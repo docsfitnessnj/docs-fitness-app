@@ -47,7 +47,7 @@ function CommunityFeed() {
 export default function CommunityScreen() {
   return (
     <ScreenContainer>
-      <MembershipGate featureName="Community">
+      <MembershipGate>
         <CommunityFeed />
       </MembershipGate>
     </ScreenContainer>

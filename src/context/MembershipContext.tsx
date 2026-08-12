@@ -1,26 +1,31 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 
-export type MembershipTier = 'free' | 'member';
+export type MembershipTier = 'trial' | 'member' | 'free';
+
+const TIER_CYCLE: MembershipTier[] = ['trial', 'member', 'free'];
 
 type MembershipContextValue = {
   tier: MembershipTier;
-  isMember: boolean;
-  toggleTier: () => void;
+  // Trial and paid Member both get full access; only an expired (Free) tier is gated.
+  hasFullAccess: boolean;
+  setTier: (tier: MembershipTier) => void;
+  cycleTier: () => void;
 };
 
 const MembershipContext = createContext<MembershipContextValue | undefined>(undefined);
 
 export function MembershipProvider({ children }: { children: React.ReactNode }) {
-  const [tier, setTier] = useState<MembershipTier>('free');
+  const [tier, setTier] = useState<MembershipTier>('trial');
 
-  const value = useMemo<MembershipContextValue>(
-    () => ({
+  const value = useMemo<MembershipContextValue>(() => {
+    const nextIndex = (TIER_CYCLE.indexOf(tier) + 1) % TIER_CYCLE.length;
+    return {
       tier,
-      isMember: tier === 'member',
-      toggleTier: () => setTier((t) => (t === 'free' ? 'member' : 'free')),
-    }),
-    [tier]
-  );
+      hasFullAccess: tier !== 'free',
+      setTier,
+      cycleTier: () => setTier(TIER_CYCLE[nextIndex]),
+    };
+  }, [tier]);
 
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>;
 }

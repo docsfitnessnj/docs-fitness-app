@@ -1,18 +1,30 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useMembership } from '../context/MembershipContext';
+import { useMembership, MembershipTier } from '../context/MembershipContext';
 import { colors, fonts } from '../theme';
 
-// Corner toggle so the gym owner can preview Free vs Member without real payments.
+const TIERS: { key: MembershipTier; label: string; color: string }[] = [
+  { key: 'trial', label: 'TRIAL', color: colors.accent },
+  { key: 'member', label: 'MEMBER', color: colors.highlight },
+  { key: 'free', label: 'FREE', color: colors.textMuted },
+];
+
+// Dev-only corner control: cycles TRIAL -> MEMBER -> FREE (expired) so the gym
+// owner can preview every access state without a real trial or payment.
 export function MembershipToggle() {
-  const { tier, toggleTier } = useMembership();
-  const isMember = tier === 'member';
+  const { tier, cycleTier } = useMembership();
+  const active = TIERS.find((t) => t.key === tier) ?? TIERS[0];
 
   return (
-    <Pressable onPress={toggleTier} style={styles.wrapper} hitSlop={8}>
-      <Text style={styles.label}>{isMember ? 'MEMBER' : 'FREE'}</Text>
-      <View style={[styles.track, isMember && styles.trackOn]}>
-        <View style={[styles.thumb, isMember && styles.thumbOn]} />
+    <Pressable onPress={cycleTier} style={styles.wrapper} hitSlop={8}>
+      <Text style={[styles.label, { color: active.color }]}>{active.label}</Text>
+      <View style={styles.track}>
+        {TIERS.map((t) => (
+          <View
+            key={t.key}
+            style={[styles.dot, { backgroundColor: t.key === tier ? t.color : colors.locked }]}
+          />
+        ))}
       </View>
     </Pressable>
   );
@@ -26,30 +38,18 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   label: {
-    color: colors.accent,
     fontFamily: fonts.bodySemiBold,
-    fontSize: 13,
+    fontSize: 12,
     letterSpacing: 1,
     marginRight: 6,
   },
   track: {
-    width: 40,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.locked,
-    padding: 2,
-    justifyContent: 'center',
+    flexDirection: 'row',
   },
-  trackOn: {
-    backgroundColor: colors.highlight,
-  },
-  thumb: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: colors.text,
-  },
-  thumbOn: {
-    alignSelf: 'flex-end',
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginLeft: 3,
   },
 });

@@ -5,16 +5,15 @@ import { useMembership } from '../context/MembershipContext';
 import { colors, fonts } from '../theme';
 
 type Props = {
-  featureName: string;
   children: React.ReactNode;
 };
 
-// Wraps a tab's content. Free tier sees a grayed-out lock screen with an Unlock button
-// instead of the real feature. Member tier sees the real content.
-export function MembershipGate({ featureName, children }: Props) {
-  const { isMember } = useMembership();
+// Wraps a tab's content. Anyone without full access (an expired Free tier) sees
+// the membership upsell instead of the real feature. Trial and Member pass through.
+export function MembershipGate({ children }: Props) {
+  const { hasFullAccess } = useMembership();
 
-  if (isMember) {
+  if (hasFullAccess) {
     return <>{children}</>;
   }
 
@@ -23,9 +22,9 @@ export function MembershipGate({ featureName, children }: Props) {
       <View style={styles.lockCircle}>
         <Ionicons name="lock-closed" size={40} color={colors.textMuted} />
       </View>
-      <Text style={styles.heading}>{featureName.toUpperCase()} IS LOCKED</Text>
+      <Text style={styles.heading}>JOIN THE BOATHOUSE</Text>
       <Text style={styles.subtext}>
-        Members get full access to {featureName}. Free accounts can preview Challenges only.
+        Daily workouts. The full Deck of WODs. Weekly challenges. Community.
       </Text>
       <Pressable
         style={styles.unlockButton}
@@ -33,7 +32,7 @@ export function MembershipGate({ featureName, children }: Props) {
           Alert.alert('Unlock Membership', 'Membership purchases are coming soon.')
         }
       >
-        <Text style={styles.unlockButtonText}>UNLOCK</Text>
+        <Text style={styles.unlockButtonText}>UNLOCK EVERYTHING</Text>
       </Pressable>
     </View>
   );
@@ -56,9 +55,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   heading: {
-    color: colors.textMuted,
+    color: colors.text,
     fontFamily: fonts.headline,
-    fontSize: 24,
+    fontSize: 30,
     letterSpacing: 1,
     textAlign: 'center',
     marginBottom: 10,

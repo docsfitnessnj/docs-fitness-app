@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -22,10 +22,11 @@ import { MembershipProvider, useMembership } from './src/context/MembershipConte
 import { MembershipToggle } from './src/components/MembershipToggle';
 import { colors, fonts } from './src/theme';
 
-import HomeScreen from './src/screens/HomeScreen';
-import ChallengesScreen from './src/screens/ChallengesScreen';
+import WelcomeScreen from './src/screens/WelcomeScreen';
+import PricingScreen from './src/screens/PricingScreen';
+import DocsWodsScreen from './src/screens/DocsWodsScreen';
+import DocsCowsScreen from './src/screens/DocsCowsScreen';
 import DeckScreen from './src/screens/DeckScreen';
-import LeaderboardScreen from './src/screens/LeaderboardScreen';
 import CommunityScreen from './src/screens/CommunityScreen';
 
 SplashScreen.preventAutoHideAsync();
@@ -37,16 +38,18 @@ type TabConfig = {
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
   component: React.ComponentType;
-  alwaysUnlocked?: boolean;
 };
 
+// Doc's WODs is partially available to the Free tier (2 of 5 days), so it never
+// shows the tab-level lock badge — the other three tabs are all-or-nothing.
 const TABS: TabConfig[] = [
-  { name: 'Home', title: 'HOME', icon: 'home', component: HomeScreen },
-  { name: 'Challenges', title: 'CHALLENGES', icon: 'trophy', component: ChallengesScreen, alwaysUnlocked: true },
-  { name: 'Deck', title: 'DECK OF WODS', icon: 'albums', component: DeckScreen },
-  { name: 'Leaderboard', title: 'LEADERBOARD', icon: 'podium', component: LeaderboardScreen },
+  { name: 'Wods', title: "DOC'S WODS", icon: 'flame', component: DocsWodsScreen },
+  { name: 'Cows', title: "DOC'S COWS", icon: 'trophy', component: DocsCowsScreen },
+  { name: 'Deck', title: 'THE DECK', icon: 'albums', component: DeckScreen },
   { name: 'Community', title: 'COMMUNITY', icon: 'people', component: CommunityScreen },
 ];
+
+const FULL_ACCESS_ONLY_TABS = new Set(['Cows', 'Deck', 'Community']);
 
 function TabIcon({
   icon,
@@ -72,7 +75,7 @@ function TabIcon({
 }
 
 function RootNavigator() {
-  const { isMember } = useMembership();
+  const { hasFullAccess } = useMembership();
 
   return (
     <Tab.Navigator
@@ -88,8 +91,8 @@ function RootNavigator() {
         tabBarLabelStyle: styles.tabBarLabel,
       }}
     >
-      {TABS.map(({ name, title, icon, component, alwaysUnlocked }) => {
-        const locked = !isMember && !alwaysUnlocked;
+      {TABS.map(({ name, title, icon, component }) => {
+        const locked = !hasFullAccess && FULL_ACCESS_ONLY_TABS.has(name);
         return (
           <Tab.Screen
             key={name}
@@ -105,6 +108,46 @@ function RootNavigator() {
         );
       })}
     </Tab.Navigator>
+  );
+}
+
+type OnboardingStep = 'welcome' | 'pricing';
+
+// Local-only onboarding: no navigator needed since it's a simple two-step flow
+// that hands off into the tab app once a trial or membership is chosen.
+function AppShell() {
+  const { setTier } = useMembership();
+  const [onboarded, setOnboarded] = useState(false);
+  const [step, setStep] = useState<OnboardingStep>('welcome');
+
+  if (!onboarded) {
+    if (step === 'pricing') {
+      return (
+        <PricingScreen
+          onBack={() => setStep('welcome')}
+          onSelectPlan={() => {
+            setTier('member');
+            setOnboarded(true);
+          }}
+        />
+      );
+    }
+
+    return (
+      <WelcomeScreen
+        onStartTrial={() => {
+          setTier('trial');
+          setOnboarded(true);
+        }}
+        onSkipTrial={() => setStep('pricing')}
+      />
+    );
+  }
+
+  return (
+    <NavigationContainer>
+      <RootNavigator />
+    </NavigationContainer>
   );
 }
 
@@ -133,9 +176,7 @@ export default function App() {
     <SafeAreaProvider>
       <MembershipProvider>
         <View style={styles.appRoot} onLayout={onLayoutRootView}>
-          <NavigationContainer>
-            <RootNavigator />
-          </NavigationContainer>
+          <AppShell />
           <StatusBar style="light" />
         </View>
       </MembershipProvider>
