@@ -3,7 +3,8 @@ import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-nativ
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useCommunity } from '../context/CommunityContext';
-import { DECK_CARDS, WEEKDAY_WODS } from '../data/content';
+import { WEEKDAY_WODS } from '../data/content';
+import { DECK_CARDS, deckCardLabel } from '../data/deckCards';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -32,9 +33,11 @@ export function SearchModal({ visible, onClose }: Props) {
       (w) => w.title.toLowerCase().includes(q) || w.moves.some((m) => m.toLowerCase().includes(q))
     ).map((w) => ({ id: `wod-${w.key}`, section: 'WORKOUTS', title: w.title, subtitle: w.moves[0], tab: 'DocsWods' }));
 
-    const deckResults: Result[] = DECK_CARDS.filter((c) => c.toLowerCase().includes(q))
+    const deckResults: Result[] = DECK_CARDS.filter(
+      (c) => deckCardLabel(c).toLowerCase().includes(q) || c.title.toLowerCase().includes(q)
+    )
       .slice(0, 8)
-      .map((c) => ({ id: `deck-${c}`, section: 'DECK CARDS', title: c, tab: 'Deck' }));
+      .map((c) => ({ id: `deck-${c.id}`, section: 'DECK CARDS', title: `${deckCardLabel(c)} — ${c.title}`, subtitle: c.format, tab: 'Deck' }));
 
     const communityResults: Result[] = posts
       .filter(

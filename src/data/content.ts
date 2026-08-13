@@ -13,11 +13,6 @@ export const WEEKDAY_WODS: DayWod[] = [
   { key: 'fri', title: 'FRIDAY FURY', moves: ['3 Rounds for Time', '400m Run', '20 Kettlebell Snatches', '15 Toes-to-Bar'] },
 ];
 
-export const SUITS = ['♠', '♥', '♦', '♣'] as const;
-export const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'] as const;
-
-export const DECK_CARDS = SUITS.flatMap((suit) => RANKS.map((rank) => `${rank}${suit}`));
-
 const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
 export type WeekDay = {
