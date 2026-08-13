@@ -1,17 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
-import { showAlert } from '../lib/alert';
+import { Avatar } from './Avatar';
+import { openMerchStore } from '../lib/links';
 import { colors, fonts } from '../theme';
 
 const DRAWER_WIDTH = 280;
-const MERCH_STORE_URL = 'https://docsfitness.example.com/merch';
 
 type Props = {
   visible: boolean;
   onClose: () => void;
   displayName: string;
+  photoUri: string | null;
+  onOpenProfile: () => void;
   onOpenMyWorkouts: () => void;
   onOpenCloseFriends: () => void;
 };
@@ -23,7 +25,15 @@ type Row = {
   onPress: () => void;
 };
 
-export function SidebarDrawer({ visible, onClose, displayName, onOpenMyWorkouts, onOpenCloseFriends }: Props) {
+export function SidebarDrawer({
+  visible,
+  onClose,
+  displayName,
+  photoUri,
+  onOpenProfile,
+  onOpenMyWorkouts,
+  onOpenCloseFriends,
+}: Props) {
   const translateX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const [mounted, setMounted] = useState(visible);
 
@@ -42,12 +52,11 @@ export function SidebarDrawer({ visible, onClose, displayName, onOpenMyWorkouts,
 
   const openMerch = () => {
     onClose();
-    Linking.openURL(MERCH_STORE_URL).catch(() => {
-      showAlert("Doc's Merch Store", 'The store is coming soon.');
-    });
+    openMerchStore();
   };
 
   const rows: Row[] = [
+    { key: 'profile', label: 'PROFILE', icon: 'person-circle-outline', onPress: () => { onClose(); onOpenProfile(); } },
     { key: 'workouts', label: 'MY WORKOUTS', icon: 'barbell-outline', onPress: () => { onClose(); onOpenMyWorkouts(); } },
     { key: 'merch', label: "DOC'S MERCH STORE", icon: 'bag-handle-outline', onPress: openMerch },
     { key: 'friends', label: 'CLOSE FRIENDS', icon: 'star-outline', onPress: () => { onClose(); onOpenCloseFriends(); } },
@@ -59,9 +68,7 @@ export function SidebarDrawer({ visible, onClose, displayName, onOpenMyWorkouts,
         <Pressable style={styles.backdrop} onPress={onClose} />
         <Animated.View style={[styles.drawer, { transform: [{ translateX }] }]}>
           <View style={styles.header}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
-            </View>
+            <Avatar name={displayName} uri={photoUri} size={40} />
             <Text style={styles.displayName}>{displayName}</Text>
             <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton}>
               <Ionicons name="close" size={22} color={colors.text} />
@@ -106,22 +113,9 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
     paddingHorizontal: 20,
     marginBottom: 16,
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
-    fontSize: 17,
   },
   displayName: {
     flex: 1,

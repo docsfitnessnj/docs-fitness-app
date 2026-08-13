@@ -1,0 +1,104 @@
+import React from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { openMerchStore } from '../lib/links';
+import { colors, fonts, TAGLINE } from '../theme';
+
+const MEMBER_COUNT = 128;
+
+type Props = {
+  onOpenMessages: () => void;
+};
+
+export function IdentitySidebar({ onOpenMessages }: Props) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.brandMark}>
+        <Ionicons name="fitness" size={28} color={colors.highlight} />
+      </View>
+      <Text style={styles.name}>DOC'S FITNESS</Text>
+      <Text style={styles.tagline}>{TAGLINE.toUpperCase()}</Text>
+
+      <View style={styles.memberRow}>
+        <Ionicons name="people" size={14} color={colors.accent} />
+        <Text style={styles.memberCount}>{MEMBER_COUNT} MEMBERS</Text>
+      </View>
+
+      <View style={styles.divider} />
+
+      <Pressable style={styles.linkRow} onPress={onOpenMessages}>
+        <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.highlight} />
+        <Text style={styles.linkText}>Message Doc</Text>
+      </Pressable>
+      <Pressable style={styles.linkRow} onPress={openMerchStore}>
+        <Ionicons name="bag-handle-outline" size={18} color={colors.highlight} />
+        <Text style={styles.linkText}>Doc's Merch Store</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: colors.backgroundLight,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+  },
+  brandMark: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: colors.highlight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  name: {
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 22,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  tagline: {
+    color: colors.highlight,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 15,
+  },
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 14,
+  },
+  memberCount: {
+    color: colors.accent,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  divider: {
+    height: 1,
+    alignSelf: 'stretch',
+    backgroundColor: colors.locked,
+    marginVertical: 16,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    alignSelf: 'stretch',
+    paddingVertical: 10,
+  },
+  linkText: {
+    color: colors.text,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 14,
+  },
+});

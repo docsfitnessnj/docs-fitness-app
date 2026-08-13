@@ -8,9 +8,11 @@ import { colors, fonts } from '../theme';
 type Props = {
   card: DeckCardData | null;
   onClose: () => void;
+  isComplete: boolean;
+  onToggleComplete: () => void;
 };
 
-export function DeckCardDetailModal({ card, onClose }: Props) {
+export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplete }: Props) {
   if (!card) return null;
 
   const jokerColor = card.joker === 'red' ? '#D9534F' : colors.text;
@@ -41,6 +43,21 @@ export function DeckCardDetailModal({ card, onClose }: Props) {
             ))}
 
             {card.note ? <Text style={styles.note}>"{card.note}"</Text> : null}
+
+            <Pressable
+              style={[styles.completeButton, isComplete && styles.completeButtonDone]}
+              onPress={onToggleComplete}
+              testID="deck-card-complete-toggle"
+            >
+              <Ionicons
+                name={isComplete ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                size={18}
+                color={isComplete ? colors.background : colors.highlight}
+              />
+              <Text style={[styles.completeButtonText, isComplete && styles.completeButtonTextDone]}>
+                {isComplete ? 'COMPLETED' : 'MARK COMPLETE'}
+              </Text>
+            </Pressable>
 
             <View style={styles.videoPlaceholder}>
               <View style={styles.playCircle}>
@@ -141,6 +158,30 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginTop: 4,
     marginBottom: 8,
+  },
+  completeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: colors.highlight,
+    borderRadius: 10,
+    paddingVertical: 13,
+    marginTop: 8,
+  },
+  completeButtonDone: {
+    backgroundColor: '#4CAF7D',
+    borderColor: '#4CAF7D',
+  },
+  completeButtonText: {
+    color: colors.highlight,
+    fontFamily: fonts.bodyBold,
+    fontSize: 13,
+    letterSpacing: 1,
+  },
+  completeButtonTextDone: {
+    color: colors.background,
   },
   videoPlaceholder: {
     backgroundColor: colors.locked,

@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '../components/AppModal';
 import { useCommunity } from '../context/CommunityContext';
 import { useCloseFriends } from '../context/CloseFriendsContext';
-import { useMembership } from '../context/MembershipContext';
+import { useDisplayName } from '../context/ProfileContext';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -22,7 +22,7 @@ function Avatar({ name }: { name: string }) {
 
 export function CloseFriendsScreen({ visible, onClose }: Props) {
   const { posts } = useCommunity();
-  const { displayName } = useMembership();
+  const displayName = useDisplayName();
   const { isCloseFriend, toggleCloseFriend, closeFriendNames } = useCloseFriends();
   const [tab, setTab] = useState<'members' | 'feed'>('members');
 

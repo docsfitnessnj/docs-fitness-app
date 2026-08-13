@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -22,12 +22,16 @@ import { MembershipProvider, useMembership } from './src/context/MembershipConte
 import { CommunityProvider } from './src/context/CommunityContext';
 import { WorkoutLogProvider } from './src/context/WorkoutLogContext';
 import { CloseFriendsProvider } from './src/context/CloseFriendsContext';
+import { ProfileProvider, useDisplayName, useProfile } from './src/context/ProfileContext';
+import { StoriesProvider } from './src/context/StoriesContext';
+import { DeckProgressProvider } from './src/context/DeckProgressContext';
 import { AppTopBar } from './src/components/AppTopBar';
 import { SearchModal } from './src/components/SearchModal';
 import { TrialExpiryModal } from './src/components/TrialExpiryModal';
 import { AlertHost } from './src/components/AlertHost';
 import { ModalRootProvider } from './src/components/ModalRootContext';
 import { SidebarDrawer } from './src/components/SidebarDrawer';
+import { IdentitySidebar } from './src/components/IdentitySidebar';
 import { colors, fonts, tabAccents } from './src/theme';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
@@ -39,8 +43,12 @@ import CommunityScreen from './src/screens/CommunityScreen';
 import { MessagesScreen } from './src/screens/MessagesScreen';
 import { MyWorkoutsScreen } from './src/screens/MyWorkoutsScreen';
 import { CloseFriendsScreen } from './src/screens/CloseFriendsScreen';
+import { ProfileScreen } from './src/screens/ProfileScreen';
 
 const PHONE_FRAME_MAX_WIDTH = 480;
+const MAIN_COLUMN_DESKTOP_WIDTH = 640;
+const SIDEBAR_WIDTH = 320;
+const DESKTOP_BREAKPOINT = 900;
 
 SplashScreen.preventAutoHideAsync();
 
@@ -169,11 +177,18 @@ function OnboardingFlow() {
   );
 }
 
-function MainApp() {
-  const { displayName } = useMembership();
+type MainAppProps = {
+  messagesOpen: boolean;
+  onOpenMessages: () => void;
+  onCloseMessages: () => void;
+};
+
+function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps) {
+  const displayName = useDisplayName();
+  const { photoUri } = useProfile();
   const [searchOpen, setSearchOpen] = useState(false);
-  const [messagesOpen, setMessagesOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [myWorkoutsOpen, setMyWorkoutsOpen] = useState(false);
   const [closeFriendsOpen, setCloseFriendsOpen] = useState(false);
 
@@ -183,19 +198,22 @@ function MainApp() {
         <AppTopBar
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenSearch={() => setSearchOpen(true)}
-          onOpenMessages={() => setMessagesOpen(true)}
+          onOpenMessages={onOpenMessages}
         />
         <RootNavigator />
       </View>
       <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
-      <MessagesScreen visible={messagesOpen} onClose={() => setMessagesOpen(false)} />
+      <MessagesScreen visible={messagesOpen} onClose={onCloseMessages} />
       <SidebarDrawer
         visible={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         displayName={displayName}
+        photoUri={photoUri}
+        onOpenProfile={() => setProfileOpen(true)}
         onOpenMyWorkouts={() => setMyWorkoutsOpen(true)}
         onOpenCloseFriends={() => setCloseFriendsOpen(true)}
       />
+      <ProfileScreen visible={profileOpen} onClose={() => setProfileOpen(false)} />
       <MyWorkoutsScreen visible={myWorkoutsOpen} onClose={() => setMyWorkoutsOpen(false)} />
       <CloseFriendsScreen visible={closeFriendsOpen} onClose={() => setCloseFriendsOpen(false)} />
       <TrialExpiryModal />
@@ -203,14 +221,47 @@ function MainApp() {
   );
 }
 
-function AppShell() {
+type ResponsiveShellProps = {
+  onLayoutRootView: () => void;
+};
+
+function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
   const { signedUp } = useMembership();
+  const { width } = useWindowDimensions();
+  const [messagesOpen, setMessagesOpen] = useState(false);
 
-  if (!signedUp) {
-    return <OnboardingFlow />;
-  }
+  const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
+  const showSidebar = isDesktop && signedUp;
+  const mainColumnMaxWidth = signedUp && isDesktop ? MAIN_COLUMN_DESKTOP_WIDTH : PHONE_FRAME_MAX_WIDTH;
 
-  return <MainApp />;
+  return (
+    <View style={styles.layoutRow}>
+      <View
+        style={[styles.mainColumn, Platform.OS === 'web' && { maxWidth: mainColumnMaxWidth }]}
+        onLayout={onLayoutRootView}
+      >
+        <ModalRootProvider>
+          {signedUp ? (
+            <MainApp
+              messagesOpen={messagesOpen}
+              onOpenMessages={() => setMessagesOpen(true)}
+              onCloseMessages={() => setMessagesOpen(false)}
+            />
+          ) : (
+            <OnboardingFlow />
+          )}
+          <AlertHost />
+          <StatusBar style="light" />
+        </ModalRootProvider>
+      </View>
+
+      {showSidebar && (
+        <View style={styles.sidebarColumn}>
+          <IdentitySidebar onOpenMessages={() => setMessagesOpen(true)} />
+        </View>
+      )}
+    </View>
+  );
 }
 
 export default function App() {
@@ -240,15 +291,15 @@ export default function App() {
         <CommunityProvider>
           <WorkoutLogProvider>
             <CloseFriendsProvider>
-              <View style={styles.webSurround}>
-                <View style={styles.appRoot} onLayout={onLayoutRootView}>
-                  <ModalRootProvider>
-                    <AppShell />
-                    <AlertHost />
-                    <StatusBar style="light" />
-                  </ModalRootProvider>
-                </View>
-              </View>
+              <ProfileProvider>
+                <StoriesProvider>
+                  <DeckProgressProvider>
+                    <View style={styles.webSurround}>
+                      <ResponsiveShell onLayoutRootView={onLayoutRootView} />
+                    </View>
+                  </DeckProgressProvider>
+                </StoriesProvider>
+              </ProfileProvider>
             </CloseFriendsProvider>
           </WorkoutLogProvider>
         </CommunityProvider>
@@ -258,19 +309,22 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  // On web, the dark teal fills the full browser width; the app itself is
-  // clamped to a phone-sized column in the middle so it never stretches wide.
+  // On web, the dark teal fills the full browser width. On phone-width web
+  // (and native) the app is a single centered phone-sized column; on wide
+  // desktop windows it becomes a Skool-style main column + identity sidebar.
   webSurround: {
     flex: 1,
     backgroundColor: colors.background,
-    alignItems: 'center',
   },
-  appRoot: {
+  layoutRow: {
     flex: 1,
-    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  mainColumn: {
+    flex: 1,
     ...(Platform.OS === 'web'
       ? {
-          maxWidth: PHONE_FRAME_MAX_WIDTH,
           position: 'relative',
           overflow: 'hidden',
           borderLeftWidth: 1,
@@ -278,6 +332,11 @@ const styles = StyleSheet.create({
           borderColor: colors.locked,
         }
       : null),
+  },
+  sidebarColumn: {
+    width: SIDEBAR_WIDTH,
+    paddingTop: 60,
+    paddingHorizontal: 20,
   },
   mainAppRoot: {
     flex: 1,
