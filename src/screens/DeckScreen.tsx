@@ -1,31 +1,38 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { MembershipGate } from '../components/MembershipGate';
-import { DECK_CARDS } from '../data/content';
+import { DeckCardDetailModal } from '../components/DeckCardDetailModal';
+import { DECK_CARDS, DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
 import { colors, fonts } from '../theme';
 
-function PlayingCard({ label }: { label: string }) {
+function PlayingCard({ card, onPress }: { card: DeckCardData; onPress: () => void }) {
+  const jokerColor = card.joker === 'red' ? '#D9534F' : colors.text;
+  const suitColor = card.joker ? jokerColor : isRedSuit(card.suit) ? '#D9534F' : colors.text;
+  const label = deckCardLabel(card);
+
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardLabel}>{label}</Text>
-      <View style={styles.lockBadge}>
-        <Ionicons name="lock-closed" size={14} color={colors.textMuted} />
-      </View>
-    </View>
+    <Pressable
+      onPress={onPress}
+      style={[styles.card, card.joker && { borderColor: jokerColor, borderWidth: 1.5 }]}
+    >
+      <Text style={[styles.cardLabel, { color: suitColor }, card.joker && styles.jokerLabel]}>{label}</Text>
+    </Pressable>
   );
 }
 
 function DeckOfWods() {
+  const [selectedCard, setSelectedCard] = useState<DeckCardData | null>(null);
+
   return (
     <View>
-      <Text style={styles.subtitle}>52 WODs. Each card is a workout. Earn cards to unlock them.</Text>
+      <Text style={styles.subtitle}>54 WODs. Every card is a real workout. Tap one to see it.</Text>
       <View style={styles.grid}>
-        {DECK_CARDS.map((label) => (
-          <PlayingCard key={label} label={label} />
+        {DECK_CARDS.map((card) => (
+          <PlayingCard key={card.id} card={card} onPress={() => setSelectedCard(card)} />
         ))}
       </View>
+      <DeckCardDetailModal card={selectedCard} onClose={() => setSelectedCard(null)} />
     </View>
   );
 }
@@ -58,21 +65,18 @@ const styles = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
     aspectRatio: 0.7,
-    backgroundColor: colors.locked,
+    backgroundColor: colors.backgroundLight,
     borderRadius: 8,
     marginBottom: CARD_MARGIN * 2,
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.55,
   },
   cardLabel: {
-    color: colors.textMuted,
     fontFamily: fonts.bodyBold,
     fontSize: 16,
   },
-  lockBadge: {
-    position: 'absolute',
-    bottom: 6,
-    right: 6,
+  jokerLabel: {
+    fontSize: 11,
+    letterSpacing: 0.5,
   },
 });
