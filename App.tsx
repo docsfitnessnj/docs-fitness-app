@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -22,10 +22,11 @@ import { MembershipProvider, useMembership } from './src/context/MembershipConte
 import { MembershipToggle } from './src/components/MembershipToggle';
 import { colors, fonts } from './src/theme';
 
-import HomeScreen from './src/screens/HomeScreen';
-import ChallengesScreen from './src/screens/ChallengesScreen';
+import WelcomeScreen from './src/screens/WelcomeScreen';
+import PricingScreen from './src/screens/PricingScreen';
+import DocsWodsScreen from './src/screens/DocsWodsScreen';
+import DocsCowsScreen from './src/screens/DocsCowsScreen';
 import DeckScreen from './src/screens/DeckScreen';
-import LeaderboardScreen from './src/screens/LeaderboardScreen';
 import CommunityScreen from './src/screens/CommunityScreen';
 
 SplashScreen.preventAutoHideAsync();
@@ -41,10 +42,9 @@ type TabConfig = {
 };
 
 const TABS: TabConfig[] = [
-  { name: 'Home', title: 'HOME', icon: 'home', component: HomeScreen },
-  { name: 'Challenges', title: 'CHALLENGES', icon: 'trophy', component: ChallengesScreen, alwaysUnlocked: true },
-  { name: 'Deck', title: 'DECK OF WODS', icon: 'albums', component: DeckScreen },
-  { name: 'Leaderboard', title: 'LEADERBOARD', icon: 'podium', component: LeaderboardScreen },
+  { name: 'DocsWods', title: "DOC'S WODS", icon: 'flame', component: DocsWodsScreen, alwaysUnlocked: true },
+  { name: 'DocsCows', title: "DOC'S COWS", icon: 'trophy', component: DocsCowsScreen },
+  { name: 'Deck', title: 'THE DECK', icon: 'albums', component: DeckScreen },
   { name: 'Community', title: 'COMMUNITY', icon: 'people', component: CommunityScreen },
 ];
 
@@ -72,7 +72,7 @@ function TabIcon({
 }
 
 function RootNavigator() {
-  const { isMember } = useMembership();
+  const { hasFullAccess } = useMembership();
 
   return (
     <Tab.Navigator
@@ -89,7 +89,7 @@ function RootNavigator() {
       }}
     >
       {TABS.map(({ name, title, icon, component, alwaysUnlocked }) => {
-        const locked = !isMember && !alwaysUnlocked;
+        const locked = !hasFullAccess && !alwaysUnlocked;
         return (
           <Tab.Screen
             key={name}
@@ -105,6 +105,41 @@ function RootNavigator() {
         );
       })}
     </Tab.Navigator>
+  );
+}
+
+function OnboardingFlow() {
+  const { startTrial, becomeMember } = useMembership();
+  const [view, setView] = useState<'welcome' | 'pricing'>('welcome');
+
+  if (view === 'pricing') {
+    return (
+      <PricingScreen
+        onBack={() => setView('welcome')}
+        onSelectPlan={() => becomeMember()}
+      />
+    );
+  }
+
+  return (
+    <WelcomeScreen
+      onStartTrial={(email) => startTrial(email)}
+      onSkipTrial={() => setView('pricing')}
+    />
+  );
+}
+
+function AppShell() {
+  const { signedUp } = useMembership();
+
+  if (!signedUp) {
+    return <OnboardingFlow />;
+  }
+
+  return (
+    <NavigationContainer>
+      <RootNavigator />
+    </NavigationContainer>
   );
 }
 
@@ -133,9 +168,7 @@ export default function App() {
     <SafeAreaProvider>
       <MembershipProvider>
         <View style={styles.appRoot} onLayout={onLayoutRootView}>
-          <NavigationContainer>
-            <RootNavigator />
-          </NavigationContainer>
+          <AppShell />
           <StatusBar style="light" />
         </View>
       </MembershipProvider>
