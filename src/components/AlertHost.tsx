@@ -1,5 +1,6 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppModal } from './AppModal';
 import { useAlertState } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -11,7 +12,7 @@ export function AlertHost() {
   const close = () => setState(null);
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={close}>
+    <AppModal visible transparent animationType="fade" onRequestClose={close}>
       <View style={styles.backdrop}>
         <View style={styles.sheet}>
           <Text style={styles.title}>{state.title}</Text>
@@ -34,7 +35,7 @@ export function AlertHost() {
           </View>
         </View>
       </View>
-    </Modal>
+    </AppModal>
   );
 }
 

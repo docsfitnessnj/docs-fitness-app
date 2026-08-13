@@ -5,15 +5,12 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { DateStrip } from '../components/DateStrip';
 import { useMembership } from '../context/MembershipContext';
 import { useCommunity } from '../context/CommunityContext';
+import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatFullDate, getCurrentWeek } from '../data/content';
 import { showAlert } from '../lib/alert';
 import { colors, fonts, TAGLINE } from '../theme';
 
 const FREE_WEEKDAYS_UNLOCKED = 2;
-
-type LogEntry = { rounds: string; time: string; kettlebell: string; notes: string };
-
-const EMPTY_LOG: LogEntry = { rounds: '', time: '', kettlebell: '', notes: '' };
 
 function VideoPlaceholder() {
   return (
@@ -47,29 +44,28 @@ function RestDay() {
 export default function DocsWodsScreen() {
   const { hasFullAccess, displayName } = useMembership();
   const { addWodResultPost } = useCommunity();
+  const { getLog, updateLog: updateLogEntry, isCompleted, toggleCompleted } = useWorkoutLog();
 
   const week = useMemo(() => getCurrentWeek(), []);
   const todayIndex = week.findIndex((d) => d.isToday);
   const defaultIndex = todayIndex >= 0 && (hasFullAccess || todayIndex < FREE_WEEKDAYS_UNLOCKED) ? todayIndex : 0;
 
   const [selectedIndex, setSelectedIndex] = useState(defaultIndex);
-  const [completed, setCompleted] = useState<Record<string, boolean>>({});
-  const [logs, setLogs] = useState<Record<string, LogEntry>>({});
   const [savedFlash, setSavedFlash] = useState(false);
 
   const isUnlocked = (index: number) => hasFullAccess || index < FREE_WEEKDAYS_UNLOCKED;
 
   const selectedDay = week[selectedIndex];
   const dayKey = selectedDay.wod?.key ?? `rest-${selectedIndex}`;
-  const log = logs[dayKey] ?? EMPTY_LOG;
-  const isComplete = !!completed[dayKey];
+  const log = getLog(dayKey);
+  const isComplete = isCompleted(dayKey);
 
-  const updateLog = (field: keyof LogEntry, value: string) => {
-    setLogs((prev) => ({ ...prev, [dayKey]: { ...(prev[dayKey] ?? EMPTY_LOG), [field]: value } }));
+  const updateLog = (field: 'rounds' | 'time' | 'kettlebell' | 'notes', value: string) => {
+    updateLogEntry(dayKey, field, value);
   };
 
   const toggleComplete = () => {
-    setCompleted((prev) => ({ ...prev, [dayKey]: !prev[dayKey] }));
+    toggleCompleted(dayKey, selectedDay.wod!.title, formatFullDate(selectedDay.date), selectedDay.date.getTime());
   };
 
   const handleSave = () => {
@@ -120,7 +116,7 @@ export default function DocsWodsScreen() {
         isUnlocked={isUnlocked}
         isCompleted={(index) => {
           const wod = week[index].wod;
-          return wod ? !!completed[wod.key] : false;
+          return wod ? isCompleted(wod.key) : false;
         }}
       />
 
