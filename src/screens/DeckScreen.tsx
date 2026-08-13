@@ -37,7 +37,7 @@ function DeckOfWods() {
 export default function DeckScreen() {
   return (
     <ScreenContainer>
-      <MembershipGate featureName="Deck of WODs">
+      <MembershipGate>
         <DeckOfWods />
       </MembershipGate>
     </ScreenContainer>
