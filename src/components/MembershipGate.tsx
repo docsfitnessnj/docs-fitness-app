@@ -1,7 +1,8 @@
 import React from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useMembership } from '../context/MembershipContext';
+import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -29,7 +30,7 @@ export function MembershipGate({ children }: Props) {
       <Pressable
         style={styles.unlockButton}
         onPress={() =>
-          Alert.alert('Unlock Everything', 'Membership purchases are coming soon.')
+          showAlert('Unlock Everything', 'Membership purchases are coming soon.')
         }
       >
         <Text style={styles.unlockButtonText}>UNLOCK EVERYTHING</Text>

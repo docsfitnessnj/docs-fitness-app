@@ -3,12 +3,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { MembershipGate } from '../components/MembershipGate';
+import { DECK_CARDS } from '../data/content';
 import { colors, fonts } from '../theme';
-
-const SUITS = ['♠', '♥', '♦', '♣'] as const;
-const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'] as const;
-
-const DECK = SUITS.flatMap((suit) => RANKS.map((rank) => `${rank}${suit}`));
 
 function PlayingCard({ label }: { label: string }) {
   return (
@@ -26,7 +22,7 @@ function DeckOfWods() {
     <View>
       <Text style={styles.subtitle}>52 WODs. Each card is a workout. Earn cards to unlock them.</Text>
       <View style={styles.grid}>
-        {DECK.map((label) => (
+        {DECK_CARDS.map((label) => (
           <PlayingCard key={label} label={label} />
         ))}
       </View>

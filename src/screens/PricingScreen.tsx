@@ -1,6 +1,7 @@
 import React from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -44,8 +45,8 @@ export default function PricingScreen({ onBack, onSelectPlan }: Props) {
             <Pressable
               style={styles.selectButton}
               onPress={() => {
-                Alert.alert('Payments Coming Soon', 'This is a preview — no charge yet.');
                 onSelectPlan();
+                showAlert('Payments Coming Soon', 'This is a preview — no charge yet.');
               }}
             >
               <Text style={styles.selectButtonText}>CHOOSE {plan.name}</Text>

@@ -4,7 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as SplashScreen from 'expo-splash-screen';
 import {
   useFonts as useBebasNeueFonts,
@@ -19,8 +19,12 @@ import {
 } from '@expo-google-fonts/barlow-condensed';
 
 import { MembershipProvider, useMembership } from './src/context/MembershipContext';
-import { MembershipToggle } from './src/components/MembershipToggle';
-import { colors, fonts } from './src/theme';
+import { CommunityProvider } from './src/context/CommunityContext';
+import { AppTopBar } from './src/components/AppTopBar';
+import { SearchModal } from './src/components/SearchModal';
+import { TrialExpiryModal } from './src/components/TrialExpiryModal';
+import { AlertHost } from './src/components/AlertHost';
+import { colors, fonts, tabAccents } from './src/theme';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import PricingScreen from './src/screens/PricingScreen';
@@ -28,40 +32,72 @@ import DocsWodsScreen from './src/screens/DocsWodsScreen';
 import DocsCowsScreen from './src/screens/DocsCowsScreen';
 import DeckScreen from './src/screens/DeckScreen';
 import CommunityScreen from './src/screens/CommunityScreen';
+import { MessagesScreen } from './src/screens/MessagesScreen';
 
 SplashScreen.preventAutoHideAsync();
 
 const Tab = createBottomTabNavigator();
 
+type IconRenderer = (props: { color: string; size: number }) => React.ReactNode;
+
 type TabConfig = {
   name: string;
   title: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  renderIcon: IconRenderer;
   component: React.ComponentType;
   alwaysUnlocked?: boolean;
 };
 
 const TABS: TabConfig[] = [
-  { name: 'DocsWods', title: "DOC'S WODS", icon: 'flame', component: DocsWodsScreen, alwaysUnlocked: true },
-  { name: 'DocsCows', title: "DOC'S COWS", icon: 'trophy', component: DocsCowsScreen },
-  { name: 'Deck', title: 'THE DECK', icon: 'albums', component: DeckScreen },
-  { name: 'Community', title: 'COMMUNITY', icon: 'people', component: CommunityScreen },
+  {
+    name: 'Community',
+    title: 'COMMUNITY',
+    color: tabAccents.community,
+    renderIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
+    component: CommunityScreen,
+  },
+  {
+    name: 'DocsWods',
+    title: "DOC'S WODS",
+    color: tabAccents.wods,
+    renderIcon: ({ color, size }) => <Ionicons name="flame" size={size} color={color} />,
+    component: DocsWodsScreen,
+    alwaysUnlocked: true,
+  },
+  {
+    name: 'DocsCows',
+    title: "DOC'S COWS",
+    color: tabAccents.cows,
+    renderIcon: ({ color, size }) => <Ionicons name="trophy" size={size} color={color} />,
+    component: DocsCowsScreen,
+  },
+  {
+    name: 'Deck',
+    title: 'DECK OF WODS',
+    color: tabAccents.deck,
+    renderIcon: ({ color, size }) => (
+      <MaterialCommunityIcons name="cards-playing-spade-outline" size={size} color={color} />
+    ),
+    component: DeckScreen,
+  },
 ];
 
 function TabIcon({
-  icon,
+  renderIcon,
   color,
-  size,
+  focused,
   locked,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  renderIcon: IconRenderer;
   color: string;
-  size: number;
+  focused: boolean;
   locked: boolean;
 }) {
   return (
-    <View>
-      <Ionicons name={icon} size={size} color={color} />
+    <View style={styles.iconWrap}>
+      {renderIcon({ color, size: focused ? 26 : 22 })}
+      {focused && <View style={[styles.activeDot, { backgroundColor: color }]} />}
       {locked && (
         <View style={styles.lockBadge}>
           <Ionicons name="lock-closed" size={9} color={colors.background} />
@@ -77,18 +113,14 @@ function RootNavigator() {
   return (
     <Tab.Navigator
       screenOptions={{
-        headerStyle: styles.header,
-        headerTitleStyle: styles.headerTitle,
-        headerShadowVisible: false,
-        headerTintColor: colors.text,
-        headerRight: () => <MembershipToggle />,
+        headerShown: false,
         tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: colors.highlight,
+        tabBarActiveTintColor: colors.text,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: styles.tabBarLabel,
       }}
     >
-      {TABS.map(({ name, title, icon, component, alwaysUnlocked }) => {
+      {TABS.map(({ name, title, color, renderIcon, component, alwaysUnlocked }) => {
         const locked = !hasFullAccess && !alwaysUnlocked;
         return (
           <Tab.Screen
@@ -97,8 +129,8 @@ function RootNavigator() {
             component={component}
             options={{
               title,
-              tabBarIcon: ({ color, size }) => (
-                <TabIcon icon={icon} color={color} size={size} locked={locked} />
+              tabBarIcon: ({ focused }) => (
+                <TabIcon renderIcon={renderIcon} color={color} focused={focused} locked={locked} />
               ),
             }}
           />
@@ -129,6 +161,23 @@ function OnboardingFlow() {
   );
 }
 
+function MainApp() {
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [messagesOpen, setMessagesOpen] = useState(false);
+
+  return (
+    <NavigationContainer>
+      <View style={styles.mainAppRoot}>
+        <AppTopBar onOpenSearch={() => setSearchOpen(true)} onOpenMessages={() => setMessagesOpen(true)} />
+        <RootNavigator />
+      </View>
+      <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
+      <MessagesScreen visible={messagesOpen} onClose={() => setMessagesOpen(false)} />
+      <TrialExpiryModal />
+    </NavigationContainer>
+  );
+}
+
 function AppShell() {
   const { signedUp } = useMembership();
 
@@ -136,11 +185,7 @@ function AppShell() {
     return <OnboardingFlow />;
   }
 
-  return (
-    <NavigationContainer>
-      <RootNavigator />
-    </NavigationContainer>
-  );
+  return <MainApp />;
 }
 
 export default function App() {
@@ -167,10 +212,13 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <MembershipProvider>
-        <View style={styles.appRoot} onLayout={onLayoutRootView}>
-          <AppShell />
-          <StatusBar style="light" />
-        </View>
+        <CommunityProvider>
+          <View style={styles.appRoot} onLayout={onLayoutRootView}>
+            <AppShell />
+            <AlertHost />
+            <StatusBar style="light" />
+          </View>
+        </CommunityProvider>
       </MembershipProvider>
     </SafeAreaProvider>
   );
@@ -180,14 +228,8 @@ const styles = StyleSheet.create({
   appRoot: {
     flex: 1,
   },
-  header: {
-    backgroundColor: colors.background,
-  },
-  headerTitle: {
-    fontFamily: fonts.headline,
-    fontSize: 24,
-    letterSpacing: 1,
-    color: colors.text,
+  mainAppRoot: {
+    flex: 1,
   },
   tabBar: {
     backgroundColor: colors.backgroundLight,
@@ -197,6 +239,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 11,
     letterSpacing: 0.5,
+  },
+  iconWrap: {
+    alignItems: 'center',
+  },
+  activeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginTop: 4,
   },
   lockBadge: {
     position: 'absolute',
