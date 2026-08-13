@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { AppModal } from './AppModal';
 import { useCommunity } from '../context/CommunityContext';
 import { WEEKDAY_WODS } from '../data/content';
 import { DECK_CARDS, deckCardLabel } from '../data/deckCards';
@@ -43,6 +44,7 @@ export function SearchModal({ visible, onClose }: Props) {
       .filter(
         (p) =>
           p.author.toLowerCase().includes(q) ||
+          p.title.toLowerCase().includes(q) ||
           p.text.toLowerCase().includes(q) ||
           p.meta?.workoutTitle.toLowerCase().includes(q)
       )
@@ -50,7 +52,7 @@ export function SearchModal({ visible, onClose }: Props) {
         id: `post-${p.id}`,
         section: 'COMMUNITY',
         title: p.author,
-        subtitle: p.kind === 'wod' ? p.meta?.workoutTitle : p.text,
+        subtitle: p.kind === 'wod' ? p.meta?.workoutTitle : p.title,
         tab: 'Community',
       }));
 
@@ -66,7 +68,7 @@ export function SearchModal({ visible, onClose }: Props) {
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
         <View style={styles.searchRow}>
           <Ionicons name="search" size={18} color={colors.textMuted} />
@@ -105,7 +107,7 @@ export function SearchModal({ visible, onClose }: Props) {
           })
         )}
       </View>
-    </Modal>
+    </AppModal>
   );
 }
 

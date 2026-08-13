@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -11,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { AppModal } from '../components/AppModal';
 import { colors, fonts } from '../theme';
 
 type Message = { id: string; from: 'me' | 'doc'; text: string };
@@ -27,6 +27,7 @@ type Props = {
 export function MessagesScreen({ visible, onClose }: Props) {
   const [messages, setMessages] = useState<Message[]>(SEED_MESSAGES);
   const [draft, setDraft] = useState('');
+  const [voiceTooltipVisible, setVoiceTooltipVisible] = useState(false);
 
   const send = () => {
     if (!draft.trim()) return;
@@ -34,8 +35,13 @@ export function MessagesScreen({ visible, onClose }: Props) {
     setDraft('');
   };
 
+  const showVoiceTooltip = () => {
+    setVoiceTooltipVisible(true);
+    setTimeout(() => setVoiceTooltipVisible(false), 2000);
+  };
+
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -61,6 +67,16 @@ export function MessagesScreen({ visible, onClose }: Props) {
         </ScrollView>
 
         <View style={styles.inputRow}>
+          <View style={styles.micWrap}>
+            {voiceTooltipVisible && (
+              <View style={styles.tooltip}>
+                <Text style={styles.tooltipText}>Voice notes coming soon</Text>
+              </View>
+            )}
+            <Pressable onPress={showVoiceTooltip} hitSlop={8} style={styles.micButton} testID="voice-note-button">
+              <Ionicons name="mic-outline" size={20} color={colors.text} />
+            </Pressable>
+          </View>
           <TextInput
             style={styles.input}
             value={draft}
@@ -74,7 +90,7 @@ export function MessagesScreen({ visible, onClose }: Props) {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </AppModal>
   );
 }
 
@@ -146,6 +162,33 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 15,
     marginRight: 10,
+  },
+  micWrap: {
+    marginRight: 10,
+  },
+  micButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.backgroundLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tooltip: {
+    position: 'absolute',
+    bottom: 48,
+    left: -30,
+    backgroundColor: colors.highlight,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    width: 150,
+  },
+  tooltipText: {
+    color: colors.background,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12,
+    textAlign: 'center',
   },
   sendButton: {
     width: 40,

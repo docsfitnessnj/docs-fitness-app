@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { AppModal } from '../components/AppModal';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { MembershipGate } from '../components/MembershipGate';
 import { Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
@@ -16,8 +17,90 @@ function Avatar({ name }: { name: string }) {
   );
 }
 
+function ComposerBar({ onOpen }: { onOpen: () => void }) {
+  const { displayName } = useMembership();
+  return (
+    <Pressable style={styles.composerBar} onPress={onOpen}>
+      <Avatar name={displayName} />
+      <View style={styles.composerField}>
+        <Text style={styles.composerPlaceholder}>Write something</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function CreatePostModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const { addTextPost } = useCommunity();
+  const { displayName } = useMembership();
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+
+  const reset = () => {
+    setTitle('');
+    setBody('');
+  };
+
+  const handleClose = () => {
+    reset();
+    onClose();
+  };
+
+  const handlePost = () => {
+    if (!body.trim()) return;
+    addTextPost(displayName, title, body.trim());
+    reset();
+    onClose();
+  };
+
+  return (
+    <AppModal visible={visible} animationType="slide" onRequestClose={handleClose}>
+      <View style={styles.composeContainer}>
+        <View style={styles.composeHeader}>
+          <Pressable onPress={handleClose} hitSlop={8}>
+            <Text style={styles.composeCancel}>CANCEL</Text>
+          </Pressable>
+          <Text style={styles.composeHeaderTitle}>NEW POST</Text>
+          <Pressable onPress={handlePost} hitSlop={8} disabled={!body.trim()}>
+            <Text style={[styles.composePost, !body.trim() && styles.composePostDisabled]}>POST</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.composeAuthorRow}>
+          <Avatar name={displayName} />
+          <Text style={styles.composeAuthorName}>{displayName}</Text>
+        </View>
+
+        <TextInput
+          style={styles.composeTitleInput}
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Title (optional)"
+          placeholderTextColor={colors.textMuted}
+        />
+        <TextInput
+          style={styles.composeBodyInput}
+          value={body}
+          onChangeText={setBody}
+          placeholder="Write something..."
+          placeholderTextColor={colors.textMuted}
+          multiline
+          autoFocus
+        />
+      </View>
+    </AppModal>
+  );
+}
+
+function CategoryTag({ category }: { category: string }) {
+  return (
+    <View style={styles.categoryTag}>
+      <Text style={styles.categoryTagText}>{category.toUpperCase()}</Text>
+    </View>
+  );
+}
+
 function PostCard({ post }: { post: Post }) {
-  const { toggleLike, addReaction, addComment, togglePin } = useCommunity();
+  const { toggleLike, addReaction, addComment, togglePin, markRead } = useCommunity();
   const { displayName } = useMembership();
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentText, setCommentText] = useState('');
@@ -35,8 +118,14 @@ function PostCard({ post }: { post: Post }) {
     }
   };
 
+  const lastComment = post.comments[post.comments.length - 1];
+  const footerRightText = lastComment
+    ? `${post.unread ? 'New comment' : 'Last comment'} ${lastComment.timeLabel}`
+    : 'No comments yet';
+  const footerRightGold = post.unread && !!lastComment;
+
   return (
-    <View style={[styles.post, post.pinned && styles.postPinned]}>
+    <Pressable style={[styles.post, post.pinned && styles.postPinned]} onPress={() => markRead(post.id)}>
       {post.pinned && (
         <View style={styles.pinnedBadge}>
           <Ionicons name="pin" size={11} color={colors.background} />
@@ -48,9 +137,13 @@ function PostCard({ post }: { post: Post }) {
         <Avatar name={post.author} />
         <View style={{ flex: 1 }}>
           <Text style={styles.postName}>{post.author}</Text>
-          <Text style={styles.postTime}>{post.timeLabel}</Text>
+          <View style={styles.postMetaRow}>
+            <Text style={styles.postTime}>{post.timeLabel}</Text>
+            <Text style={styles.postMetaDot}>·</Text>
+            <CategoryTag category={post.category} />
+          </View>
         </View>
-        <Pressable onPress={handleTogglePin} hitSlop={8}>
+        <Pressable onPress={handleTogglePin} hitSlop={8} testID={`pin-toggle-${post.id}`}>
           <Ionicons
             name={post.pinned ? 'pin' : 'pin-outline'}
             size={18}
@@ -62,12 +155,30 @@ function PostCard({ post }: { post: Post }) {
       {post.kind === 'wod' && post.meta ? (
         <View style={styles.wodBlock}>
           <Text style={styles.wodBadge}>WORKOUT COMPLETE</Text>
-          <Text style={styles.wodTitle}>{post.meta.workoutTitle}</Text>
+          <View style={styles.titleRow}>
+            {post.unread && <View style={styles.unreadDot} />}
+            <Text style={styles.wodTitle}>{post.meta.workoutTitle}</Text>
+          </View>
           <Text style={styles.wodDate}>{post.meta.dateLabel}</Text>
           <Text style={styles.wodResults}>{post.meta.results}</Text>
         </View>
       ) : (
-        <Text style={styles.postText}>{post.text}</Text>
+        <View>
+          <View style={styles.titleRow}>
+            {post.unread && <View style={styles.unreadDot} />}
+            <Text style={styles.postTitle}>{post.title}</Text>
+          </View>
+          <View style={styles.previewRow}>
+            <Text style={styles.postText} numberOfLines={3}>
+              {post.text}
+            </Text>
+            {post.hasImage && (
+              <View style={styles.thumbnail}>
+                <Ionicons name="image-outline" size={22} color={CARD_MUTED} />
+              </View>
+            )}
+          </View>
+        </View>
       )}
 
       <View style={styles.reactionRow}>
@@ -80,20 +191,25 @@ function PostCard({ post }: { post: Post }) {
       </View>
 
       <View style={styles.postFooter}>
-        <Pressable style={styles.footerButton} onPress={() => toggleLike(post.id)}>
-          <Ionicons
-            name={post.liked ? 'heart' : 'heart-outline'}
-            size={18}
-            color={post.liked ? '#D9534F' : '#8A7F6E'}
-          />
-          <Text style={styles.footerButtonText}>{post.likes}</Text>
-        </Pressable>
-        <Pressable style={styles.footerButton} onPress={() => setCommentsOpen((v) => !v)}>
-          <Ionicons name="chatbubble-outline" size={16} color="#8A7F6E" />
-          <Text style={styles.footerButtonText}>
-            {post.comments.length} comment{post.comments.length === 1 ? '' : 's'}
-          </Text>
-        </Pressable>
+        <View style={styles.postFooterLeft}>
+          <Pressable style={styles.footerButton} onPress={() => toggleLike(post.id)}>
+            <Ionicons
+              name={post.liked ? 'heart' : 'heart-outline'}
+              size={18}
+              color={post.liked ? '#D9534F' : '#8A7F6E'}
+            />
+            <Text style={styles.footerButtonText}>{post.likes}</Text>
+          </Pressable>
+          <Pressable style={styles.footerButton} onPress={() => setCommentsOpen((v) => !v)}>
+            <Ionicons name="chatbubble-outline" size={16} color="#8A7F6E" />
+            <Text style={styles.footerButtonText}>
+              {post.comments.length} comment{post.comments.length === 1 ? '' : 's'}
+            </Text>
+          </Pressable>
+        </View>
+        <Text style={[styles.footerRightText, footerRightGold && styles.footerRightTextGold]}>
+          {footerRightText}
+        </Text>
       </View>
 
       {commentsOpen && (
@@ -128,14 +244,15 @@ function PostCard({ post }: { post: Post }) {
           </View>
         </View>
       )}
-    </View>
+    </Pressable>
   );
 }
 
-function CommunityFeed() {
+function CommunityFeed({ onOpenComposer }: { onOpenComposer: () => void }) {
   const { posts } = useCommunity();
   return (
     <View>
+      <ComposerBar onOpen={onOpenComposer} />
       {posts.map((post) => (
         <PostCard key={post.id} post={post} />
       ))}
@@ -144,10 +261,13 @@ function CommunityFeed() {
 }
 
 export default function CommunityScreen() {
+  const [composerOpen, setComposerOpen] = useState(false);
+
   return (
     <ScreenContainer>
       <MembershipGate>
-        <CommunityFeed />
+        <CommunityFeed onOpenComposer={() => setComposerOpen(true)} />
+        <CreatePostModal visible={composerOpen} onClose={() => setComposerOpen(false)} />
       </MembershipGate>
     </ScreenContainer>
   );
@@ -158,6 +278,87 @@ const CARD_TEXT = '#1E2E33';
 const CARD_MUTED = '#8A7F6E';
 
 const styles = StyleSheet.create({
+  composerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CARD_BG,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+  },
+  composerField: {
+    flex: 1,
+    backgroundColor: '#F0EBDF',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  composerPlaceholder: {
+    color: CARD_MUTED,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+  },
+  composeContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    paddingTop: 60,
+    paddingHorizontal: 20,
+  },
+  composeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  composeHeaderTitle: {
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 18,
+    letterSpacing: 1,
+  },
+  composeCancel: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    letterSpacing: 0.5,
+  },
+  composePost: {
+    color: colors.highlight,
+    fontFamily: fonts.bodyBold,
+    fontSize: 13,
+    letterSpacing: 0.5,
+  },
+  composePostDisabled: {
+    color: colors.textMuted,
+  },
+  composeAuthorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  composeAuthorName: {
+    color: colors.text,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 15,
+    marginLeft: 10,
+  },
+  composeTitleInput: {
+    color: colors.text,
+    fontFamily: fonts.bodyBold,
+    fontSize: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.locked,
+    paddingBottom: 12,
+    marginBottom: 16,
+  },
+  composeBodyInput: {
+    flex: 1,
+    color: colors.text,
+    fontFamily: fonts.body,
+    fontSize: 16,
+    lineHeight: 22,
+    textAlignVertical: 'top',
+  },
   post: {
     backgroundColor: CARD_BG,
     borderRadius: 14,
@@ -209,17 +410,70 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 15,
   },
+  postMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 1,
+  },
   postTime: {
     color: CARD_MUTED,
     fontFamily: fonts.body,
     fontSize: 12,
   },
+  postMetaDot: {
+    color: CARD_MUTED,
+    fontSize: 12,
+    marginHorizontal: 5,
+  },
+  categoryTag: {
+    backgroundColor: '#F0EBDF',
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  categoryTagText: {
+    color: CARD_MUTED,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.highlight,
+    marginRight: 6,
+  },
+  postTitle: {
+    color: CARD_TEXT,
+    fontFamily: fonts.bodyBold,
+    fontSize: 17,
+    marginBottom: 4,
+  },
+  previewRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
   postText: {
+    flex: 1,
     color: CARD_TEXT,
     fontFamily: fonts.body,
     fontSize: 16,
     lineHeight: 21,
     marginBottom: 6,
+  },
+  thumbnail: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
+    backgroundColor: '#F0EBDF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 10,
   },
   wodBlock: {
     backgroundColor: '#F0E6D2',
@@ -280,9 +534,14 @@ const styles = StyleSheet.create({
   postFooter: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     borderTopWidth: 1,
     borderTopColor: '#EDE6D6',
     paddingTop: 10,
+  },
+  postFooterLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   footerButton: {
     flexDirection: 'row',
@@ -294,6 +553,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 13,
     marginLeft: 5,
+  },
+  footerRightText: {
+    color: CARD_MUTED,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+  },
+  footerRightTextGold: {
+    color: colors.highlight,
+    fontFamily: fonts.bodySemiBold,
   },
   commentsBlock: {
     marginTop: 12,

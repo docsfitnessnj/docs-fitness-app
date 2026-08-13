@@ -1,6 +1,7 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { AppModal } from './AppModal';
 import { TRIAL_WARNING_THRESHOLD, useMembership } from '../context/MembershipContext';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
@@ -28,7 +29,7 @@ export function TrialExpiryModal() {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={dismissTrialWarning}>
+    <AppModal visible={visible} transparent animationType="fade" onRequestClose={dismissTrialWarning}>
       <View style={styles.backdrop}>
         <View style={styles.sheet}>
           <Pressable onPress={dismissTrialWarning} hitSlop={8} style={styles.closeButton}>
@@ -67,7 +68,7 @@ export function TrialExpiryModal() {
           </Pressable>
         </View>
       </View>
-    </Modal>
+    </AppModal>
   );
 }
 

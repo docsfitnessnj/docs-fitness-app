@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -20,10 +20,14 @@ import {
 
 import { MembershipProvider, useMembership } from './src/context/MembershipContext';
 import { CommunityProvider } from './src/context/CommunityContext';
+import { WorkoutLogProvider } from './src/context/WorkoutLogContext';
+import { CloseFriendsProvider } from './src/context/CloseFriendsContext';
 import { AppTopBar } from './src/components/AppTopBar';
 import { SearchModal } from './src/components/SearchModal';
 import { TrialExpiryModal } from './src/components/TrialExpiryModal';
 import { AlertHost } from './src/components/AlertHost';
+import { ModalRootProvider } from './src/components/ModalRootContext';
+import { SidebarDrawer } from './src/components/SidebarDrawer';
 import { colors, fonts, tabAccents } from './src/theme';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
@@ -33,6 +37,10 @@ import DocsCowsScreen from './src/screens/DocsCowsScreen';
 import DeckScreen from './src/screens/DeckScreen';
 import CommunityScreen from './src/screens/CommunityScreen';
 import { MessagesScreen } from './src/screens/MessagesScreen';
+import { MyWorkoutsScreen } from './src/screens/MyWorkoutsScreen';
+import { CloseFriendsScreen } from './src/screens/CloseFriendsScreen';
+
+const PHONE_FRAME_MAX_WIDTH = 480;
 
 SplashScreen.preventAutoHideAsync();
 
@@ -162,17 +170,34 @@ function OnboardingFlow() {
 }
 
 function MainApp() {
+  const { displayName } = useMembership();
   const [searchOpen, setSearchOpen] = useState(false);
   const [messagesOpen, setMessagesOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [myWorkoutsOpen, setMyWorkoutsOpen] = useState(false);
+  const [closeFriendsOpen, setCloseFriendsOpen] = useState(false);
 
   return (
     <NavigationContainer>
       <View style={styles.mainAppRoot}>
-        <AppTopBar onOpenSearch={() => setSearchOpen(true)} onOpenMessages={() => setMessagesOpen(true)} />
+        <AppTopBar
+          onOpenSidebar={() => setSidebarOpen(true)}
+          onOpenSearch={() => setSearchOpen(true)}
+          onOpenMessages={() => setMessagesOpen(true)}
+        />
         <RootNavigator />
       </View>
       <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
       <MessagesScreen visible={messagesOpen} onClose={() => setMessagesOpen(false)} />
+      <SidebarDrawer
+        visible={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        displayName={displayName}
+        onOpenMyWorkouts={() => setMyWorkoutsOpen(true)}
+        onOpenCloseFriends={() => setCloseFriendsOpen(true)}
+      />
+      <MyWorkoutsScreen visible={myWorkoutsOpen} onClose={() => setMyWorkoutsOpen(false)} />
+      <CloseFriendsScreen visible={closeFriendsOpen} onClose={() => setCloseFriendsOpen(false)} />
       <TrialExpiryModal />
     </NavigationContainer>
   );
@@ -213,11 +238,19 @@ export default function App() {
     <SafeAreaProvider>
       <MembershipProvider>
         <CommunityProvider>
-          <View style={styles.appRoot} onLayout={onLayoutRootView}>
-            <AppShell />
-            <AlertHost />
-            <StatusBar style="light" />
-          </View>
+          <WorkoutLogProvider>
+            <CloseFriendsProvider>
+              <View style={styles.webSurround}>
+                <View style={styles.appRoot} onLayout={onLayoutRootView}>
+                  <ModalRootProvider>
+                    <AppShell />
+                    <AlertHost />
+                    <StatusBar style="light" />
+                  </ModalRootProvider>
+                </View>
+              </View>
+            </CloseFriendsProvider>
+          </WorkoutLogProvider>
         </CommunityProvider>
       </MembershipProvider>
     </SafeAreaProvider>
@@ -225,8 +258,26 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  // On web, the dark teal fills the full browser width; the app itself is
+  // clamped to a phone-sized column in the middle so it never stretches wide.
+  webSurround: {
+    flex: 1,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+  },
   appRoot: {
     flex: 1,
+    width: '100%',
+    ...(Platform.OS === 'web'
+      ? {
+          maxWidth: PHONE_FRAME_MAX_WIDTH,
+          position: 'relative',
+          overflow: 'hidden',
+          borderLeftWidth: 1,
+          borderRightWidth: 1,
+          borderColor: colors.locked,
+        }
+      : null),
   },
   mainAppRoot: {
     flex: 1,

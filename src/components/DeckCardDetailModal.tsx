@@ -1,6 +1,7 @@
 import React from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { AppModal } from './AppModal';
 import { DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
 import { colors, fonts } from '../theme';
 
@@ -17,7 +18,7 @@ export function DeckCardDetailModal({ card, onClose }: Props) {
   const label = deckCardLabel(card);
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <AppModal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={[styles.card, card.joker && { borderColor: jokerColor, borderWidth: 2 }]}>
           <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton} testID="deck-card-close">
@@ -52,7 +53,7 @@ export function DeckCardDetailModal({ card, onClose }: Props) {
           </ScrollView>
         </View>
       </View>
-    </Modal>
+    </AppModal>
   );
 }
 

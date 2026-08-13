@@ -6,22 +6,28 @@ import { MembershipToggle } from './MembershipToggle';
 import { colors, fonts } from '../theme';
 
 type Props = {
+  onOpenSidebar: () => void;
   onOpenSearch: () => void;
   onOpenMessages: () => void;
 };
 
-export function AppTopBar({ onOpenSearch, onOpenMessages }: Props) {
+export function AppTopBar({ onOpenSidebar, onOpenSearch, onOpenMessages }: Props) {
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <View style={styles.bar}>
-        <Pressable onPress={onOpenSearch} hitSlop={8} style={styles.iconButton}>
-          <Ionicons name="search" size={20} color={colors.text} />
-        </Pressable>
+        <View style={styles.leftGroup}>
+          <Pressable onPress={onOpenSidebar} hitSlop={8} style={styles.iconButton} testID="open-sidebar">
+            <Ionicons name="menu" size={22} color={colors.text} />
+          </Pressable>
+          <Pressable onPress={onOpenSearch} hitSlop={8} style={styles.iconButton}>
+            <Ionicons name="search" size={20} color={colors.text} />
+          </Pressable>
+        </View>
 
         <Text style={styles.title}>DOC'S FITNESS</Text>
 
         <View style={styles.rightGroup}>
-          <Pressable onPress={onOpenMessages} hitSlop={8} style={styles.iconButton}>
+          <Pressable onPress={onOpenMessages} hitSlop={8} style={styles.iconButton} testID="open-messages">
             <Ionicons name="chatbubble-ellipses-outline" size={20} color={colors.text} />
           </Pressable>
           <MembershipToggle />
@@ -46,6 +52,11 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     padding: 4,
+  },
+  leftGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   title: {
     color: colors.text,
