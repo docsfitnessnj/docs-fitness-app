@@ -5,6 +5,7 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { DateStrip } from '../components/DateStrip';
 import { useMembership } from '../context/MembershipContext';
 import { useCommunity } from '../context/CommunityContext';
+import { useDisplayName } from '../context/ProfileContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatFullDate, getCurrentWeek } from '../data/content';
 import { showAlert } from '../lib/alert';
@@ -42,7 +43,8 @@ function RestDay() {
 }
 
 export default function DocsWodsScreen() {
-  const { hasFullAccess, displayName } = useMembership();
+  const { hasFullAccess } = useMembership();
+  const displayName = useDisplayName();
   const { addWodResultPost } = useCommunity();
   const { getLog, updateLog: updateLogEntry, isCompleted, toggleCompleted } = useWorkoutLog();
 

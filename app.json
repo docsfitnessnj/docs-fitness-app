@@ -25,6 +25,14 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Doc's Fitness uses your photo library to set your profile picture."
+        }
+      ]
+    ],
     "experiments": {
       "baseUrl": "/docs-fitness-app"
     }

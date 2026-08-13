@@ -2,28 +2,23 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '../components/AppModal';
+import { Avatar } from '../components/Avatar';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { MembershipGate } from '../components/MembershipGate';
+import { StoryRow } from '../components/StoryRow';
 import { Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
-import { useMembership } from '../context/MembershipContext';
+import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
-function Avatar({ name }: { name: string }) {
-  return (
-    <View style={styles.avatar}>
-      <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>
-    </View>
-  );
-}
-
 function ComposerBar({ onOpen }: { onOpen: () => void }) {
-  const { displayName } = useMembership();
+  const displayName = useDisplayName();
+  const { photoUri } = useProfile();
   return (
     <Pressable style={styles.composerBar} onPress={onOpen}>
-      <Avatar name={displayName} />
+      <Avatar name={displayName} uri={photoUri} />
       <View style={styles.composerField}>
-        <Text style={styles.composerPlaceholder}>Write something</Text>
+        <Text style={styles.composerPlaceholder}>LOG IT. POST IT.</Text>
       </View>
     </Pressable>
   );
@@ -31,7 +26,8 @@ function ComposerBar({ onOpen }: { onOpen: () => void }) {
 
 function CreatePostModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { addTextPost } = useCommunity();
-  const { displayName } = useMembership();
+  const displayName = useDisplayName();
+  const { photoUri } = useProfile();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
 
@@ -66,7 +62,7 @@ function CreatePostModal({ visible, onClose }: { visible: boolean; onClose: () =
         </View>
 
         <View style={styles.composeAuthorRow}>
-          <Avatar name={displayName} />
+          <Avatar name={displayName} uri={photoUri} />
           <Text style={styles.composeAuthorName}>{displayName}</Text>
         </View>
 
@@ -81,7 +77,7 @@ function CreatePostModal({ visible, onClose }: { visible: boolean; onClose: () =
           style={styles.composeBodyInput}
           value={body}
           onChangeText={setBody}
-          placeholder="Write something..."
+          placeholder="LOG IT. POST IT."
           placeholderTextColor={colors.textMuted}
           multiline
           autoFocus
@@ -101,7 +97,8 @@ function CategoryTag({ category }: { category: string }) {
 
 function PostCard({ post }: { post: Post }) {
   const { toggleLike, addReaction, addComment, togglePin, markRead } = useCommunity();
-  const { displayName } = useMembership();
+  const displayName = useDisplayName();
+  const { photoUri } = useProfile();
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentText, setCommentText] = useState('');
 
@@ -134,7 +131,7 @@ function PostCard({ post }: { post: Post }) {
       )}
 
       <View style={styles.postHeader}>
-        <Avatar name={post.author} />
+        <Avatar name={post.author} uri={post.author === displayName ? photoUri : undefined} />
         <View style={{ flex: 1 }}>
           <Text style={styles.postName}>{post.author}</Text>
           <View style={styles.postMetaRow}>
@@ -216,7 +213,7 @@ function PostCard({ post }: { post: Post }) {
         <View style={styles.commentsBlock}>
           {post.comments.map((comment) => (
             <View key={comment.id} style={styles.commentRow}>
-              <Avatar name={comment.author} />
+              <Avatar name={comment.author} uri={comment.author === displayName ? photoUri : undefined} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.commentAuthor}>{comment.author}</Text>
                 <Text style={styles.commentText}>{comment.text}</Text>
@@ -252,6 +249,7 @@ function CommunityFeed({ onOpenComposer }: { onOpenComposer: () => void }) {
   const { posts } = useCommunity();
   return (
     <View>
+      <StoryRow />
       <ComposerBar onOpen={onOpenComposer} />
       {posts.map((post) => (
         <PostCard key={post.id} post={post} />
@@ -281,6 +279,7 @@ const styles = StyleSheet.create({
   composerBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     backgroundColor: CARD_BG,
     borderRadius: 14,
     padding: 12,
@@ -334,13 +333,13 @@ const styles = StyleSheet.create({
   composeAuthorRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     marginBottom: 16,
   },
   composeAuthorName: {
     color: colors.text,
     fontFamily: fonts.bodySemiBold,
     fontSize: 15,
-    marginLeft: 10,
   },
   composeTitleInput: {
     color: colors.text,
@@ -389,21 +388,8 @@ const styles = StyleSheet.create({
   postHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     marginBottom: 10,
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  avatarText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
-    fontSize: 16,
   },
   postName: {
     color: CARD_TEXT,
@@ -571,6 +557,7 @@ const styles = StyleSheet.create({
   },
   commentRow: {
     flexDirection: 'row',
+    gap: 10,
     marginBottom: 10,
   },
   commentAuthor: {
