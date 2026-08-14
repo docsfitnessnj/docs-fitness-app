@@ -42,7 +42,7 @@ export function AlertHost() {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(18,33,28,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
@@ -50,8 +50,10 @@ const styles = StyleSheet.create({
   sheet: {
     width: '100%',
     maxWidth: 340,
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.card,
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     padding: 22,
   },
   title: {
@@ -65,7 +67,7 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 15,
-    lineHeight: 20,
+    lineHeight: 21,
     marginBottom: 20,
   },
   buttonRow: {
@@ -74,17 +76,17 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   button: {
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.green,
     borderRadius: 8,
     paddingHorizontal: 18,
     paddingVertical: 10,
   },
   buttonCancel: {
-    backgroundColor: colors.locked,
+    backgroundColor: colors.background,
   },
   buttonText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 0.5,
   },

@@ -48,7 +48,7 @@ export function MessagesScreen({ visible, onClose }: Props) {
       >
         <View style={styles.header}>
           <Text style={styles.headerTitle}>MESSAGE DOC</Text>
-          <Pressable onPress={onClose} hitSlop={8}>
+          <Pressable onPress={onClose} hitSlop={8} testID="close-messages">
             <Ionicons name="close" size={22} color={colors.text} />
           </Pressable>
         </View>
@@ -86,7 +86,7 @@ export function MessagesScreen({ visible, onClose }: Props) {
             onSubmitEditing={send}
           />
           <Pressable onPress={send} hitSlop={8} style={styles.sendButton}>
-            <Ionicons name="send" size={18} color={colors.background} />
+            <Ionicons name="send" size={18} color={colors.white} />
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -128,11 +128,13 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   bubbleDoc: {
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     alignSelf: 'flex-start',
   },
   bubbleMe: {
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.green,
     alignSelf: 'flex-end',
   },
   bubbleText: {
@@ -142,7 +144,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   bubbleTextMe: {
-    color: colors.background,
+    color: colors.white,
   },
   inputRow: {
     flexDirection: 'row',
@@ -150,11 +152,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderTopWidth: 1,
-    borderTopColor: colors.locked,
+    borderTopColor: colors.hairline,
   },
   input: {
     flex: 1,
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -170,7 +174,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -178,15 +184,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 48,
     left: -30,
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.green,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
     width: 150,
   },
   tooltipText: {
-    color: colors.background,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.white,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 12,
     textAlign: 'center',
   },
@@ -194,7 +200,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.green,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -14,24 +14,24 @@ export function IdentitySidebar({ onOpenMessages }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.brandMark}>
-        <Ionicons name="fitness" size={28} color={colors.highlight} />
+        <Ionicons name="fitness" size={26} color={colors.white} />
       </View>
       <Text style={styles.name}>DOC'S FITNESS</Text>
       <Text style={styles.tagline}>{TAGLINE.toUpperCase()}</Text>
 
       <View style={styles.memberRow}>
-        <Ionicons name="people" size={14} color={colors.accent} />
+        <Ionicons name="people-outline" size={14} color={colors.green} />
         <Text style={styles.memberCount}>{MEMBER_COUNT} MEMBERS</Text>
       </View>
 
       <View style={styles.divider} />
 
       <Pressable style={styles.linkRow} onPress={onOpenMessages}>
-        <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.highlight} />
+        <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.green} />
         <Text style={styles.linkText}>Message Doc</Text>
       </Pressable>
       <Pressable style={styles.linkRow} onPress={openMerchStore}>
-        <Ionicons name="bag-handle-outline" size={18} color={colors.highlight} />
+        <Ionicons name="bag-handle-outline" size={18} color={colors.green} />
         <Text style={styles.linkText}>Doc's Merch Store</Text>
       </Pressable>
     </View>
@@ -40,8 +40,10 @@ export function IdentitySidebar({ onOpenMessages }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.card,
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     padding: 20,
     alignItems: 'center',
   },
@@ -49,8 +51,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    borderWidth: 2,
-    borderColor: colors.highlight,
+    backgroundColor: colors.green,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -63,8 +64,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   tagline: {
-    color: colors.highlight,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.gold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 11,
     letterSpacing: 0.5,
     textAlign: 'center',
@@ -78,15 +79,15 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   memberCount: {
-    color: colors.accent,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.green,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 12,
     letterSpacing: 0.5,
   },
   divider: {
     height: 1,
     alignSelf: 'stretch',
-    backgroundColor: colors.locked,
+    backgroundColor: colors.hairline,
     marginVertical: 16,
   },
   linkRow: {

@@ -21,7 +21,7 @@ export function MembershipGate({ children }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.lockCircle}>
-        <Ionicons name="lock-closed" size={40} color={colors.textMuted} />
+        <Ionicons name="lock-closed" size={36} color={colors.green} />
       </View>
       <Text style={styles.heading}>JOIN THE BOATHOUSE</Text>
       <Text style={styles.subtext}>
@@ -47,10 +47,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   lockCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: colors.locked,
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
@@ -69,18 +71,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 24,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   unlockButton: {
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.green,
     paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 10,
   },
   unlockButtonText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
-    fontSize: 16,
-    letterSpacing: 1,
+    color: colors.white,
+    fontFamily: fonts.labelBold,
+    fontSize: 15,
+    letterSpacing: 1.5,
   },
 });

@@ -12,8 +12,8 @@ const LABEL: Record<MembershipTier, string> = {
 };
 
 const TIER_COLOR: Record<MembershipTier, string> = {
-  trial: colors.accent,
-  member: colors.highlight,
+  trial: colors.green,
+  member: colors.gold,
   free: colors.textMuted,
 };
 
@@ -46,19 +46,19 @@ const styles = StyleSheet.create({
   wrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
   },
   label: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 12,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 11,
     letterSpacing: 1,
     marginRight: 6,
   },
   track: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.locked,
+    backgroundColor: colors.background,
     borderRadius: 10,
     paddingHorizontal: 5,
     paddingVertical: 5,
@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.background,
+    backgroundColor: colors.hairline,
     marginHorizontal: 2,
   },
 });

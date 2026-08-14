@@ -16,9 +16,7 @@ const PATTERN_POSITIONS = [
   { top: '85%', left: '35%' },
 ];
 
-// Placeholder card-back design — a real illustrated back will replace this
-// once one exists. Kept visually simple: brand color, gold border, subtle
-// repeating brand-mark pattern, dead center wordmark.
+// Deep-green card back, white border, brand mark pattern, dead center wordmark.
 export function CardBack({ size = 'small' }: Props) {
   const isLarge = size === 'large';
 
@@ -30,12 +28,12 @@ export function CardBack({ size = 'small' }: Props) {
             key={index}
             name="fitness"
             size={14}
-            color="rgba(232,168,74,0.18)"
+            color="rgba(255,255,255,0.14)"
             style={[styles.patternIcon, pos as any]}
           />
         ))}
       <View style={[styles.innerBorder, isLarge ? styles.innerBorderLarge : styles.innerBorderSmall]}>
-        <Ionicons name="fitness" size={isLarge ? 30 : 16} color={colors.highlight} />
+        <Ionicons name="fitness" size={isLarge ? 30 : 16} color={colors.gold} />
         {isLarge && <Text style={styles.wordmark}>DOC'S{'\n'}FITNESS</Text>}
       </View>
     </View>
@@ -44,10 +42,10 @@ export function CardBack({ size = 'small' }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.greenDeep,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: colors.highlight,
+    borderColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -65,7 +63,7 @@ const styles = StyleSheet.create({
   },
   innerBorder: {
     borderWidth: 1,
-    borderColor: 'rgba(232,168,74,0.4)',
+    borderColor: 'rgba(255,213,32,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -80,7 +78,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   wordmark: {
-    color: colors.text,
+    color: colors.white,
     fontFamily: fonts.headline,
     fontSize: 15,
     letterSpacing: 1,

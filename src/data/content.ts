@@ -58,3 +58,11 @@ export function formatDateKey(d: Date): string {
 export function formatFullDate(d: Date): string {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
+
+// Splits a movement string like "10 Kettlebell Swings" into a right-aligned
+// rep count and the movement name, for the "THE WORK" style movement rows.
+export function parseMoveRow(move: string): { reps?: string; name: string } {
+  const match = move.match(/^(\d[\w:+/-]*)\s+(.+)/);
+  if (match) return { reps: match[1], name: match[2] };
+  return { name: move };
+}

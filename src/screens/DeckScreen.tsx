@@ -66,7 +66,7 @@ function ShuffleArea({ onDeal }: { onDeal: (card: DeckCardData) => void }) {
   if (deckExhausted) {
     return (
       <View style={styles.completeBanner}>
-        <Ionicons name="trophy" size={40} color={colors.highlight} />
+        <Ionicons name="trophy" size={40} color={colors.gold} />
         <Text style={styles.completeBannerTitle}>DECK COMPLETE!</Text>
         <Text style={styles.completeBannerText}>You've beaten all {totalCount} workouts. Legendary.</Text>
       </View>
@@ -122,8 +122,8 @@ function BrowseCard({
     onOpen(card);
   };
 
-  const jokerColor = card.joker === 'red' ? '#D9534F' : colors.text;
-  const suitColor = card.joker ? jokerColor : isRedSuit(card.suit) ? '#D9534F' : colors.text;
+  const jokerColor = card.joker === 'red' ? colors.scoreboardRed : colors.green;
+  const suitColor = card.joker ? jokerColor : isRedSuit(card.suit) ? colors.scoreboardRed : colors.green;
   const label = deckCardLabel(card);
 
   return (
@@ -200,24 +200,27 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     alignItems: 'center',
   },
   modeButtonActive: {
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.green,
+    borderColor: colors.green,
   },
   modeButtonText: {
     color: colors.textMuted,
-    fontFamily: fonts.bodySemiBold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 12,
     letterSpacing: 0.5,
   },
   modeButtonTextActive: {
-    color: colors.background,
+    color: colors.white,
   },
   progressLine: {
-    color: colors.accent,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.green,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 13,
     letterSpacing: 1,
     textAlign: 'center',
@@ -228,7 +231,7 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
   shuffleButton: {
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.gold,
     borderRadius: 10,
     paddingHorizontal: 36,
     paddingVertical: 16,
@@ -238,15 +241,17 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   shuffleButtonText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
     fontSize: 16,
     letterSpacing: 1,
   },
   completeBanner: {
     alignItems: 'center',
-    backgroundColor: colors.backgroundLight,
-    borderRadius: 12,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 14,
     paddingVertical: 48,
     paddingHorizontal: 24,
   },
@@ -279,7 +284,9 @@ const styles = StyleSheet.create({
   },
   faceCard: {
     flex: 1,
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
@@ -298,13 +305,13 @@ const styles = StyleSheet.create({
     top: '42%',
     left: -14,
     right: -14,
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.gold,
     paddingVertical: 3,
     transform: [{ rotate: '-18deg' }],
   },
   stampText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
     fontSize: 10,
     letterSpacing: 1,
     textAlign: 'center',

@@ -49,7 +49,7 @@ export function ProfileScreen({ visible, onClose }: Props) {
           <Pressable onPress={pickPhoto} style={styles.photoWrap} testID="profile-photo-picker">
             <Avatar name={displayName} uri={photoUri} size={96} />
             <View style={styles.photoEditBadge}>
-              <Ionicons name="camera" size={16} color={colors.background} />
+              <Ionicons name="camera" size={16} color={colors.white} />
             </View>
           </Pressable>
           <Text style={styles.photoHint}>Tap to choose a photo</Text>
@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.green,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -142,14 +142,16 @@ const styles = StyleSheet.create({
   label: {
     alignSelf: 'flex-start',
     color: colors.textMuted,
-    fontFamily: fonts.bodySemiBold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 12,
     letterSpacing: 1,
     marginBottom: 6,
   },
   input: {
     width: '100%',
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -162,7 +164,9 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     borderRadius: 8,
     paddingHorizontal: 14,
     marginBottom: 18,

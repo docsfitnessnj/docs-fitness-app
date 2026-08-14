@@ -26,7 +26,7 @@ export function MyWorkoutsScreen({ visible, onClose }: Props) {
         <ScrollView contentContainerStyle={styles.list}>
           {completedWorkouts.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="barbell-outline" size={32} color={colors.textMuted} />
+              <Ionicons name="barbell-outline" size={30} color={colors.textMuted} />
               <Text style={styles.emptyText}>Complete a workout on Doc's WODs to see it here.</Text>
             </View>
           ) : (
@@ -84,14 +84,16 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   card: {
-    backgroundColor: colors.backgroundLight,
-    borderRadius: 12,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
   },
   date: {
-    color: colors.accent,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.green,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 12,
     letterSpacing: 1,
     marginBottom: 2,

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, TAGLINE } from '../theme';
 
 type Props = {
@@ -18,7 +19,10 @@ export default function WelcomeScreen({ onStartTrial, onSkipTrial }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.content}>
-        <Text style={styles.title}>WELCOME TO{'\n'}DOC'S FITNESS</Text>
+        <View style={styles.brandMark}>
+          <Ionicons name="fitness" size={30} color={colors.white} />
+        </View>
+        <Text style={styles.title}>DOC'S FITNESS</Text>
         <Text style={styles.tagline}>{TAGLINE.toUpperCase()}</Text>
 
         <View style={styles.form}>
@@ -59,7 +63,17 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 28,
+  },
+  brandMark: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
   },
   title: {
     color: colors.text,
@@ -70,28 +84,33 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   tagline: {
-    color: colors.highlight,
-    fontFamily: fonts.bodyBold,
-    fontSize: 16,
+    color: colors.green,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 14,
     letterSpacing: 2,
     textAlign: 'center',
     marginTop: 12,
     marginBottom: 40,
   },
   form: {
-    backgroundColor: colors.backgroundLight,
-    borderRadius: 12,
+    width: '100%',
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 14,
     padding: 20,
   },
   label: {
-    color: colors.accent,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.green,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 13,
     letterSpacing: 1,
     marginBottom: 8,
   },
   input: {
     backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -101,17 +120,17 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   trialButton: {
-    backgroundColor: colors.highlight,
-    borderRadius: 8,
-    paddingVertical: 14,
+    backgroundColor: colors.green,
+    borderRadius: 10,
+    paddingVertical: 15,
     alignItems: 'center',
   },
   trialButtonDisabled: {
     opacity: 0.5,
   },
   trialButtonText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    fontFamily: fonts.labelBold,
     fontSize: 15,
     letterSpacing: 1,
   },
@@ -120,8 +139,8 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   skipLinkText: {
-    color: colors.accent,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 14,
     textDecorationLine: 'underline',
   },

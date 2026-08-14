@@ -26,20 +26,23 @@ export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isComplet
             onPress={() => onSelect(index)}
             style={[
               styles.cell,
-              selected && styles.cellSelected,
               day.isToday && !selected && styles.cellToday,
+              selected && styles.cellSelected,
+              day.isRestDay && styles.cellRest,
             ]}
           >
-            <Text style={[styles.dayLabel, selected && styles.dayLabelSelected]}>{day.label}</Text>
-            <Text style={[styles.dateNumber, selected && styles.dayLabelSelected]}>{day.dateNumber}</Text>
+            <Text style={[styles.dayLabel, selected && styles.textSelected, day.isRestDay && !selected && styles.textDim]}>
+              {day.label}
+            </Text>
+            <Text style={[styles.dateNumber, selected && styles.textSelected, day.isRestDay && !selected && styles.textDim]}>
+              {day.dateNumber}
+            </Text>
             {locked ? (
-              <Ionicons name="lock-closed" size={12} color={selected ? colors.background : colors.textMuted} />
+              <Ionicons name="lock-closed" size={11} color={selected ? colors.white : colors.textMuted} />
             ) : completed ? (
-              <View style={styles.completedDot}>
-                <Ionicons name="checkmark" size={10} color={colors.background} />
-              </View>
+              <Ionicons name="checkmark" size={13} color={selected ? colors.white : colors.gold} />
             ) : (
-              <Text style={[styles.fractionLabel, selected && styles.dayLabelSelected]}>
+              <Text style={[styles.fractionLabel, selected && styles.textSelected, day.isRestDay && !selected && styles.textDim]}>
                 {day.isRestDay ? 'REST' : `${weekdayNumber(day)}/5`}
               </Text>
             )}
@@ -58,26 +61,33 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    padding: 6,
+    marginBottom: 16,
   },
   cell: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 8,
     marginHorizontal: 2,
-    borderRadius: 10,
-    backgroundColor: colors.backgroundLight,
+    borderRadius: 8,
   },
   cellToday: {
     borderWidth: 1,
-    borderColor: colors.highlight,
+    borderColor: colors.green,
   },
   cellSelected: {
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.green,
+  },
+  cellRest: {
+    opacity: 0.7,
   },
   dayLabel: {
     color: colors.textMuted,
-    fontFamily: fonts.bodySemiBold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 10,
     letterSpacing: 0.5,
   },
@@ -87,20 +97,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginVertical: 2,
   },
-  dayLabelSelected: {
-    color: colors.background,
+  textSelected: {
+    color: colors.white,
+  },
+  textDim: {
+    color: colors.textMuted,
   },
   fractionLabel: {
-    color: colors.accent,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.green,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 10,
-  },
-  completedDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#4CAF7D',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

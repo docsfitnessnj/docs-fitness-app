@@ -19,7 +19,7 @@ type Plan = {
 
 const PLANS: Plan[] = [
   { key: 'monthly', name: 'MONTHLY', price: '$37', cadence: '/ month' },
-  { key: 'annual', name: 'ANNUAL', price: '$333', cadence: '/ year', note: '12 months. Pay for 9.' },
+  { key: 'annual', name: 'ANNUAL', price: '$333', cadence: '/ year', note: '12 MONTHS. PAY FOR 9.' },
 ];
 
 export default function PricingScreen({ onBack, onSelectPlan }: Props) {
@@ -36,21 +36,25 @@ export default function PricingScreen({ onBack, onSelectPlan }: Props) {
       <View style={styles.plans}>
         {PLANS.map((plan) => (
           <View key={plan.key} style={styles.planCard}>
-            <Text style={styles.planName}>{plan.name}</Text>
-            <Text style={styles.planPrice}>
-              {plan.price}
-              <Text style={styles.planCadence}>{plan.cadence}</Text>
-            </Text>
-            {plan.note && <Text style={styles.planNote}>{plan.note}</Text>}
-            <Pressable
-              style={styles.selectButton}
-              onPress={() => {
-                onSelectPlan();
-                showAlert('Payments Coming Soon', 'This is a preview — no charge yet.');
-              }}
-            >
-              <Text style={styles.selectButtonText}>CHOOSE {plan.name}</Text>
-            </Pressable>
+            <View style={styles.planHeader}>
+              <Text style={styles.planName}>{plan.name}</Text>
+            </View>
+            <View style={styles.planBody}>
+              <Text style={styles.planPrice}>
+                {plan.price}
+                <Text style={styles.planCadence}>{plan.cadence}</Text>
+              </Text>
+              {plan.note && <Text style={styles.planNote}>{plan.note}</Text>}
+              <Pressable
+                style={styles.selectButton}
+                onPress={() => {
+                  onSelectPlan();
+                  showAlert('Payments Coming Soon', 'This is a preview — no charge yet.');
+                }}
+              >
+                <Text style={styles.selectButtonText}>CHOOSE {plan.name}</Text>
+              </Pressable>
+            </View>
           </View>
         ))}
       </View>
@@ -72,7 +76,7 @@ const styles = StyleSheet.create({
   },
   backText: {
     color: colors.text,
-    fontFamily: fonts.bodySemiBold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 14,
     letterSpacing: 1,
     marginLeft: 2,
@@ -89,28 +93,37 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 8,
     marginBottom: 28,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   plans: {
     gap: 16,
   },
   planCard: {
-    backgroundColor: colors.backgroundLight,
-    borderRadius: 12,
-    padding: 20,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  planHeader: {
+    backgroundColor: colors.green,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
   planName: {
-    color: colors.accent,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.white,
+    fontFamily: fonts.labelBold,
     fontSize: 14,
     letterSpacing: 2,
+  },
+  planBody: {
+    padding: 20,
   },
   planPrice: {
     color: colors.text,
     fontFamily: fonts.headline,
     fontSize: 40,
     letterSpacing: 1,
-    marginTop: 4,
   },
   planCadence: {
     fontFamily: fonts.bodyMedium,
@@ -118,22 +131,22 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   planNote: {
-    color: colors.highlight,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.gold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 13,
     letterSpacing: 0.5,
     marginTop: 4,
   },
   selectButton: {
-    backgroundColor: colors.highlight,
-    borderRadius: 8,
-    paddingVertical: 12,
+    backgroundColor: colors.green,
+    borderRadius: 10,
+    paddingVertical: 13,
     alignItems: 'center',
     marginTop: 16,
   },
   selectButtonText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    fontFamily: fonts.labelBold,
     fontSize: 14,
     letterSpacing: 1,
   },

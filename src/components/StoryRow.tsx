@@ -17,6 +17,11 @@ export function StoryRow() {
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>D</Text>
           </View>
+          {hasUnviewed && (
+            <View style={styles.newTag}>
+              <Text style={styles.newTagText}>NEW</Text>
+            </View>
+          )}
         </View>
         <Text style={styles.itemLabel}>Doc</Text>
       </Pressable>
@@ -49,29 +54,43 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   ringUnviewed: {
-    borderColor: colors.highlight,
+    borderColor: colors.gold,
   },
   ringViewed: {
-    borderColor: colors.locked,
+    borderColor: colors.hairline,
   },
   avatar: {
     width: RING_SIZE - 10,
     height: RING_SIZE - 10,
     borderRadius: (RING_SIZE - 10) / 2,
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.green,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.background,
+    borderColor: colors.card,
   },
   avatarText: {
-    color: colors.highlight,
+    color: colors.white,
     fontFamily: fonts.headline,
     fontSize: 22,
   },
+  newTag: {
+    position: 'absolute',
+    bottom: -3,
+    backgroundColor: colors.gold,
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  newTagText: {
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
+    fontSize: 8,
+    letterSpacing: 0.5,
+  },
   itemLabel: {
     color: colors.textMuted,
-    fontFamily: fonts.bodySemiBold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 11,
     letterSpacing: 0.5,
   },
