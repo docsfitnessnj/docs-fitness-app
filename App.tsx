@@ -12,11 +12,17 @@ import {
 } from '@expo-google-fonts/bebas-neue';
 import {
   useFonts as useBarlowFonts,
-  BarlowCondensed_400Regular,
   BarlowCondensed_500Medium,
   BarlowCondensed_600SemiBold,
   BarlowCondensed_700Bold,
 } from '@expo-google-fonts/barlow-condensed';
+import {
+  useFonts as usePublicSansFonts,
+  PublicSans_400Regular,
+  PublicSans_500Medium,
+  PublicSans_600SemiBold,
+  PublicSans_700Bold,
+} from '@expo-google-fonts/public-sans';
 
 import { MembershipProvider, useMembership } from './src/context/MembershipContext';
 import { CommunityProvider } from './src/context/CommunityContext';
@@ -25,6 +31,7 @@ import { CloseFriendsProvider } from './src/context/CloseFriendsContext';
 import { ProfileProvider, useDisplayName, useProfile } from './src/context/ProfileContext';
 import { StoriesProvider } from './src/context/StoriesContext';
 import { DeckProgressProvider } from './src/context/DeckProgressContext';
+import { ClassSignUpProvider } from './src/context/ClassSignUpContext';
 import { AppTopBar } from './src/components/AppTopBar';
 import { SearchModal } from './src/components/SearchModal';
 import { TrialExpiryModal } from './src/components/TrialExpiryModal';
@@ -32,7 +39,8 @@ import { AlertHost } from './src/components/AlertHost';
 import { ModalRootProvider } from './src/components/ModalRootContext';
 import { SidebarDrawer } from './src/components/SidebarDrawer';
 import { IdentitySidebar } from './src/components/IdentitySidebar';
-import { colors, fonts, tabAccents } from './src/theme';
+import { useScheduleModalState } from './src/lib/scheduleModal';
+import { colors, fonts } from './src/theme';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import PricingScreen from './src/screens/PricingScreen';
@@ -40,6 +48,7 @@ import DocsWodsScreen from './src/screens/DocsWodsScreen';
 import DocsCowsScreen from './src/screens/DocsCowsScreen';
 import DeckScreen from './src/screens/DeckScreen';
 import CommunityScreen from './src/screens/CommunityScreen';
+import { FullScheduleScreen } from './src/screens/FullScheduleScreen';
 import { MessagesScreen } from './src/screens/MessagesScreen';
 import { MyWorkoutsScreen } from './src/screens/MyWorkoutsScreen';
 import { CloseFriendsScreen } from './src/screens/CloseFriendsScreen';
@@ -59,7 +68,7 @@ type IconRenderer = (props: { color: string; size: number }) => React.ReactNode;
 type TabConfig = {
   name: string;
   title: string;
-  color: string;
+  navLabel: string;
   renderIcon: IconRenderer;
   component: React.ComponentType;
   alwaysUnlocked?: boolean;
@@ -69,35 +78,40 @@ const TABS: TabConfig[] = [
   {
     name: 'Community',
     title: 'COMMUNITY',
-    color: tabAccents.community,
-    renderIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
+    navLabel: 'COMMUNITY',
+    renderIcon: ({ color, size }) => <Ionicons name="people-outline" size={size} color={color} />,
     component: CommunityScreen,
   },
   {
     name: 'DocsWods',
     title: "DOC'S WODS",
-    color: tabAccents.wods,
-    renderIcon: ({ color, size }) => <Ionicons name="flame" size={size} color={color} />,
+    navLabel: "DOC'S WODS",
+    renderIcon: ({ color, size }) => <Ionicons name="flame-outline" size={size} color={color} />,
     component: DocsWodsScreen,
     alwaysUnlocked: true,
   },
   {
     name: 'DocsCows',
     title: "DOC'S COWS",
-    color: tabAccents.cows,
-    renderIcon: ({ color, size }) => <Ionicons name="trophy" size={size} color={color} />,
+    navLabel: "DOC'S COWS",
+    renderIcon: ({ color, size }) => <Ionicons name="trophy-outline" size={size} color={color} />,
     component: DocsCowsScreen,
   },
   {
     name: 'Deck',
-    title: 'DECK OF WODS',
-    color: tabAccents.deck,
+    title: 'THE DECK',
+    navLabel: 'THE DECK',
     renderIcon: ({ color, size }) => (
       <MaterialCommunityIcons name="cards-playing-spade-outline" size={size} color={color} />
     ),
     component: DeckScreen,
   },
 ];
+
+const TAB_SUBTITLES: Record<string, string> = TABS.reduce(
+  (acc, tab) => ({ ...acc, [tab.name]: tab.title }),
+  {} as Record<string, string>
+);
 
 function TabIcon({
   renderIcon,
@@ -112,11 +126,11 @@ function TabIcon({
 }) {
   return (
     <View style={styles.iconWrap}>
-      {renderIcon({ color, size: focused ? 26 : 22 })}
-      {focused && <View style={[styles.activeDot, { backgroundColor: color }]} />}
+      {renderIcon({ color, size: 22 })}
+      {focused && <View style={styles.activeDot} />}
       {locked && (
         <View style={styles.lockBadge}>
-          <Ionicons name="lock-closed" size={9} color={colors.background} />
+          <Ionicons name="lock-closed" size={9} color={colors.white} />
         </View>
       )}
     </View>
@@ -131,12 +145,12 @@ function RootNavigator() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: colors.text,
+        tabBarActiveTintColor: colors.green,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: styles.tabBarLabel,
       }}
     >
-      {TABS.map(({ name, title, color, renderIcon, component, alwaysUnlocked }) => {
+      {TABS.map(({ name, navLabel, renderIcon, component, alwaysUnlocked }) => {
         const locked = !hasFullAccess && !alwaysUnlocked;
         return (
           <Tab.Screen
@@ -144,8 +158,8 @@ function RootNavigator() {
             name={name}
             component={component}
             options={{
-              title,
-              tabBarIcon: ({ focused }) => (
+              title: navLabel,
+              tabBarIcon: ({ focused, color }) => (
                 <TabIcon renderIcon={renderIcon} color={color} focused={focused} locked={locked} />
               ),
             }}
@@ -191,14 +205,21 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [profileOpen, setProfileOpen] = useState(false);
   const [myWorkoutsOpen, setMyWorkoutsOpen] = useState(false);
   const [closeFriendsOpen, setCloseFriendsOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useScheduleModalState();
+  const [activeTab, setActiveTab] = useState('Community');
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      onStateChange={(state) => {
+        const route = state?.routes[state.index ?? 0];
+        if (route) setActiveTab(route.name);
+      }}
+    >
       <View style={styles.mainAppRoot}>
         <AppTopBar
+          subtitle={TAB_SUBTITLES[activeTab]}
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenSearch={() => setSearchOpen(true)}
-          onOpenMessages={onOpenMessages}
         />
         <RootNavigator />
       </View>
@@ -212,10 +233,12 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
         onOpenProfile={() => setProfileOpen(true)}
         onOpenMyWorkouts={() => setMyWorkoutsOpen(true)}
         onOpenCloseFriends={() => setCloseFriendsOpen(true)}
+        onOpenMessages={onOpenMessages}
       />
       <ProfileScreen visible={profileOpen} onClose={() => setProfileOpen(false)} />
       <MyWorkoutsScreen visible={myWorkoutsOpen} onClose={() => setMyWorkoutsOpen(false)} />
       <CloseFriendsScreen visible={closeFriendsOpen} onClose={() => setCloseFriendsOpen(false)} />
+      <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
       <TrialExpiryModal />
     </NavigationContainer>
   );
@@ -251,7 +274,7 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
             <OnboardingFlow />
           )}
           <AlertHost />
-          <StatusBar style="light" />
+          <StatusBar style="dark" />
         </ModalRootProvider>
       </View>
 
@@ -267,13 +290,18 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
 export default function App() {
   const [bebasLoaded] = useBebasNeueFonts({ BebasNeue_400Regular });
   const [barlowLoaded] = useBarlowFonts({
-    BarlowCondensed_400Regular,
     BarlowCondensed_500Medium,
     BarlowCondensed_600SemiBold,
     BarlowCondensed_700Bold,
   });
+  const [publicSansLoaded] = usePublicSansFonts({
+    PublicSans_400Regular,
+    PublicSans_500Medium,
+    PublicSans_600SemiBold,
+    PublicSans_700Bold,
+  });
 
-  const fontsLoaded = bebasLoaded && barlowLoaded;
+  const fontsLoaded = bebasLoaded && barlowLoaded && publicSansLoaded;
 
   const onLayoutRootView = useCallback(async () => {
     if (fontsLoaded) {
@@ -294,9 +322,11 @@ export default function App() {
               <ProfileProvider>
                 <StoriesProvider>
                   <DeckProgressProvider>
-                    <View style={styles.webSurround}>
-                      <ResponsiveShell onLayoutRootView={onLayoutRootView} />
-                    </View>
+                    <ClassSignUpProvider>
+                      <View style={styles.webSurround}>
+                        <ResponsiveShell onLayoutRootView={onLayoutRootView} />
+                      </View>
+                    </ClassSignUpProvider>
                   </DeckProgressProvider>
                 </StoriesProvider>
               </ProfileProvider>
@@ -309,8 +339,8 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  // On web, the dark teal fills the full browser width. On phone-width web
-  // (and native) the app is a single centered phone-sized column; on wide
+  // On web, the off-white base fills the full browser width. On phone-width
+  // web (and native) the app is a single centered phone-sized column; on wide
   // desktop windows it becomes a Skool-style main column + identity sidebar.
   webSurround: {
     flex: 1,
@@ -329,7 +359,7 @@ const styles = StyleSheet.create({
           overflow: 'hidden',
           borderLeftWidth: 1,
           borderRightWidth: 1,
-          borderColor: colors.locked,
+          borderColor: colors.hairline,
         }
       : null),
   },
@@ -342,11 +372,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   tabBar: {
-    backgroundColor: colors.backgroundLight,
-    borderTopColor: colors.locked,
+    backgroundColor: colors.card,
+    borderTopColor: colors.hairline,
   },
   tabBarLabel: {
-    fontFamily: fonts.bodySemiBold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 11,
     letterSpacing: 0.5,
   },
@@ -358,6 +388,7 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     marginTop: 4,
+    backgroundColor: colors.green,
   },
   lockBadge: {
     position: 'absolute',
@@ -366,7 +397,7 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
   },

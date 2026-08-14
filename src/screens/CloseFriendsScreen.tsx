@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '../components/AppModal';
+import { Avatar } from '../components/Avatar';
 import { useCommunity } from '../context/CommunityContext';
 import { useCloseFriends } from '../context/CloseFriendsContext';
 import { useDisplayName } from '../context/ProfileContext';
@@ -11,14 +12,6 @@ type Props = {
   visible: boolean;
   onClose: () => void;
 };
-
-function Avatar({ name }: { name: string }) {
-  return (
-    <View style={styles.avatar}>
-      <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>
-    </View>
-  );
-}
 
 export function CloseFriendsScreen({ visible, onClose }: Props) {
   const { posts } = useCommunity();
@@ -81,7 +74,7 @@ export function CloseFriendsScreen({ visible, onClose }: Props) {
                       <Ionicons
                         name={friend ? 'star' : 'star-outline'}
                         size={14}
-                        color={friend ? colors.background : colors.highlight}
+                        color={friend ? colors.white : colors.green}
                       />
                       <Text style={[styles.friendButtonText, friend && styles.friendButtonTextActive]}>
                         {friend ? 'CLOSE FRIEND' : 'ADD'}
@@ -161,20 +154,23 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     alignItems: 'center',
   },
   tabButtonActive: {
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.green,
+    borderColor: colors.green,
   },
   tabButtonText: {
     color: colors.textMuted,
-    fontFamily: fonts.bodySemiBold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 11,
     letterSpacing: 0.5,
   },
   tabButtonTextActive: {
-    color: colors.background,
+    color: colors.white,
   },
   list: {
     paddingHorizontal: 20,
@@ -191,24 +187,13 @@ const styles = StyleSheet.create({
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.backgroundLight,
-    borderRadius: 12,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 14,
     padding: 12,
     marginBottom: 10,
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  avatarText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
-    fontSize: 16,
+    gap: 10,
   },
   memberName: {
     flex: 1,
@@ -220,33 +205,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.highlight,
+    borderColor: colors.green,
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   friendButtonActive: {
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.green,
   },
   friendButtonText: {
-    color: colors.highlight,
-    fontFamily: fonts.bodyBold,
+    color: colors.green,
+    fontFamily: fonts.labelBold,
     fontSize: 11,
     letterSpacing: 0.5,
     marginLeft: 4,
   },
   friendButtonTextActive: {
-    color: colors.background,
+    color: colors.white,
   },
   postCard: {
-    backgroundColor: colors.backgroundLight,
-    borderRadius: 12,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
   },
   postHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     marginBottom: 8,
   },
   postAuthor: {
@@ -256,13 +244,13 @@ const styles = StyleSheet.create({
   },
   postTime: {
     color: colors.textMuted,
-    fontFamily: fonts.body,
+    fontFamily: fonts.label,
     fontSize: 12,
   },
   postTitle: {
     color: colors.text,
-    fontFamily: fonts.bodyBold,
-    fontSize: 16,
+    fontFamily: fonts.headline,
+    fontSize: 19,
     marginBottom: 4,
   },
   postBody: {

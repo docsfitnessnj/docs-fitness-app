@@ -1,102 +1,126 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { MembershipGate } from '../components/MembershipGate';
+import { Avatar } from '../components/Avatar';
+import { useDisplayName } from '../context/ProfileContext';
 import { colors, fonts } from '../theme';
 
-type Entry = { rank: number; name: string; kettlebell: string; score: string };
+type Entry = { rank: number; name: string; kettlebell: string; score: string; tag: 'Boathouse Crew' | 'Virtual' };
 
 const INITIAL_ENTRIES: Entry[] = [
-  { rank: 1, name: 'J. Marino', kettlebell: '35lb', score: '8:42' },
-  { rank: 2, name: 'K. Alvarez', kettlebell: '26lb', score: '9:05' },
-  { rank: 3, name: 'T. Ruiz', kettlebell: '35lb', score: '9:18' },
-  { rank: 4, name: 'S. Boyle', kettlebell: '26lb', score: '9:47' },
-  { rank: 5, name: 'D. Castillo', kettlebell: '18lb', score: '10:02' },
+  { rank: 1, name: 'J. Marino', kettlebell: '35lb', score: '8:42', tag: 'Boathouse Crew' },
+  { rank: 2, name: 'K. Alvarez', kettlebell: '26lb', score: '9:05', tag: 'Boathouse Crew' },
+  { rank: 3, name: 'T. Ruiz', kettlebell: '35lb', score: '9:18', tag: 'Virtual' },
+  { rank: 4, name: 'S. Boyle', kettlebell: '26lb', score: '9:47', tag: 'Boathouse Crew' },
+  { rank: 5, name: 'D. Castillo', kettlebell: '18lb', score: '10:02', tag: 'Virtual' },
 ];
 
-function CurrentChallenge() {
+function LeaderboardRail({ entries }: { entries: Entry[] }) {
+  const top = entries.slice(0, 5);
   return (
-    <View style={styles.card}>
-      <View style={styles.badge}>
-        <Ionicons name="flame" size={16} color={colors.background} />
-        <Text style={styles.badgeText}>THIS WEEK'S CHALLENGE</Text>
-      </View>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
+      {top.map((entry) => {
+        const isLeader = entry.rank === 1;
+        const firstName = entry.name.split(' ')[0];
+        return (
+          <View key={entry.rank} style={styles.railItem}>
+            <View style={[styles.railAvatarWrap, isLeader && styles.railAvatarWrapLeader]}>
+              <Avatar name={entry.name} size={52} />
+              <View style={styles.railTimeBadge}>
+                <Text style={styles.railTimeBadgeText}>{entry.score}</Text>
+              </View>
+            </View>
+            <Text style={styles.railName}>
+              #{entry.rank} {firstName}
+            </Text>
+            <Text style={styles.railBell}>{entry.kettlebell} KB</Text>
+          </View>
+        );
+      })}
+    </ScrollView>
+  );
+}
 
-      <Text style={styles.cardHeadline}>SWING CHALLENGE</Text>
-      <Text style={styles.cardSubtext}>
+function ChallengeHero() {
+  return (
+    <View style={styles.hero}>
+      <Text style={styles.ghostWatermark}>COW</Text>
+      <View style={styles.badge}>
+        <Ionicons name="flame" size={14} color={colors.greenDeep} />
+        <Text style={styles.badgeText}>THIS WEEK'S COW</Text>
+      </View>
+      <Text style={styles.heroTitle}>SWING CHALLENGE</Text>
+      <Text style={styles.heroSubtext}>
         Rack up as many kettlebell swings as you can, for time. No shortcuts, no excuses.
       </Text>
-
-      <View style={styles.divider} />
-
-      <Text style={styles.sectionLabel}>DAYS LEFT</Text>
+      <View style={styles.heroDivider} />
+      <Text style={styles.daysLeftLabel}>DAYS LEFT</Text>
       <Text style={styles.daysLeft}>4</Text>
     </View>
   );
 }
 
-function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank'>) => void }) {
-  const [name, setName] = useState('');
+function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>) => void }) {
+  const displayName = useDisplayName();
   const [kettlebell, setKettlebell] = useState('');
   const [score, setScore] = useState('');
 
-  const canSubmit = name.trim().length > 0 && score.trim().length > 0;
+  const canSubmit = score.trim().length > 0;
 
   const submit = () => {
     if (!canSubmit) return;
-    onSubmit({ name: name.trim(), kettlebell: kettlebell.trim() || '—', score: score.trim() });
-    setName('');
+    onSubmit({ name: displayName, kettlebell: kettlebell.trim() || '—', score: score.trim() });
     setKettlebell('');
     setScore('');
   };
 
   return (
     <View style={styles.formCard}>
-      <Text style={styles.formTitle}>SUBMIT YOUR SCORE</Text>
+      <Text style={styles.formTitle}>POST YOUR SCORE</Text>
 
-      <Text style={styles.label}>NAME</Text>
-      <TextInput
-        style={styles.input}
-        value={name}
-        onChangeText={setName}
-        placeholder="Your name"
-        placeholderTextColor={colors.textMuted}
-      />
-
-      <Text style={styles.label}>KETTLEBELL SIZE</Text>
-      <TextInput
-        style={styles.input}
-        value={kettlebell}
-        onChangeText={setKettlebell}
-        placeholder="e.g. 35lb"
-        placeholderTextColor={colors.textMuted}
-      />
-
-      <Text style={styles.label}>SCORE / TIME / ROUNDS+REPS</Text>
-      <TextInput
-        style={styles.input}
-        value={score}
-        onChangeText={setScore}
-        placeholder="e.g. 9:42 or 12 rounds + 5"
-        placeholderTextColor={colors.textMuted}
-      />
+      <View style={styles.formRow}>
+        <View style={styles.formField}>
+          <Text style={styles.label}>SCORE / TIME</Text>
+          <TextInput
+            style={styles.input}
+            value={score}
+            onChangeText={setScore}
+            placeholder="e.g. 9:42"
+            placeholderTextColor={colors.textMuted}
+          />
+        </View>
+        <View style={styles.formField}>
+          <Text style={styles.label}>BELL SIZE</Text>
+          <TextInput
+            style={styles.input}
+            value={kettlebell}
+            onChangeText={setKettlebell}
+            placeholder="e.g. 35lb"
+            placeholderTextColor={colors.textMuted}
+          />
+        </View>
+      </View>
 
       <Pressable style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]} disabled={!canSubmit} onPress={submit}>
-        <Text style={styles.submitButtonText}>SUBMIT SCORE</Text>
+        <Text style={styles.submitButtonText}>POST SCORE</Text>
       </Pressable>
     </View>
   );
 }
 
 function LeaderboardRow({ entry }: { entry: Entry }) {
-  const isTopThree = entry.rank <= 3;
+  const isFirst = entry.rank === 1;
   return (
     <View style={styles.row}>
-      <Text style={[styles.rank, isTopThree && styles.rankTop]}>{entry.rank}</Text>
+      <Text style={[styles.rank, isFirst && styles.rankFirst]}>{entry.rank}</Text>
+      <Avatar name={entry.name} size={32} />
       <View style={styles.rowMain}>
         <Text style={styles.name}>{entry.name}</Text>
-        <Text style={styles.kettlebell}>{entry.kettlebell} KB</Text>
+        <Text style={styles.rowMeta}>
+          {entry.kettlebell} KB · {entry.tag}
+        </Text>
       </View>
       <Text style={styles.score}>{entry.score}</Text>
     </View>
@@ -119,13 +143,14 @@ function Leaderboard({ entries }: { entries: Entry[] }) {
 function DocsCowsContent() {
   const [entries, setEntries] = useState<Entry[]>(INITIAL_ENTRIES);
 
-  const addEntry = (entry: Omit<Entry, 'rank'>) => {
-    setEntries((prev) => [...prev, { ...entry, rank: prev.length + 1 }]);
+  const addEntry = (entry: Omit<Entry, 'rank' | 'tag'>) => {
+    setEntries((prev) => [...prev, { ...entry, rank: prev.length + 1, tag: 'Boathouse Crew' }]);
   };
 
   return (
     <View>
-      <CurrentChallenge />
+      <LeaderboardRail entries={entries} />
+      <ChallengeHero />
       <EntryForm onSubmit={addEntry} />
       <Leaderboard entries={entries} />
     </View>
@@ -143,80 +168,147 @@ export default function DocsCowsScreen() {
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.backgroundLight,
-    borderRadius: 12,
-    padding: 20,
+  rail: {
+    paddingBottom: 4,
+    paddingTop: 4,
+    gap: 18,
     marginBottom: 20,
+  },
+  railItem: {
+    alignItems: 'center',
+    width: 68,
+  },
+  railAvatarWrap: {
+    padding: 2,
+    borderRadius: 30,
+  },
+  railAvatarWrapLeader: {
+    borderWidth: 2,
+    borderColor: colors.gold,
+  },
+  railTimeBadge: {
+    position: 'absolute',
+    bottom: -6,
+    alignSelf: 'center',
+    backgroundColor: colors.scoreboardRed,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  railTimeBadgeText: {
+    color: colors.white,
+    fontFamily: fonts.labelBold,
+    fontSize: 10,
+    letterSpacing: 0.3,
+  },
+  railName: {
+    color: colors.text,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 0.3,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  railBell: {
+    color: colors.textMuted,
+    fontFamily: fonts.label,
+    fontSize: 11,
+  },
+  hero: {
+    backgroundColor: colors.green,
+    borderRadius: 14,
+    padding: 20,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  ghostWatermark: {
+    position: 'absolute',
+    top: -22,
+    right: -8,
+    color: 'rgba(255,255,255,0.08)',
+    fontFamily: fonts.headline,
+    fontSize: 96,
+    letterSpacing: 2,
   },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.goldBright,
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 4,
     marginBottom: 12,
+    gap: 5,
   },
   badgeText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
-    fontSize: 12,
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
+    fontSize: 11,
     letterSpacing: 1,
-    marginLeft: 6,
   },
-  cardHeadline: {
-    color: colors.text,
+  heroTitle: {
+    color: colors.white,
     fontFamily: fonts.headline,
     fontSize: 40,
     letterSpacing: 1,
   },
-  cardSubtext: {
-    color: colors.textMuted,
+  heroSubtext: {
+    color: 'rgba(255,255,255,0.85)',
     fontFamily: fonts.body,
-    fontSize: 16,
+    fontSize: 15,
     marginTop: 8,
     lineHeight: 20,
   },
-  divider: {
+  heroDivider: {
     height: 1,
-    backgroundColor: colors.locked,
+    backgroundColor: 'rgba(255,255,255,0.25)',
     marginVertical: 16,
   },
-  sectionLabel: {
-    color: colors.textMuted,
-    fontFamily: fonts.bodySemiBold,
+  daysLeftLabel: {
+    color: 'rgba(255,255,255,0.75)',
+    fontFamily: fonts.labelSemiBold,
     fontSize: 13,
     letterSpacing: 1,
   },
   daysLeft: {
-    color: colors.highlight,
+    color: colors.goldBright,
     fontFamily: fonts.headline,
     fontSize: 32,
   },
   formCard: {
-    backgroundColor: colors.backgroundLight,
-    borderRadius: 12,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 14,
     padding: 20,
     marginBottom: 20,
   },
   formTitle: {
-    color: colors.accent,
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 14,
-    letterSpacing: 2,
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 18,
+    letterSpacing: 1,
     marginBottom: 16,
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  formField: {
+    flex: 1,
   },
   label: {
     color: colors.textMuted,
-    fontFamily: fonts.bodySemiBold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 12,
     letterSpacing: 1,
     marginBottom: 6,
   },
   input: {
     backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -226,66 +318,69 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   submitButton: {
-    backgroundColor: colors.highlight,
-    borderRadius: 8,
-    paddingVertical: 12,
+    backgroundColor: colors.gold,
+    borderRadius: 10,
+    paddingVertical: 13,
     alignItems: 'center',
   },
   submitButtonDisabled: {
     opacity: 0.5,
   },
   submitButtonText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
     fontSize: 14,
     letterSpacing: 1,
   },
   subtitle: {
-    color: colors.accent,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.green,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 14,
     letterSpacing: 1,
     marginBottom: 12,
   },
   list: {
-    backgroundColor: colors.backgroundLight,
-    borderRadius: 12,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 14,
     overflow: 'hidden',
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: colors.background,
   },
   rank: {
-    width: 28,
+    width: 20,
     color: colors.textMuted,
     fontFamily: fonts.bodyBold,
     fontSize: 16,
   },
-  rankTop: {
-    color: colors.highlight,
+  rankFirst: {
+    color: colors.gold,
   },
   rowMain: {
     flex: 1,
   },
   name: {
     color: colors.text,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 17,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 16,
   },
-  kettlebell: {
+  rowMeta: {
     color: colors.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 13,
+    fontFamily: fonts.label,
+    fontSize: 12,
     marginTop: 1,
   },
   score: {
     color: colors.text,
-    fontFamily: fonts.bodySemiBold,
+    fontFamily: fonts.bodyBold,
     fontSize: 16,
   },
 });

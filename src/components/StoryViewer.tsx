@@ -3,7 +3,7 @@ import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { StoryItem, useStories } from '../context/StoriesContext';
-import { fonts } from '../theme';
+import { colors, fonts } from '../theme';
 
 const ITEM_DURATION_MS = 5000;
 const SWIPE_DOWN_CLOSE_THRESHOLD = 80;
@@ -104,7 +104,7 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
         <View style={styles.headerRow}>
           <Text style={styles.headerText}>DOC</Text>
           <Pressable onPress={onClose} hitSlop={10} testID="story-close">
-            <Ionicons name="close" size={26} color="#FFFFFF" />
+            <Ionicons name="close" size={26} color={colors.white} />
           </Pressable>
         </View>
 
@@ -112,7 +112,7 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
           <Ionicons
             name={current.mediaType === 'video' ? 'videocam-outline' : 'image-outline'}
             size={72}
-            color="rgba(255,255,255,0.5)"
+            color="rgba(255,255,255,0.55)"
           />
           <Text style={styles.mediaLabel}>{current.placeholderLabel}</Text>
         </View>
@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.white,
   },
   headerRow: {
     flexDirection: 'row',
@@ -156,7 +156,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   headerText: {
-    color: '#FFFFFF',
+    color: colors.white,
     fontFamily: fonts.headline,
     fontSize: 18,
     letterSpacing: 1,
@@ -167,8 +167,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   mediaLabel: {
-    color: 'rgba(255,255,255,0.8)',
-    fontFamily: fonts.bodySemiBold,
+    color: 'rgba(255,255,255,0.85)',
+    fontFamily: fonts.labelSemiBold,
     fontSize: 15,
     letterSpacing: 0.5,
     marginTop: 16,

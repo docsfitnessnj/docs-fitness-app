@@ -15,8 +15,8 @@ type Props = {
 export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplete }: Props) {
   if (!card) return null;
 
-  const jokerColor = card.joker === 'red' ? '#D9534F' : colors.text;
-  const suitColor = card.joker ? jokerColor : isRedSuit(card.suit) ? '#D9534F' : colors.text;
+  const jokerColor = card.joker === 'red' ? colors.scoreboardRed : colors.green;
+  const suitColor = card.joker ? jokerColor : isRedSuit(card.suit) ? colors.scoreboardRed : colors.green;
   const label = deckCardLabel(card);
 
   return (
@@ -52,7 +52,7 @@ export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplet
               <Ionicons
                 name={isComplete ? 'checkmark-circle' : 'checkmark-circle-outline'}
                 size={18}
-                color={isComplete ? colors.background : colors.highlight}
+                color={isComplete ? colors.white : colors.green}
               />
               <Text style={[styles.completeButtonText, isComplete && styles.completeButtonTextDone]}>
                 {isComplete ? 'COMPLETED' : 'MARK COMPLETE'}
@@ -61,7 +61,7 @@ export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplet
 
             <View style={styles.videoPlaceholder}>
               <View style={styles.playCircle}>
-                <Ionicons name="play" size={20} color={colors.background} />
+                <Ionicons name="play" size={20} color={colors.white} />
               </View>
               <Text style={styles.videoLabel}>WATCH DEMO</Text>
             </View>
@@ -77,7 +77,7 @@ export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplet
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(18,33,28,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
@@ -86,8 +86,10 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 380,
     maxHeight: '85%',
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.card,
     borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     paddingTop: 16,
     paddingBottom: 20,
     paddingHorizontal: 20,
@@ -122,15 +124,15 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   format: {
-    color: colors.accent,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.green,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 14,
     lineHeight: 19,
     marginTop: 6,
   },
   divider: {
     height: 1,
-    backgroundColor: colors.locked,
+    backgroundColor: colors.hairline,
     marginVertical: 16,
   },
   moveRow: {
@@ -152,7 +154,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   note: {
-    color: colors.highlight,
+    color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 14,
     fontStyle: 'italic',
@@ -165,26 +167,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     borderWidth: 1.5,
-    borderColor: colors.highlight,
+    borderColor: colors.green,
     borderRadius: 10,
     paddingVertical: 13,
     marginTop: 8,
   },
   completeButtonDone: {
-    backgroundColor: '#4CAF7D',
-    borderColor: '#4CAF7D',
+    backgroundColor: colors.green,
+    borderColor: colors.green,
   },
   completeButtonText: {
-    color: colors.highlight,
-    fontFamily: fonts.bodyBold,
+    color: colors.green,
+    fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 1,
   },
   completeButtonTextDone: {
-    color: colors.background,
+    color: colors.white,
   },
   videoPlaceholder: {
-    backgroundColor: colors.locked,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     borderRadius: 12,
     paddingVertical: 20,
     alignItems: 'center',
@@ -194,14 +198,14 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.green,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
   },
   videoLabel: {
     color: colors.textMuted,
-    fontFamily: fonts.bodySemiBold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 12,
     letterSpacing: 1,
   },

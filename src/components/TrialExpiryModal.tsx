@@ -48,7 +48,7 @@ export function TrialExpiryModal() {
             <Text style={styles.includedTitle}>UPGRADE NOW FOR FULL ACCESS</Text>
             {INCLUDED.map((item) => (
               <View key={item} style={styles.includedRow}>
-                <Ionicons name="checkmark-circle" size={16} color={colors.accent} />
+                <Ionicons name="checkmark-circle" size={16} color={colors.green} />
                 <Text style={styles.includedText}>{item}</Text>
               </View>
             ))}
@@ -75,7 +75,7 @@ export function TrialExpiryModal() {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(18,33,28,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
@@ -83,8 +83,10 @@ const styles = StyleSheet.create({
   sheet: {
     width: '100%',
     maxWidth: 380,
-    backgroundColor: colors.backgroundLight,
+    backgroundColor: colors.card,
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     padding: 24,
   },
   closeButton: {
@@ -104,7 +106,7 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 15,
-    lineHeight: 20,
+    lineHeight: 21,
     marginTop: 10,
     marginBottom: 20,
   },
@@ -115,8 +117,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   includedTitle: {
-    color: colors.accent,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.green,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 12,
     letterSpacing: 1.5,
     marginBottom: 10,
@@ -138,14 +140,14 @@ const styles = StyleSheet.create({
   },
   planButton: {
     flex: 1,
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.green,
     borderRadius: 8,
     paddingVertical: 14,
     alignItems: 'center',
   },
   planButtonText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    fontFamily: fonts.labelBold,
     fontSize: 14,
     letterSpacing: 0.5,
   },
@@ -155,7 +157,7 @@ const styles = StyleSheet.create({
   },
   laterLinkText: {
     color: colors.textMuted,
-    fontFamily: fonts.bodySemiBold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 13,
     textDecorationLine: 'underline',
   },

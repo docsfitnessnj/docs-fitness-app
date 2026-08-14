@@ -17,22 +17,22 @@ export function Avatar({ name, uri, size = 36 }: Props) {
 
   return (
     <View style={[styles.fallback, dimensionStyle]}>
-      <Text style={[styles.fallbackText, { fontSize: size * 0.44 }]}>{name.charAt(0).toUpperCase()}</Text>
+      <Text style={[styles.fallbackText, { fontSize: size * 0.42 }]}>{name.charAt(0).toUpperCase()}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   image: {
-    backgroundColor: colors.locked,
+    backgroundColor: colors.hairline,
   },
   fallback: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.green,
     alignItems: 'center',
     justifyContent: 'center',
   },
   fallbackText: {
-    color: colors.background,
+    color: colors.white,
     fontFamily: fonts.bodyBold,
   },
 });

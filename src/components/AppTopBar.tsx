@@ -6,29 +6,27 @@ import { MembershipToggle } from './MembershipToggle';
 import { colors, fonts } from '../theme';
 
 type Props = {
+  subtitle?: string;
   onOpenSidebar: () => void;
   onOpenSearch: () => void;
-  onOpenMessages: () => void;
 };
 
-export function AppTopBar({ onOpenSidebar, onOpenSearch, onOpenMessages }: Props) {
+export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch }: Props) {
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <View style={styles.bar}>
-        <View style={styles.leftGroup}>
-          <Pressable onPress={onOpenSidebar} hitSlop={8} style={styles.iconButton} testID="open-sidebar">
-            <Ionicons name="menu" size={22} color={colors.text} />
-          </Pressable>
-          <Pressable onPress={onOpenSearch} hitSlop={8} style={styles.iconButton}>
-            <Ionicons name="search" size={20} color={colors.text} />
-          </Pressable>
+        <Pressable onPress={onOpenSidebar} hitSlop={8} style={styles.iconButton} testID="open-sidebar">
+          <Ionicons name="menu-outline" size={24} color={colors.text} />
+        </Pressable>
+
+        <View style={styles.titleWrap}>
+          <Text style={styles.title}>DOC'S FITNESS</Text>
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
 
-        <Text style={styles.title}>DOC'S FITNESS</Text>
-
         <View style={styles.rightGroup}>
-          <Pressable onPress={onOpenMessages} hitSlop={8} style={styles.iconButton} testID="open-messages">
-            <Ionicons name="chatbubble-ellipses-outline" size={20} color={colors.text} />
+          <Pressable onPress={onOpenSearch} hitSlop={8} style={styles.iconButton} testID="open-search">
+            <Ionicons name="search-outline" size={22} color={colors.text} />
           </Pressable>
           <MembershipToggle />
         </View>
@@ -39,30 +37,38 @@ export function AppTopBar({ onOpenSidebar, onOpenSearch, onOpenMessages }: Props
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.card,
   },
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: colors.locked,
+    borderBottomColor: colors.hairline,
   },
   iconButton: {
     padding: 4,
-  },
-  leftGroup: {
-    flexDirection: 'row',
+    width: 32,
     alignItems: 'center',
-    gap: 10,
+  },
+  titleWrap: {
+    flex: 1,
+    alignItems: 'center',
   },
   title: {
     color: colors.text,
     fontFamily: fonts.headline,
-    fontSize: 17,
-    letterSpacing: 0.5,
+    fontSize: 20,
+    letterSpacing: 0.8,
+  },
+  subtitle: {
+    color: colors.gold,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    marginTop: 1,
   },
   rightGroup: {
     flexDirection: 'row',

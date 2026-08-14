@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '../components/AppModal';
@@ -6,10 +6,18 @@ import { Avatar } from '../components/Avatar';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { MembershipGate } from '../components/MembershipGate';
 import { StoryRow } from '../components/StoryRow';
+import { DateStrip } from '../components/DateStrip';
+import { ScheduleStrip } from '../components/ScheduleStrip';
+import { DayViewModal } from '../components/DayViewModal';
 import { Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
+import { useMembership } from '../context/MembershipContext';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
+import { useWorkoutLog } from '../context/WorkoutLogContext';
+import { getCurrentWeek } from '../data/content';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
+
+const FREE_WEEKDAYS_UNLOCKED = 2;
 
 function ComposerBar({ onOpen }: { onOpen: () => void }) {
   const displayName = useDisplayName();
@@ -19,6 +27,7 @@ function ComposerBar({ onOpen }: { onOpen: () => void }) {
       <Avatar name={displayName} uri={photoUri} />
       <View style={styles.composerField}>
         <Text style={styles.composerPlaceholder}>LOG IT. POST IT.</Text>
+        <Ionicons name="add-circle" size={22} color={colors.gold} />
       </View>
     </Pressable>
   );
@@ -117,15 +126,15 @@ function PostCard({ post }: { post: Post }) {
 
   const lastComment = post.comments[post.comments.length - 1];
   const footerRightText = lastComment
-    ? `${post.unread ? 'New comment' : 'Last comment'} ${lastComment.timeLabel}`
-    : 'No comments yet';
+    ? `${post.unread ? 'NEW COMMENT' : 'LAST COMMENT'} · ${lastComment.timeLabel}`
+    : 'NO COMMENTS YET';
   const footerRightGold = post.unread && !!lastComment;
 
   return (
     <Pressable style={[styles.post, post.pinned && styles.postPinned]} onPress={() => markRead(post.id)}>
       {post.pinned && (
         <View style={styles.pinnedBadge}>
-          <Ionicons name="pin" size={11} color={colors.background} />
+          <Ionicons name="pin" size={11} color={colors.greenDeep} />
           <Text style={styles.pinnedBadgeText}>PINNED</Text>
         </View>
       )}
@@ -144,7 +153,7 @@ function PostCard({ post }: { post: Post }) {
           <Ionicons
             name={post.pinned ? 'pin' : 'pin-outline'}
             size={18}
-            color={post.pinned ? colors.highlight : '#B8AC9A'}
+            color={post.pinned ? colors.gold : colors.textMuted}
           />
         </Pressable>
       </View>
@@ -171,7 +180,7 @@ function PostCard({ post }: { post: Post }) {
             </Text>
             {post.hasImage && (
               <View style={styles.thumbnail}>
-                <Ionicons name="image-outline" size={22} color={CARD_MUTED} />
+                <Ionicons name="image-outline" size={22} color={colors.textMuted} />
               </View>
             )}
           </View>
@@ -193,12 +202,12 @@ function PostCard({ post }: { post: Post }) {
             <Ionicons
               name={post.liked ? 'heart' : 'heart-outline'}
               size={18}
-              color={post.liked ? '#D9534F' : '#8A7F6E'}
+              color={post.liked ? colors.green : colors.textMuted}
             />
             <Text style={styles.footerButtonText}>{post.likes}</Text>
           </Pressable>
           <Pressable style={styles.footerButton} onPress={() => setCommentsOpen((v) => !v)}>
-            <Ionicons name="chatbubble-outline" size={16} color="#8A7F6E" />
+            <Ionicons name="chatbubble-outline" size={16} color={colors.textMuted} />
             <Text style={styles.footerButtonText}>
               {post.comments.length} comment{post.comments.length === 1 ? '' : 's'}
             </Text>
@@ -219,7 +228,7 @@ function PostCard({ post }: { post: Post }) {
                 <Text style={styles.commentText}>{comment.text}</Text>
                 <View style={styles.commentMetaRow}>
                   <Text style={styles.commentMeta}>{comment.timeLabel}</Text>
-                  <Ionicons name="heart-outline" size={12} color="#8A7F6E" />
+                  <Ionicons name="heart-outline" size={12} color={colors.textMuted} />
                   <Text style={styles.commentMeta}>{comment.likes}</Text>
                 </View>
               </View>
@@ -232,11 +241,11 @@ function PostCard({ post }: { post: Post }) {
               value={commentText}
               onChangeText={setCommentText}
               placeholder="Write a comment..."
-              placeholderTextColor="#A79C89"
+              placeholderTextColor={colors.textMuted}
               onSubmitEditing={submitComment}
             />
             <Pressable onPress={submitComment} hitSlop={8}>
-              <Ionicons name="send" size={18} color={colors.highlight} />
+              <Ionicons name="send" size={18} color={colors.green} />
             </Pressable>
           </View>
         </View>
@@ -260,42 +269,72 @@ function CommunityFeed({ onOpenComposer }: { onOpenComposer: () => void }) {
 
 export default function CommunityScreen() {
   const [composerOpen, setComposerOpen] = useState(false);
+  const [dayViewIndex, setDayViewIndex] = useState<number | null>(null);
+  const { hasFullAccess } = useMembership();
+  const { isCompleted } = useWorkoutLog();
+
+  const week = useMemo(() => getCurrentWeek(), []);
+  const todayIndex = week.findIndex((d) => d.isToday);
+
+  const isUnlocked = (index: number) => hasFullAccess || index < FREE_WEEKDAYS_UNLOCKED;
 
   return (
     <ScreenContainer>
+      <DateStrip
+        week={week}
+        selectedIndex={todayIndex}
+        onSelect={setDayViewIndex}
+        isUnlocked={isUnlocked}
+        isCompleted={(index) => {
+          const wod = week[index].wod;
+          return wod ? isCompleted(wod.key) : false;
+        }}
+      />
+      <ScheduleStrip />
+
       <MembershipGate>
         <CommunityFeed onOpenComposer={() => setComposerOpen(true)} />
         <CreatePostModal visible={composerOpen} onClose={() => setComposerOpen(false)} />
       </MembershipGate>
+
+      <DayViewModal
+        visible={dayViewIndex !== null}
+        onClose={() => setDayViewIndex(null)}
+        day={dayViewIndex !== null ? week[dayViewIndex] : null}
+        weekdayIndex={dayViewIndex ?? 0}
+        isUnlocked={dayViewIndex !== null ? isUnlocked(dayViewIndex) : false}
+      />
     </ScreenContainer>
   );
 }
-
-const CARD_BG = '#FAF6EF';
-const CARD_TEXT = '#1E2E33';
-const CARD_MUTED = '#8A7F6E';
 
 const styles = StyleSheet.create({
   composerBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: CARD_BG,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     borderRadius: 14,
     padding: 12,
     marginBottom: 14,
   },
   composerField: {
     flex: 1,
-    backgroundColor: '#F0EBDF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.background,
     borderRadius: 20,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   composerPlaceholder: {
-    color: CARD_MUTED,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 14,
+    color: colors.textMuted,
+    fontFamily: fonts.headline,
+    fontSize: 16,
+    letterSpacing: 0.5,
   },
   composeContainer: {
     flex: 1,
@@ -317,13 +356,13 @@ const styles = StyleSheet.create({
   },
   composeCancel: {
     color: colors.textMuted,
-    fontFamily: fonts.bodySemiBold,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 13,
     letterSpacing: 0.5,
   },
   composePost: {
-    color: colors.highlight,
-    fontFamily: fonts.bodyBold,
+    color: colors.green,
+    fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 0.5,
   },
@@ -346,7 +385,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyBold,
     fontSize: 20,
     borderBottomWidth: 1,
-    borderBottomColor: colors.locked,
+    borderBottomColor: colors.hairline,
     paddingBottom: 12,
     marginBottom: 16,
   },
@@ -359,28 +398,30 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   post: {
-    backgroundColor: CARD_BG,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     borderRadius: 14,
     padding: 16,
     marginBottom: 14,
   },
   postPinned: {
     borderWidth: 1.5,
-    borderColor: colors.highlight,
+    borderColor: colors.gold,
   },
   pinnedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.gold,
     borderRadius: 20,
     paddingHorizontal: 8,
     paddingVertical: 3,
     marginBottom: 10,
   },
   pinnedBadgeText: {
-    color: colors.background,
-    fontFamily: fonts.bodyBold,
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
     fontSize: 10,
     letterSpacing: 1,
     marginLeft: 4,
@@ -392,7 +433,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   postName: {
-    color: CARD_TEXT,
+    color: colors.text,
     fontFamily: fonts.bodySemiBold,
     fontSize: 15,
   },
@@ -402,24 +443,24 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   postTime: {
-    color: CARD_MUTED,
-    fontFamily: fonts.body,
+    color: colors.textMuted,
+    fontFamily: fonts.label,
     fontSize: 12,
   },
   postMetaDot: {
-    color: CARD_MUTED,
+    color: colors.textMuted,
     fontSize: 12,
     marginHorizontal: 5,
   },
   categoryTag: {
-    backgroundColor: '#F0EBDF',
+    backgroundColor: colors.background,
     borderRadius: 8,
     paddingHorizontal: 7,
     paddingVertical: 2,
   },
   categoryTagText: {
-    color: CARD_MUTED,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 10,
     letterSpacing: 0.5,
   },
@@ -431,13 +472,14 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.highlight,
+    backgroundColor: colors.goldBright,
     marginRight: 6,
   },
   postTitle: {
-    color: CARD_TEXT,
-    fontFamily: fonts.bodyBold,
-    fontSize: 17,
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 22,
+    letterSpacing: 0.3,
     marginBottom: 4,
   },
   previewRow: {
@@ -446,9 +488,9 @@ const styles = StyleSheet.create({
   },
   postText: {
     flex: 1,
-    color: CARD_TEXT,
+    color: colors.text,
     fontFamily: fonts.body,
-    fontSize: 16,
+    fontSize: 15,
     lineHeight: 21,
     marginBottom: 6,
   },
@@ -456,40 +498,40 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 8,
-    backgroundColor: '#F0EBDF',
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
   },
   wodBlock: {
-    backgroundColor: '#F0E6D2',
+    backgroundColor: colors.background,
     borderLeftWidth: 3,
-    borderLeftColor: colors.highlight,
+    borderLeftColor: colors.green,
     borderRadius: 8,
     padding: 12,
     marginBottom: 6,
   },
   wodBadge: {
-    color: '#9A6B1E',
-    fontFamily: fonts.bodyBold,
+    color: colors.green,
+    fontFamily: fonts.labelBold,
     fontSize: 11,
     letterSpacing: 1,
     marginBottom: 4,
   },
   wodTitle: {
-    color: CARD_TEXT,
+    color: colors.text,
     fontFamily: fonts.headline,
     fontSize: 24,
     letterSpacing: 0.5,
   },
   wodDate: {
-    color: CARD_MUTED,
-    fontFamily: fonts.bodyMedium,
+    color: colors.textMuted,
+    fontFamily: fonts.label,
     fontSize: 13,
     marginBottom: 6,
   },
   wodResults: {
-    color: CARD_TEXT,
+    color: colors.text,
     fontFamily: fonts.bodyMedium,
     fontSize: 15,
     lineHeight: 20,
@@ -502,7 +544,7 @@ const styles = StyleSheet.create({
   reactionPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0EBDF',
+    backgroundColor: colors.background,
     borderRadius: 14,
     paddingHorizontal: 9,
     paddingVertical: 4,
@@ -512,7 +554,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   reactionCount: {
-    color: CARD_TEXT,
+    color: colors.text,
     fontFamily: fonts.bodySemiBold,
     fontSize: 12,
     marginLeft: 4,
@@ -522,7 +564,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderTopWidth: 1,
-    borderTopColor: '#EDE6D6',
+    borderTopColor: colors.hairline,
     paddingTop: 10,
   },
   postFooterLeft: {
@@ -535,24 +577,24 @@ const styles = StyleSheet.create({
     marginRight: 20,
   },
   footerButtonText: {
-    color: CARD_MUTED,
+    color: colors.textMuted,
     fontFamily: fonts.bodySemiBold,
     fontSize: 13,
     marginLeft: 5,
   },
   footerRightText: {
-    color: CARD_MUTED,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 12,
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 11,
+    letterSpacing: 0.5,
   },
   footerRightTextGold: {
-    color: colors.highlight,
-    fontFamily: fonts.bodySemiBold,
+    color: colors.gold,
   },
   commentsBlock: {
     marginTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#EDE6D6',
+    borderTopColor: colors.hairline,
     paddingTop: 12,
   },
   commentRow: {
@@ -561,12 +603,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   commentAuthor: {
-    color: CARD_TEXT,
+    color: colors.text,
     fontFamily: fonts.bodySemiBold,
     fontSize: 13,
   },
   commentText: {
-    color: CARD_TEXT,
+    color: colors.text,
     fontFamily: fonts.body,
     fontSize: 14,
     marginTop: 1,
@@ -578,21 +620,21 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   commentMeta: {
-    color: CARD_MUTED,
-    fontFamily: fonts.body,
+    color: colors.textMuted,
+    fontFamily: fonts.label,
     fontSize: 11,
   },
   commentInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0EBDF',
+    backgroundColor: colors.background,
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   commentInput: {
     flex: 1,
-    color: CARD_TEXT,
+    color: colors.text,
     fontFamily: fonts.body,
     fontSize: 14,
     marginRight: 8,
