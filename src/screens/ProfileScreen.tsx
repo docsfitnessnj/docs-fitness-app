@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { AppModal } from '../components/AppModal';
+import { ModalHeader } from '../components/ModalHeader';
 import { Avatar } from '../components/Avatar';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
@@ -18,12 +19,33 @@ export function ProfileScreen({ visible, onClose }: Props) {
     useProfile();
   const displayName = useDisplayName();
 
+  const [draftPhotoUri, setDraftPhotoUri] = useState(photoUri);
+  const [draftName, setDraftName] = useState(name);
+  const [draftHandle, setDraftHandle] = useState(instagramHandle);
+  const [draftFunFact, setDraftFunFact] = useState(funFact);
+
+  // Reset the draft to the saved values every time the sheet opens.
+  useEffect(() => {
+    if (visible) {
+      setDraftPhotoUri(photoUri);
+      setDraftName(name);
+      setDraftHandle(instagramHandle);
+      setDraftFunFact(funFact);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const isDirty =
+    draftPhotoUri !== photoUri || draftName !== name || draftHandle !== instagramHandle || draftFunFact !== funFact;
+
   const pickPhoto = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       showAlert('Permission Needed', 'Allow photo access to set a profile picture.');
       return;
     }
+    // allowsEditing + a locked 1:1 aspect gives the OS's native square crop/zoom
+    // step before the photo ever comes back to the app.
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
@@ -31,34 +53,48 @@ export function ProfileScreen({ visible, onClose }: Props) {
       quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
+      setDraftPhotoUri(result.assets[0].uri);
     }
   };
 
+  const save = () => {
+    setPhotoUri(draftPhotoUri);
+    setName(draftName);
+    setInstagramHandle(draftHandle);
+    setFunFact(draftFunFact);
+    onClose();
+  };
+
+  const handleBack = () => {
+    if (!isDirty) {
+      onClose();
+      return;
+    }
+    showAlert('Discard Changes?', "You haven't saved your edits.", [
+      { text: 'Keep Editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: onClose },
+    ]);
+  };
+
   return (
-    <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <AppModal visible={visible} animationType="slide" onRequestClose={handleBack}>
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>PROFILE</Text>
-          <Pressable onPress={onClose} hitSlop={8} testID="close-profile">
-            <Ionicons name="close" size={22} color={colors.text} />
-          </Pressable>
-        </View>
+        <ModalHeader title="PROFILE" onBack={handleBack} backTestID="close-profile" />
 
         <ScrollView contentContainerStyle={styles.body}>
           <Pressable onPress={pickPhoto} style={styles.photoWrap} testID="profile-photo-picker">
-            <Avatar name={displayName} uri={photoUri} size={96} />
+            <Avatar name={displayName} uri={draftPhotoUri} size={96} />
             <View style={styles.photoEditBadge}>
               <Ionicons name="camera" size={16} color={colors.white} />
             </View>
           </Pressable>
-          <Text style={styles.photoHint}>Tap to choose a photo</Text>
+          <Text style={styles.photoHint}>Tap to choose and crop a photo</Text>
 
           <Text style={styles.label}>NAME</Text>
           <TextInput
             style={styles.input}
-            value={name}
-            onChangeText={setName}
+            value={draftName}
+            onChangeText={setDraftName}
             placeholder={displayName}
             placeholderTextColor={colors.textMuted}
           />
@@ -68,8 +104,8 @@ export function ProfileScreen({ visible, onClose }: Props) {
             <Text style={styles.handlePrefix}>@</Text>
             <TextInput
               style={styles.handleInput}
-              value={instagramHandle}
-              onChangeText={(v) => setInstagramHandle(v.replace(/^@+/, ''))}
+              value={draftHandle}
+              onChangeText={(v) => setDraftHandle(v.replace(/^@+/, ''))}
               placeholder="yourhandle"
               placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
@@ -79,11 +115,15 @@ export function ProfileScreen({ visible, onClose }: Props) {
           <Text style={styles.label}>FUN FACT</Text>
           <TextInput
             style={styles.input}
-            value={funFact}
-            onChangeText={setFunFact}
+            value={draftFunFact}
+            onChangeText={setDraftFunFact}
             placeholder="One line about you"
             placeholderTextColor={colors.textMuted}
           />
+
+          <Pressable style={styles.saveButton} onPress={save} testID="save-profile">
+            <Text style={styles.saveButtonText}>SAVE</Text>
+          </Pressable>
 
           <Text style={styles.footnote}>Saved on this device for now.</Text>
         </ScrollView>
@@ -97,19 +137,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingTop: 60,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  headerTitle: {
-    color: colors.text,
-    fontFamily: fonts.headline,
-    fontSize: 24,
-    letterSpacing: 1,
   },
   body: {
     paddingHorizontal: 20,
@@ -184,10 +211,24 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingLeft: 2,
   },
+  saveButton: {
+    width: '100%',
+    backgroundColor: colors.green,
+    borderRadius: 10,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  saveButtonText: {
+    color: colors.white,
+    fontFamily: fonts.labelBold,
+    fontSize: 14,
+    letterSpacing: 1,
+  },
   footnote: {
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 12,
-    marginTop: 8,
+    marginTop: 12,
   },
 });

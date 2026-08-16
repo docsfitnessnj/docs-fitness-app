@@ -7,12 +7,9 @@ import { colors, fonts } from '../theme';
 export function ScheduleStrip() {
   return (
     <View style={styles.wrap}>
-      <View style={styles.lineOneRow}>
-        <Ionicons name="arrow-up" size={13} color={colors.gold} />
-        <Text style={styles.lineOne}>CLASS SIGN UP ABOVE + TODAY'S WOD</Text>
-      </View>
-      <Pressable onPress={openFullSchedule} hitSlop={8} testID="see-full-schedule">
-        <Text style={styles.lineTwo}>SEE FULL SCHEDULE</Text>
+      <Pressable onPress={openFullSchedule} hitSlop={8} style={styles.linkRow} testID="see-full-schedule">
+        <Ionicons name="calendar-outline" size={13} color={colors.textMuted} />
+        <Text style={styles.lineTwo}>SEE FULL WEEKLY SCHEDULE</Text>
       </Pressable>
     </View>
   );
@@ -23,17 +20,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 18,
   },
-  lineOneRow: {
+  linkRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginBottom: 4,
-  },
-  lineOne: {
-    color: colors.text,
-    fontFamily: fonts.headline,
-    fontSize: 15,
-    letterSpacing: 0.5,
   },
   lineTwo: {
     color: colors.textMuted,

@@ -1,8 +1,8 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { openMerchStore } from '../lib/links';
-import { colors, fonts, TAGLINE } from '../theme';
+import { openMerchStore, openLocationMaps } from '../lib/links';
+import { colors, fonts, TAGLINE, LOCATION } from '../theme';
 
 const MEMBER_COUNT = 128;
 
@@ -17,7 +17,7 @@ export function IdentitySidebar({ onOpenMessages }: Props) {
         <Ionicons name="fitness" size={26} color={colors.white} />
       </View>
       <Text style={styles.name}>DOC'S FITNESS</Text>
-      <Text style={styles.tagline}>{TAGLINE.toUpperCase()}</Text>
+      <Text style={styles.tagline}>{TAGLINE}</Text>
 
       <View style={styles.memberRow}>
         <Ionicons name="people-outline" size={14} color={colors.green} />
@@ -33,6 +33,12 @@ export function IdentitySidebar({ onOpenMessages }: Props) {
       <Pressable style={styles.linkRow} onPress={openMerchStore}>
         <Ionicons name="bag-handle-outline" size={18} color={colors.green} />
         <Text style={styles.linkText}>Doc's Merch Store</Text>
+      </Pressable>
+      <Pressable style={styles.linkRow} onPress={openLocationMaps}>
+        <Ionicons name="location-outline" size={18} color={colors.green} />
+        <Text style={styles.linkText}>
+          {LOCATION.name}, {LOCATION.city}
+        </Text>
       </Pressable>
     </View>
   );
@@ -64,13 +70,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   tagline: {
-    color: colors.gold,
-    fontFamily: fonts.labelSemiBold,
-    fontSize: 11,
-    letterSpacing: 0.5,
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 12,
     textAlign: 'center',
     marginTop: 6,
-    lineHeight: 15,
+    lineHeight: 16,
   },
   memberRow: {
     flexDirection: 'row',

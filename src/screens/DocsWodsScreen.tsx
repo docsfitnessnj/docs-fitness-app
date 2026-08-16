@@ -4,12 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { DateStrip } from '../components/DateStrip';
 import { LogResultsModal } from '../components/LogResultsModal';
+import { UpgradeBanner } from '../components/UpgradeBanner';
 import { useMembership } from '../context/MembershipContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
-import { formatFullDate, getCurrentWeek, parseMoveRow } from '../data/content';
+import { formatFullDate, getCurrentWeek, isDayWodUnlocked, parseMoveRow } from '../data/content';
 import { colors, fonts } from '../theme';
-
-const FREE_WEEKDAYS_UNLOCKED = 2;
 
 function LockedDay() {
   return (
@@ -30,17 +29,17 @@ function RestDay() {
 }
 
 export default function DocsWodsScreen() {
-  const { hasFullAccess } = useMembership();
+  const { wodAccessLevel } = useMembership();
   const { isCompleted, toggleCompleted } = useWorkoutLog();
   const [logOpen, setLogOpen] = useState(false);
 
   const week = useMemo(() => getCurrentWeek(), []);
   const todayIndex = week.findIndex((d) => d.isToday);
-  const defaultIndex = todayIndex >= 0 && (hasFullAccess || todayIndex < FREE_WEEKDAYS_UNLOCKED) ? todayIndex : 0;
+  const defaultIndex = todayIndex >= 0 && isDayWodUnlocked(week[todayIndex], wodAccessLevel) ? todayIndex : 0;
 
   const [selectedIndex, setSelectedIndex] = useState(defaultIndex);
 
-  const isUnlocked = (index: number) => hasFullAccess || index < FREE_WEEKDAYS_UNLOCKED;
+  const isUnlocked = (index: number) => isDayWodUnlocked(week[index], wodAccessLevel);
 
   const selectedDay = week[selectedIndex];
   const wod = selectedDay.wod;
@@ -68,7 +67,10 @@ export default function DocsWodsScreen() {
       {selectedDay.isRestDay ? (
         <RestDay />
       ) : !isUnlocked(selectedIndex) ? (
-        <LockedDay />
+        <>
+          {wodAccessLevel === 'partial' && <UpgradeBanner message="Unlock all 5 weekly WODs" />}
+          <LockedDay />
+        </>
       ) : (
         <View style={styles.card}>
           <View style={styles.mediaBand}>

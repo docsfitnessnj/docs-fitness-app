@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '../components/AppModal';
+import { ModalHeader } from '../components/ModalHeader';
 import { Avatar } from '../components/Avatar';
 import { useCommunity } from '../context/CommunityContext';
 import { useCloseFriends } from '../context/CloseFriendsContext';
@@ -35,12 +36,7 @@ export function CloseFriendsScreen({ visible, onClose }: Props) {
   return (
     <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>CLOSE FRIENDS</Text>
-          <Pressable onPress={onClose} hitSlop={8} testID="close-close-friends">
-            <Ionicons name="close" size={22} color={colors.text} />
-          </Pressable>
-        </View>
+        <ModalHeader title="CLOSE FRIENDS" onBack={onClose} backTestID="close-close-friends" />
 
         <Text style={styles.subtext}>
           Mark members as close friends to see just their recent posts and workouts. Local to this device for now.
@@ -122,19 +118,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingTop: 60,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginBottom: 8,
-  },
-  headerTitle: {
-    color: colors.text,
-    fontFamily: fonts.headline,
-    fontSize: 24,
-    letterSpacing: 1,
   },
   subtext: {
     color: colors.textMuted,

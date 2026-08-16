@@ -40,10 +40,14 @@ import { ModalRootProvider } from './src/components/ModalRootContext';
 import { SidebarDrawer } from './src/components/SidebarDrawer';
 import { IdentitySidebar } from './src/components/IdentitySidebar';
 import { useScheduleModalState } from './src/lib/scheduleModal';
+import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
 import { colors, fonts } from './src/theme';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
+import HowDoYouTrainScreen from './src/screens/HowDoYouTrainScreen';
+import OnlineStartScreen from './src/screens/OnlineStartScreen';
 import PricingScreen from './src/screens/PricingScreen';
+import InPersonPlansScreen from './src/screens/InPersonPlansScreen';
 import DocsWodsScreen from './src/screens/DocsWodsScreen';
 import DocsCowsScreen from './src/screens/DocsCowsScreen';
 import DeckScreen from './src/screens/DeckScreen';
@@ -71,7 +75,9 @@ type TabConfig = {
   navLabel: string;
   renderIcon: IconRenderer;
   component: React.ComponentType;
-  alwaysUnlocked?: boolean;
+  // Community handles its own full / read-only / closed states inline, so its
+  // tab icon never shows a lock — everything else is locked per its own flag.
+  isLocked: (m: ReturnType<typeof useMembership>) => boolean;
 };
 
 const TABS: TabConfig[] = [
@@ -81,6 +87,7 @@ const TABS: TabConfig[] = [
     navLabel: 'COMMUNITY',
     renderIcon: ({ color, size }) => <Ionicons name="people-outline" size={size} color={color} />,
     component: CommunityScreen,
+    isLocked: () => false,
   },
   {
     name: 'DocsWods',
@@ -88,7 +95,7 @@ const TABS: TabConfig[] = [
     navLabel: "DOC'S WODS",
     renderIcon: ({ color, size }) => <Ionicons name="flame-outline" size={size} color={color} />,
     component: DocsWodsScreen,
-    alwaysUnlocked: true,
+    isLocked: (m) => m.wodAccessLevel === 'none',
   },
   {
     name: 'DocsCows',
@@ -96,6 +103,7 @@ const TABS: TabConfig[] = [
     navLabel: "DOC'S COWS",
     renderIcon: ({ color, size }) => <Ionicons name="trophy-outline" size={size} color={color} />,
     component: DocsCowsScreen,
+    isLocked: (m) => !m.cowsAccess,
   },
   {
     name: 'Deck',
@@ -105,6 +113,7 @@ const TABS: TabConfig[] = [
       <MaterialCommunityIcons name="cards-playing-spade-outline" size={size} color={color} />
     ),
     component: DeckScreen,
+    isLocked: (m) => !m.deckAccess,
   },
 ];
 
@@ -138,7 +147,7 @@ function TabIcon({
 }
 
 function RootNavigator() {
-  const { hasFullAccess } = useMembership();
+  const membership = useMembership();
 
   return (
     <Tab.Navigator
@@ -150,8 +159,8 @@ function RootNavigator() {
         tabBarLabelStyle: styles.tabBarLabel,
       }}
     >
-      {TABS.map(({ name, navLabel, renderIcon, component, alwaysUnlocked }) => {
-        const locked = !hasFullAccess && !alwaysUnlocked;
+      {TABS.map(({ name, navLabel, renderIcon, component, isLocked }) => {
+        const locked = isLocked(membership);
         return (
           <Tab.Screen
             key={name}
@@ -170,25 +179,51 @@ function RootNavigator() {
   );
 }
 
+type OnboardingStep = 'email' | 'howDoYouTrain' | 'onlineStart' | 'pricing' | 'inPersonPlans';
+
+// Fewest possible clicks: Continue -> How do you train -> (pick a path) -> in.
+// TRAIN ONLINE lands on a single trial-start screen (with a skip-to-pricing
+// link); TRAIN AT THE BOATHOUSE goes straight to plan selection. Guests skip
+// this whole flow from the email screen.
 function OnboardingFlow() {
-  const { startTrial, becomeMember } = useMembership();
-  const [view, setView] = useState<'welcome' | 'pricing'>('welcome');
+  const { startTrial, becomeMember, selectInPersonPlan, becomeGuest } = useMembership();
+  const [step, setStep] = useState<OnboardingStep>('email');
+  const [email, setEmail] = useState('');
 
-  if (view === 'pricing') {
-    return (
-      <PricingScreen
-        onBack={() => setView('welcome')}
-        onSelectPlan={() => becomeMember()}
-      />
-    );
+  switch (step) {
+    case 'howDoYouTrain':
+      return (
+        <HowDoYouTrainScreen
+          onBack={() => setStep('email')}
+          onTrainOnline={() => setStep('onlineStart')}
+          onTrainAtBoathouse={() => setStep('inPersonPlans')}
+        />
+      );
+    case 'onlineStart':
+      return (
+        <OnlineStartScreen
+          onBack={() => setStep('howDoYouTrain')}
+          onStartTrial={() => startTrial(email)}
+          onSkipToPricing={() => setStep('pricing')}
+        />
+      );
+    case 'pricing':
+      return <PricingScreen onBack={() => setStep('onlineStart')} onSelectPlan={() => becomeMember()} />;
+    case 'inPersonPlans':
+      return (
+        <InPersonPlansScreen onBack={() => setStep('howDoYouTrain')} onSelectPlan={(plan) => selectInPersonPlan(plan)} />
+      );
+    default:
+      return (
+        <WelcomeScreen
+          onContinue={(enteredEmail) => {
+            setEmail(enteredEmail);
+            setStep('howDoYouTrain');
+          }}
+          onBrowseAsGuest={() => becomeGuest()}
+        />
+      );
   }
-
-  return (
-    <WelcomeScreen
-      onStartTrial={(email) => startTrial(email)}
-      onSkipTrial={() => setView('pricing')}
-    />
-  );
 }
 
 type MainAppProps = {
@@ -200,6 +235,8 @@ type MainAppProps = {
 function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps) {
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
+  const { tier } = useMembership();
+  useWeeklyUpgradeNudge(tier === 'online_free');
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);

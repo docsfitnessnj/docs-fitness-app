@@ -24,6 +24,32 @@ export type WeekDay = {
   wod?: DayWod;
 };
 
+// Free (online, post-trial) accounts get these two weekdays unlocked out of the 5 — checked
+// by the WOD's stable key so it holds regardless of which real week/date is showing.
+export const FREE_UNLOCKED_WOD_KEYS = ['mon', 'tue'];
+
+export type WodAccessLevel = 'full' | 'partial' | 'none';
+
+export function isDayWodUnlocked(day: WeekDay, wodAccessLevel: WodAccessLevel): boolean {
+  if (wodAccessLevel === 'full') return true;
+  if (wodAccessLevel === 'none') return false;
+  return !!day.wod && FREE_UNLOCKED_WOD_KEYS.includes(day.wod.key);
+}
+
+function dayInfoForDate(date: Date, today: Date): WeekDay {
+  const jsDay = date.getDay(); // 0 = Sunday
+  const mondayIndexed = jsDay === 0 ? 6 : jsDay - 1;
+  const isRestDay = mondayIndexed >= 5;
+  return {
+    date,
+    label: DAY_LABELS[mondayIndexed],
+    dateNumber: date.getDate(),
+    isToday: isSameDay(date, today),
+    isRestDay,
+    wod: isRestDay ? undefined : WEEKDAY_WODS[mondayIndexed],
+  };
+}
+
 // Returns the Monday-Sunday week containing `today`, with each weekday's real WOD attached.
 export function getCurrentWeek(today: Date = new Date()): WeekDay[] {
   const dayOfWeek = today.getDay(); // 0 = Sunday
@@ -32,18 +58,23 @@ export function getCurrentWeek(today: Date = new Date()): WeekDay[] {
   monday.setHours(0, 0, 0, 0);
   monday.setDate(monday.getDate() + mondayOffset);
 
-  return DAY_LABELS.map((label, index) => {
+  return DAY_LABELS.map((_label, index) => {
     const date = new Date(monday);
     date.setDate(monday.getDate() + index);
-    const isRestDay = index >= 5;
-    return {
-      date,
-      label,
-      dateNumber: date.getDate(),
-      isToday: isSameDay(date, today),
-      isRestDay,
-      wod: isRestDay ? undefined : WEEKDAY_WODS[index],
-    };
+    return dayInfoForDate(date, today);
+  });
+}
+
+// Rolling range starting today and running `count` days forward — used by the booking
+// date strip, which needs to scroll well past the current Mon-Sun week.
+export function getUpcomingDays(count: number, today: Date = new Date()): WeekDay[] {
+  const start = new Date(today);
+  start.setHours(0, 0, 0, 0);
+
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return dayInfoForDate(date, today);
   });
 }
 

@@ -1,13 +1,43 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 
-// Three states: TRIAL (2-week full-access trial), MEMBER (paid), FREE (trial expired).
-export type MembershipTier = 'trial' | 'member' | 'free';
+// Every state a person (or Doc) can be in:
+// - trial: 2-week free online trial, full access
+// - online_paid: paying online member, full access
+// - in_person_unlimited: Boathouse Monthly Unlimited — full app included
+// - online_free: online trial expired, no plan chosen — 2 of 5 weekly WODs, no COWS, no Deck
+// - ten_pack: Boathouse 10 Class Pack — community + booking, workouts locked
+// - drop_in: Boathouse Drop In — booking only, no community, workouts locked
+// - guest: browsing without an account — read-only community + booking, workouts locked
+// - admin: Doc's own account — full access + community moderation
+// The dev preview toggle only cycles the five states named in the product brief
+// (admin / online_paid / in_person_unlimited / online_free / guest); ten_pack and
+// drop_in are real outcomes of the In-Person Plans screen but aren't previewable there
+// since their capabilities are identical to guest's.
+export type MembershipTier =
+  | 'trial'
+  | 'online_paid'
+  | 'in_person_unlimited'
+  | 'online_free'
+  | 'ten_pack'
+  | 'drop_in'
+  | 'guest'
+  | 'admin';
+
+export type InPersonPlan = 'monthly_unlimited' | 'ten_pack' | 'drop_in';
+
+export const DEV_PREVIEW_TIERS: MembershipTier[] = [
+  'admin',
+  'online_paid',
+  'in_person_unlimited',
+  'online_free',
+  'guest',
+];
 
 const TRIAL_LENGTH_DAYS = 14;
 const TRIAL_WARNING_THRESHOLD_DAYS = 3;
 
 function deriveDisplayName(email: string | null): string {
-  if (!email) return 'Member';
+  if (!email) return 'Guest';
   const local = email.split('@')[0].replace(/[._-]+/g, ' ').trim();
   if (!local) return 'Member';
   return local
@@ -15,6 +45,8 @@ function deriveDisplayName(email: string | null): string {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 }
+
+type WodAccessLevel = 'full' | 'partial' | 'none';
 
 type MembershipContextValue = {
   tier: MembershipTier;
@@ -24,10 +56,22 @@ type MembershipContextValue = {
   trialEndsAt: Date | null;
   daysLeftInTrial: number | null;
   trialWarningDismissed: boolean;
-  // True once a user has full access to Doc's COWS, The Deck, and Community (trial or paid member).
-  hasFullAccess: boolean;
+
+  isAdmin: boolean;
+  // Full access to Doc's WODs, COWS, The Deck, and Community.
+  fullContentAccess: boolean;
+  wodAccessLevel: WodAccessLevel;
+  cowsAccess: boolean;
+  deckAccess: boolean;
+  communityAccess: 'full' | 'read_only' | 'none';
+  // Class booking is available to every tier, including guests — kept as an explicit
+  // flag (rather than assumed) so call sites read intent, not "true" literals.
+  bookingAccess: boolean;
+
   startTrial: (email: string) => void;
   becomeMember: () => void;
+  selectInPersonPlan: (plan: InPersonPlan) => void;
+  becomeGuest: () => void;
   setDevTier: (tier: MembershipTier) => void;
   dismissTrialWarning: () => void;
 };
@@ -45,8 +89,13 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : null;
 
-  const value = useMemo<MembershipContextValue>(
-    () => ({
+  const value = useMemo<MembershipContextValue>(() => {
+    const fullContentAccess = tier === 'admin' || tier === 'trial' || tier === 'online_paid' || tier === 'in_person_unlimited';
+    const wodAccessLevel: WodAccessLevel = fullContentAccess ? 'full' : tier === 'online_free' ? 'partial' : 'none';
+    const communityAccess: 'full' | 'read_only' | 'none' =
+      tier === 'drop_in' ? 'none' : tier === 'guest' ? 'read_only' : 'full';
+
+    return {
       tier,
       signedUp,
       email,
@@ -54,7 +103,15 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       trialEndsAt,
       daysLeftInTrial,
       trialWarningDismissed,
-      hasFullAccess: tier === 'trial' || tier === 'member',
+
+      isAdmin: tier === 'admin',
+      fullContentAccess,
+      wodAccessLevel,
+      cowsAccess: fullContentAccess,
+      deckAccess: fullContentAccess,
+      communityAccess,
+      bookingAccess: true,
+
       startTrial: (enteredEmail: string) => {
         const endsAt = new Date();
         endsAt.setDate(endsAt.getDate() + TRIAL_LENGTH_DAYS);
@@ -65,11 +122,21 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         setSignedUp(true);
       },
       becomeMember: () => {
-        setTier('member');
+        setTier('online_paid');
+        setSignedUp(true);
+      },
+      selectInPersonPlan: (plan: InPersonPlan) => {
+        setTier(plan === 'monthly_unlimited' ? 'in_person_unlimited' : plan === 'ten_pack' ? 'ten_pack' : 'drop_in');
+        setSignedUp(true);
+      },
+      becomeGuest: () => {
+        setEmail(null);
+        setTier('guest');
         setSignedUp(true);
       },
       setDevTier: (nextTier: MembershipTier) => {
         setTier(nextTier);
+        setSignedUp(true);
         if (nextTier === 'trial' && !trialEndsAt) {
           const endsAt = new Date();
           endsAt.setDate(endsAt.getDate() + TRIAL_LENGTH_DAYS);
@@ -77,9 +144,8 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         }
       },
       dismissTrialWarning: () => setTrialWarningDismissed(true),
-    }),
-    [tier, signedUp, email, trialEndsAt, daysLeftInTrial, trialWarningDismissed]
-  );
+    };
+  }, [tier, signedUp, email, trialEndsAt, daysLeftInTrial, trialWarningDismissed]);
 
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>;
 }

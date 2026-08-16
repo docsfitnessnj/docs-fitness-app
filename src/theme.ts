@@ -41,7 +41,10 @@ export const fonts = {
   labelBold: 'BarlowCondensed_700Bold',
 };
 
-export const TAGLINE = 'Stronger Than 10 Years Ago. Under 4 Hours a Week.';
+export const TAGLINE =
+  'Become stronger than you were 10 years ago with just 2 hours a week of kettlebell training.';
+
+export const WELCOME_SUBTEXT = 'For those who want to become stronger now than they were 10 years ago.';
 
 export const LOCATION = {
   name: "Dr. John W. Holland Boathouse",
