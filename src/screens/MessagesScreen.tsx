@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '../components/AppModal';
+import { ModalHeader } from '../components/ModalHeader';
 import { colors, fonts } from '../theme';
 
 type Message = { id: string; from: 'me' | 'doc'; text: string };
@@ -46,12 +47,7 @@ export function MessagesScreen({ visible, onClose }: Props) {
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>MESSAGE DOC</Text>
-          <Pressable onPress={onClose} hitSlop={8} testID="close-messages">
-            <Ionicons name="close" size={22} color={colors.text} />
-          </Pressable>
-        </View>
+        <ModalHeader title="MESSAGE DOC" onBack={onClose} backTestID="close-messages" />
 
         <ScrollView style={styles.thread} contentContainerStyle={styles.threadContent}>
           {messages.map((message) => (
@@ -99,19 +95,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingTop: 60,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  headerTitle: {
-    color: colors.text,
-    fontFamily: fonts.headline,
-    fontSize: 24,
-    letterSpacing: 1,
   },
   thread: {
     flex: 1,

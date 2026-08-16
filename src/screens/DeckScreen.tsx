@@ -1,9 +1,10 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { MembershipGate } from '../components/MembershipGate';
 import { DeckCardDetailModal } from '../components/DeckCardDetailModal';
+import { DeckUpsellModal } from '../components/DeckUpsellModal';
 import { CardBack } from '../components/CardBack';
 import { useDeckProgress } from '../context/DeckProgressContext';
 import { DECK_CARDS, DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
@@ -156,9 +157,21 @@ function BrowseGrid({ onOpen }: { onOpen: (card: DeckCardData) => void }) {
 }
 
 function DeckOfWods() {
-  const { isComplete, toggleComplete, completedCount, totalCount } = useDeckProgress();
+  const { isComplete, toggleComplete, completedCount, totalCount, shouldOfferUpsell, recordUpsellShown } =
+    useDeckProgress();
   const [mode, setMode] = useState<Mode>('shuffle');
   const [selectedCard, setSelectedCard] = useState<DeckCardData | null>(null);
+  const [upsellVisible, setUpsellVisible] = useState(false);
+  const prevCompletedCount = useRef(completedCount);
+
+  useEffect(() => {
+    if (completedCount > prevCompletedCount.current && shouldOfferUpsell) {
+      setUpsellVisible(true);
+      recordUpsellShown();
+    }
+    prevCompletedCount.current = completedCount;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completedCount]);
 
   return (
     <View>
@@ -173,6 +186,8 @@ function DeckOfWods() {
         isComplete={selectedCard ? isComplete(selectedCard.id) : false}
         onToggleComplete={() => selectedCard && toggleComplete(selectedCard.id)}
       />
+
+      <DeckUpsellModal visible={upsellVisible} onDismiss={() => setUpsellVisible(false)} />
     </View>
   );
 }

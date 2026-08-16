@@ -1,7 +1,8 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '../components/AppModal';
+import { ModalHeader } from '../components/ModalHeader';
 import { formatLogSummary, useWorkoutLog } from '../context/WorkoutLogContext';
 import { colors, fonts } from '../theme';
 
@@ -16,12 +17,7 @@ export function MyWorkoutsScreen({ visible, onClose }: Props) {
   return (
     <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>MY WORKOUTS</Text>
-          <Pressable onPress={onClose} hitSlop={8} testID="close-my-workouts">
-            <Ionicons name="close" size={22} color={colors.text} />
-          </Pressable>
-        </View>
+        <ModalHeader title="MY WORKOUTS" onBack={onClose} backTestID="close-my-workouts" />
 
         <ScrollView contentContainerStyle={styles.list}>
           {completedWorkouts.length === 0 ? (
@@ -52,19 +48,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingTop: 60,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  headerTitle: {
-    color: colors.text,
-    fontFamily: fonts.headline,
-    fontSize: 24,
-    letterSpacing: 1,
   },
   list: {
     paddingHorizontal: 20,

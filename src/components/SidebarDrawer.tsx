@@ -6,10 +6,10 @@ import { AppModal } from './AppModal';
 import { Avatar } from './Avatar';
 import { useDeckProgress } from '../context/DeckProgressContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
-import { openMerchStore } from '../lib/links';
+import { openMerchStore, openLocationMaps } from '../lib/links';
 import { showAlert } from '../lib/alert';
 import { openFullSchedule } from '../lib/scheduleModal';
-import { colors, fonts, TAGLINE } from '../theme';
+import { colors, fonts, TAGLINE, LOCATION } from '../theme';
 
 type Props = {
   visible: boolean;
@@ -116,7 +116,13 @@ export function SidebarDrawer({
           ))}
         </View>
 
-        <Text style={styles.tagline}>{TAGLINE.toUpperCase()}</Text>
+        <Pressable style={styles.locationRow} onPress={openLocationMaps} testID="sidebar-location">
+          <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.85)" />
+          <Text style={styles.locationText}>
+            {LOCATION.name}, {LOCATION.city}
+          </Text>
+        </Pressable>
+        <Text style={styles.tagline}>{TAGLINE}</Text>
       </View>
     </AppModal>
   );
@@ -187,13 +193,27 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginRight: 8,
   },
-  tagline: {
-    color: 'rgba(255,255,255,0.7)',
-    fontFamily: fonts.labelSemiBold,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    textAlign: 'center',
-    marginTop: 12,
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 16,
     paddingHorizontal: 32,
+  },
+  locationText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    textDecorationLine: 'underline',
+  },
+  tagline: {
+    color: 'rgba(255,255,255,0.65)',
+    fontFamily: fonts.body,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 10,
+    paddingHorizontal: 32,
+    lineHeight: 15,
   },
 });

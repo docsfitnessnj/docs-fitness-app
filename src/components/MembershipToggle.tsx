@@ -1,37 +1,46 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { MembershipTier, useMembership } from '../context/MembershipContext';
+import { DEV_PREVIEW_TIERS, MembershipTier, useMembership } from '../context/MembershipContext';
 import { colors, fonts } from '../theme';
-
-const ORDER: MembershipTier[] = ['trial', 'member', 'free'];
 
 const LABEL: Record<MembershipTier, string> = {
   trial: 'TRIAL',
-  member: 'MEMBER',
-  free: 'FREE',
+  online_paid: 'ONLINE PAID',
+  in_person_unlimited: 'IN-PERSON',
+  online_free: 'ONLINE FREE',
+  ten_pack: '10-PACK',
+  drop_in: 'DROP-IN',
+  guest: 'GUEST',
+  admin: 'ADMIN',
 };
 
 const TIER_COLOR: Record<MembershipTier, string> = {
   trial: colors.green,
-  member: colors.gold,
-  free: colors.textMuted,
+  online_paid: colors.green,
+  in_person_unlimited: colors.green,
+  online_free: colors.textMuted,
+  ten_pack: colors.textMuted,
+  drop_in: colors.textMuted,
+  guest: colors.textMuted,
+  admin: colors.gold,
 };
 
-// Dev-only 3-state switch so the gym owner can preview Trial / Member / Free (expired)
-// without a real signup or payment.
+// Dev-only 5-state switch so the gym owner can preview Admin / Online Paid /
+// In-Person Unlimited / Online Free / Guest without a real signup or payment.
 export function MembershipToggle() {
   const { tier, setDevTier } = useMembership();
+  const previewIndex = DEV_PREVIEW_TIERS.indexOf(tier);
 
   const cycle = () => {
-    const nextIndex = (ORDER.indexOf(tier) + 1) % ORDER.length;
-    setDevTier(ORDER[nextIndex]);
+    const nextIndex = (Math.max(previewIndex, 0) + 1) % DEV_PREVIEW_TIERS.length;
+    setDevTier(DEV_PREVIEW_TIERS[nextIndex]);
   };
 
   return (
-    <Pressable onPress={cycle} style={styles.wrapper} hitSlop={8}>
+    <Pressable onPress={cycle} style={styles.wrapper} hitSlop={8} testID="dev-tier-toggle">
       <Text style={[styles.label, { color: TIER_COLOR[tier] }]}>{LABEL[tier]}</Text>
       <View style={styles.track}>
-        {ORDER.map((t) => (
+        {DEV_PREVIEW_TIERS.map((t) => (
           <View
             key={t}
             style={[styles.dot, t === tier && { backgroundColor: TIER_COLOR[tier] }]}
@@ -51,8 +60,8 @@ const styles = StyleSheet.create({
   },
   label: {
     fontFamily: fonts.labelSemiBold,
-    fontSize: 11,
-    letterSpacing: 1,
+    fontSize: 10,
+    letterSpacing: 0.8,
     marginRight: 6,
   },
   track: {

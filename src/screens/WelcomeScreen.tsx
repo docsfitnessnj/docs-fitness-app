@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts, TAGLINE } from '../theme';
+import { colors, fonts, WELCOME_SUBTEXT } from '../theme';
 
 type Props = {
-  onStartTrial: (email: string) => void;
-  onSkipTrial: () => void;
+  onContinue: (email: string) => void;
+  onBrowseAsGuest: () => void;
 };
 
-export default function WelcomeScreen({ onStartTrial, onSkipTrial }: Props) {
+export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
   const [email, setEmail] = useState('');
 
   const canSubmit = email.trim().length > 3 && email.includes('@');
@@ -23,7 +23,6 @@ export default function WelcomeScreen({ onStartTrial, onSkipTrial }: Props) {
           <Ionicons name="fitness" size={30} color={colors.white} />
         </View>
         <Text style={styles.title}>DOC'S FITNESS</Text>
-        <Text style={styles.tagline}>{TAGLINE.toUpperCase()}</Text>
 
         <View style={styles.form}>
           <Text style={styles.label}>EMAIL ADDRESS</Text>
@@ -37,18 +36,20 @@ export default function WelcomeScreen({ onStartTrial, onSkipTrial }: Props) {
             autoCorrect={false}
             keyboardType="email-address"
           />
+          <Text style={styles.subtext}>{WELCOME_SUBTEXT}</Text>
 
           <Pressable
-            style={[styles.trialButton, !canSubmit && styles.trialButtonDisabled]}
+            style={[styles.continueButton, !canSubmit && styles.continueButtonDisabled]}
             disabled={!canSubmit}
-            onPress={() => onStartTrial(email.trim())}
+            onPress={() => onContinue(email.trim())}
+            testID="welcome-continue"
           >
-            <Text style={styles.trialButtonText}>START MY 2-WEEK FREE TRIAL</Text>
+            <Text style={styles.continueButtonText}>CONTINUE</Text>
           </Pressable>
         </View>
 
-        <Pressable onPress={onSkipTrial} hitSlop={8} style={styles.skipLink}>
-          <Text style={styles.skipLinkText}>Skip the trial — become a member now</Text>
+        <Pressable onPress={onBrowseAsGuest} hitSlop={8} style={styles.guestLink} testID="browse-as-guest">
+          <Text style={styles.guestLinkText}>Browse as guest</Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -82,15 +83,7 @@ const styles = StyleSheet.create({
     lineHeight: 48,
     letterSpacing: 1,
     textAlign: 'center',
-  },
-  tagline: {
-    color: colors.green,
-    fontFamily: fonts.labelSemiBold,
-    fontSize: 14,
-    letterSpacing: 2,
-    textAlign: 'center',
-    marginTop: 12,
-    marginBottom: 40,
+    marginBottom: 32,
   },
   form: {
     width: '100%',
@@ -117,28 +110,35 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.bodyMedium,
     fontSize: 16,
-    marginBottom: 16,
   },
-  trialButton: {
+  subtext: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 10,
+    marginBottom: 18,
+  },
+  continueButton: {
     backgroundColor: colors.green,
     borderRadius: 10,
     paddingVertical: 15,
     alignItems: 'center',
   },
-  trialButtonDisabled: {
+  continueButtonDisabled: {
     opacity: 0.5,
   },
-  trialButtonText: {
+  continueButtonText: {
     color: colors.white,
     fontFamily: fonts.labelBold,
     fontSize: 15,
     letterSpacing: 1,
   },
-  skipLink: {
+  guestLink: {
     alignItems: 'center',
     marginTop: 24,
   },
-  skipLinkText: {
+  guestLinkText: {
     color: colors.textMuted,
     fontFamily: fonts.labelSemiBold,
     fontSize: 14,

@@ -124,6 +124,8 @@ type CommunityContextValue = {
   posts: Post[];
   addTextPost: (author: string, title: string, text: string, category?: string) => void;
   addWodResultPost: (author: string, meta: WodPostMeta) => void;
+  updateTextPost: (postId: string, title: string, text: string) => void;
+  deletePost: (postId: string) => void;
   toggleLike: (postId: string) => void;
   addReaction: (postId: string, emoji: string) => void;
   addComment: (postId: string, author: string, text: string) => void;
@@ -180,6 +182,14 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           meta,
           unread: false,
         });
+      },
+      updateTextPost: (postId, title, text) => {
+        setPosts((prev) =>
+          prev.map((p) => (p.id === postId ? { ...p, title: title.trim() || text.trim().slice(0, 60), text } : p))
+        );
+      },
+      deletePost: (postId) => {
+        setPosts((prev) => prev.filter((p) => p.id !== postId));
       },
       toggleLike: (postId) => {
         setPosts((prev) =>
