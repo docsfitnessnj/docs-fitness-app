@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { StoryViewer } from './StoryViewer';
+import { KettlebellWaveMark } from './brand/KettlebellWaveMark';
 import { useStories } from '../context/StoriesContext';
 import { colors, fonts } from '../theme';
 
@@ -15,7 +16,7 @@ export function StoryRow() {
       <Pressable style={styles.item} onPress={() => setViewerOpen(true)} testID="story-ring-doc">
         <View style={[styles.ring, hasUnviewed ? styles.ringUnviewed : styles.ringViewed]}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>D</Text>
+            <KettlebellWaveMark color={colors.white} size={28} strokeWidth={10} />
           </View>
           {hasUnviewed && (
             <View style={styles.newTag}>

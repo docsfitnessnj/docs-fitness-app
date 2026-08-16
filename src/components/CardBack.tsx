@@ -1,51 +1,29 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, fonts } from '../theme';
+import { StyleSheet, View } from 'react-native';
+import { DocsBadgeLogo } from './brand/DocsBadgeLogo';
+import { colors } from '../theme';
 
 type Props = {
   size?: 'large' | 'small';
 };
 
-const PATTERN_POSITIONS = [
-  { top: '12%', left: '15%' },
-  { top: '12%', left: '55%' },
-  { top: '38%', left: '35%' },
-  { top: '62%', left: '15%' },
-  { top: '62%', left: '55%' },
-  { top: '85%', left: '35%' },
-];
-
-// Deep-green card back, white border, brand mark pattern, dead center wordmark.
+// Black card back, thin gold border, the white circular badge centered.
 export function CardBack({ size = 'small' }: Props) {
   const isLarge = size === 'large';
 
   return (
     <View style={[styles.card, isLarge ? styles.cardLarge : styles.cardSmall]}>
-      {isLarge &&
-        PATTERN_POSITIONS.map((pos, index) => (
-          <Ionicons
-            key={index}
-            name="fitness"
-            size={14}
-            color="rgba(255,255,255,0.14)"
-            style={[styles.patternIcon, pos as any]}
-          />
-        ))}
-      <View style={[styles.innerBorder, isLarge ? styles.innerBorderLarge : styles.innerBorderSmall]}>
-        <Ionicons name="fitness" size={isLarge ? 30 : 16} color={colors.gold} />
-        {isLarge && <Text style={styles.wordmark}>DOC'S{'\n'}FITNESS</Text>}
-      </View>
+      <DocsBadgeLogo color={colors.white} size={isLarge ? 108 : 40} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.greenDeep,
+    backgroundColor: '#000000',
     borderRadius: 10,
-    borderWidth: 2,
-    borderColor: colors.white,
+    borderWidth: 1.5,
+    borderColor: colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -57,33 +35,5 @@ const styles = StyleSheet.create({
   cardSmall: {
     width: '100%',
     height: '100%',
-  },
-  patternIcon: {
-    position: 'absolute',
-  },
-  innerBorder: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,213,32,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  innerBorderLarge: {
-    width: '78%',
-    height: '55%',
-    borderRadius: 8,
-  },
-  innerBorderSmall: {
-    width: '70%',
-    height: '70%',
-    borderRadius: 6,
-  },
-  wordmark: {
-    color: colors.white,
-    fontFamily: fonts.headline,
-    fontSize: 15,
-    letterSpacing: 1,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 16,
   },
 });
