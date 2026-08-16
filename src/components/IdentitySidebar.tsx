@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { DocsBadgeLogo } from './brand/DocsBadgeLogo';
 import { openMerchStore, openLocationMaps } from '../lib/links';
 import { colors, fonts, TAGLINE, LOCATION } from '../theme';
 
@@ -14,7 +15,7 @@ export function IdentitySidebar({ onOpenMessages }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.brandMark}>
-        <Ionicons name="fitness" size={26} color={colors.white} />
+        <DocsBadgeLogo color={colors.green} size={80} />
       </View>
       <Text style={styles.name}>DOC'S FITNESS</Text>
       <Text style={styles.tagline}>{TAGLINE}</Text>
@@ -54,12 +55,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   brandMark: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.green,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: 12,
   },
   name: {

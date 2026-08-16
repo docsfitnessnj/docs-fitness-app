@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -58,6 +59,10 @@ export default function PricingScreen({ onBack, onSelectPlan }: Props) {
           </View>
         ))}
       </View>
+
+      <View style={styles.footer}>
+        <DocsHorizontalLockup color={colors.green} size={16} />
+      </View>
     </View>
   );
 }
@@ -97,6 +102,10 @@ const styles = StyleSheet.create({
   },
   plans: {
     gap: 16,
+  },
+  footer: {
+    alignItems: 'center',
+    marginTop: 28,
   },
   planCard: {
     backgroundColor: colors.card,

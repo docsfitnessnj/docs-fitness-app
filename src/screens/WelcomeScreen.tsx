@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { DocsBadgeLogo } from '../components/brand/DocsBadgeLogo';
+import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
 import { colors, fonts, WELCOME_SUBTEXT } from '../theme';
 
 type Props = {
@@ -20,7 +21,7 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
     >
       <View style={styles.content}>
         <View style={styles.brandMark}>
-          <Ionicons name="fitness" size={30} color={colors.white} />
+          <DocsBadgeLogo color={colors.green} size={140} />
         </View>
         <Text style={styles.title}>DOC'S FITNESS</Text>
 
@@ -51,6 +52,10 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
         <Pressable onPress={onBrowseAsGuest} hitSlop={8} style={styles.guestLink} testID="browse-as-guest">
           <Text style={styles.guestLinkText}>Browse as guest</Text>
         </Pressable>
+
+        <View style={styles.footer}>
+          <DocsHorizontalLockup color={colors.green} size={16} />
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -68,13 +73,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
   },
   brandMark: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: colors.green,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: 8,
+  },
+  footer: {
+    marginTop: 40,
   },
   title: {
     color: colors.text,
