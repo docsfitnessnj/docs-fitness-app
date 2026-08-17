@@ -61,7 +61,7 @@ export default function PricingScreen({ onBack, onSelectPlan }: Props) {
       </View>
 
       <View style={styles.footer}>
-        <DocsHorizontalLockup color={colors.green} size={16} />
+        <DocsHorizontalLockup width={130} />
       </View>
     </View>
   );

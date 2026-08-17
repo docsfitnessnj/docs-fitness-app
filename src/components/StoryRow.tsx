@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { StoryViewer } from './StoryViewer';
-import { KettlebellWaveMark } from './brand/KettlebellWaveMark';
+import { DocsBadge } from './brand/DocsBadge';
 import { useStories } from '../context/StoriesContext';
 import { colors, fonts } from '../theme';
+
+const RING_SIZE = 64;
+const AVATAR_SIZE = RING_SIZE - 10;
 
 export function StoryRow() {
   const { activeStories, hasUnviewed } = useStories();
@@ -16,7 +19,7 @@ export function StoryRow() {
       <Pressable style={styles.item} onPress={() => setViewerOpen(true)} testID="story-ring-doc">
         <View style={[styles.ring, hasUnviewed ? styles.ringUnviewed : styles.ringViewed]}>
           <View style={styles.avatar}>
-            <KettlebellWaveMark color={colors.white} size={28} strokeWidth={10} />
+            <DocsBadge variant="white" size={AVATAR_SIZE} />
           </View>
           {hasUnviewed && (
             <View style={styles.newTag}>
@@ -33,8 +36,6 @@ export function StoryRow() {
     </View>
   );
 }
-
-const RING_SIZE = 64;
 
 const styles = StyleSheet.create({
   row: {
@@ -61,19 +62,15 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
   },
   avatar: {
-    width: RING_SIZE - 10,
-    height: RING_SIZE - 10,
-    borderRadius: (RING_SIZE - 10) / 2,
-    backgroundColor: colors.green,
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.card,
-  },
-  avatarText: {
-    color: colors.white,
-    fontFamily: fonts.headline,
-    fontSize: 22,
+    overflow: 'hidden',
   },
   newTag: {
     position: 'absolute',

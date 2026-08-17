@@ -1,38 +1,15 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { KettlebellWaveMark } from './KettlebellWaveMark';
-import { fonts } from '../../theme';
+import { Image } from 'react-native';
 
 type Props = {
-  color: string;
-  size?: number;
+  width?: number;
 };
 
-// Kettlebell-wave mark + divider + "DOC'S / FITNESS NJ" wordmark, matching
-// the app's own headline type — used in footers (Welcome, Pricing).
-export function DocsHorizontalLockup({ color, size = 22 }: Props) {
-  return (
-    <View style={styles.row}>
-      <KettlebellWaveMark color={color} size={size} strokeWidth={9} />
-      <View style={[styles.divider, { backgroundColor: color, height: size }]} />
-      <Text style={[styles.wordmark, { color, fontSize: size * 0.62, lineHeight: size * 0.62 }]}>
-        DOC'S{'\n'}FITNESS NJ
-      </Text>
-    </View>
-  );
-}
+const SOURCE = require('../../../assets/brand/horizontal-lockup.png');
+const ASPECT_RATIO = 2080 / 784;
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  divider: {
-    width: 2,
-    marginHorizontal: 10,
-  },
-  wordmark: {
-    fontFamily: fonts.headline,
-    letterSpacing: 0.5,
-  },
-});
+// Kettlebell-wave mark + divider + "DOC'S FITNESS NJ" wordmark — black line
+// art on a transparent background, so it sits cleanly on any light surface.
+export function DocsHorizontalLockup({ width = 140 }: Props) {
+  return <Image source={SOURCE} resizeMode="contain" style={{ width, height: width / ASPECT_RATIO }} />;
+}

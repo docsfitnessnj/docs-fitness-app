@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { DocsBadgeLogo } from '../components/brand/DocsBadgeLogo';
+import { DocsBadge } from '../components/brand/DocsBadge';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
 import { colors, fonts, WELCOME_SUBTEXT } from '../theme';
 
@@ -21,7 +21,7 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
     >
       <View style={styles.content}>
         <View style={styles.brandMark}>
-          <DocsBadgeLogo color={colors.green} size={140} />
+          <DocsBadge variant="white" size={140} />
         </View>
         <Text style={styles.title}>DOC'S FITNESS</Text>
 
@@ -54,7 +54,7 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
         </Pressable>
 
         <View style={styles.footer}>
-          <DocsHorizontalLockup color={colors.green} size={16} />
+          <DocsHorizontalLockup width={130} />
         </View>
       </View>
     </KeyboardAvoidingView>

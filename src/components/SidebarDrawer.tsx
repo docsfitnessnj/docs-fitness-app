@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { AppModal } from './AppModal';
 import { Avatar } from './Avatar';
-import { DocsBadgeLogo } from './brand/DocsBadgeLogo';
+import { DocsBadge } from './brand/DocsBadge';
 import { useDeckProgress } from '../context/DeckProgressContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { openMerchStore, openLocationMaps } from '../lib/links';
@@ -96,7 +96,7 @@ export function SidebarDrawer({
     <AppModal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.root}>
         <View style={styles.badgeWrap}>
-          <DocsBadgeLogo color={colors.white} size={64} />
+          <DocsBadge variant="black" size={64} />
         </View>
 
         <View style={styles.header}>
