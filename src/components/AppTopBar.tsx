@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { MembershipToggle } from './MembershipToggle';
-import { KettlebellWaveMark } from './brand/KettlebellWaveMark';
+import { DocsBadge } from './brand/DocsBadge';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -22,7 +22,7 @@ export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch }: Props) {
 
         <View style={styles.titleWrap}>
           <View style={styles.titleRow}>
-            <KettlebellWaveMark color={colors.green} size={18} strokeWidth={9} />
+            <DocsBadge variant="white" size={22} />
             <Text style={styles.title}>DOC'S FITNESS</Text>
           </View>
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
