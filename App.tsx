@@ -57,6 +57,7 @@ import CommunityScreen from './src/screens/CommunityScreen';
 import { FullScheduleScreen } from './src/screens/FullScheduleScreen';
 import { MessagesScreen } from './src/screens/MessagesScreen';
 import { MyWorkoutsScreen } from './src/screens/MyWorkoutsScreen';
+import { MembershipsScreen } from './src/screens/MembershipsScreen';
 import { CloseFriendsScreen } from './src/screens/CloseFriendsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 
@@ -271,6 +272,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [membershipsOpen, setMembershipsOpen] = useState(false);
   const [myWorkoutsOpen, setMyWorkoutsOpen] = useState(false);
   const [closeFriendsOpen, setCloseFriendsOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useScheduleModalState();
@@ -302,6 +304,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           visible={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           onOpenProfile={() => setProfileOpen(true)}
+          onOpenMemberships={() => setMembershipsOpen(true)}
           onOpenMyWorkouts={() => setMyWorkoutsOpen(true)}
           onOpenCloseFriends={() => setCloseFriendsOpen(true)}
           onOpenMessages={onOpenMessages}
@@ -309,6 +312,9 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       </ScreenOverlay>
       <ScreenOverlay visible={profileOpen}>
         <ProfileScreen visible={profileOpen} onClose={() => setProfileOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={membershipsOpen}>
+        <MembershipsScreen visible={membershipsOpen} onClose={() => setMembershipsOpen(false)} />
       </ScreenOverlay>
       <ScreenOverlay visible={myWorkoutsOpen}>
         <MyWorkoutsScreen visible={myWorkoutsOpen} onClose={() => setMyWorkoutsOpen(false)} />

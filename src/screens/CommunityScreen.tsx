@@ -132,7 +132,7 @@ function PostCard({
   canInteract: boolean;
   onEdit: (post: Post) => void;
 }) {
-  const { toggleLike, addReaction, addComment, togglePin, markRead } = useCommunity();
+  const { toggleLike, addReaction, addComment, togglePin, deletePost, markRead } = useCommunity();
   const { isAdmin } = useMembership();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
@@ -150,6 +150,13 @@ function PostCard({
     setCommentText('');
   };
 
+  const confirmDelete = () => {
+    showAlert('Delete This Post?', "This can't be undone.", [
+      { text: 'Keep Post', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deletePost(post.id) },
+    ]);
+  };
+
   const openMenu = () => {
     if (isAdmin) {
       showAlert(post.title || post.author, undefined, [
@@ -161,11 +168,13 @@ function PostCard({
           },
         },
         ...(post.kind === 'text' ? [{ text: 'Edit', onPress: () => onEdit(post) }] : []),
+        { text: 'Delete', style: 'destructive' as const, onPress: confirmDelete },
         { text: 'Cancel', style: 'cancel' as const },
       ]);
     } else if (isOwn) {
       showAlert(post.title || post.author, undefined, [
         ...(post.kind === 'text' ? [{ text: 'Edit', onPress: () => onEdit(post) }] : []),
+        { text: 'Delete', style: 'destructive' as const, onPress: confirmDelete },
         { text: 'Cancel', style: 'cancel' as const },
       ]);
     }
