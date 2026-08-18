@@ -1,7 +1,6 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { AppModal } from '../components/AppModal';
 import { ModalHeader } from '../components/ModalHeader';
 import { LOCATION_CITY, LOCATION_NAME, SCHEDULE } from '../data/schedule';
 import { openLocationMaps } from '../lib/links';
@@ -13,46 +12,46 @@ type Props = {
 };
 
 export function FullScheduleScreen({ visible, onClose }: Props) {
+  if (!visible) return null;
+
   return (
-    <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
-        <ModalHeader title="BOATHOUSE SCHEDULE" onBack={onClose} backTestID="close-full-schedule" />
+    <View style={styles.container}>
+      <ModalHeader title="BOATHOUSE SCHEDULE" onBack={onClose} backTestID="close-full-schedule" />
 
-        <ScrollView contentContainerStyle={styles.body}>
-          {SCHEDULE.map((section) => (
-            <View key={section.key} style={styles.section}>
-              <Text style={styles.sectionHeading}>{section.heading}</Text>
-              {section.rows.length > 0 ? (
-                <View style={styles.card}>
-                  {section.rows.map((row, index) => (
-                    <View key={row.id} style={[styles.row, index === section.rows.length - 1 && styles.rowLast]}>
-                      <Text style={styles.time}>{row.time}</Text>
-                      <View style={styles.rowMain}>
-                        <Text style={styles.className}>{row.className}</Text>
-                        <Text style={styles.classType}>{row.classType}</Text>
-                      </View>
+      <ScrollView contentContainerStyle={styles.body}>
+        {SCHEDULE.map((section) => (
+          <View key={section.key} style={styles.section}>
+            <Text style={styles.sectionHeading}>{section.heading}</Text>
+            {section.rows.length > 0 ? (
+              <View style={styles.card}>
+                {section.rows.map((row, index) => (
+                  <View key={row.id} style={[styles.row, index === section.rows.length - 1 && styles.rowLast]}>
+                    <Text style={styles.time}>{row.time}</Text>
+                    <View style={styles.rowMain}>
+                      <Text style={styles.className}>{row.className}</Text>
+                      <Text style={styles.classType}>{row.classType}</Text>
                     </View>
-                  ))}
-                </View>
-              ) : (
-                <View style={styles.card}>
-                  <Text style={styles.note}>{section.note}</Text>
-                </View>
-              )}
-            </View>
-          ))}
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.card}>
+                <Text style={styles.note}>{section.note}</Text>
+              </View>
+            )}
+          </View>
+        ))}
 
-          <Pressable style={styles.locationCard} onPress={openLocationMaps} testID="full-schedule-location">
-            <Ionicons name="location-outline" size={20} color={colors.gold} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.locationName}>{LOCATION_NAME}</Text>
-              <Text style={styles.locationCity}>{LOCATION_CITY} · Get directions</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
-          </Pressable>
-        </ScrollView>
-      </View>
-    </AppModal>
+        <Pressable style={styles.locationCard} onPress={openLocationMaps} testID="full-schedule-location">
+          <Ionicons name="location-outline" size={20} color={colors.gold} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.locationName}>{LOCATION_NAME}</Text>
+            <Text style={styles.locationCity}>{LOCATION_CITY} · Get directions</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
+        </Pressable>
+      </ScrollView>
+    </View>
   );
 }
 

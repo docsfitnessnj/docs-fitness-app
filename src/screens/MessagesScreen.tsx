@@ -10,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { AppModal } from '../components/AppModal';
 import { ModalHeader } from '../components/ModalHeader';
 import { colors, fonts } from '../theme';
 
@@ -41,52 +40,52 @@ export function MessagesScreen({ visible, onClose }: Props) {
     setTimeout(() => setVoiceTooltipVisible(false), 2000);
   };
 
+  if (!visible) return null;
+
   return (
-    <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ModalHeader title="MESSAGE DOC" onBack={onClose} backTestID="close-messages" />
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ModalHeader title="MESSAGE DOC" onBack={onClose} backTestID="close-messages" />
 
-        <ScrollView style={styles.thread} contentContainerStyle={styles.threadContent}>
-          {messages.map((message) => (
-            <View
-              key={message.id}
-              style={[styles.bubble, message.from === 'me' ? styles.bubbleMe : styles.bubbleDoc]}
-            >
-              <Text style={[styles.bubbleText, message.from === 'me' && styles.bubbleTextMe]}>
-                {message.text}
-              </Text>
-            </View>
-          ))}
-        </ScrollView>
-
-        <View style={styles.inputRow}>
-          <View style={styles.micWrap}>
-            {voiceTooltipVisible && (
-              <View style={styles.tooltip}>
-                <Text style={styles.tooltipText}>Voice notes coming soon</Text>
-              </View>
-            )}
-            <Pressable onPress={showVoiceTooltip} hitSlop={8} style={styles.micButton} testID="voice-note-button">
-              <Ionicons name="mic-outline" size={20} color={colors.text} />
-            </Pressable>
+      <ScrollView style={styles.thread} contentContainerStyle={styles.threadContent}>
+        {messages.map((message) => (
+          <View
+            key={message.id}
+            style={[styles.bubble, message.from === 'me' ? styles.bubbleMe : styles.bubbleDoc]}
+          >
+            <Text style={[styles.bubbleText, message.from === 'me' && styles.bubbleTextMe]}>
+              {message.text}
+            </Text>
           </View>
-          <TextInput
-            style={styles.input}
-            value={draft}
-            onChangeText={setDraft}
-            placeholder="Type a message..."
-            placeholderTextColor={colors.textMuted}
-            onSubmitEditing={send}
-          />
-          <Pressable onPress={send} hitSlop={8} style={styles.sendButton}>
-            <Ionicons name="send" size={18} color={colors.white} />
+        ))}
+      </ScrollView>
+
+      <View style={styles.inputRow}>
+        <View style={styles.micWrap}>
+          {voiceTooltipVisible && (
+            <View style={styles.tooltip}>
+              <Text style={styles.tooltipText}>Voice notes coming soon</Text>
+            </View>
+          )}
+          <Pressable onPress={showVoiceTooltip} hitSlop={8} style={styles.micButton} testID="voice-note-button">
+            <Ionicons name="mic-outline" size={20} color={colors.text} />
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
-    </AppModal>
+        <TextInput
+          style={styles.input}
+          value={draft}
+          onChangeText={setDraft}
+          placeholder="Type a message..."
+          placeholderTextColor={colors.textMuted}
+          onSubmitEditing={send}
+        />
+        <Pressable onPress={send} hitSlop={8} style={styles.sendButton}>
+          <Ionicons name="send" size={18} color={colors.white} />
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { AppModal } from './AppModal';
 import { useCommunity } from '../context/CommunityContext';
 import { WEEKDAY_WODS } from '../data/content';
 import { DECK_CARDS, deckCardLabel } from '../data/deckCards';
@@ -67,47 +66,47 @@ export function SearchModal({ visible, onClose }: Props) {
     navigation.navigate(result.tab);
   };
 
-  return (
-    <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
-        <View style={styles.searchRow}>
-          <Ionicons name="search" size={18} color={colors.textMuted} />
-          <TextInput
-            style={styles.input}
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search workouts, deck cards, community..."
-            placeholderTextColor={colors.textMuted}
-            autoFocus
-          />
-          <Pressable onPress={onClose} hitSlop={8}>
-            <Text style={styles.cancelText}>CANCEL</Text>
-          </Pressable>
-        </View>
+  if (!visible) return null;
 
-        {query.trim().length === 0 ? (
-          <Text style={styles.hint}>Start typing to search the whole app.</Text>
-        ) : results.length === 0 ? (
-          <Text style={styles.hint}>No results for "{query}".</Text>
-        ) : (
-          sections.map((section) => {
-            const sectionResults = results.filter((r) => r.section === section);
-            if (sectionResults.length === 0) return null;
-            return (
-              <View key={section} style={styles.section}>
-                <Text style={styles.sectionLabel}>{section}</Text>
-                {sectionResults.map((r) => (
-                  <Pressable key={r.id} style={styles.resultRow} onPress={() => handleSelect(r)}>
-                    <Text style={styles.resultTitle}>{r.title}</Text>
-                    {r.subtitle && <Text style={styles.resultSubtitle}>{r.subtitle}</Text>}
-                  </Pressable>
-                ))}
-              </View>
-            );
-          })
-        )}
+  return (
+    <View style={styles.container}>
+      <View style={styles.searchRow}>
+        <Ionicons name="search" size={18} color={colors.textMuted} />
+        <TextInput
+          style={styles.input}
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search workouts, deck cards, community..."
+          placeholderTextColor={colors.textMuted}
+          autoFocus
+        />
+        <Pressable onPress={onClose} hitSlop={8}>
+          <Text style={styles.cancelText}>CANCEL</Text>
+        </Pressable>
       </View>
-    </AppModal>
+
+      {query.trim().length === 0 ? (
+        <Text style={styles.hint}>Start typing to search the whole app.</Text>
+      ) : results.length === 0 ? (
+        <Text style={styles.hint}>No results for "{query}".</Text>
+      ) : (
+        sections.map((section) => {
+          const sectionResults = results.filter((r) => r.section === section);
+          if (sectionResults.length === 0) return null;
+          return (
+            <View key={section} style={styles.section}>
+              <Text style={styles.sectionLabel}>{section}</Text>
+              {sectionResults.map((r) => (
+                <Pressable key={r.id} style={styles.resultRow} onPress={() => handleSelect(r)}>
+                  <Text style={styles.resultTitle}>{r.title}</Text>
+                  {r.subtitle && <Text style={styles.resultSubtitle}>{r.subtitle}</Text>}
+                </Pressable>
+              ))}
+            </View>
+          );
+        })
+      )}
+    </View>
   );
 }
 

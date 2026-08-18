@@ -59,6 +59,47 @@ export function DayPanel({ day, wodUnlocked }: Props) {
     <View>
       <Text style={styles.dateHeading}>{dateLabel.toUpperCase()}</Text>
 
+      {scheduleRows.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.cardHeading}>DOC'S FITNESS GROUP TRAINING (IN PERSON)</Text>
+          {scheduleRows.map((row) => {
+            const signedUp = isSignedUp(dateKey, row.id);
+            return (
+              <View key={row.id} style={styles.classRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.classTime}>
+                    {row.time} · {row.className}
+                  </Text>
+                  <Text style={styles.classMeta}>{row.classType}</Text>
+                  <Pressable onPress={openLocationMaps} hitSlop={4}>
+                    <Text style={styles.classLocation}>{LOCATION_NAME}</Text>
+                  </Pressable>
+                </View>
+                {signedUp ? (
+                  <View style={styles.signedUpWrap}>
+                    <View style={styles.signedUpBadge}>
+                      <Ionicons name="checkmark-circle" size={13} color={colors.green} />
+                      <Text style={styles.signedUpBadgeText}>YOU'RE IN</Text>
+                    </View>
+                    <Pressable
+                      style={styles.cancelPill}
+                      onPress={() => handleCancel(row)}
+                      testID={`cancel-class-${row.id}`}
+                    >
+                      <Text style={styles.cancelPillText}>CANCEL CLASS</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Pressable style={styles.signUpPill} onPress={() => handleSignUp(row)} testID={`sign-up-${row.id}`}>
+                    <Text style={styles.signUpPillText}>SIGN UP</Text>
+                  </Pressable>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       {wod && wodUnlocked ? (
         <View style={styles.card}>
           <Text style={styles.cardHeading}>{wod.title}</Text>
@@ -101,47 +142,6 @@ export function DayPanel({ day, wodUnlocked }: Props) {
         <View style={styles.lockedCard}>
           <Ionicons name="moon-outline" size={24} color={colors.textMuted} />
           <Text style={styles.lockedText}>Rest day. Recover up — you'll need it.</Text>
-        </View>
-      )}
-
-      {scheduleRows.length > 0 && (
-        <View style={styles.card}>
-          <Text style={styles.cardHeading}>DOC'S FITNESS GROUP TRAINING (IN PERSON)</Text>
-          {scheduleRows.map((row) => {
-            const signedUp = isSignedUp(dateKey, row.id);
-            return (
-              <View key={row.id} style={styles.classRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.classTime}>
-                    {row.time} · {row.className}
-                  </Text>
-                  <Text style={styles.classMeta}>{row.classType}</Text>
-                  <Pressable onPress={openLocationMaps} hitSlop={4}>
-                    <Text style={styles.classLocation}>{LOCATION_NAME}</Text>
-                  </Pressable>
-                </View>
-                {signedUp ? (
-                  <View style={styles.signedUpWrap}>
-                    <View style={styles.signedUpBadge}>
-                      <Ionicons name="checkmark-circle" size={13} color={colors.green} />
-                      <Text style={styles.signedUpBadgeText}>YOU'RE IN</Text>
-                    </View>
-                    <Pressable
-                      style={styles.cancelPill}
-                      onPress={() => handleCancel(row)}
-                      testID={`cancel-class-${row.id}`}
-                    >
-                      <Text style={styles.cancelPillText}>CANCEL CLASS</Text>
-                    </Pressable>
-                  </View>
-                ) : (
-                  <Pressable style={styles.signUpPill} onPress={() => handleSignUp(row)} testID={`sign-up-${row.id}`}>
-                    <Text style={styles.signUpPillText}>SIGN UP</Text>
-                  </Pressable>
-                )}
-              </View>
-            );
-          })}
         </View>
       )}
 

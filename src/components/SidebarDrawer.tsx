@@ -1,10 +1,10 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { AppModal } from './AppModal';
 import { Avatar } from './Avatar';
 import { DocsBadge } from './brand/DocsBadge';
+import { MembershipToggle } from './MembershipToggle';
 import { useDeckProgress } from '../context/DeckProgressContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { openMerchStore, openLocationMaps } from '../lib/links';
@@ -93,43 +93,50 @@ export function SidebarDrawer({
   ];
 
   return (
-    <AppModal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.root}>
-        <View style={styles.badgeWrap}>
-          <DocsBadge variant="black" size={64} />
-        </View>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.badgeWrap}>
+            <DocsBadge variant="black" size={64} />
+          </View>
 
-        <View style={styles.header}>
-          <Avatar name={displayName} uri={photoUri} size={44} />
-          <Text style={styles.displayName}>{displayName}</Text>
-          <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton} testID="close-sidebar">
-            <Ionicons name="close" size={24} color={colors.white} />
+          <View style={styles.header}>
+            <Avatar name={displayName} uri={photoUri} size={44} />
+            <Text style={styles.displayName}>{displayName}</Text>
+            <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton} testID="close-sidebar">
+              <Ionicons name="close" size={24} color={colors.white} />
+            </Pressable>
+          </View>
+
+          <View>
+            {rows.map((row) => (
+              <MenuRow key={row.key} row={row} />
+            ))}
+            <View style={styles.divider} />
+            {rowsAfterDivider.map((row) => (
+              <MenuRow key={row.key} row={row} />
+            ))}
+            <View style={styles.divider} />
+            {rowsFinal.map((row) => (
+              <MenuRow key={row.key} row={row} />
+            ))}
+          </View>
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <View style={styles.previewRow}>
+            <MembershipToggle />
+          </View>
+
+          <Pressable style={styles.locationRow} onPress={openLocationMaps} testID="sidebar-location">
+            <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.85)" />
+            <Text style={styles.locationText}>
+              {LOCATION.name}, {LOCATION.city}
+            </Text>
           </Pressable>
-        </View>
 
-        <View style={styles.rowsWrap}>
-          {rows.map((row) => (
-            <MenuRow key={row.key} row={row} />
-          ))}
-          <View style={styles.divider} />
-          {rowsAfterDivider.map((row) => (
-            <MenuRow key={row.key} row={row} />
-          ))}
-          <View style={styles.divider} />
-          {rowsFinal.map((row) => (
-            <MenuRow key={row.key} row={row} />
-          ))}
+          <Text style={styles.tagline}>{TAGLINE}</Text>
         </View>
-
-        <Pressable style={styles.locationRow} onPress={openLocationMaps} testID="sidebar-location">
-          <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.85)" />
-          <Text style={styles.locationText}>
-            {LOCATION.name}, {LOCATION.city}
-          </Text>
-        </Pressable>
-        <Text style={styles.tagline}>{TAGLINE}</Text>
       </View>
-    </AppModal>
   );
 }
 
@@ -149,7 +156,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.green,
     paddingTop: 60,
-    paddingBottom: 32,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 12,
   },
   badgeWrap: {
     alignItems: 'center',
@@ -171,9 +183,6 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: 2,
-  },
-  rowsWrap: {
-    flex: 1,
   },
   divider: {
     height: 1,
@@ -202,26 +211,39 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginRight: 8,
   },
+  footer: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.18)',
+    paddingTop: 14,
+    paddingBottom: 24,
+  },
+  previewRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 14,
+  },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginTop: 16,
     paddingHorizontal: 32,
+    marginBottom: 10,
   },
   locationText: {
     color: 'rgba(255,255,255,0.85)',
     fontFamily: fonts.bodyMedium,
     fontSize: 12,
     textDecorationLine: 'underline',
+    textAlign: 'center',
   },
   tagline: {
     color: 'rgba(255,255,255,0.65)',
     fontFamily: fonts.body,
     fontSize: 11,
     textAlign: 'center',
-    marginTop: 10,
     paddingHorizontal: 32,
     lineHeight: 15,
   },

@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { AppModal } from '../components/AppModal';
 import { ModalHeader } from '../components/ModalHeader';
 import { Avatar } from '../components/Avatar';
 import { useCommunity } from '../context/CommunityContext';
@@ -33,26 +32,27 @@ export function CloseFriendsScreen({ visible, onClose }: Props) {
     [posts, closeFriendNames]
   );
 
+  if (!visible) return null;
+
   return (
-    <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
-        <ModalHeader title="CLOSE FRIENDS" onBack={onClose} backTestID="close-close-friends" />
+    <View style={styles.container}>
+      <ModalHeader title="CLOSE FRIENDS" onBack={onClose} backTestID="close-close-friends" />
 
-        <Text style={styles.subtext}>
-          Mark members as close friends to see just their recent posts and workouts. Local to this device for now.
-        </Text>
+      <Text style={styles.subtext}>
+        Mark members as close friends to see just their recent posts and workouts. Local to this device for now.
+      </Text>
 
-        <View style={styles.tabRow}>
-          <Pressable style={[styles.tabButton, tab === 'members' && styles.tabButtonActive]} onPress={() => setTab('members')}>
-            <Text style={[styles.tabButtonText, tab === 'members' && styles.tabButtonTextActive]}>ALL MEMBERS</Text>
-          </Pressable>
-          <Pressable style={[styles.tabButton, tab === 'feed' && styles.tabButtonActive]} onPress={() => setTab('feed')}>
-            <Text style={[styles.tabButtonText, tab === 'feed' && styles.tabButtonTextActive]}>CLOSE FRIENDS FEED</Text>
-          </Pressable>
-        </View>
+      <View style={styles.tabRow}>
+        <Pressable style={[styles.tabButton, tab === 'members' && styles.tabButtonActive]} onPress={() => setTab('members')}>
+          <Text style={[styles.tabButtonText, tab === 'members' && styles.tabButtonTextActive]}>ALL MEMBERS</Text>
+        </Pressable>
+        <Pressable style={[styles.tabButton, tab === 'feed' && styles.tabButtonActive]} onPress={() => setTab('feed')}>
+          <Text style={[styles.tabButtonText, tab === 'feed' && styles.tabButtonTextActive]}>CLOSE FRIENDS FEED</Text>
+        </Pressable>
+      </View>
 
-        <ScrollView contentContainerStyle={styles.list}>
-          {tab === 'members' ? (
+      <ScrollView contentContainerStyle={styles.list}>
+        {tab === 'members' ? (
             members.length === 0 ? (
               <Text style={styles.emptyText}>No other members yet.</Text>
             ) : (
@@ -106,10 +106,9 @@ export function CloseFriendsScreen({ visible, onClose }: Props) {
                 )}
               </View>
             ))
-          )}
-        </ScrollView>
-      </View>
-    </AppModal>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
