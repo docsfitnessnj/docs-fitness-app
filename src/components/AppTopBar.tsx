@@ -2,7 +2,6 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { MembershipToggle } from './MembershipToggle';
 import { DocsBadge } from './brand/DocsBadge';
 import { colors, fonts } from '../theme';
 
@@ -32,7 +31,6 @@ export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch }: Props) {
           <Pressable onPress={onOpenSearch} hitSlop={8} style={styles.iconButton} testID="open-search">
             <Ionicons name="search-outline" size={22} color={colors.text} />
           </Pressable>
-          <MembershipToggle />
         </View>
       </View>
     </SafeAreaView>

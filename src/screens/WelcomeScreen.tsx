@@ -24,6 +24,7 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
           <DocsBadge variant="white" size={140} />
         </View>
         <Text style={styles.title}>DOC'S FITNESS</Text>
+        <Text style={styles.subtext}>{WELCOME_SUBTEXT}</Text>
 
         <View style={styles.form}>
           <Text style={styles.label}>EMAIL ADDRESS</Text>
@@ -37,7 +38,6 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
             autoCorrect={false}
             keyboardType="email-address"
           />
-          <Text style={styles.subtext}>{WELCOME_SUBTEXT}</Text>
 
           <Pressable
             style={[styles.continueButton, !canSubmit && styles.continueButtonDisabled]}
@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
     lineHeight: 48,
     letterSpacing: 1,
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: 10,
   },
   form: {
     width: '100%',
@@ -112,14 +112,15 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.bodyMedium,
     fontSize: 16,
+    marginBottom: 18,
   },
   subtext: {
     color: colors.textMuted,
     fontFamily: fonts.body,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 10,
-    marginBottom: 18,
+    fontSize: 14,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginBottom: 28,
   },
   continueButton: {
     backgroundColor: colors.green,

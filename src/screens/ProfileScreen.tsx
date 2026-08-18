@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { AppModal } from '../components/AppModal';
 import { ModalHeader } from '../components/ModalHeader';
 import { Avatar } from '../components/Avatar';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
@@ -76,12 +75,13 @@ export function ProfileScreen({ visible, onClose }: Props) {
     ]);
   };
 
-  return (
-    <AppModal visible={visible} animationType="slide" onRequestClose={handleBack}>
-      <View style={styles.container}>
-        <ModalHeader title="PROFILE" onBack={handleBack} backTestID="close-profile" />
+  if (!visible) return null;
 
-        <ScrollView contentContainerStyle={styles.body}>
+  return (
+    <View style={styles.container}>
+      <ModalHeader title="PROFILE" onBack={handleBack} backTestID="close-profile" />
+
+      <ScrollView contentContainerStyle={styles.body}>
           <Pressable onPress={pickPhoto} style={styles.photoWrap} testID="profile-photo-picker">
             <Avatar name={displayName} uri={draftPhotoUri} size={96} />
             <View style={styles.photoEditBadge}>
@@ -125,10 +125,9 @@ export function ProfileScreen({ visible, onClose }: Props) {
             <Text style={styles.saveButtonText}>SAVE</Text>
           </Pressable>
 
-          <Text style={styles.footnote}>Saved on this device for now.</Text>
-        </ScrollView>
-      </View>
-    </AppModal>
+        <Text style={styles.footnote}>Saved on this device for now.</Text>
+      </ScrollView>
+    </View>
   );
 }
 

@@ -1,8 +1,8 @@
-import React, { useCallback, useState } from 'react';
-import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as SplashScreen from 'expo-splash-screen';
@@ -37,10 +37,12 @@ import { SearchModal } from './src/components/SearchModal';
 import { TrialExpiryModal } from './src/components/TrialExpiryModal';
 import { AlertHost } from './src/components/AlertHost';
 import { ModalRootProvider } from './src/components/ModalRootContext';
+import { ScreenOverlay } from './src/components/ScreenOverlay';
 import { SidebarDrawer } from './src/components/SidebarDrawer';
 import { IdentitySidebar } from './src/components/IdentitySidebar';
 import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
+import { useTabBarHeight } from './src/lib/tabBarHeight';
 import { colors, fonts } from './src/theme';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
@@ -146,17 +148,36 @@ function TabIcon({
   );
 }
 
+// React Navigation's own animated tab label measures its height once and can
+// get stuck mid-animation at a few px tall (a known bottom-tabs quirk,
+// worse with custom fonts) — clipping the label text. Rendering the label
+// ourselves as a plain Text via `tabBarLabel` sidesteps that measurement
+// entirely and always renders at full height.
+function TabLabel({ label, color }: { label: string; color: string }) {
+  return (
+    <Text style={[styles.tabBarLabel, { color }]} numberOfLines={1}>
+      {label}
+    </Text>
+  );
+}
+
 function RootNavigator() {
   const membership = useMembership();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useTabBarHeight();
+
+  const tabBarStyle = useMemo(
+    () => [styles.tabBar, { height: tabBarHeight, paddingBottom: Math.max(insets.bottom, 6), paddingTop: 6 }],
+    [tabBarHeight, insets.bottom]
+  );
 
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle,
         tabBarActiveTintColor: colors.green,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarLabelStyle: styles.tabBarLabel,
       }}
     >
       {TABS.map(({ name, navLabel, renderIcon, component, isLocked }) => {
@@ -171,6 +192,7 @@ function RootNavigator() {
               tabBarIcon: ({ focused, color }) => (
                 <TabIcon renderIcon={renderIcon} color={color} focused={focused} locked={locked} />
               ),
+              tabBarLabel: ({ color }) => <TabLabel label={navLabel} color={color} />,
             }}
           />
         );
@@ -260,22 +282,36 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
         />
         <RootNavigator />
       </View>
-      <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
-      <MessagesScreen visible={messagesOpen} onClose={onCloseMessages} />
-      <SidebarDrawer
-        visible={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        displayName={displayName}
-        photoUri={photoUri}
-        onOpenProfile={() => setProfileOpen(true)}
-        onOpenMyWorkouts={() => setMyWorkoutsOpen(true)}
-        onOpenCloseFriends={() => setCloseFriendsOpen(true)}
-        onOpenMessages={onOpenMessages}
-      />
-      <ProfileScreen visible={profileOpen} onClose={() => setProfileOpen(false)} />
-      <MyWorkoutsScreen visible={myWorkoutsOpen} onClose={() => setMyWorkoutsOpen(false)} />
-      <CloseFriendsScreen visible={closeFriendsOpen} onClose={() => setCloseFriendsOpen(false)} />
-      <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
+      <ScreenOverlay visible={searchOpen}>
+        <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={messagesOpen}>
+        <MessagesScreen visible={messagesOpen} onClose={onCloseMessages} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={sidebarOpen}>
+        <SidebarDrawer
+          visible={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          displayName={displayName}
+          photoUri={photoUri}
+          onOpenProfile={() => setProfileOpen(true)}
+          onOpenMyWorkouts={() => setMyWorkoutsOpen(true)}
+          onOpenCloseFriends={() => setCloseFriendsOpen(true)}
+          onOpenMessages={onOpenMessages}
+        />
+      </ScreenOverlay>
+      <ScreenOverlay visible={profileOpen}>
+        <ProfileScreen visible={profileOpen} onClose={() => setProfileOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={myWorkoutsOpen}>
+        <MyWorkoutsScreen visible={myWorkoutsOpen} onClose={() => setMyWorkoutsOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={closeFriendsOpen}>
+        <CloseFriendsScreen visible={closeFriendsOpen} onClose={() => setCloseFriendsOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={scheduleOpen}>
+        <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
+      </ScreenOverlay>
       <TrialExpiryModal />
     </NavigationContainer>
   );

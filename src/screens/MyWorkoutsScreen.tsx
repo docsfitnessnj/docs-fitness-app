@@ -1,7 +1,6 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { AppModal } from '../components/AppModal';
 import { ModalHeader } from '../components/ModalHeader';
 import { formatLogSummary, useWorkoutLog } from '../context/WorkoutLogContext';
 import { colors, fonts } from '../theme';
@@ -14,32 +13,32 @@ type Props = {
 export function MyWorkoutsScreen({ visible, onClose }: Props) {
   const { completedWorkouts } = useWorkoutLog();
 
-  return (
-    <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
-        <ModalHeader title="MY WORKOUTS" onBack={onClose} backTestID="close-my-workouts" />
+  if (!visible) return null;
 
-        <ScrollView contentContainerStyle={styles.list}>
-          {completedWorkouts.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="barbell-outline" size={30} color={colors.textMuted} />
-              <Text style={styles.emptyText}>Complete a workout on Doc's WODs to see it here.</Text>
-            </View>
-          ) : (
-            completedWorkouts.map((workout) => {
-              const summary = formatLogSummary(workout.log);
-              return (
-                <View key={workout.dayKey} style={styles.card}>
-                  <Text style={styles.date}>{workout.dateLabel.toUpperCase()}</Text>
-                  <Text style={styles.title}>{workout.workoutTitle}</Text>
-                  <Text style={styles.results}>{summary || 'No results logged.'}</Text>
-                </View>
-              );
-            })
-          )}
-        </ScrollView>
-      </View>
-    </AppModal>
+  return (
+    <View style={styles.container}>
+      <ModalHeader title="MY WORKOUTS" onBack={onClose} backTestID="close-my-workouts" />
+
+      <ScrollView contentContainerStyle={styles.list}>
+        {completedWorkouts.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="barbell-outline" size={30} color={colors.textMuted} />
+            <Text style={styles.emptyText}>Complete a workout on Doc's WODs to see it here.</Text>
+          </View>
+        ) : (
+          completedWorkouts.map((workout) => {
+            const summary = formatLogSummary(workout.log);
+            return (
+              <View key={workout.dayKey} style={styles.card}>
+                <Text style={styles.date}>{workout.dateLabel.toUpperCase()}</Text>
+                <Text style={styles.title}>{workout.workoutTitle}</Text>
+                <Text style={styles.results}>{summary || 'No results logged.'}</Text>
+              </View>
+            );
+          })
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
