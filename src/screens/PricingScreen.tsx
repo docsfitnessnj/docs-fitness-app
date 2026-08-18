@@ -19,8 +19,8 @@ type Plan = {
 };
 
 const PLANS: Plan[] = [
-  { key: 'monthly', name: 'MONTHLY', price: '$37', cadence: '/ month' },
-  { key: 'annual', name: 'ANNUAL', price: '$333', cadence: '/ year', note: '12 MONTHS. PAY FOR 9.' },
+  { key: 'monthly', name: 'MONTHLY', price: '$39', cadence: '/ month' },
+  { key: 'annual', name: 'ANNUAL', price: '$351', cadence: '/ year', note: '3 MONTHS FREE' },
 ];
 
 export default function PricingScreen({ onBack, onSelectPlan }: Props) {

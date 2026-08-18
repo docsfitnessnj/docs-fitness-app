@@ -56,10 +56,10 @@ export function TrialExpiryModal() {
 
           <View style={styles.planRow}>
             <Pressable style={styles.planButton} onPress={() => choosePlan()}>
-              <Text style={styles.planButtonText}>$37/MONTH</Text>
+              <Text style={styles.planButtonText}>$39/MONTH</Text>
             </Pressable>
             <Pressable style={styles.planButton} onPress={() => choosePlan()}>
-              <Text style={styles.planButtonText}>$333/YEAR</Text>
+              <Text style={styles.planButtonText}>$351/YEAR</Text>
             </Pressable>
           </View>
 
