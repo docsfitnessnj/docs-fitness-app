@@ -28,7 +28,7 @@ import { MembershipProvider, useMembership } from './src/context/MembershipConte
 import { CommunityProvider } from './src/context/CommunityContext';
 import { WorkoutLogProvider } from './src/context/WorkoutLogContext';
 import { CloseFriendsProvider } from './src/context/CloseFriendsContext';
-import { ProfileProvider, useDisplayName, useProfile } from './src/context/ProfileContext';
+import { ProfileProvider } from './src/context/ProfileContext';
 import { StoriesProvider } from './src/context/StoriesContext';
 import { DeckProgressProvider } from './src/context/DeckProgressContext';
 import { ClassSignUpProvider } from './src/context/ClassSignUpContext';
@@ -161,14 +161,25 @@ function TabLabel({ label, color }: { label: string; color: string }) {
   );
 }
 
-function RootNavigator() {
+type RootNavigatorProps = {
+  // The hamburger drawer is the one intentional exception to the persistent
+  // tab bar rule — it's its own space, not a second navigation, so the tab
+  // bar hides while it's open and reappears once the drawer closes.
+  tabBarHidden: boolean;
+};
+
+function RootNavigator({ tabBarHidden }: RootNavigatorProps) {
   const membership = useMembership();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useTabBarHeight();
 
   const tabBarStyle = useMemo(
-    () => [styles.tabBar, { height: tabBarHeight, paddingBottom: Math.max(insets.bottom, 6), paddingTop: 6 }],
-    [tabBarHeight, insets.bottom]
+    () => [
+      styles.tabBar,
+      { height: tabBarHeight, paddingBottom: Math.max(insets.bottom, 6), paddingTop: 6 },
+      tabBarHidden && styles.tabBarHidden,
+    ],
+    [tabBarHeight, insets.bottom, tabBarHidden]
   );
 
   return (
@@ -255,8 +266,6 @@ type MainAppProps = {
 };
 
 function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps) {
-  const displayName = useDisplayName();
-  const { photoUri } = useProfile();
   const { tier } = useMembership();
   useWeeklyUpgradeNudge(tier === 'online_free');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -280,7 +289,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenSearch={() => setSearchOpen(true)}
         />
-        <RootNavigator />
+        <RootNavigator tabBarHidden={sidebarOpen} />
       </View>
       <ScreenOverlay visible={searchOpen}>
         <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
@@ -288,12 +297,10 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       <ScreenOverlay visible={messagesOpen}>
         <MessagesScreen visible={messagesOpen} onClose={onCloseMessages} />
       </ScreenOverlay>
-      <ScreenOverlay visible={sidebarOpen}>
+      <ScreenOverlay visible={sidebarOpen} fullBleed>
         <SidebarDrawer
           visible={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
-          displayName={displayName}
-          photoUri={photoUri}
           onOpenProfile={() => setProfileOpen(true)}
           onOpenMyWorkouts={() => setMyWorkoutsOpen(true)}
           onOpenCloseFriends={() => setCloseFriendsOpen(true)}
@@ -447,6 +454,9 @@ const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: colors.card,
     borderTopColor: colors.hairline,
+  },
+  tabBarHidden: {
+    display: 'none',
   },
   tabBarLabel: {
     fontFamily: fonts.labelSemiBold,

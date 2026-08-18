@@ -6,6 +6,11 @@ import { colors } from '../theme';
 type Props = {
   visible: boolean;
   children: React.ReactNode;
+  // The hamburger drawer is the one intentional exception to the persistent
+  // tab bar rule: the tab bar hides itself while the drawer is open (see
+  // App.tsx), so the drawer should cover that now-empty space instead of
+  // leaving a gap where the bar used to be.
+  fullBleed?: boolean;
 };
 
 // A full-bleed secondary screen (Profile, My Workouts, Close Friends, the
@@ -14,12 +19,17 @@ type Props = {
 // underneath — the user can jump straight to another tab without first
 // backing out. Only truly transient overlays (the story viewer, the deck
 // card detail popup) are allowed to cover the whole screen.
-export function ScreenOverlay({ visible, children }: Props) {
+export function ScreenOverlay({ visible, children, fullBleed = false }: Props) {
   const tabBarHeight = useTabBarHeight();
   if (!visible) return null;
 
   return (
-    <View style={[StyleSheet.absoluteFill, { bottom: tabBarHeight, zIndex: 500, backgroundColor: colors.background }]}>
+    <View
+      style={[
+        StyleSheet.absoluteFill,
+        { bottom: fullBleed ? 0 : tabBarHeight, zIndex: 500, backgroundColor: colors.background },
+      ]}
+    >
       {children}
     </View>
   );
