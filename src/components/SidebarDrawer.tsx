@@ -15,6 +15,7 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   onOpenProfile: () => void;
+  onOpenMemberships: () => void;
   onOpenMyWorkouts: () => void;
   onOpenCloseFriends: () => void;
   onOpenMessages: () => void;
@@ -35,6 +36,7 @@ export function SidebarDrawer({
   visible,
   onClose,
   onOpenProfile,
+  onOpenMemberships,
   onOpenMyWorkouts,
   onOpenCloseFriends,
   onOpenMessages,
@@ -52,6 +54,7 @@ export function SidebarDrawer({
 
   const rows: Row[] = [
     { key: 'profile', label: 'PROFILE', icon: 'person-circle-outline', onPress: () => go(onOpenProfile) },
+    { key: 'memberships', label: 'MEMBERSHIPS', icon: 'card-outline', onPress: () => go(onOpenMemberships) },
     {
       key: 'workouts',
       label: 'MY WORKOUTS',
