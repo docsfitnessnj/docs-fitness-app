@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
+import { MediaAttachment } from '../lib/media';
 
 export type Comment = {
   id: string;
@@ -22,7 +23,7 @@ export type Post = {
   title: string;
   text: string;
   category: string;
-  hasImage?: boolean;
+  media?: MediaAttachment | null;
   likes: number;
   liked: boolean;
   reactions: Record<string, number>;
@@ -75,7 +76,6 @@ const SEED_POSTS: Post[] = [
     title: 'PR’d the Swing Challenge',
     text: "PR'd the Swing Challenge today. Legs are gone. Grinded through the last two rounds on pure stubbornness — worth it.",
     category: 'Win',
-    hasImage: true,
     likes: 12,
     liked: false,
     reactions: { ...emptyReactions(), '💪': 6 },
@@ -122,9 +122,9 @@ const SEED_POSTS: Post[] = [
 
 type CommunityContextValue = {
   posts: Post[];
-  addTextPost: (author: string, title: string, text: string, category?: string) => void;
-  addWodResultPost: (author: string, meta: WodPostMeta) => void;
-  updateTextPost: (postId: string, title: string, text: string) => void;
+  addTextPost: (author: string, title: string, text: string, category?: string, media?: MediaAttachment | null) => void;
+  addWodResultPost: (author: string, meta: WodPostMeta, media?: MediaAttachment | null) => void;
+  updateTextPost: (postId: string, title: string, text: string, media?: MediaAttachment | null) => void;
   deletePost: (postId: string) => void;
   toggleLike: (postId: string) => void;
   addReaction: (postId: string, emoji: string) => void;
@@ -146,7 +146,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
         return b.createdAt - a.createdAt;
       }),
-      addTextPost: (author, title, text, category = 'General') => {
+      addTextPost: (author, title, text, category = 'General', media = null) => {
         addPost({
           id: nextId('post'),
           author,
@@ -155,6 +155,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           title: title.trim() || text.trim().slice(0, 60),
           text,
           category,
+          media,
           likes: 0,
           liked: false,
           reactions: emptyReactions(),
@@ -164,7 +165,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           unread: false,
         });
       },
-      addWodResultPost: (author, meta) => {
+      addWodResultPost: (author, meta, media = null) => {
         addPost({
           id: nextId('post'),
           author,
@@ -173,6 +174,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           title: meta.workoutTitle,
           text: '',
           category: 'Workout',
+          media,
           likes: 0,
           liked: false,
           reactions: emptyReactions(),
@@ -183,9 +185,13 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           unread: false,
         });
       },
-      updateTextPost: (postId, title, text) => {
+      updateTextPost: (postId, title, text, media) => {
         setPosts((prev) =>
-          prev.map((p) => (p.id === postId ? { ...p, title: title.trim() || text.trim().slice(0, 60), text } : p))
+          prev.map((p) =>
+            p.id === postId
+              ? { ...p, title: title.trim() || text.trim().slice(0, 60), text, media: media !== undefined ? media : p.media }
+              : p
+          )
         );
       },
       deletePost: (postId) => {

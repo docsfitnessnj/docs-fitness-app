@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
+import { MediaAttachment } from '../lib/media';
 
 export type WorkoutLog = {
   rounds: string;
   time: string;
   kettlebell: string;
   notes: string;
+  media: MediaAttachment | null;
 };
 
 export type CompletedWorkout = {
@@ -16,7 +18,7 @@ export type CompletedWorkout = {
   log: WorkoutLog;
 };
 
-export const EMPTY_WORKOUT_LOG: WorkoutLog = { rounds: '', time: '', kettlebell: '', notes: '' };
+export const EMPTY_WORKOUT_LOG: WorkoutLog = { rounds: '', time: '', kettlebell: '', notes: '', media: null };
 
 export function formatLogSummary(log: WorkoutLog): string {
   const parts = [
@@ -40,7 +42,8 @@ type CompletedMeta = {
 
 type WorkoutLogContextValue = {
   getLog: (dayKey: string) => WorkoutLog;
-  updateLog: (dayKey: string, field: keyof WorkoutLog, value: string) => void;
+  updateLog: (dayKey: string, field: 'rounds' | 'time' | 'kettlebell' | 'notes', value: string) => void;
+  setLogMedia: (dayKey: string, media: MediaAttachment | null) => void;
   isCompleted: (dayKey: string) => boolean;
   toggleCompleted: (dayKey: string, workoutTitle: string, dateLabel: string, timestamp: number) => void;
   completedWorkouts: CompletedWorkout[];
@@ -61,6 +64,9 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
       getLog: (dayKey) => logs[dayKey] ?? EMPTY_WORKOUT_LOG,
       updateLog: (dayKey, field, value) => {
         setLogs((prev) => ({ ...prev, [dayKey]: { ...(prev[dayKey] ?? EMPTY_WORKOUT_LOG), [field]: value } }));
+      },
+      setLogMedia: (dayKey, media) => {
+        setLogs((prev) => ({ ...prev, [dayKey]: { ...(prev[dayKey] ?? EMPTY_WORKOUT_LOG), media } }));
       },
       isCompleted: (dayKey) => !!completed[dayKey],
       toggleCompleted: (dayKey, workoutTitle, dateLabel, timestamp) => {
