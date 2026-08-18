@@ -2,7 +2,6 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { Avatar } from './Avatar';
 import { DocsBadge } from './brand/DocsBadge';
 import { MembershipToggle } from './MembershipToggle';
 import { useDeckProgress } from '../context/DeckProgressContext';
@@ -15,8 +14,6 @@ import { colors, fonts, TAGLINE, LOCATION } from '../theme';
 type Props = {
   visible: boolean;
   onClose: () => void;
-  displayName: string;
-  photoUri: string | null;
   onOpenProfile: () => void;
   onOpenMyWorkouts: () => void;
   onOpenCloseFriends: () => void;
@@ -31,11 +28,12 @@ type Row = {
   onPress: () => void;
 };
 
+// A focused settings space, not a second navigation — no account row, no
+// tab shortcuts. The one nav-shaped exception is "Deck of WODs", carried
+// over from before the tab links existed; it still jumps to that tab.
 export function SidebarDrawer({
   visible,
   onClose,
-  displayName,
-  photoUri,
   onOpenProfile,
   onOpenMyWorkouts,
   onOpenCloseFriends,
@@ -52,24 +50,6 @@ export function SidebarDrawer({
     fn();
   };
 
-  const goToTab = (tab: string) => {
-    onClose();
-    navigation.navigate(tab);
-  };
-
-  const tabRows: Row[] = [
-    { key: 'community', label: 'COMMUNITY', icon: 'people-outline', onPress: () => goToTab('Community') },
-    { key: 'docswods', label: "DOC'S WODS", icon: 'flame-outline', onPress: () => goToTab('DocsWods') },
-    { key: 'cow', label: "DOC'S COWS", icon: 'trophy-outline', onPress: () => goToTab('DocsCows') },
-    {
-      key: 'deck',
-      label: 'THE DECK',
-      icon: 'albums-outline',
-      meta: `${completedCount}/${totalCount}`,
-      onPress: () => goToTab('Deck'),
-    },
-  ];
-
   const rows: Row[] = [
     { key: 'profile', label: 'PROFILE', icon: 'person-circle-outline', onPress: () => go(onOpenProfile) },
     {
@@ -80,15 +60,16 @@ export function SidebarDrawer({
       onPress: () => go(onOpenMyWorkouts),
     },
     { key: 'friends', label: 'CLOSE FRIENDS', icon: 'star-outline', onPress: () => go(onOpenCloseFriends) },
-  ];
-
-  const rowsAfterDivider: Row[] = [
     { key: 'schedule', label: 'BOATHOUSE SCHEDULE', icon: 'calendar-outline', onPress: () => go(openFullSchedule) },
-    { key: 'merch', label: "MERCH STORE", icon: 'bag-handle-outline', onPress: () => go(openMerchStore) },
+    { key: 'merch', label: 'MERCH STORE', icon: 'bag-handle-outline', onPress: () => go(openMerchStore) },
     { key: 'message', label: 'MESSAGE DOC', icon: 'chatbubble-ellipses-outline', onPress: () => go(onOpenMessages) },
-  ];
-
-  const rowsFinal: Row[] = [
+    {
+      key: 'deck',
+      label: 'DECK OF WODS',
+      icon: 'albums-outline',
+      meta: `${completedCount}/${totalCount}`,
+      onPress: () => go(() => navigation.navigate('Deck')),
+    },
     {
       key: 'settings',
       label: 'SETTINGS & NOTIFICATIONS',
@@ -111,25 +92,8 @@ export function SidebarDrawer({
             <DocsBadge variant="black" size={64} />
           </View>
 
-          <View style={styles.header}>
-            <Avatar name={displayName} uri={photoUri} size={44} />
-            <Text style={styles.displayName}>{displayName}</Text>
-          </View>
-
           <View>
-            {tabRows.map((row) => (
-              <MenuRow key={row.key} row={row} />
-            ))}
-            <View style={styles.divider} />
             {rows.map((row) => (
-              <MenuRow key={row.key} row={row} />
-            ))}
-            <View style={styles.divider} />
-            {rowsAfterDivider.map((row) => (
-              <MenuRow key={row.key} row={row} />
-            ))}
-            <View style={styles.divider} />
-            {rowsFinal.map((row) => (
               <MenuRow key={row.key} row={row} />
             ))}
           </View>
@@ -202,27 +166,7 @@ const styles = StyleSheet.create({
   },
   badgeWrap: {
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  displayName: {
-    flex: 1,
-    color: colors.white,
-    fontFamily: fonts.headline,
-    fontSize: 20,
-    letterSpacing: 0.5,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    marginVertical: 8,
-    marginHorizontal: 20,
+    marginBottom: 24,
   },
   row: {
     flexDirection: 'row',
