@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '../components/AppModal';
 import { Avatar } from '../components/Avatar';
+import { MediaAttachmentPicker } from '../components/MediaAttachmentPicker';
+import { PostDetailModal } from '../components/PostDetailModal';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { StoryRow } from '../components/StoryRow';
 import { DateStrip } from '../components/DateStrip';
@@ -13,6 +15,7 @@ import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { useStories } from '../context/StoriesContext';
 import { getUpcomingDays, isDayWodUnlocked } from '../data/content';
 import { showAlert } from '../lib/alert';
+import { MediaAttachment } from '../lib/media';
 import { colors, fonts } from '../theme';
 
 const BOOKING_DAYS_AHEAD = 21;
@@ -45,17 +48,20 @@ function CreatePostModal({
   const { photoUri } = useProfile();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [media, setMedia] = useState<MediaAttachment | null>(null);
 
   React.useEffect(() => {
     if (visible) {
       setTitle(editingPost?.title ?? '');
       setBody(editingPost?.text ?? '');
+      setMedia(editingPost?.media ?? null);
     }
   }, [visible, editingPost]);
 
   const reset = () => {
     setTitle('');
     setBody('');
+    setMedia(null);
   };
 
   const handleClose = () => {
@@ -66,9 +72,9 @@ function CreatePostModal({
   const handleSubmit = () => {
     if (!body.trim()) return;
     if (editingPost) {
-      updateTextPost(editingPost.id, title, body.trim());
+      updateTextPost(editingPost.id, title, body.trim(), media);
     } else {
-      addTextPost(displayName, title, body.trim());
+      addTextPost(displayName, title, body.trim(), undefined, media);
     }
     reset();
     onClose();
@@ -110,6 +116,10 @@ function CreatePostModal({
           multiline
           autoFocus
         />
+
+        <View style={styles.composeMediaWrap}>
+          <MediaAttachmentPicker media={media} onChange={setMedia} />
+        </View>
       </View>
     </AppModal>
   );
@@ -127,27 +137,25 @@ function PostCard({
   post,
   canInteract,
   onEdit,
+  onOpenDetail,
 }: {
   post: Post;
   canInteract: boolean;
   onEdit: (post: Post) => void;
+  onOpenDetail: (post: Post) => void;
 }) {
-  const { toggleLike, addReaction, addComment, togglePin, deletePost, markRead } = useCommunity();
+  const { toggleLike, addReaction, togglePin, deletePost, markRead } = useCommunity();
   const { isAdmin } = useMembership();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
-  const [commentsOpen, setCommentsOpen] = useState(false);
-  const [commentText, setCommentText] = useState('');
 
   const isOwn = post.author === displayName;
 
   const guestNudge = () => showAlert('Join to Participate', 'Sign up to like, comment, and post in the community.');
 
-  const submitComment = () => {
-    if (!canInteract) return guestNudge();
-    if (!commentText.trim()) return;
-    addComment(post.id, displayName, commentText.trim());
-    setCommentText('');
+  const openDetail = () => {
+    markRead(post.id);
+    onOpenDetail(post);
   };
 
   const confirmDelete = () => {
@@ -187,7 +195,11 @@ function PostCard({
   const footerRightGold = post.unread && !!lastComment;
 
   return (
-    <Pressable style={[styles.post, post.pinned && styles.postPinned]} onPress={() => markRead(post.id)}>
+    <Pressable
+      style={[styles.post, post.pinned && styles.postPinned]}
+      onPress={openDetail}
+      testID={`post-card-${post.id}`}
+    >
       {post.pinned && (
         <View style={styles.pinnedBadge}>
           <Ionicons name="pin" size={11} color={colors.greenDeep} />
@@ -206,7 +218,14 @@ function PostCard({
           </View>
         </View>
         {(isAdmin || isOwn) && (
-          <Pressable onPress={openMenu} hitSlop={8} testID={`post-menu-${post.id}`}>
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              openMenu();
+            }}
+            hitSlop={8}
+            testID={`post-menu-${post.id}`}
+          >
             <Ionicons name="ellipsis-horizontal" size={18} color={colors.textMuted} />
           </Pressable>
         )}
@@ -232,9 +251,13 @@ function PostCard({
             <Text style={styles.postText} numberOfLines={3}>
               {post.text}
             </Text>
-            {post.hasImage && (
+            {post.media && (
               <View style={styles.thumbnail}>
-                <Ionicons name="image-outline" size={22} color={colors.textMuted} />
+                {post.media.type === 'image' ? (
+                  <Image source={{ uri: post.media.uri }} style={styles.thumbnailImage} />
+                ) : (
+                  <Ionicons name="videocam-outline" size={22} color={colors.textMuted} />
+                )}
               </View>
             )}
           </View>
@@ -246,7 +269,10 @@ function PostCard({
           <Pressable
             key={emoji}
             style={styles.reactionPill}
-            onPress={() => (canInteract ? addReaction(post.id, emoji) : guestNudge())}
+            onPress={(e) => {
+              e.stopPropagation();
+              canInteract ? addReaction(post.id, emoji) : guestNudge();
+            }}
           >
             <Text style={styles.reactionEmoji}>{emoji}</Text>
             {post.reactions[emoji] > 0 && <Text style={styles.reactionCount}>{post.reactions[emoji]}</Text>}
@@ -256,7 +282,13 @@ function PostCard({
 
       <View style={styles.postFooter}>
         <View style={styles.postFooterLeft}>
-          <Pressable style={styles.footerButton} onPress={() => (canInteract ? toggleLike(post.id) : guestNudge())}>
+          <Pressable
+            style={styles.footerButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              canInteract ? toggleLike(post.id) : guestNudge();
+            }}
+          >
             <Ionicons
               name={post.liked ? 'heart' : 'heart-outline'}
               size={18}
@@ -266,7 +298,10 @@ function PostCard({
           </Pressable>
           <Pressable
             style={styles.footerButton}
-            onPress={() => (canInteract ? setCommentsOpen((v) => !v) : guestNudge())}
+            onPress={(e) => {
+              e.stopPropagation();
+              openDetail();
+            }}
           >
             <Ionicons name="chatbubble-outline" size={16} color={colors.textMuted} />
             <Text style={styles.footerButtonText}>
@@ -278,39 +313,6 @@ function PostCard({
           {footerRightText}
         </Text>
       </View>
-
-      {commentsOpen && canInteract && (
-        <View style={styles.commentsBlock}>
-          {post.comments.map((comment) => (
-            <View key={comment.id} style={styles.commentRow}>
-              <Avatar name={comment.author} uri={comment.author === displayName ? photoUri : undefined} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.commentAuthor}>{comment.author}</Text>
-                <Text style={styles.commentText}>{comment.text}</Text>
-                <View style={styles.commentMetaRow}>
-                  <Text style={styles.commentMeta}>{comment.timeLabel}</Text>
-                  <Ionicons name="heart-outline" size={12} color={colors.textMuted} />
-                  <Text style={styles.commentMeta}>{comment.likes}</Text>
-                </View>
-              </View>
-            </View>
-          ))}
-
-          <View style={styles.commentInputRow}>
-            <TextInput
-              style={styles.commentInput}
-              value={commentText}
-              onChangeText={setCommentText}
-              placeholder="Write a comment..."
-              placeholderTextColor={colors.textMuted}
-              onSubmitEditing={submitComment}
-            />
-            <Pressable onPress={submitComment} hitSlop={8}>
-              <Ionicons name="send" size={18} color={colors.green} />
-            </Pressable>
-          </View>
-        </View>
-      )}
     </Pressable>
   );
 }
@@ -345,10 +347,12 @@ function ClosedCommunityNotice() {
 function CommunityFeed({
   onOpenComposer,
   onEditPost,
+  onOpenDetail,
   communityAccess,
 }: {
   onOpenComposer: () => void;
   onEditPost: (post: Post) => void;
+  onOpenDetail: (post: Post) => void;
   communityAccess: 'full' | 'read_only';
 }) {
   const { posts } = useCommunity();
@@ -357,7 +361,7 @@ function CommunityFeed({
     <View>
       {canInteract ? <ComposerBar onOpen={onOpenComposer} /> : <GuestBanner />}
       {posts.map((post) => (
-        <PostCard key={post.id} post={post} canInteract={canInteract} onEdit={onEditPost} />
+        <PostCard key={post.id} post={post} canInteract={canInteract} onEdit={onEditPost} onOpenDetail={onOpenDetail} />
       ))}
     </View>
   );
@@ -366,6 +370,12 @@ function CommunityFeed({
 export default function CommunityScreen() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
+  // Store just the id and re-derive the post from live context state each
+  // render — holding the Post object itself would freeze the detail view on
+  // a stale snapshot the moment a comment/like/reaction updates it in context.
+  const [detailPostId, setDetailPostId] = useState<string | null>(null);
+  const { posts } = useCommunity();
+  const detailPost = detailPostId ? posts.find((p) => p.id === detailPostId) ?? null : null;
   const { wodAccessLevel, communityAccess } = useMembership();
   const { activeStories } = useStories();
 
@@ -401,7 +411,12 @@ export default function CommunityScreen() {
         <ClosedCommunityNotice />
       ) : (
         <>
-          <CommunityFeed onOpenComposer={openComposer} onEditPost={openEditor} communityAccess={communityAccess} />
+          <CommunityFeed
+            onOpenComposer={openComposer}
+            onEditPost={openEditor}
+            onOpenDetail={(post) => setDetailPostId(post.id)}
+            communityAccess={communityAccess}
+          />
           <CreatePostModal
             visible={composerOpen}
             onClose={() => {
@@ -409,6 +424,11 @@ export default function CommunityScreen() {
               setEditingPost(null);
             }}
             editingPost={editingPost}
+          />
+          <PostDetailModal
+            post={detailPost}
+            onClose={() => setDetailPostId(null)}
+            canInteract={communityAccess === 'full'}
           />
         </>
       )}
@@ -560,6 +580,10 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlignVertical: 'top',
   },
+  composeMediaWrap: {
+    marginTop: 12,
+    marginBottom: 12,
+  },
   post: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -665,6 +689,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
+    overflow: 'hidden',
+  },
+  thumbnailImage: {
+    width: '100%',
+    height: '100%',
   },
   wodBlock: {
     backgroundColor: colors.background,
@@ -753,53 +782,5 @@ const styles = StyleSheet.create({
   },
   footerRightTextGold: {
     color: colors.gold,
-  },
-  commentsBlock: {
-    marginTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.hairline,
-    paddingTop: 12,
-  },
-  commentRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
-  },
-  commentAuthor: {
-    color: colors.text,
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 13,
-  },
-  commentText: {
-    color: colors.text,
-    fontFamily: fonts.body,
-    fontSize: 14,
-    marginTop: 1,
-  },
-  commentMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
-    gap: 4,
-  },
-  commentMeta: {
-    color: colors.textMuted,
-    fontFamily: fonts.label,
-    fontSize: 11,
-  },
-  commentInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  commentInput: {
-    flex: 1,
-    color: colors.text,
-    fontFamily: fonts.body,
-    fontSize: 14,
-    marginRight: 8,
   },
 });

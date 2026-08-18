@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppModal } from './AppModal';
+import { MediaAttachmentPicker } from './MediaAttachmentPicker';
 import { ModalHeader } from './ModalHeader';
 import { useCommunity } from '../context/CommunityContext';
 import { useDisplayName } from '../context/ProfileContext';
@@ -19,7 +20,7 @@ type Props = {
 export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLabel }: Props) {
   const displayName = useDisplayName();
   const { addWodResultPost } = useCommunity();
-  const { getLog, updateLog: updateLogEntry } = useWorkoutLog();
+  const { getLog, updateLog: updateLogEntry, setLogMedia } = useWorkoutLog();
 
   const log = getLog(dayKey);
 
@@ -54,7 +55,7 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             log.kettlebell.trim() && `KB: ${log.kettlebell.trim()}`,
           ].filter(Boolean);
           const results = parts.join(' · ') + (log.notes.trim() ? `\n${log.notes.trim()}` : '');
-          addWodResultPost(displayName, { workoutTitle, dateLabel, results });
+          addWodResultPost(displayName, { workoutTitle, dateLabel, results }, log.media);
           showAlert('Posted!', 'Your result is live on the Community board.');
           onClose();
         },
@@ -112,6 +113,11 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             placeholderTextColor={colors.textMuted}
             multiline
           />
+
+          <Text style={styles.label}>PHOTO / VIDEO</Text>
+          <View style={styles.mediaWrap}>
+            <MediaAttachmentPicker media={log.media} onChange={(media) => setLogMedia(dayKey, media)} />
+          </View>
 
           <View style={styles.actionRow}>
             <Pressable style={styles.saveButton} onPress={handleSaveResults} testID="save-results">
@@ -180,6 +186,9 @@ const styles = StyleSheet.create({
   notesInput: {
     minHeight: 70,
     textAlignVertical: 'top',
+  },
+  mediaWrap: {
+    marginBottom: 8,
   },
   actionRow: {
     flexDirection: 'row',
