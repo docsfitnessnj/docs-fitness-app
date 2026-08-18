@@ -8,6 +8,7 @@ import { DeckUpsellModal } from '../components/DeckUpsellModal';
 import { CardBack } from '../components/CardBack';
 import { useDeckProgress } from '../context/DeckProgressContext';
 import { DECK_CARDS, DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
+import { openDeckStore } from '../lib/links';
 import { colors, fonts } from '../theme';
 
 type Mode = 'shuffle' | 'browse';
@@ -95,6 +96,10 @@ function ShuffleArea({ onDeal }: { onDeal: (card: DeckCardData) => void }) {
         testID="shuffle-deck-button"
       >
         <Text style={styles.shuffleButtonText}>{shuffling ? 'SHUFFLING…' : 'SHUFFLE THE DECK'}</Text>
+      </Pressable>
+
+      <Pressable style={styles.physicalDeckButton} onPress={openDeckStore} testID="get-physical-deck-button">
+        <Text style={styles.physicalDeckButtonText}>GET THE PHYSICAL DECK</Text>
       </Pressable>
     </View>
   );
@@ -263,6 +268,20 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelBold,
     fontSize: 16,
     letterSpacing: 1,
+  },
+  physicalDeckButton: {
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 11,
+    marginTop: 12,
+  },
+  physicalDeckButtonText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 0.8,
   },
   completeBanner: {
     alignItems: 'center',

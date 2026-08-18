@@ -56,7 +56,7 @@ const SEED_POSTS: Post[] = [
     timeLabel: '1d ago',
     createdAt: Date.now() - 1000 * 60 * 60 * 24,
     title: 'WELCOME TO THE BOATHOUSE. START HERE.',
-    text: 'Welcome to the app. Take a minute and wander around. Like walking into a new place, half the fun is finding your favorite spot. Here is the lay of the land.\n\nCOMMUNITY is where you are now. Post your workouts, your wins, your questions. This board is the heartbeat of the whole thing.\n\nThe dates at the top are your week. Tap any day to sign up for class at the Boathouse and see that day\'s workout.\n\nDOC\'S WODS is your daily work. Five workouts a week. Tap the day, do the work, mark it complete, log your results. Post them to the board when you are done. That is how we push each other.\n\nCHALLENGE OF WEEK is the trophy tab. One challenge every week, one live leaderboard. Post your score and see where you stand.\n\nTHE DECK is 54 of my workouts built as a deck of cards. Shuffle it, let it deal you a workout, and work your way through the whole deck.\n\nThe menu in the top left has your profile, your workout history, memberships, the Boathouse schedule, and the merch store.\n\nAny questions or if anything is not working right, message me directly from the menu. I read everything.\n\nNow go find your spot. Stronger than you were 10 years ago starts today.',
+    text: 'Welcome to the app. Take a minute and wander around. Like walking into a new place, half the fun is finding your favorite spot. Here is the lay of the land.\n\nCOMMUNITY is where you are now. Post your workouts, your wins, your questions. This board is the heartbeat of the whole thing.\n\nThe dates at the top are your week. Tap any day to sign up for class at the Boathouse and see that day\'s workout.\n\nDOC\'S WODS is your daily work. Five workouts a week. Tap the day, do the work, mark it complete, log your results. Post them to the board when you are done. That is how we push each other.\n\nWEEKLY CHALLENGE is the trophy tab. This is where my infamous COWs live, the Challenge of the Week. One challenge every week, one live leaderboard. Post your score and see where you stand.\n\nTHE DECK is 54 of my workouts built as a deck of cards. Shuffle it, let it deal you a workout, and work your way through the whole deck. And if you want the real thing in your hands, the physical Deck of WODs is right there in the same tab.\n\nThe menu in the top left has your profile, your workout history, memberships, the Boathouse schedule, and the merch store.\n\nAny questions or if anything is not working right, message me directly from the menu. I read everything.\n\nNow go find your spot. Stronger than you were 10 years ago starts today.',
     category: 'Announcement',
     likes: 14,
     liked: false,
@@ -129,6 +129,8 @@ type CommunityContextValue = {
   toggleLike: (postId: string) => void;
   addReaction: (postId: string, emoji: string) => void;
   addComment: (postId: string, author: string, text: string) => void;
+  updateComment: (postId: string, commentId: string, text: string) => void;
+  deleteComment: (postId: string, commentId: string) => void;
   togglePin: (postId: string) => boolean;
   markRead: (postId: string) => void;
 };
@@ -225,6 +227,22 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
                   ],
                 }
               : p
+          )
+        );
+      },
+      updateComment: (postId, commentId, text) => {
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId
+              ? { ...p, comments: p.comments.map((c) => (c.id === commentId ? { ...c, text } : c)) }
+              : p
+          )
+        );
+      },
+      deleteComment: (postId, commentId) => {
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId ? { ...p, comments: p.comments.filter((c) => c.id !== commentId) } : p
           )
         );
       },

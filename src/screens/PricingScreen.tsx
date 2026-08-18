@@ -1,7 +1,8 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
+import { ONLINE_PLANS, ONLINE_PLAN_BULLETS } from '../data/plans';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -9,19 +10,6 @@ type Props = {
   onBack: () => void;
   onSelectPlan: () => void;
 };
-
-type Plan = {
-  key: string;
-  name: string;
-  price: string;
-  cadence: string;
-  note?: string;
-};
-
-const PLANS: Plan[] = [
-  { key: 'monthly', name: 'MONTHLY', price: '$39', cadence: '/ month' },
-  { key: 'annual', name: 'ANNUAL', price: '$351', cadence: '/ year', note: '3 MONTHS FREE' },
-];
 
 export default function PricingScreen({ onBack, onSelectPlan }: Props) {
   return (
@@ -34,8 +22,8 @@ export default function PricingScreen({ onBack, onSelectPlan }: Props) {
       <Text style={styles.title}>BECOME A MEMBER</Text>
       <Text style={styles.subtext}>Full access to Doc's WODs, COWS, The Deck, and Community.</Text>
 
-      <View style={styles.plans}>
-        {PLANS.map((plan) => (
+      <ScrollView contentContainerStyle={styles.plans} showsVerticalScrollIndicator={false}>
+        {ONLINE_PLANS.map((plan) => (
           <View key={plan.key} style={styles.planCard}>
             <View style={styles.planHeader}>
               <Text style={styles.planName}>{plan.name}</Text>
@@ -45,7 +33,22 @@ export default function PricingScreen({ onBack, onSelectPlan }: Props) {
                 {plan.price}
                 <Text style={styles.planCadence}>{plan.cadence}</Text>
               </Text>
-              {plan.note && <Text style={styles.planNote}>{plan.note}</Text>}
+
+              {plan.banner && (
+                <View style={styles.banner}>
+                  <Text style={styles.bannerTitle}>{plan.banner.title}</Text>
+                  <Text style={styles.bannerSubtitle}>{plan.banner.subtitle}</Text>
+                </View>
+              )}
+
+              <Text style={styles.whatYouGet}>WHAT YOU GET</Text>
+              {ONLINE_PLAN_BULLETS.map((bullet) => (
+                <View key={bullet} style={styles.bulletRow}>
+                  <Ionicons name="checkmark" size={14} color={colors.green} />
+                  <Text style={styles.bulletText}>{bullet}</Text>
+                </View>
+              ))}
+
               <Pressable
                 style={styles.selectButton}
                 onPress={() => {
@@ -58,11 +61,11 @@ export default function PricingScreen({ onBack, onSelectPlan }: Props) {
             </View>
           </View>
         ))}
-      </View>
 
-      <View style={styles.footer}>
-        <DocsHorizontalLockup width={130} />
-      </View>
+        <View style={styles.footer}>
+          <DocsHorizontalLockup width={130} />
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -102,10 +105,11 @@ const styles = StyleSheet.create({
   },
   plans: {
     gap: 16,
+    paddingBottom: 12,
   },
   footer: {
     alignItems: 'center',
-    marginTop: 28,
+    marginTop: 12,
   },
   planCard: {
     backgroundColor: colors.card,
@@ -139,12 +143,45 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textMuted,
   },
-  planNote: {
-    color: colors.gold,
-    fontFamily: fonts.labelSemiBold,
+  banner: {
+    backgroundColor: colors.gold,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 12,
+  },
+  bannerTitle: {
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
+    fontSize: 15,
+    letterSpacing: 1,
+  },
+  bannerSubtitle: {
+    color: colors.greenDeep,
+    fontFamily: fonts.bodyMedium,
     fontSize: 13,
-    letterSpacing: 0.5,
-    marginTop: 4,
+    marginTop: 2,
+  },
+  whatYouGet: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 1,
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 8,
+  },
+  bulletText: {
+    flex: 1,
+    color: colors.text,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+    lineHeight: 19,
   },
   selectButton: {
     backgroundColor: colors.green,

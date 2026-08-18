@@ -4,12 +4,23 @@ import { Ionicons } from '@expo/vector-icons';
 import { LogResultsModal } from './LogResultsModal';
 import { ScheduleStrip } from './ScheduleStrip';
 import { useClassSignUp } from '../context/ClassSignUpContext';
+import { planLabel, useMembership } from '../context/MembershipContext';
+import { useDisplayName } from '../context/ProfileContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatDateKey, formatFullDate, parseMoveRow, WeekDay } from '../data/content';
 import { LOCATION_NAME, rowsForDate } from '../data/schedule';
 import { openLocationMaps } from '../lib/links';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
+
+// Tiers that book a class instantly, no payment gate — Doc's own account
+// and the unlimited in-person plan.
+const INSTANT_BOOK_TIERS = ['admin', 'in_person_unlimited'];
+// Tiers that see the "want unlimited classes?" upsell line inside the $30
+// drop-in paywall — online-only members who don't already have an
+// in-person plan.
+const ONLINE_ONLY_TIERS = ['trial', 'online_paid', 'online_free'];
+const DROP_IN_PRICE = 30;
 
 type Props = {
   day: WeekDay;
@@ -22,6 +33,8 @@ type Props = {
 export function DayPanel({ day, wodUnlocked }: Props) {
   const { isCompleted, toggleCompleted } = useWorkoutLog();
   const { isSignedUp, signUp, cancelSignUp } = useClassSignUp();
+  const membership = useMembership();
+  const displayName = useDisplayName();
   const [logOpen, setLogOpen] = useState(false);
   const [wodExpanded, setWodExpanded] = useState(false);
 
@@ -38,7 +51,7 @@ export function DayPanel({ day, wodUnlocked }: Props) {
     toggleCompleted(dayKey, wod.title, dateLabel, day.date.getTime());
   };
 
-  const handleSignUp = (row: (typeof scheduleRows)[number]) => {
+  const bookClass = (row: (typeof scheduleRows)[number]) => {
     signUp({
       dateKey,
       classId: row.id,
@@ -46,14 +59,56 @@ export function DayPanel({ day, wodUnlocked }: Props) {
       classType: row.classType,
       time: row.time,
       dayLabel: weekdayName,
+      memberName: displayName,
+      planType: planLabel(membership.tier),
     });
-    showAlert("YOU'RE IN", `${row.className} · ${weekdayName} · ${row.time}`);
+  };
+
+  const handleSignUp = (row: (typeof scheduleRows)[number]) => {
+    if (INSTANT_BOOK_TIERS.includes(membership.tier)) {
+      bookClass(row);
+      showAlert("YOU'RE IN", `${row.className} · ${weekdayName} · ${row.time}`);
+      return;
+    }
+
+    if (membership.tier === 'ten_pack') {
+      const remaining = membership.tenPackClassesRemaining ?? 0;
+      if (remaining <= 0) {
+        showAlert('No Classes Left', 'Your 10 Class Pack is used up. Grab a new pack or switch plans in Memberships.');
+        return;
+      }
+      bookClass(row);
+      membership.useTenPackClass();
+      showAlert("YOU'RE IN", `${row.className} · ${weekdayName} · ${row.time}\n${remaining - 1} classes left`);
+      return;
+    }
+
+    const upsell = ONLINE_ONLY_TIERS.includes(membership.tier)
+      ? '\n\nWant unlimited classes? See Monthly Unlimited in Memberships.'
+      : '';
+    showAlert(`Class Drop In Is $${DROP_IN_PRICE}`, `${row.className} · ${weekdayName} · ${row.time}${upsell}`, [
+      { text: 'Not Now', style: 'cancel' },
+      {
+        text: `Pay $${DROP_IN_PRICE} and Book`,
+        onPress: () => {
+          bookClass(row);
+          showAlert("YOU'RE IN", `Payment simulated — ${row.className} · ${weekdayName} · ${row.time}`);
+        },
+      },
+    ]);
   };
 
   const handleCancel = (row: (typeof scheduleRows)[number]) => {
     showAlert('Cancel This Class?', `${row.className} · ${weekdayName} · ${row.time}`, [
       { text: 'Keep My Spot', style: 'cancel' },
-      { text: 'Cancel Class', style: 'destructive', onPress: () => cancelSignUp(dateKey, row.id) },
+      {
+        text: 'Cancel Class',
+        style: 'destructive',
+        onPress: () => {
+          cancelSignUp(dateKey, row.id);
+          if (membership.tier === 'ten_pack') membership.refundTenPackClass();
+        },
+      },
     ]);
   };
 

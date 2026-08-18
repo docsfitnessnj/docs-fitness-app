@@ -3,13 +3,22 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MembershipTier, useMembership } from '../context/MembershipContext';
 import { colors, fonts } from '../theme';
 
-// Dev-only preview control — cycles NON-MEMBER -> MEMBER -> ADMIN PREVIEW on
-// tap. The full access-matrix logic (online tiers, in-person tiers, guest)
-// stays intact in MembershipContext; this just gives testers one obvious
-// lever instead of cycling every named state. Admin preview exists so
-// admin-only surfaces (e.g. the community post menu's Pin/Unpin) can
-// actually be reached and verified without a real Doc account.
-const CYCLE: MembershipTier[] = ['guest', 'online_paid', 'admin'];
+// Dev-only preview control — cycles through the tiers that matter for
+// testing on tap. The full access-matrix logic (online tiers, in-person
+// tiers, guest) stays intact in MembershipContext; this just gives testers
+// one obvious lever instead of cycling every named state. Covers all four
+// class-booking paths (unlimited instant-book, 10-pack decrement, online
+// member $30 paywall, guest $30 paywall) plus admin-only surfaces like the
+// community post menu's Pin/Unpin and the class roster.
+const CYCLE: MembershipTier[] = ['guest', 'online_paid', 'in_person_unlimited', 'ten_pack', 'admin'];
+
+const LABELS: Partial<Record<MembershipTier, string>> = {
+  guest: 'NON-MEMBER',
+  online_paid: 'ONLINE MEMBER',
+  in_person_unlimited: 'UNLIMITED',
+  ten_pack: '10-PACK',
+  admin: 'ADMIN PREVIEW',
+};
 
 export function MembershipToggle() {
   const { tier, setDevTier } = useMembership();
@@ -20,7 +29,7 @@ export function MembershipToggle() {
 
   const isAdminPreview = tier === 'admin';
   const isOn = safeIndex > 0;
-  const label = isAdminPreview ? 'ADMIN PREVIEW' : isOn ? 'MEMBER' : 'NON-MEMBER';
+  const label = LABELS[tier] ?? 'NON-MEMBER';
   const labelColor = isAdminPreview ? colors.scoreboardRed : isOn ? colors.goldBright : 'rgba(255,255,255,0.85)';
 
   return (
