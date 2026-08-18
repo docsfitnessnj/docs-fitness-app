@@ -102,8 +102,8 @@ const TABS: TabConfig[] = [
   },
   {
     name: 'DocsCows',
-    title: "DOC'S COWS",
-    navLabel: "DOC'S COWS",
+    title: "DOC'S COWS + LIVE LEADERBOARD",
+    navLabel: 'WEEKLY CHALLENGE',
     renderIcon: ({ color, size }) => <Ionicons name="trophy-outline" size={size} color={color} />,
     component: DocsCowsScreen,
     isLocked: (m) => !m.cowsAccess,
