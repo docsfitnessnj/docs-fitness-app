@@ -14,9 +14,12 @@ type Props = {
   // (the booking strip) instead of the default 7-cell Mon-Sun row that fills
   // the screen width edge to edge.
   scrollable?: boolean;
+  // Optional fixed element pinned to the left of the scrollable strip (the
+  // story ring on Community), outside the horizontal scroll so it stays put.
+  leading?: React.ReactNode;
 };
 
-export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isCompleted, scrollable = false }: Props) {
+export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isCompleted, scrollable = false, leading }: Props) {
   const cells = week.map((day, index) => {
     const selected = index === selectedIndex;
     const locked = !day.isRestDay && !isUnlocked(index);
@@ -56,14 +59,22 @@ export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isComplet
 
   if (scrollable) {
     return (
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.scrollRow}
-        contentContainerStyle={styles.scrollRowContent}
-      >
-        {cells}
-      </ScrollView>
+      <View style={styles.scrollWrap}>
+        {leading && (
+          <>
+            <View style={styles.leadingSlot}>{leading}</View>
+            <View style={styles.leadingDivider} />
+          </>
+        )}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.scrollRow}
+          contentContainerStyle={styles.scrollRowContent}
+        >
+          {cells}
+        </ScrollView>
+      </View>
     );
   }
 
@@ -85,12 +96,27 @@ const styles = StyleSheet.create({
     padding: 6,
     marginBottom: 16,
   },
-  scrollRow: {
+  scrollWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.card,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.hairline,
     marginBottom: 16,
+  },
+  leadingSlot: {
+    paddingLeft: 6,
+    justifyContent: 'center',
+  },
+  leadingDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    marginVertical: 8,
+    backgroundColor: colors.hairline,
+  },
+  scrollRow: {
+    flex: 1,
   },
   scrollRowContent: {
     padding: 6,

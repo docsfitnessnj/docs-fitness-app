@@ -102,9 +102,13 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
         </View>
 
         <View style={styles.headerRow}>
+          <Pressable onPress={onClose} hitSlop={10} style={styles.backButton} testID="story-back">
+            <Ionicons name="chevron-back" size={22} color={colors.white} />
+            <Text style={styles.backButtonText}>BACK</Text>
+          </Pressable>
           <Text style={styles.headerText}>DOC</Text>
-          <Pressable onPress={onClose} hitSlop={10} testID="story-close">
-            <Ionicons name="close" size={26} color={colors.white} />
+          <Pressable onPress={onClose} hitSlop={10} style={styles.closeButtonSlot} testID="story-close">
+            <Ionicons name="close" size={22} color={colors.white} />
           </Pressable>
         </View>
 
@@ -156,10 +160,28 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   headerText: {
+    flex: 1,
+    textAlign: 'center',
     color: colors.white,
     fontFamily: fonts.headline,
     fontSize: 18,
     letterSpacing: 1,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 60,
+  },
+  backButtonText: {
+    color: colors.white,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    marginLeft: 2,
+  },
+  closeButtonSlot: {
+    minWidth: 60,
+    alignItems: 'flex-end',
   },
   mediaArea: {
     flex: 1,

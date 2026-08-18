@@ -146,10 +146,13 @@ function BrowseCard({
 }
 
 function BrowseGrid({ onOpen }: { onOpen: (card: DeckCardData) => void }) {
-  const { isComplete } = useDeckProgress();
+  const { isComplete, browseOrder } = useDeckProgress();
+  const orderedCards = browseOrder
+    .map((id) => DECK_CARDS.find((c) => c.id === id))
+    .filter((c): c is DeckCardData => !!c);
   return (
     <View style={styles.grid}>
-      {DECK_CARDS.map((card) => (
+      {orderedCards.map((card) => (
         <BrowseCard key={card.id} card={card} completed={isComplete(card.id)} onOpen={onOpen} />
       ))}
     </View>

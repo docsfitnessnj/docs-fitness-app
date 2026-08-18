@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
+import { ModalHeader } from './ModalHeader';
 import { useCommunity } from '../context/CommunityContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
@@ -27,32 +27,45 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
     updateLogEntry(dayKey, field, value);
   };
 
+  const hasResults = log.rounds.trim() || log.time.trim() || log.kettlebell.trim();
+
+  const handleSaveResults = () => {
+    if (!hasResults) {
+      showAlert('Log Your Results First', 'Add rounds, time, or kettlebell size before saving.');
+      return;
+    }
+    showAlert('Saved', 'Your result is saved privately to My Workouts.');
+    onClose();
+  };
+
   const handlePostToCommunity = () => {
-    const hasResults = log.rounds.trim() || log.time.trim() || log.kettlebell.trim();
     if (!hasResults) {
       showAlert('Log Your Results First', 'Add rounds, time, or kettlebell size before posting.');
       return;
     }
-    const parts = [
-      log.rounds.trim() && `Rounds: ${log.rounds.trim()}`,
-      log.time.trim() && `Time: ${log.time.trim()}`,
-      log.kettlebell.trim() && `KB: ${log.kettlebell.trim()}`,
-    ].filter(Boolean);
-    const results = parts.join(' · ') + (log.notes.trim() ? `\n${log.notes.trim()}` : '');
-    addWodResultPost(displayName, { workoutTitle, dateLabel, results });
-    showAlert('Posted!', 'Your result is live on the Community board.');
-    onClose();
+    showAlert('Post to Community?', 'Your result will be visible to everyone in the community.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Post',
+        onPress: () => {
+          const parts = [
+            log.rounds.trim() && `Rounds: ${log.rounds.trim()}`,
+            log.time.trim() && `Time: ${log.time.trim()}`,
+            log.kettlebell.trim() && `KB: ${log.kettlebell.trim()}`,
+          ].filter(Boolean);
+          const results = parts.join(' · ') + (log.notes.trim() ? `\n${log.notes.trim()}` : '');
+          addWodResultPost(displayName, { workoutTitle, dateLabel, results });
+          showAlert('Posted!', 'Your result is live on the Community board.');
+          onClose();
+        },
+      },
+    ]);
   };
 
   return (
     <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>LOG RESULTS</Text>
-          <Pressable onPress={onClose} hitSlop={8} testID="close-log-results">
-            <Ionicons name="close" size={22} color={colors.text} />
-          </Pressable>
-        </View>
+        <ModalHeader title="LOG RESULTS" onBack={onClose} backTestID="close-log-results" />
 
         <ScrollView contentContainerStyle={styles.body}>
           <Text style={styles.workoutTitle}>{workoutTitle}</Text>
@@ -100,9 +113,14 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             multiline
           />
 
-          <Pressable style={styles.postButton} onPress={handlePostToCommunity}>
-            <Text style={styles.postButtonText}>POST TO COMMUNITY</Text>
-          </Pressable>
+          <View style={styles.actionRow}>
+            <Pressable style={styles.saveButton} onPress={handleSaveResults} testID="save-results">
+              <Text style={styles.saveButtonText}>SAVE RESULTS</Text>
+            </Pressable>
+            <Pressable style={styles.postButton} onPress={handlePostToCommunity} testID="post-to-community">
+              <Text style={styles.postButtonText}>POST TO COMMUNITY</Text>
+            </Pressable>
+          </View>
         </ScrollView>
       </View>
     </AppModal>
@@ -114,19 +132,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingTop: 60,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  headerTitle: {
-    color: colors.text,
-    fontFamily: fonts.headline,
-    fontSize: 22,
-    letterSpacing: 1,
   },
   body: {
     paddingHorizontal: 20,
@@ -176,17 +181,36 @@ const styles = StyleSheet.create({
     minHeight: 70,
     textAlignVertical: 'top',
   },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  saveButton: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: colors.green,
+    borderRadius: 10,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 1,
+  },
   postButton: {
+    flex: 1,
     backgroundColor: colors.green,
     borderRadius: 10,
     paddingVertical: 15,
     alignItems: 'center',
-    marginTop: 8,
   },
   postButtonText: {
     color: colors.white,
     fontFamily: fonts.labelBold,
-    fontSize: 14,
+    fontSize: 13,
     letterSpacing: 1,
   },
 });

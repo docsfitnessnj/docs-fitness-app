@@ -73,13 +73,6 @@ export default function DocsWodsScreen() {
         </>
       ) : (
         <View style={styles.card}>
-          <View style={styles.mediaBand}>
-            <View style={styles.playCircle}>
-              <Ionicons name="play" size={20} color={colors.green} />
-            </View>
-            <Text style={styles.mediaKicker}>WATCH DOC'S BREAKDOWN</Text>
-          </View>
-
           <View style={styles.cardBody}>
             <Text style={styles.cardLabel}>{formatFullDate(selectedDay.date).toUpperCase()}</Text>
             <Text style={styles.cardHeadline}>{wod!.title}</Text>
@@ -95,6 +88,11 @@ export default function DocsWodsScreen() {
                 </View>
               );
             })}
+
+            <View style={styles.watchChip}>
+              <Ionicons name="play-circle-outline" size={16} color={colors.green} />
+              <Text style={styles.watchChipText}>WATCH BREAKDOWN</Text>
+            </View>
 
             <View style={styles.buttonRow}>
               <Pressable
@@ -152,25 +150,22 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 24,
   },
-  mediaBand: {
-    backgroundColor: colors.green,
-    paddingVertical: 26,
+  watchChip: {
+    flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    backgroundColor: colors.background,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 14,
   },
-  playCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  mediaKicker: {
-    color: colors.goldBright,
+  watchChipText: {
+    color: colors.green,
     fontFamily: fonts.labelSemiBold,
-    fontSize: 12,
-    letterSpacing: 1.5,
+    fontSize: 11,
+    letterSpacing: 1,
   },
   cardBody: {
     padding: 20,
