@@ -57,6 +57,19 @@ export function SidebarDrawer({
     navigation.navigate(tab);
   };
 
+  const tabRows: Row[] = [
+    { key: 'community', label: 'COMMUNITY', icon: 'people-outline', onPress: () => goToTab('Community') },
+    { key: 'docswods', label: "DOC'S WODS", icon: 'flame-outline', onPress: () => goToTab('DocsWods') },
+    { key: 'cow', label: "DOC'S COWS", icon: 'trophy-outline', onPress: () => goToTab('DocsCows') },
+    {
+      key: 'deck',
+      label: 'THE DECK',
+      icon: 'albums-outline',
+      meta: `${completedCount}/${totalCount}`,
+      onPress: () => goToTab('Deck'),
+    },
+  ];
+
   const rows: Row[] = [
     { key: 'profile', label: 'PROFILE', icon: 'person-circle-outline', onPress: () => go(onOpenProfile) },
     {
@@ -67,17 +80,9 @@ export function SidebarDrawer({
       onPress: () => go(onOpenMyWorkouts),
     },
     { key: 'friends', label: 'CLOSE FRIENDS', icon: 'star-outline', onPress: () => go(onOpenCloseFriends) },
-    { key: 'cow', label: 'WEEKLY COW', icon: 'trophy-outline', onPress: () => goToTab('DocsCows') },
   ];
 
   const rowsAfterDivider: Row[] = [
-    {
-      key: 'deck',
-      label: 'DECK OF WODS',
-      icon: 'albums-outline',
-      meta: `${completedCount}/${totalCount}`,
-      onPress: () => goToTab('Deck'),
-    },
     { key: 'schedule', label: 'BOATHOUSE SCHEDULE', icon: 'calendar-outline', onPress: () => go(openFullSchedule) },
     { key: 'merch', label: "MERCH STORE", icon: 'bag-handle-outline', onPress: () => go(openMerchStore) },
     { key: 'message', label: 'MESSAGE DOC', icon: 'chatbubble-ellipses-outline', onPress: () => go(onOpenMessages) },
@@ -95,6 +100,13 @@ export function SidebarDrawer({
   return (
       <View style={styles.root}>
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.backRow}>
+            <Pressable onPress={onClose} hitSlop={8} style={styles.backButton} testID="close-sidebar">
+              <Ionicons name="chevron-back" size={20} color={colors.white} />
+              <Text style={styles.backButtonText}>BACK</Text>
+            </Pressable>
+          </View>
+
           <View style={styles.badgeWrap}>
             <DocsBadge variant="black" size={64} />
           </View>
@@ -102,12 +114,13 @@ export function SidebarDrawer({
           <View style={styles.header}>
             <Avatar name={displayName} uri={photoUri} size={44} />
             <Text style={styles.displayName}>{displayName}</Text>
-            <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton} testID="close-sidebar">
-              <Ionicons name="close" size={24} color={colors.white} />
-            </Pressable>
           </View>
 
           <View>
+            {tabRows.map((row) => (
+              <MenuRow key={row.key} row={row} />
+            ))}
+            <View style={styles.divider} />
             {rows.map((row) => (
               <MenuRow key={row.key} row={row} />
             ))}
@@ -140,10 +153,16 @@ export function SidebarDrawer({
   );
 }
 
+// The icon column matches the header avatar's width (44) so every row's
+// label — GUEST/account name up top, PROFILE/MY WORKOUTS/etc below — starts
+// at the same left edge instead of the label position depending on whether
+// the leading element is a 44px avatar or a 20px icon.
 function MenuRow({ row }: { row: Row }) {
   return (
     <Pressable style={styles.row} onPress={row.onPress} testID={`sidebar-${row.key}`}>
-      <Ionicons name={row.icon} size={20} color={colors.white} />
+      <View style={styles.rowIconWrap}>
+        <Ionicons name={row.icon} size={20} color={colors.white} />
+      </View>
       <Text style={styles.rowLabel}>{row.label}</Text>
       {row.meta ? <Text style={styles.rowMeta}>{row.meta}</Text> : null}
       <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
@@ -163,6 +182,24 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 12,
   },
+  backRow: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+  },
+  backButtonText: {
+    color: colors.white,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    marginLeft: 2,
+  },
   badgeWrap: {
     alignItems: 'center',
     marginBottom: 16,
@@ -181,9 +218,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     letterSpacing: 0.5,
   },
-  closeButton: {
-    padding: 2,
-  },
   divider: {
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.18)',
@@ -196,13 +230,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 15,
   },
+  rowIconWrap: {
+    width: 44,
+    alignItems: 'center',
+  },
   rowLabel: {
     flex: 1,
     color: colors.white,
     fontFamily: fonts.labelSemiBold,
     fontSize: 15,
     letterSpacing: 0.8,
-    marginLeft: 14,
+    marginLeft: 12,
   },
   rowMeta: {
     color: colors.goldBright,

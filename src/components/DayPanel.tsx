@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LogResultsModal } from './LogResultsModal';
+import { ScheduleStrip } from './ScheduleStrip';
 import { useClassSignUp } from '../context/ClassSignUpContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatDateKey, formatFullDate, parseMoveRow, WeekDay } from '../data/content';
@@ -22,6 +23,7 @@ export function DayPanel({ day, wodUnlocked }: Props) {
   const { isCompleted, toggleCompleted } = useWorkoutLog();
   const { isSignedUp, signUp, cancelSignUp } = useClassSignUp();
   const [logOpen, setLogOpen] = useState(false);
+  const [wodExpanded, setWodExpanded] = useState(false);
 
   const wod = day.wod;
   const dayKey = wod?.key ?? `rest-${day.label}`;
@@ -100,50 +102,73 @@ export function DayPanel({ day, wodUnlocked }: Props) {
         </View>
       )}
 
-      {wod && wodUnlocked ? (
-        <View style={styles.card}>
-          <Text style={styles.cardHeading}>{wod.title}</Text>
-          {wod.moves.map((move, index) => {
-            const parsed = parseMoveRow(move);
-            return (
-              <View key={index} style={styles.moveRow}>
-                <Text style={styles.moveName}>{parsed.name}</Text>
-                {parsed.reps ? <Text style={styles.moveReps}>{parsed.reps}</Text> : null}
-              </View>
-            );
-          })}
+      <ScheduleStrip />
 
-          <View style={styles.watchChip}>
-            <Ionicons name="play-circle-outline" size={16} color={colors.green} />
-            <Text style={styles.watchChipText}>WATCH BREAKDOWN</Text>
-          </View>
+      <Pressable
+        style={styles.wodBar}
+        onPress={() => setWodExpanded((v) => !v)}
+        testID="wod-bar-toggle"
+      >
+        <Text style={styles.wodBarLabel}>DOC'S WORKOUT OF THE DAY</Text>
+        <View style={styles.wodBarRight}>
+          {isComplete && (
+            <Ionicons
+              name="checkmark-circle"
+              size={16}
+              color={colors.green}
+              style={styles.wodBarCheck}
+              testID="wod-bar-complete-check"
+            />
+          )}
+          <Ionicons name={wodExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+        </View>
+      </Pressable>
 
-          <View style={styles.buttonRow}>
-            <Pressable
-              style={[styles.completeButton, isComplete && styles.completeButtonDone]}
-              onPress={toggleComplete}
-              testID="day-panel-complete"
-            >
-              <Text style={[styles.completeButtonText, isComplete && styles.completeButtonTextDone]}>
-                {isComplete ? 'COMPLETED ✓' : 'MARK COMPLETE'}
-              </Text>
-            </Pressable>
-            <Pressable style={styles.logButton} onPress={() => setLogOpen(true)} testID="day-panel-log">
-              <Text style={styles.logButtonText}>LOG RESULTS</Text>
-            </Pressable>
+      {wodExpanded &&
+        (wod && wodUnlocked ? (
+          <View style={styles.card}>
+            <Text style={styles.cardHeading}>{wod.title}</Text>
+            {wod.moves.map((move, index) => {
+              const parsed = parseMoveRow(move);
+              return (
+                <View key={index} style={styles.moveRow}>
+                  <Text style={styles.moveName}>{parsed.name}</Text>
+                  {parsed.reps ? <Text style={styles.moveReps}>{parsed.reps}</Text> : null}
+                </View>
+              );
+            })}
+
+            <View style={styles.watchChip}>
+              <Ionicons name="play-circle-outline" size={16} color={colors.green} />
+              <Text style={styles.watchChipText}>WATCH BREAKDOWN</Text>
+            </View>
+
+            <View style={styles.buttonRow}>
+              <Pressable
+                style={[styles.completeButton, isComplete && styles.completeButtonDone]}
+                onPress={toggleComplete}
+                testID="day-panel-complete"
+              >
+                <Text style={[styles.completeButtonText, isComplete && styles.completeButtonTextDone]}>
+                  {isComplete ? 'COMPLETED ✓' : 'MARK COMPLETE'}
+                </Text>
+              </Pressable>
+              <Pressable style={styles.logButton} onPress={() => setLogOpen(true)} testID="day-panel-log">
+                <Text style={styles.logButtonText}>LOG RESULTS</Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
-      ) : wod && !wodUnlocked ? (
-        <View style={styles.lockedCard}>
-          <Ionicons name="lock-closed" size={24} color={colors.textMuted} />
-          <Text style={styles.lockedText}>Join to unlock this workout</Text>
-        </View>
-      ) : (
-        <View style={styles.lockedCard}>
-          <Ionicons name="moon-outline" size={24} color={colors.textMuted} />
-          <Text style={styles.lockedText}>Rest day. Recover up — you'll need it.</Text>
-        </View>
-      )}
+        ) : wod && !wodUnlocked ? (
+          <View style={styles.lockedCard}>
+            <Ionicons name="lock-closed" size={24} color={colors.textMuted} />
+            <Text style={styles.lockedText}>Join to unlock this workout</Text>
+          </View>
+        ) : (
+          <View style={styles.lockedCard}>
+            <Ionicons name="moon-outline" size={24} color={colors.textMuted} />
+            <Text style={styles.lockedText}>Rest day. Recover up — you'll need it.</Text>
+          </View>
+        ))}
 
       {wod && (
         <LogResultsModal
@@ -173,6 +198,31 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 18,
     marginBottom: 18,
+  },
+  wodBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 14,
+  },
+  wodBarLabel: {
+    color: colors.text,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.8,
+  },
+  wodBarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  wodBarCheck: {
+    marginRight: 8,
   },
   cardHeading: {
     color: colors.text,

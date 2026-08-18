@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { MembershipGate } from '../components/MembershipGate';
@@ -17,39 +17,13 @@ const INITIAL_ENTRIES: Entry[] = [
   { rank: 5, name: 'D. Castillo', kettlebell: '18lb', score: '10:02', tag: 'Virtual' },
 ];
 
-function LeaderboardRail({ entries }: { entries: Entry[] }) {
-  const top = entries.slice(0, 5);
-  return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
-      {top.map((entry) => {
-        const isLeader = entry.rank === 1;
-        const firstName = entry.name.split(' ')[0];
-        return (
-          <View key={entry.rank} style={styles.railItem}>
-            <View style={[styles.railAvatarWrap, isLeader && styles.railAvatarWrapLeader]}>
-              <Avatar name={entry.name} size={52} />
-              <View style={styles.railTimeBadge}>
-                <Text style={styles.railTimeBadgeText}>{entry.score}</Text>
-              </View>
-            </View>
-            <Text style={styles.railName}>
-              #{entry.rank} {firstName}
-            </Text>
-            <Text style={styles.railBell}>{entry.kettlebell} KB</Text>
-          </View>
-        );
-      })}
-    </ScrollView>
-  );
-}
-
 function ChallengeHero() {
   return (
     <View style={styles.hero}>
       <Text style={styles.ghostWatermark}>COW</Text>
       <View style={styles.badge}>
         <Ionicons name="flame" size={14} color={colors.greenDeep} />
-        <Text style={styles.badgeText}>THIS WEEK'S COW</Text>
+        <Text style={styles.badgeText}>THIS WEEK'S CHALLENGE OF THE WEEK</Text>
       </View>
       <Text style={styles.heroTitle}>SWING CHALLENGE</Text>
       <Text style={styles.heroSubtext}>
@@ -149,7 +123,6 @@ function DocsCowsContent() {
 
   return (
     <View>
-      <LeaderboardRail entries={entries} />
       <ChallengeHero />
       <EntryForm onSubmit={addEntry} />
       <Leaderboard entries={entries} />
@@ -168,52 +141,6 @@ export default function DocsCowsScreen() {
 }
 
 const styles = StyleSheet.create({
-  rail: {
-    paddingBottom: 4,
-    paddingTop: 4,
-    gap: 18,
-    marginBottom: 20,
-  },
-  railItem: {
-    alignItems: 'center',
-    width: 68,
-  },
-  railAvatarWrap: {
-    padding: 2,
-    borderRadius: 30,
-  },
-  railAvatarWrapLeader: {
-    borderWidth: 2,
-    borderColor: colors.gold,
-  },
-  railTimeBadge: {
-    position: 'absolute',
-    bottom: -6,
-    alignSelf: 'center',
-    backgroundColor: colors.scoreboardRed,
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  railTimeBadgeText: {
-    color: colors.white,
-    fontFamily: fonts.labelBold,
-    fontSize: 10,
-    letterSpacing: 0.3,
-  },
-  railName: {
-    color: colors.text,
-    fontFamily: fonts.labelSemiBold,
-    fontSize: 12,
-    letterSpacing: 0.3,
-    marginTop: 10,
-    textAlign: 'center',
-  },
-  railBell: {
-    color: colors.textMuted,
-    fontFamily: fonts.label,
-    fontSize: 11,
-  },
   hero: {
     backgroundColor: colors.green,
     borderRadius: 14,

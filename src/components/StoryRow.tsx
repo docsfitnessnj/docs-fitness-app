@@ -7,27 +7,51 @@ import { colors, fonts } from '../theme';
 
 const RING_SIZE = 64;
 const AVATAR_SIZE = RING_SIZE - 10;
+const COMPACT_RING_SIZE = 46;
+const COMPACT_AVATAR_SIZE = COMPACT_RING_SIZE - 8;
 
-export function StoryRow() {
+type Props = {
+  // Slim ring-only rendering for the inline slot on the Community date strip
+  // — drops the "Doc" label and the "NEW" pill; the gold vs. hairline ring
+  // color alone still signals unviewed vs. viewed.
+  compact?: boolean;
+};
+
+export function StoryRow({ compact = false }: Props) {
   const { activeStories, hasUnviewed } = useStories();
   const [viewerOpen, setViewerOpen] = useState(false);
 
   if (activeStories.length === 0) return null;
 
+  const ringSize = compact ? COMPACT_RING_SIZE : RING_SIZE;
+  const avatarSize = compact ? COMPACT_AVATAR_SIZE : AVATAR_SIZE;
+
   return (
-    <View style={styles.row}>
-      <Pressable style={styles.item} onPress={() => setViewerOpen(true)} testID="story-ring-doc">
-        <View style={[styles.ring, hasUnviewed ? styles.ringUnviewed : styles.ringViewed]}>
-          <View style={styles.avatar}>
-            <DocsBadge variant="white" size={AVATAR_SIZE} />
+    <View style={compact ? styles.compactRow : styles.row}>
+      <Pressable
+        style={compact ? styles.compactItem : styles.item}
+        onPress={() => setViewerOpen(true)}
+        testID="story-ring-doc"
+      >
+        <View
+          style={[
+            styles.ring,
+            { width: ringSize, height: ringSize, borderRadius: ringSize / 2 },
+            hasUnviewed ? styles.ringUnviewed : styles.ringViewed,
+          ]}
+        >
+          <View
+            style={[styles.avatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }]}
+          >
+            <DocsBadge variant="white" size={avatarSize} />
           </View>
-          {hasUnviewed && (
+          {!compact && hasUnviewed && (
             <View style={styles.newTag}>
               <Text style={styles.newTagText}>NEW</Text>
             </View>
           )}
         </View>
-        <Text style={styles.itemLabel}>Doc</Text>
+        {!compact && <Text style={styles.itemLabel}>Doc</Text>}
       </Pressable>
 
       {viewerOpen && (
@@ -45,6 +69,12 @@ const styles = StyleSheet.create({
   item: {
     alignItems: 'center',
     width: 72,
+  },
+  compactRow: {
+    marginBottom: 0,
+  },
+  compactItem: {
+    alignItems: 'center',
   },
   ring: {
     width: RING_SIZE,

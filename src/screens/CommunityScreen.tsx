@@ -6,11 +6,11 @@ import { Avatar } from '../components/Avatar';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { StoryRow } from '../components/StoryRow';
 import { DateStrip } from '../components/DateStrip';
-import { ScheduleStrip } from '../components/ScheduleStrip';
 import { DayPanel } from '../components/DayPanel';
 import { Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
 import { useMembership } from '../context/MembershipContext';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
+import { useStories } from '../context/StoriesContext';
 import { getUpcomingDays, isDayWodUnlocked } from '../data/content';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
@@ -132,7 +132,7 @@ function PostCard({
   canInteract: boolean;
   onEdit: (post: Post) => void;
 }) {
-  const { toggleLike, addReaction, addComment, togglePin, deletePost, markRead } = useCommunity();
+  const { toggleLike, addReaction, addComment, togglePin, markRead } = useCommunity();
   const { isAdmin } = useMembership();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
@@ -150,13 +150,6 @@ function PostCard({
     setCommentText('');
   };
 
-  const confirmDelete = () => {
-    showAlert('Delete This Post?', "This can't be undone.", [
-      { text: 'Keep Post', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => deletePost(post.id) },
-    ]);
-  };
-
   const openMenu = () => {
     if (isAdmin) {
       showAlert(post.title || post.author, undefined, [
@@ -167,20 +160,13 @@ function PostCard({
             if (!ok) showAlert('Pin Limit Reached', 'Unpin another post before pinning a new one (max 3).');
           },
         },
-        { text: 'Delete', style: 'destructive', onPress: confirmDelete },
-        { text: 'Cancel', style: 'cancel' },
+        ...(post.kind === 'text' ? [{ text: 'Edit', onPress: () => onEdit(post) }] : []),
+        { text: 'Cancel', style: 'cancel' as const },
       ]);
     } else if (isOwn) {
-      const buttons = [
-        ...(post.kind === 'text' ? [{ text: 'Edit', onPress: () => onEdit(post) }] : []),
-        { text: 'Delete', style: 'destructive' as const, onPress: confirmDelete },
-        { text: 'Cancel', style: 'cancel' as const },
-      ];
-      showAlert(post.title || post.author, undefined, buttons);
-    } else {
       showAlert(post.title || post.author, undefined, [
-        { text: 'Report', onPress: () => showAlert('Reported', "Thanks for flagging this — Doc will take a look.") },
-        { text: 'Cancel', style: 'cancel' },
+        ...(post.kind === 'text' ? [{ text: 'Edit', onPress: () => onEdit(post) }] : []),
+        { text: 'Cancel', style: 'cancel' as const },
       ]);
     }
   };
@@ -210,9 +196,11 @@ function PostCard({
             <CategoryTag category={post.category} />
           </View>
         </View>
-        <Pressable onPress={openMenu} hitSlop={8} testID={`post-menu-${post.id}`}>
-          <Ionicons name="ellipsis-horizontal" size={18} color={colors.textMuted} />
-        </Pressable>
+        {(isAdmin || isOwn) && (
+          <Pressable onPress={openMenu} hitSlop={8} testID={`post-menu-${post.id}`}>
+            <Ionicons name="ellipsis-horizontal" size={18} color={colors.textMuted} />
+          </Pressable>
+        )}
       </View>
 
       {post.kind === 'wod' && post.meta ? (
@@ -358,7 +346,6 @@ function CommunityFeed({
   const canInteract = communityAccess === 'full';
   return (
     <View>
-      <StoryRow />
       {canInteract ? <ComposerBar onOpen={onOpenComposer} /> : <GuestBanner />}
       {posts.map((post) => (
         <PostCard key={post.id} post={post} canInteract={canInteract} onEdit={onEditPost} />
@@ -371,6 +358,7 @@ export default function CommunityScreen() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const { wodAccessLevel, communityAccess } = useMembership();
+  const { activeStories } = useStories();
 
   const days = useMemo(() => getUpcomingDays(BOOKING_DAYS_AHEAD), []);
   const todayIndex = days.findIndex((d) => d.isToday);
@@ -396,9 +384,9 @@ export default function CommunityScreen() {
         isUnlocked={isUnlocked}
         isCompleted={() => false}
         scrollable
+        leading={activeStories.length > 0 ? <StoryRow compact /> : undefined}
       />
       <DayPanel day={days[selectedIndex]} wodUnlocked={isUnlocked(selectedIndex)} />
-      <ScheduleStrip />
 
       {communityAccess === 'none' ? (
         <ClosedCommunityNotice />
