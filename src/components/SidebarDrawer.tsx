@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import { DocsBadge } from './brand/DocsBadge';
 import { MembershipToggle } from './MembershipToggle';
 import { useDeckProgress } from '../context/DeckProgressContext';
+import { useMembership } from '../context/MembershipContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { openMerchStore, openLocationMaps } from '../lib/links';
 import { showAlert } from '../lib/alert';
@@ -19,6 +20,7 @@ type Props = {
   onOpenMyWorkouts: () => void;
   onOpenCloseFriends: () => void;
   onOpenMessages: () => void;
+  onOpenAdminRoster: () => void;
 };
 
 type Row = {
@@ -40,10 +42,12 @@ export function SidebarDrawer({
   onOpenMyWorkouts,
   onOpenCloseFriends,
   onOpenMessages,
+  onOpenAdminRoster,
 }: Props) {
   const navigation = useNavigation<any>();
   const { completedWorkouts } = useWorkoutLog();
   const { completedCount, totalCount } = useDeckProgress();
+  const { isAdmin } = useMembership();
 
   if (!visible) return null;
 
@@ -73,6 +77,16 @@ export function SidebarDrawer({
       meta: `${completedCount}/${totalCount}`,
       onPress: () => go(() => navigation.navigate('Deck')),
     },
+    ...(isAdmin
+      ? [
+          {
+            key: 'admin-roster',
+            label: 'CLASS ROSTER',
+            icon: 'clipboard-outline' as const,
+            onPress: () => go(onOpenAdminRoster),
+          },
+        ]
+      : []),
     {
       key: 'settings',
       label: 'SETTINGS & NOTIFICATIONS',

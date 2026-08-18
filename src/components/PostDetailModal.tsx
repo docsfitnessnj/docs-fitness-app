@@ -4,7 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { Avatar } from './Avatar';
 import { ModalHeader } from './ModalHeader';
-import { Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
+import { Comment, Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
+import { useMembership } from '../context/MembershipContext';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
@@ -27,20 +28,55 @@ function CategoryTag({ category }: { category: string }) {
 // and the comment thread — this is where comments are actually read and
 // written, reached by tapping anywhere on a PostCard in the feed.
 export function PostDetailModal({ post, onClose, canInteract }: Props) {
-  const { toggleLike, addReaction, addComment } = useCommunity();
+  const { toggleLike, addReaction, addComment, updateComment, deleteComment } = useCommunity();
+  const { isAdmin } = useMembership();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
   const [commentText, setCommentText] = useState('');
+  const [editingComment, setEditingComment] = useState<Comment | null>(null);
 
   if (!post) return null;
 
   const guestNudge = () => showAlert('Join to Participate', 'Sign up to like, comment, and post in the community.');
 
+  const cancelEdit = () => {
+    setEditingComment(null);
+    setCommentText('');
+  };
+
   const submitComment = () => {
     if (!canInteract) return guestNudge();
     if (!commentText.trim()) return;
+    if (editingComment) {
+      updateComment(post.id, editingComment.id, commentText.trim());
+      cancelEdit();
+      return;
+    }
     addComment(post.id, displayName, commentText.trim());
     setCommentText('');
+  };
+
+  const openCommentMenu = (comment: Comment) => {
+    showAlert(comment.author, undefined, [
+      {
+        text: 'Edit',
+        onPress: () => {
+          setEditingComment(comment);
+          setCommentText(comment.text);
+        },
+      },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          showAlert('Delete This Comment?', "This can't be undone.", [
+            { text: 'Keep Comment', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: () => deleteComment(post.id, comment.id) },
+          ]);
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   return (
@@ -124,24 +160,46 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
           </View>
 
           <View style={styles.commentsBlock}>
-            {post.comments.map((comment) => (
-              <View key={comment.id} style={styles.commentRow}>
-                <Avatar name={comment.author} uri={comment.author === displayName ? photoUri : undefined} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.commentAuthor}>{comment.author}</Text>
-                  <Text style={styles.commentText}>{comment.text}</Text>
-                  <View style={styles.commentMetaRow}>
-                    <Text style={styles.commentMeta}>{comment.timeLabel}</Text>
-                    <Ionicons name="heart-outline" size={12} color={colors.textMuted} />
-                    <Text style={styles.commentMeta}>{comment.likes}</Text>
+            {post.comments.map((comment) => {
+              const ownComment = comment.author === displayName;
+              return (
+                <View key={comment.id} style={styles.commentRow}>
+                  <Avatar name={comment.author} uri={ownComment ? photoUri : undefined} />
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.commentHeaderRow}>
+                      <Text style={styles.commentAuthor}>{comment.author}</Text>
+                      {(isAdmin || ownComment) && (
+                        <Pressable
+                          onPress={() => openCommentMenu(comment)}
+                          hitSlop={8}
+                          testID={`comment-menu-${comment.id}`}
+                        >
+                          <Ionicons name="ellipsis-horizontal" size={14} color={colors.textMuted} />
+                        </Pressable>
+                      )}
+                    </View>
+                    <Text style={styles.commentText}>{comment.text}</Text>
+                    <View style={styles.commentMetaRow}>
+                      <Text style={styles.commentMeta}>{comment.timeLabel}</Text>
+                      <Ionicons name="heart-outline" size={12} color={colors.textMuted} />
+                      <Text style={styles.commentMeta}>{comment.likes}</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
             {post.comments.length === 0 && <Text style={styles.noComments}>No comments yet — be the first.</Text>}
           </View>
         </ScrollView>
 
+        {editingComment && (
+          <View style={styles.editingBar}>
+            <Text style={styles.editingBarText}>Editing comment</Text>
+            <Pressable onPress={cancelEdit} hitSlop={8} testID="cancel-edit-comment">
+              <Text style={styles.editingBarCancel}>CANCEL</Text>
+            </Pressable>
+          </View>
+        )}
         <View style={styles.commentInputRow}>
           <TextInput
             style={styles.commentInput}
@@ -154,7 +212,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
             testID="post-detail-comment-input"
           />
           <Pressable onPress={submitComment} hitSlop={8} testID="post-detail-send-comment">
-            <Ionicons name="send" size={18} color={colors.green} />
+            <Ionicons name={editingComment ? 'checkmark' : 'send'} size={18} color={colors.green} />
           </Pressable>
         </View>
       </View>
@@ -346,6 +404,11 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 14,
   },
+  commentHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   commentAuthor: {
     color: colors.text,
     fontFamily: fonts.bodySemiBold,
@@ -374,6 +437,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     paddingVertical: 12,
+  },
+  editingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.background,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  editingBarText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  editingBarCancel: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 12,
+    letterSpacing: 0.5,
   },
   commentInputRow: {
     flexDirection: 'row',

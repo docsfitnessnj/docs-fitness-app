@@ -2,7 +2,8 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ModalHeader } from '../components/ModalHeader';
-import { InPersonPlan, useMembership } from '../context/MembershipContext';
+import { useMembership } from '../context/MembershipContext';
+import { IN_PERSON_PLANS, InPersonPlanCard, ONLINE_PLANS, ONLINE_PLAN_BULLETS, OnlinePlan } from '../data/plans';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -11,55 +12,8 @@ type Props = {
   onClose: () => void;
 };
 
-type OnlinePlan = {
-  key: 'monthly' | 'annual';
-  name: string;
-  price: string;
-  cadence: string;
-  note?: string;
-};
-
-const ONLINE_PLANS: OnlinePlan[] = [
-  { key: 'monthly', name: 'MONTHLY', price: '$39', cadence: '/ month' },
-  { key: 'annual', name: 'ANNUAL', price: '$351', cadence: '/ year', note: '3 MONTHS FREE' },
-];
-
-type InPerson = {
-  key: InPersonPlan;
-  name: string;
-  price: string;
-  cadence: string;
-  bullets: string[];
-  bestValue?: boolean;
-};
-
-const IN_PERSON_PLANS: InPerson[] = [
-  {
-    key: 'monthly_unlimited',
-    name: 'MONTHLY UNLIMITED',
-    price: '$130',
-    cadence: '/ month',
-    bullets: ['Unlimited Boathouse classes', 'Full app included — all WODs, COWS, Deck, community'],
-    bestValue: true,
-  },
-  {
-    key: 'ten_pack',
-    name: '10 CLASS PACK',
-    price: '$250',
-    cadence: '',
-    bullets: ['Ten classes, expires 1 year from purchase', 'App community + booking access', 'Workouts locked'],
-  },
-  {
-    key: 'drop_in',
-    name: 'DROP IN',
-    price: '$30',
-    cadence: '/ class',
-    bullets: ['Booking access only'],
-  },
-];
-
 export function MembershipsScreen({ visible, onClose }: Props) {
-  const { tier, daysLeftInTrial, becomeMember, selectInPersonPlan } = useMembership();
+  const { tier, daysLeftInTrial, tenPackClassesRemaining, becomeMember, selectInPersonPlan } = useMembership();
 
   if (!visible) return null;
 
@@ -70,7 +24,7 @@ export function MembershipsScreen({ visible, onClose }: Props) {
     ]);
   };
 
-  const chooseInPerson = (plan: InPerson) => {
+  const chooseInPerson = (plan: InPersonPlanCard) => {
     showAlert(`Confirm ${plan.name}?`, `${plan.price}${plan.cadence} — this is a preview, no charge yet.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Confirm', onPress: () => selectInPersonPlan(plan.key) },
@@ -100,7 +54,22 @@ export function MembershipsScreen({ visible, onClose }: Props) {
                   {plan.price}
                   <Text style={styles.planCadence}>{plan.cadence}</Text>
                 </Text>
-                {plan.note && <Text style={styles.planNote}>{plan.note}</Text>}
+
+                {plan.banner && (
+                  <View style={styles.banner}>
+                    <Text style={styles.bannerTitle}>{plan.banner.title}</Text>
+                    <Text style={styles.bannerSubtitle}>{plan.banner.subtitle}</Text>
+                  </View>
+                )}
+
+                <Text style={styles.whatYouGet}>WHAT YOU GET</Text>
+                {ONLINE_PLAN_BULLETS.map((bullet) => (
+                  <View key={bullet} style={styles.bulletRow}>
+                    <Ionicons name="checkmark" size={14} color={colors.green} />
+                    <Text style={styles.bulletText}>{bullet}</Text>
+                  </View>
+                ))}
+
                 <Pressable
                   style={styles.selectButton}
                   onPress={() => chooseOnline(plan)}
@@ -130,6 +99,12 @@ export function MembershipsScreen({ visible, onClose }: Props) {
                   {plan.price}
                   <Text style={styles.planCadence}>{plan.cadence}</Text>
                 </Text>
+
+                {plan.key === 'ten_pack' && tier === 'ten_pack' && (
+                  <Text style={styles.classesLeft} testID="ten-pack-classes-left">
+                    {tenPackClassesRemaining ?? 0} classes left
+                  </Text>
+                )}
 
                 {plan.bullets.map((bullet) => (
                   <View key={bullet} style={styles.bulletRow}>
@@ -235,12 +210,39 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textMuted,
   },
-  planNote: {
-    color: colors.gold,
-    fontFamily: fonts.labelSemiBold,
+  classesLeft: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 0.5,
-    marginTop: 4,
+    marginTop: 6,
+  },
+  banner: {
+    backgroundColor: colors.gold,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 12,
+  },
+  bannerTitle: {
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
+    fontSize: 15,
+    letterSpacing: 1,
+  },
+  bannerSubtitle: {
+    color: colors.greenDeep,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  whatYouGet: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 1,
+    marginTop: 16,
+    marginBottom: 4,
   },
   bulletRow: {
     flexDirection: 'row',

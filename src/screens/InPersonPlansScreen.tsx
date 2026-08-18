@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { InPersonPlan } from '../context/MembershipContext';
+import { IN_PERSON_PLANS, InPersonPlanCard } from '../data/plans';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -10,42 +11,8 @@ type Props = {
   onSelectPlan: (plan: InPersonPlan) => void;
 };
 
-type Plan = {
-  key: InPersonPlan;
-  name: string;
-  price: string;
-  cadence: string;
-  bullets: string[];
-  bestValue?: boolean;
-};
-
-const PLANS: Plan[] = [
-  {
-    key: 'monthly_unlimited',
-    name: 'MONTHLY UNLIMITED',
-    price: '$130',
-    cadence: '/ month',
-    bullets: ['Unlimited Boathouse classes', 'Full app included — all WODs, COWS, Deck, community'],
-    bestValue: true,
-  },
-  {
-    key: 'ten_pack',
-    name: '10 CLASS PACK',
-    price: '$250',
-    cadence: '',
-    bullets: ['Ten classes, expires 1 year from purchase', 'App community + booking access', 'Workouts locked'],
-  },
-  {
-    key: 'drop_in',
-    name: 'DROP IN',
-    price: '$30',
-    cadence: '/ class',
-    bullets: ['Booking access only'],
-  },
-];
-
 export default function InPersonPlansScreen({ onBack, onSelectPlan }: Props) {
-  const confirmPlan = (plan: Plan) => {
+  const confirmPlan = (plan: InPersonPlanCard) => {
     showAlert(`Confirm ${plan.name}?`, `${plan.price}${plan.cadence} — this is a preview, no charge yet.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Confirm', onPress: () => onSelectPlan(plan.key) },
@@ -63,7 +30,7 @@ export default function InPersonPlansScreen({ onBack, onSelectPlan }: Props) {
       <Text style={styles.subtext}>Train in person at the Boathouse in Ventnor City.</Text>
 
       <ScrollView contentContainerStyle={styles.plans} showsVerticalScrollIndicator={false}>
-        {PLANS.map((plan) => (
+        {IN_PERSON_PLANS.map((plan) => (
           <View key={plan.key} style={[styles.planCard, plan.bestValue && styles.planCardBest]}>
             {plan.bestValue && (
               <View style={styles.bestValueBadge}>

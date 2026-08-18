@@ -29,12 +29,39 @@ export const DEV_PREVIEW_TIERS: MembershipTier[] = [
   'admin',
   'online_paid',
   'in_person_unlimited',
+  'ten_pack',
   'online_free',
   'guest',
 ];
 
 const TRIAL_LENGTH_DAYS = 14;
 const TRIAL_WARNING_THRESHOLD_DAYS = 3;
+const TEN_PACK_SIZE = 10;
+
+// Human-readable plan label for the admin roster / booking notifications —
+// keeps that copy in one place instead of re-deriving it at each call site.
+export function planLabel(tier: MembershipTier): string {
+  switch (tier) {
+    case 'admin':
+      return 'Admin';
+    case 'trial':
+      return 'Online Trial';
+    case 'online_paid':
+      return 'Online Member';
+    case 'online_free':
+      return 'Online (Free)';
+    case 'in_person_unlimited':
+      return 'Monthly Unlimited';
+    case 'ten_pack':
+      return '10 Class Pack';
+    case 'drop_in':
+      return 'Drop In';
+    case 'guest':
+      return 'Guest';
+    default:
+      return tier;
+  }
+}
 
 function deriveDisplayName(email: string | null): string {
   if (!email) return 'Guest';
@@ -67,6 +94,8 @@ type MembershipContextValue = {
   // Class booking is available to every tier, including guests — kept as an explicit
   // flag (rather than assumed) so call sites read intent, not "true" literals.
   bookingAccess: boolean;
+  // Only meaningful for tier === 'ten_pack'; null otherwise.
+  tenPackClassesRemaining: number | null;
 
   startTrial: (email: string) => void;
   becomeMember: () => void;
@@ -74,6 +103,8 @@ type MembershipContextValue = {
   becomeGuest: () => void;
   setDevTier: (tier: MembershipTier) => void;
   dismissTrialWarning: () => void;
+  useTenPackClass: () => void;
+  refundTenPackClass: () => void;
 };
 
 const MembershipContext = createContext<MembershipContextValue | undefined>(undefined);
@@ -84,6 +115,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   const [email, setEmail] = useState<string | null>(null);
   const [trialEndsAt, setTrialEndsAt] = useState<Date | null>(null);
   const [trialWarningDismissed, setTrialWarningDismissed] = useState(false);
+  const [tenPackClassesRemaining, setTenPackClassesRemaining] = useState<number | null>(null);
 
   const daysLeftInTrial = trialEndsAt
     ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
@@ -111,6 +143,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       deckAccess: fullContentAccess,
       communityAccess,
       bookingAccess: true,
+      tenPackClassesRemaining,
 
       startTrial: (enteredEmail: string) => {
         const endsAt = new Date();
@@ -128,6 +161,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       selectInPersonPlan: (plan: InPersonPlan) => {
         setTier(plan === 'monthly_unlimited' ? 'in_person_unlimited' : plan === 'ten_pack' ? 'ten_pack' : 'drop_in');
         setSignedUp(true);
+        if (plan === 'ten_pack') setTenPackClassesRemaining(TEN_PACK_SIZE);
       },
       becomeGuest: () => {
         setEmail(null);
@@ -142,10 +176,16 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
           endsAt.setDate(endsAt.getDate() + TRIAL_LENGTH_DAYS);
           setTrialEndsAt(endsAt);
         }
+        if (nextTier === 'ten_pack' && tenPackClassesRemaining === null) {
+          setTenPackClassesRemaining(TEN_PACK_SIZE);
+        }
       },
       dismissTrialWarning: () => setTrialWarningDismissed(true),
+      useTenPackClass: () => setTenPackClassesRemaining((prev) => Math.max(0, (prev ?? TEN_PACK_SIZE) - 1)),
+      refundTenPackClass: () =>
+        setTenPackClassesRemaining((prev) => Math.min(TEN_PACK_SIZE, (prev ?? 0) + 1)),
     };
-  }, [tier, signedUp, email, trialEndsAt, daysLeftInTrial, trialWarningDismissed]);
+  }, [tier, signedUp, email, trialEndsAt, daysLeftInTrial, trialWarningDismissed, tenPackClassesRemaining]);
 
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>;
 }

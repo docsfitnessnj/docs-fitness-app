@@ -58,6 +58,7 @@ import { FullScheduleScreen } from './src/screens/FullScheduleScreen';
 import { MessagesScreen } from './src/screens/MessagesScreen';
 import { MyWorkoutsScreen } from './src/screens/MyWorkoutsScreen';
 import { MembershipsScreen } from './src/screens/MembershipsScreen';
+import { AdminRosterScreen } from './src/screens/AdminRosterScreen';
 import { CloseFriendsScreen } from './src/screens/CloseFriendsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 
@@ -275,6 +276,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [membershipsOpen, setMembershipsOpen] = useState(false);
   const [myWorkoutsOpen, setMyWorkoutsOpen] = useState(false);
   const [closeFriendsOpen, setCloseFriendsOpen] = useState(false);
+  const [adminRosterOpen, setAdminRosterOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useScheduleModalState();
   const [activeTab, setActiveTab] = useState('Community');
 
@@ -308,6 +310,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenMyWorkouts={() => setMyWorkoutsOpen(true)}
           onOpenCloseFriends={() => setCloseFriendsOpen(true)}
           onOpenMessages={onOpenMessages}
+          onOpenAdminRoster={() => setAdminRosterOpen(true)}
         />
       </ScreenOverlay>
       <ScreenOverlay visible={profileOpen}>
@@ -321,6 +324,9 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       </ScreenOverlay>
       <ScreenOverlay visible={closeFriendsOpen}>
         <CloseFriendsScreen visible={closeFriendsOpen} onClose={() => setCloseFriendsOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={adminRosterOpen}>
+        <AdminRosterScreen visible={adminRosterOpen} onClose={() => setAdminRosterOpen(false)} />
       </ScreenOverlay>
       <ScreenOverlay visible={scheduleOpen}>
         <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
