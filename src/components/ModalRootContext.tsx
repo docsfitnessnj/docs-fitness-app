@@ -20,7 +20,7 @@ export function ModalRootProvider({ children }: { children: React.ReactNode }) {
         ref={(el) => {
           if (el && el !== node) setNode(el);
         }}
-        style={StyleSheet.absoluteFill}
+        style={styles.root}
         pointerEvents="box-none"
       />
     </ModalRootContext.Provider>
@@ -30,3 +30,20 @@ export function ModalRootProvider({ children }: { children: React.ReactNode }) {
 export function useModalRootNode() {
   return useContext(ModalRootContext);
 }
+
+const styles = StyleSheet.create({
+  // Needs an explicit zIndex above every non-portaled overlay (ScreenOverlay
+  // renders its screens at zIndex: 500) — without one this marker sits at
+  // the implicit zIndex: auto (treated as 0 for stacking purposes), so a
+  // ScreenOverlay screen mounted after it — a hamburger drawer screen like
+  // Memberships, for instance — paints on top of every AppModal portaled
+  // here, confirmation dialogs included, regardless of DOM/mount order.
+  root: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+  },
+});
