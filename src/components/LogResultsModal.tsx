@@ -5,7 +5,7 @@ import { MediaAttachmentPicker } from './MediaAttachmentPicker';
 import { ModalHeader } from './ModalHeader';
 import { useCommunity } from '../context/CommunityContext';
 import { useDisplayName } from '../context/ProfileContext';
-import { useWorkoutLog } from '../context/WorkoutLogContext';
+import { formatResultsLine, useWorkoutLog } from '../context/WorkoutLogContext';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -28,34 +28,22 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
     updateLogEntry(dayKey, field, value);
   };
 
-  const hasResults = log.rounds.trim() || log.time.trim() || log.kettlebell.trim();
-
   const handleSaveResults = () => {
-    if (!hasResults) {
-      showAlert('Log Your Results First', 'Add rounds, time, or kettlebell size before saving.');
-      return;
-    }
     showAlert('Saved', 'Your result is saved privately to My Workouts.');
     onClose();
   };
 
   const handlePostToCommunity = () => {
-    if (!hasResults) {
-      showAlert('Log Your Results First', 'Add rounds, time, or kettlebell size before posting.');
-      return;
-    }
     showAlert('Post to Community?', 'Your result will be visible to everyone in the community.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Post',
         onPress: () => {
-          const parts = [
-            log.rounds.trim() && `Rounds: ${log.rounds.trim()}`,
-            log.time.trim() && `Time: ${log.time.trim()}`,
-            log.kettlebell.trim() && `KB: ${log.kettlebell.trim()}`,
-          ].filter(Boolean);
-          const results = parts.join(' · ') + (log.notes.trim() ? `\n${log.notes.trim()}` : '');
-          addWodResultPost(displayName, { workoutTitle, dateLabel, results }, log.media);
+          addWodResultPost(
+            displayName,
+            { workoutTitle, dateLabel, notes: log.notes.trim(), resultsLine: formatResultsLine(log) },
+            log.media
+          );
           showAlert('Posted!', 'Your result is live on the Community board.');
           onClose();
         },

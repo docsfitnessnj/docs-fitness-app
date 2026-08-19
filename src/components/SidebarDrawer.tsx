@@ -6,6 +6,7 @@ import { DocsBadge } from './brand/DocsBadge';
 import { MembershipToggle } from './MembershipToggle';
 import { useDeckProgress } from '../context/DeckProgressContext';
 import { useMembership } from '../context/MembershipContext';
+import { useTour } from '../context/TourContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { openMerchStore, openLocationMaps } from '../lib/links';
 import { showAlert } from '../lib/alert';
@@ -48,6 +49,12 @@ export function SidebarDrawer({
   const { completedWorkouts } = useWorkoutLog();
   const { completedCount, totalCount } = useDeckProgress();
   const { isAdmin } = useMembership();
+  const tour = useTour();
+
+  const resetTour = () => {
+    tour.resetForTesting();
+    onClose();
+  };
 
   if (!visible) return null;
 
@@ -120,6 +127,10 @@ export function SidebarDrawer({
           <View style={styles.previewRow}>
             <MembershipToggle />
           </View>
+
+          <Pressable onPress={resetTour} hitSlop={8} style={styles.devResetRow} testID="dev-reset-tour">
+            <Text style={styles.devResetText}>RESET SPOTLIGHT TOUR (DEV)</Text>
+          </Pressable>
 
           <Pressable style={styles.locationRow} onPress={openLocationMaps} testID="sidebar-location">
             <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.85)" />
@@ -222,6 +233,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     marginBottom: 14,
+  },
+  devResetRow: {
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  devResetText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 10,
+    letterSpacing: 1,
   },
   locationRow: {
     flexDirection: 'row',

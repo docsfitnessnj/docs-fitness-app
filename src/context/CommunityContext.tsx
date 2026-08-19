@@ -12,7 +12,8 @@ export type Comment = {
 export type WodPostMeta = {
   workoutTitle: string;
   dateLabel: string;
-  results: string;
+  notes: string;
+  resultsLine?: string;
 };
 
 export type Post = {

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { StoryViewer } from './StoryViewer';
 import { DocsBadge } from './brand/DocsBadge';
 import { useStories } from '../context/StoriesContext';
+import { useTour } from '../context/TourContext';
 import { colors, fonts } from '../theme';
 
 const RING_SIZE = 64;
@@ -19,6 +20,7 @@ type Props = {
 
 export function StoryRow({ compact = false }: Props) {
   const { activeStories, hasUnviewed } = useStories();
+  const { registerTarget } = useTour();
   const [viewerOpen, setViewerOpen] = useState(false);
 
   if (activeStories.length === 0) return null;
@@ -29,6 +31,7 @@ export function StoryRow({ compact = false }: Props) {
   return (
     <View style={compact ? styles.compactRow : styles.row}>
       <Pressable
+        ref={compact ? registerTarget('story-ring') : undefined}
         style={compact ? styles.compactItem : styles.item}
         onPress={() => setViewerOpen(true)}
         testID="story-ring-doc"

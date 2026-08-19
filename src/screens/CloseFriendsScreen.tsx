@@ -98,7 +98,9 @@ export function CloseFriendsScreen({ visible, onClose }: Props) {
                 </View>
                 <Text style={styles.postTitle}>{post.title}</Text>
                 {post.kind === 'wod' && post.meta ? (
-                  <Text style={styles.postBody}>{post.meta.results}</Text>
+                  <Text style={styles.postBody} numberOfLines={3}>
+                    {post.meta.resultsLine ? `${post.meta.notes}\n${post.meta.resultsLine}` : post.meta.notes}
+                  </Text>
                 ) : (
                   <Text style={styles.postBody} numberOfLines={3}>
                     {post.text}

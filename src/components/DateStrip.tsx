@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WeekDay } from '../data/content';
+import { useTour } from '../context/TourContext';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -20,6 +21,7 @@ type Props = {
 };
 
 export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isCompleted, scrollable = false, leading }: Props) {
+  const { registerTarget } = useTour();
   const cells = week.map((day, index) => {
     const selected = index === selectedIndex;
     const locked = !day.isRestDay && !isUnlocked(index);
@@ -59,7 +61,7 @@ export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isComplet
 
   if (scrollable) {
     return (
-      <View style={styles.scrollWrap}>
+      <View style={styles.scrollWrap} ref={registerTarget('date-strip')}>
         {leading && (
           <>
             <View style={styles.leadingSlot}>{leading}</View>
