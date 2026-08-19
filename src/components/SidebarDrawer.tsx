@@ -9,7 +9,6 @@ import { useMembership } from '../context/MembershipContext';
 import { useTour } from '../context/TourContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { openMerchStore, openLocationMaps } from '../lib/links';
-import { showAlert } from '../lib/alert';
 import { openFullSchedule } from '../lib/scheduleModal';
 import { colors, fonts, TAGLINE, LOCATION } from '../theme';
 
@@ -22,6 +21,7 @@ type Props = {
   onOpenCloseFriends: () => void;
   onOpenMessages: () => void;
   onOpenAdminRoster: () => void;
+  onOpenSettings: () => void;
 };
 
 type Row = {
@@ -44,6 +44,7 @@ export function SidebarDrawer({
   onOpenCloseFriends,
   onOpenMessages,
   onOpenAdminRoster,
+  onOpenSettings,
 }: Props) {
   const navigation = useNavigation<any>();
   const { completedWorkouts } = useWorkoutLog();
@@ -98,7 +99,7 @@ export function SidebarDrawer({
       key: 'settings',
       label: 'SETTINGS & NOTIFICATIONS',
       icon: 'settings-outline',
-      onPress: () => go(() => showAlert('Settings & Notifications', 'Coming soon.')),
+      onPress: () => go(onOpenSettings),
     },
   ];
 

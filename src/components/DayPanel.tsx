@@ -51,7 +51,7 @@ export function DayPanel({ day, wodUnlocked }: Props) {
     toggleCompleted(dayKey, wod.title, dateLabel, day.date.getTime());
   };
 
-  const bookClass = (row: (typeof scheduleRows)[number]) => {
+  const bookClass = (row: (typeof scheduleRows)[number], opts?: { firstClass?: boolean }) => {
     signUp({
       dateKey,
       classId: row.id,
@@ -61,7 +61,24 @@ export function DayPanel({ day, wodUnlocked }: Props) {
       dayLabel: weekdayName,
       memberName: displayName,
       planType: planLabel(membership.tier),
+      firstClass: !!opts?.firstClass,
     });
+  };
+
+  const showDropInGate = (row: (typeof scheduleRows)[number]) => {
+    const upsell = ONLINE_ONLY_TIERS.includes(membership.tier)
+      ? '\n\nWant unlimited classes? See Monthly Unlimited in Memberships.'
+      : '';
+    showAlert(`Class Drop In Is $${DROP_IN_PRICE}`, `${row.className} · ${weekdayName} · ${row.time}${upsell}`, [
+      { text: 'Not Now', style: 'cancel' },
+      {
+        text: `Pay $${DROP_IN_PRICE} and Book`,
+        onPress: () => {
+          bookClass(row);
+          showAlert("YOU'RE IN", `Payment simulated — ${row.className} · ${weekdayName} · ${row.time}`);
+        },
+      },
+    ]);
   };
 
   const handleSignUp = (row: (typeof scheduleRows)[number]) => {
@@ -83,19 +100,31 @@ export function DayPanel({ day, wodUnlocked }: Props) {
       return;
     }
 
-    const upsell = ONLINE_ONLY_TIERS.includes(membership.tier)
-      ? '\n\nWant unlimited classes? See Monthly Unlimited in Memberships.'
-      : '';
-    showAlert(`Class Drop In Is $${DROP_IN_PRICE}`, `${row.className} · ${weekdayName} · ${row.time}${upsell}`, [
-      { text: 'Not Now', style: 'cancel' },
-      {
-        text: `Pay $${DROP_IN_PRICE} and Book`,
-        onPress: () => {
-          bookClass(row);
-          showAlert("YOU'RE IN", `Payment simulated — ${row.className} · ${weekdayName} · ${row.time}`);
+    // Everyone left over here is about to hit the $30 drop-in gate — ask,
+    // casually, whether they've trained at Doc's before so first-timers can
+    // book free instead. Only offered once per account.
+    if (!membership.firstClassUsed) {
+      showAlert("Have You Trained at Doc's Fitness Before?", undefined, [
+        {
+          text: 'FIRST TIME HERE',
+          onPress: () => {
+            membership.useFirstClass();
+            bookClass(row, { firstClass: true });
+            showAlert(
+              'Your First Class Is On Us',
+              `You're in — ${row.className} · ${weekdayName} · ${row.time}.`
+            );
+          },
         },
-      },
-    ]);
+        {
+          text: "I'VE BEEN BEFORE",
+          onPress: () => showDropInGate(row),
+        },
+      ]);
+      return;
+    }
+
+    showDropInGate(row);
   };
 
   const handleCancel = (row: (typeof scheduleRows)[number]) => {

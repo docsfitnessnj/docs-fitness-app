@@ -19,6 +19,9 @@ export type ClassSignUp = {
   // on what plan without needing a real multi-user backend yet.
   memberName: string;
   planType: string;
+  // True when this booking redeemed the free-first-class offer — lets the
+  // admin roster flag new faces before Doc walks into class.
+  firstClass?: boolean;
 };
 
 export type BookingEvent = BookingNotificationEvent & {

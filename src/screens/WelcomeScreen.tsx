@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
 import { colors, fonts, WELCOME_SUBTEXT } from '../theme';
 
 type Props = {
-  onContinue: (email: string) => void;
+  onContinue: (email: string, newsletterOptIn: boolean) => void;
   onBrowseAsGuest: () => void;
 };
 
 export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
   const [email, setEmail] = useState('');
+  const [newsletterOptIn, setNewsletterOptIn] = useState(true);
 
   const canSubmit = email.trim().length > 3 && email.includes('@');
 
@@ -40,9 +42,21 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
           />
 
           <Pressable
+            style={styles.checkboxRow}
+            onPress={() => setNewsletterOptIn((v) => !v)}
+            hitSlop={4}
+            testID="newsletter-optin-checkbox"
+          >
+            <View style={[styles.checkbox, newsletterOptIn && styles.checkboxChecked]}>
+              {newsletterOptIn && <Ionicons name="checkmark" size={13} color={colors.white} />}
+            </View>
+            <Text style={styles.checkboxLabel}>Send me The Weekly Kettlebell, Doc's weekly newsletter.</Text>
+          </Pressable>
+
+          <Pressable
             style={[styles.continueButton, !canSubmit && styles.continueButtonDisabled]}
             disabled={!canSubmit}
-            onPress={() => onContinue(email.trim())}
+            onPress={() => onContinue(email.trim(), newsletterOptIn)}
             testID="welcome-continue"
           >
             <Text style={styles.continueButtonText}>CONTINUE</Text>
@@ -121,6 +135,33 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     textAlign: 'center',
     marginBottom: 28,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 18,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: colors.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.green,
+    borderColor: colors.green,
+  },
+  checkboxLabel: {
+    flex: 1,
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
   },
   continueButton: {
     backgroundColor: colors.green,
