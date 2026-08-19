@@ -58,8 +58,15 @@ export function AdminRosterScreen({ visible, onClose }: Props) {
               bookers.map((booker) => (
                 <View key={`${booker.dateKey}-${booker.classId}-${booker.memberName}`} style={styles.bookerRow}>
                   <Text style={styles.bookerName}>{booker.memberName}</Text>
-                  <View style={styles.planBadge}>
-                    <Text style={styles.planBadgeText}>{booker.planType.toUpperCase()}</Text>
+                  <View style={styles.bookerBadges}>
+                    {booker.firstClass && (
+                      <View style={styles.firstClassBadge} testID={`first-class-tag-${booker.memberName}`}>
+                        <Text style={styles.firstClassBadgeText}>FIRST CLASS</Text>
+                      </View>
+                    )}
+                    <View style={styles.planBadge}>
+                      <Text style={styles.planBadgeText}>{booker.planType.toUpperCase()}</Text>
+                    </View>
                   </View>
                 </View>
               ))
@@ -177,6 +184,23 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.bodyMedium,
     fontSize: 13,
+  },
+  bookerBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  firstClassBadge: {
+    backgroundColor: colors.gold,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  firstClassBadgeText: {
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   planBadge: {
     backgroundColor: colors.background,

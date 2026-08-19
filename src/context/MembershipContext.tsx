@@ -96,6 +96,13 @@ type MembershipContextValue = {
   bookingAccess: boolean;
   // Only meaningful for tier === 'ten_pack'; null otherwise.
   tenPackClassesRemaining: number | null;
+  // Whether this account has already redeemed its one free first class —
+  // once true, every booking (for this tier) goes through the normal gates.
+  firstClassUsed: boolean;
+  // Opted in to The Weekly Kettlebell newsletter, captured at signup and
+  // editable later in Settings. Keyed to `email` so a future backend round
+  // can sync it straight to Doc's email platform.
+  newsletterOptIn: boolean;
 
   startTrial: (email: string) => void;
   becomeMember: () => void;
@@ -105,6 +112,8 @@ type MembershipContextValue = {
   dismissTrialWarning: () => void;
   useTenPackClass: () => void;
   refundTenPackClass: () => void;
+  useFirstClass: () => void;
+  setNewsletterOptIn: (optIn: boolean) => void;
 };
 
 const MembershipContext = createContext<MembershipContextValue | undefined>(undefined);
@@ -116,6 +125,8 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   const [trialEndsAt, setTrialEndsAt] = useState<Date | null>(null);
   const [trialWarningDismissed, setTrialWarningDismissed] = useState(false);
   const [tenPackClassesRemaining, setTenPackClassesRemaining] = useState<number | null>(null);
+  const [firstClassUsed, setFirstClassUsed] = useState(false);
+  const [newsletterOptIn, setNewsletterOptIn] = useState(true);
 
   const daysLeftInTrial = trialEndsAt
     ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
@@ -144,6 +155,8 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       communityAccess,
       bookingAccess: true,
       tenPackClassesRemaining,
+      firstClassUsed,
+      newsletterOptIn,
 
       startTrial: (enteredEmail: string) => {
         const endsAt = new Date();
@@ -184,8 +197,20 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       useTenPackClass: () => setTenPackClassesRemaining((prev) => Math.max(0, (prev ?? TEN_PACK_SIZE) - 1)),
       refundTenPackClass: () =>
         setTenPackClassesRemaining((prev) => Math.min(TEN_PACK_SIZE, (prev ?? 0) + 1)),
+      useFirstClass: () => setFirstClassUsed(true),
+      setNewsletterOptIn: (optIn: boolean) => setNewsletterOptIn(optIn),
     };
-  }, [tier, signedUp, email, trialEndsAt, daysLeftInTrial, trialWarningDismissed, tenPackClassesRemaining]);
+  }, [
+    tier,
+    signedUp,
+    email,
+    trialEndsAt,
+    daysLeftInTrial,
+    trialWarningDismissed,
+    tenPackClassesRemaining,
+    firstClassUsed,
+    newsletterOptIn,
+  ]);
 
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>;
 }

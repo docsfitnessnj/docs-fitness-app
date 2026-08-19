@@ -63,6 +63,7 @@ import { MembershipsScreen } from './src/screens/MembershipsScreen';
 import { AdminRosterScreen } from './src/screens/AdminRosterScreen';
 import { CloseFriendsScreen } from './src/screens/CloseFriendsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
 
 const PHONE_FRAME_MAX_WIDTH = 480;
 const MAIN_COLUMN_DESKTOP_WIDTH = 640;
@@ -223,7 +224,7 @@ type OnboardingStep = 'email' | 'howDoYouTrain' | 'onlineStart' | 'pricing' | 'i
 // link); TRAIN AT THE BOATHOUSE goes straight to plan selection. Guests skip
 // this whole flow from the email screen.
 function OnboardingFlow() {
-  const { startTrial, becomeMember, selectInPersonPlan, becomeGuest } = useMembership();
+  const { startTrial, becomeMember, selectInPersonPlan, becomeGuest, setNewsletterOptIn } = useMembership();
   const [step, setStep] = useState<OnboardingStep>('email');
   const [email, setEmail] = useState('');
 
@@ -253,8 +254,9 @@ function OnboardingFlow() {
     default:
       return (
         <WelcomeScreen
-          onContinue={(enteredEmail) => {
+          onContinue={(enteredEmail, newsletterOptIn) => {
             setEmail(enteredEmail);
+            setNewsletterOptIn(newsletterOptIn);
             setStep('howDoYouTrain');
           }}
           onBrowseAsGuest={() => becomeGuest()}
@@ -294,6 +296,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [myWorkoutsOpen, setMyWorkoutsOpen] = useState(false);
   const [closeFriendsOpen, setCloseFriendsOpen] = useState(false);
   const [adminRosterOpen, setAdminRosterOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useScheduleModalState();
   const [activeTab, setActiveTab] = useState('Community');
 
@@ -329,6 +332,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenCloseFriends={() => setCloseFriendsOpen(true)}
           onOpenMessages={onOpenMessages}
           onOpenAdminRoster={() => setAdminRosterOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
       </ScreenOverlay>
       <ScreenOverlay visible={profileOpen}>
@@ -345,6 +349,9 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       </ScreenOverlay>
       <ScreenOverlay visible={adminRosterOpen}>
         <AdminRosterScreen visible={adminRosterOpen} onClose={() => setAdminRosterOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={settingsOpen}>
+        <SettingsScreen visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </ScreenOverlay>
       <ScreenOverlay visible={scheduleOpen}>
         <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
