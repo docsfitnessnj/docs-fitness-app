@@ -109,7 +109,8 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
               <Text style={styles.wodBadge}>WORKOUT COMPLETE</Text>
               <Text style={styles.wodTitle}>{post.meta.workoutTitle}</Text>
               <Text style={styles.wodDate}>{post.meta.dateLabel}</Text>
-              <Text style={styles.wodResults}>{post.meta.results}</Text>
+              {!!post.meta.notes && <Text style={styles.wodNotes}>{post.meta.notes}</Text>}
+              {!!post.meta.resultsLine && <Text style={styles.wodResults}>{post.meta.resultsLine}</Text>}
             </View>
           ) : (
             <>
@@ -324,11 +325,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 6,
   },
-  wodResults: {
+  wodNotes: {
     color: colors.text,
-    fontFamily: fonts.bodyMedium,
+    fontFamily: fonts.body,
     fontSize: 15,
-    lineHeight: 20,
+    lineHeight: 21,
+    marginBottom: 8,
+  },
+  wodResults: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   media: {
     width: '100%',

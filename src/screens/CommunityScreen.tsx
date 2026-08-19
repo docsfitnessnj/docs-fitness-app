@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '../components/AppModal';
@@ -13,6 +13,7 @@ import { Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext
 import { useMembership } from '../context/MembershipContext';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { useStories } from '../context/StoriesContext';
+import { useTour } from '../context/TourContext';
 import { getUpcomingDays, isDayWodUnlocked } from '../data/content';
 import { showAlert } from '../lib/alert';
 import { MediaAttachment } from '../lib/media';
@@ -23,8 +24,9 @@ const BOOKING_DAYS_AHEAD = 21;
 function ComposerBar({ onOpen }: { onOpen: () => void }) {
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
+  const { registerTarget } = useTour();
   return (
-    <Pressable style={styles.composerBar} onPress={onOpen}>
+    <Pressable ref={registerTarget('composer-bar')} style={styles.composerBar} onPress={onOpen}>
       <Avatar name={displayName} uri={photoUri} />
       <View style={styles.composerField}>
         <Text style={styles.composerPlaceholder}>LOG IT. POST IT.</Text>
@@ -239,7 +241,12 @@ function PostCard({
             <Text style={styles.wodTitle}>{post.meta.workoutTitle}</Text>
           </View>
           <Text style={styles.wodDate}>{post.meta.dateLabel}</Text>
-          <Text style={styles.wodResults}>{post.meta.results}</Text>
+          {!!post.meta.notes && (
+            <Text style={styles.wodNotes} numberOfLines={3}>
+              {post.meta.notes}
+            </Text>
+          )}
+          {!!post.meta.resultsLine && <Text style={styles.wodResults}>{post.meta.resultsLine}</Text>}
         </View>
       ) : (
         <View>
@@ -378,6 +385,19 @@ export default function CommunityScreen() {
   const detailPost = detailPostId ? posts.find((p) => p.id === detailPostId) ?? null : null;
   const { wodAccessLevel, communityAccess } = useMembership();
   const { activeStories } = useStories();
+  const tour = useTour();
+
+  // First-open spotlight tour: fires once per install, guarded by the
+  // persisted completed flag inside TourContext — this effect just needs to
+  // ask exactly once per mount, not once per render.
+  const tourStarted = useRef(false);
+  useEffect(() => {
+    if (!tourStarted.current) {
+      tourStarted.current = true;
+      tour.start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const days = useMemo(() => getUpcomingDays(BOOKING_DAYS_AHEAD), []);
   const todayIndex = days.findIndex((d) => d.isToday);
@@ -722,11 +742,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 6,
   },
-  wodResults: {
+  wodNotes: {
     color: colors.text,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 15,
-    lineHeight: 20,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 19,
+    marginBottom: 6,
+  },
+  wodResults: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 12,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   reactionRow: {
     flexDirection: 'row',

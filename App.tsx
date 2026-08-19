@@ -32,6 +32,7 @@ import { ProfileProvider } from './src/context/ProfileContext';
 import { StoriesProvider } from './src/context/StoriesContext';
 import { DeckProgressProvider } from './src/context/DeckProgressContext';
 import { ClassSignUpProvider } from './src/context/ClassSignUpContext';
+import { TourProvider, useTour } from './src/context/TourContext';
 import { AppTopBar } from './src/components/AppTopBar';
 import { SearchModal } from './src/components/SearchModal';
 import { TrialExpiryModal } from './src/components/TrialExpiryModal';
@@ -40,6 +41,7 @@ import { ModalRootProvider } from './src/components/ModalRootContext';
 import { ScreenOverlay } from './src/components/ScreenOverlay';
 import { SidebarDrawer } from './src/components/SidebarDrawer';
 import { IdentitySidebar } from './src/components/IdentitySidebar';
+import { TourOverlay } from './src/components/TourOverlay';
 import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
 import { useTabBarHeight } from './src/lib/tabBarHeight';
@@ -261,6 +263,21 @@ function OnboardingFlow() {
   }
 }
 
+// Invisible marker sized/positioned to match the real tab bar, purely so the
+// tour can measure "the tab bar" by ref — react-navigation's bottom-tabs
+// doesn't expose a ref to its own rendered bar.
+function TabBarTourMarker() {
+  const { registerTarget } = useTour();
+  const tabBarHeight = useTabBarHeight();
+  return (
+    <View
+      ref={registerTarget('tab-bar')}
+      pointerEvents="none"
+      style={[styles.tabBarTourMarker, { height: tabBarHeight }]}
+    />
+  );
+}
+
 type MainAppProps = {
   messagesOpen: boolean;
   onOpenMessages: () => void;
@@ -294,6 +311,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenSearch={() => setSearchOpen(true)}
         />
         <RootNavigator tabBarHidden={sidebarOpen} />
+        <TabBarTourMarker />
       </View>
       <ScreenOverlay visible={searchOpen}>
         <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
@@ -332,6 +350,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
         <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
       </ScreenOverlay>
       <TrialExpiryModal />
+      <TourOverlay />
     </NavigationContainer>
   );
 }
@@ -415,9 +434,11 @@ export default function App() {
                 <StoriesProvider>
                   <DeckProgressProvider>
                     <ClassSignUpProvider>
-                      <View style={styles.webSurround}>
-                        <ResponsiveShell onLayoutRootView={onLayoutRootView} />
-                      </View>
+                      <TourProvider>
+                        <View style={styles.webSurround}>
+                          <ResponsiveShell onLayoutRootView={onLayoutRootView} />
+                        </View>
+                      </TourProvider>
                     </ClassSignUpProvider>
                   </DeckProgressProvider>
                 </StoriesProvider>
@@ -462,6 +483,12 @@ const styles = StyleSheet.create({
   },
   mainAppRoot: {
     flex: 1,
+  },
+  tabBarTourMarker: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   tabBar: {
     backgroundColor: colors.card,

@@ -33,6 +33,19 @@ export function formatLogSummary(log: WorkoutLog): string {
   return summary;
 }
 
+// Condensed "RESULTS:" line for a workout post — combines bell size(s) and
+// score. Returns undefined when no result fields are filled, since results
+// are optional and a post can be subject + notes only.
+export function formatResultsLine(log: WorkoutLog): string | undefined {
+  const parts = [
+    log.kettlebell.trim() && log.kettlebell.trim().toUpperCase(),
+    log.rounds.trim() && `${log.rounds.trim().toUpperCase()} ROUNDS`,
+    log.time.trim() && log.time.trim().toUpperCase(),
+  ].filter(Boolean) as string[];
+  if (parts.length === 0) return undefined;
+  return `RESULTS: ${parts.join(' · ')}`;
+}
+
 type CompletedMeta = {
   workoutTitle: string;
   dateLabel: string;

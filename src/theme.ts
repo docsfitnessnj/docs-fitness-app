@@ -17,6 +17,9 @@ export const colors = {
   // Scoreboard red — leaderboard time badges only
   scoreboardRed: '#9E1B32',
 
+  // Playing-card red — suit glyphs only (the Deck's diamond/heart)
+  playingCardRed: '#C8102E',
+
   // Text
   text: '#12211C',
   textMuted: '#5F6B66',
