@@ -1,8 +1,22 @@
 import { InPersonPlan } from '../context/MembershipContext';
 
-// Single source of truth for plan pricing/copy — pricing has changed three
+// Single source of truth for plan pricing/copy — pricing has changed several
 // rounds running, and duplicating it across the onboarding screens and the
 // Memberships screen kept drifting out of sync.
+
+// The two tracks are shown either as separate onboarding screens or side by
+// side on the Memberships screen — this copy is the one header each leads
+// with (or, on Memberships, each section leads with) so the tracks are never
+// confused for one another.
+export const ONLINE_SECTION_HEADER = {
+  title: 'ONLINE TRAINING',
+  subtitle: 'Train anywhere. The full app.',
+};
+
+export const IN_PERSON_SECTION_HEADER = {
+  title: "IN PERSON AT DOC'S FITNESS",
+  subtitle: 'Classes at the Boathouse, Ventnor City NJ.',
+};
 
 export type OnlinePlanKey = 'monthly' | 'annual';
 
@@ -22,12 +36,14 @@ export const ONLINE_PLAN_BULLETS = [
   'Message Doc directly',
 ];
 
+// Names carry the "(ONLINE)" tag so the track reads even out of context —
+// card, confirmation popup, receipt, anywhere the plan is named.
 export const ONLINE_PLANS: OnlinePlan[] = [
-  { key: 'monthly', name: 'MONTHLY', price: '$39', cadence: '/ month' },
+  { key: 'monthly', name: 'MONTHLY (ONLINE)', price: '$37', cadence: '/ month' },
   {
     key: 'annual',
-    name: 'ANNUAL',
-    price: '$351',
+    name: 'ANNUAL (ONLINE)',
+    price: '$333',
     cadence: '/ year',
     banner: { title: '3 MONTHS FREE', subtitle: 'Pay for 9 months. Get 12.' },
   },
@@ -39,7 +55,17 @@ export type InPersonPlanCard = {
   price: string;
   cadence: string;
   bullets: string[];
-  bestValue?: boolean;
+  // Full-width gold strip across the top of the card, and the trigger for
+  // the gold card-border highlight — only Monthly Unlimited has one, so the
+  // full-app-access tier is unmissable next to the booking-only tiers.
+  topBanner?: string;
+  // Exact bullet text to render bold + gold instead of the normal bullet
+  // style — used to call out full app access on Monthly Unlimited.
+  emphasizedBullet?: string;
+  // A quiet note (not a checkmark bullet) making clear this tier does NOT
+  // include app/workout access, so the contrast with Monthly Unlimited is
+  // obvious at a glance.
+  clarifyingNote?: string;
 };
 
 export const IN_PERSON_PLANS: InPersonPlanCard[] = [
@@ -48,8 +74,9 @@ export const IN_PERSON_PLANS: InPersonPlanCard[] = [
     name: 'MONTHLY UNLIMITED',
     price: '$130',
     cadence: '/ month',
-    bullets: ["Unlimited Doc's Fitness classes + full app included"],
-    bestValue: true,
+    bullets: ["Unlimited Doc's Fitness classes", 'Book any class, any day', 'Full access to everything in this app'],
+    topBanner: 'EVERYTHING INCLUDED',
+    emphasizedBullet: 'Full access to everything in this app',
   },
   {
     key: 'ten_pack',
@@ -57,6 +84,7 @@ export const IN_PERSON_PLANS: InPersonPlanCard[] = [
     price: '$250',
     cadence: '',
     bullets: ['Ten classes, expires 1 year from purchase', 'App community + booking access', 'Workouts locked'],
+    clarifyingNote: 'Class booking + community access. Workouts not included.',
   },
   {
     key: 'drop_in',
@@ -64,5 +92,6 @@ export const IN_PERSON_PLANS: InPersonPlanCard[] = [
     price: '$30',
     cadence: '/ class',
     bullets: ['Booking access only'],
+    clarifyingNote: 'Class booking + community access. Workouts not included.',
   },
 ];

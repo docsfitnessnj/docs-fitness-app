@@ -2,8 +2,17 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ModalHeader } from '../components/ModalHeader';
+import { PlanSectionHeader } from '../components/PlanSectionHeader';
 import { useMembership } from '../context/MembershipContext';
-import { IN_PERSON_PLANS, InPersonPlanCard, ONLINE_PLANS, ONLINE_PLAN_BULLETS, OnlinePlan } from '../data/plans';
+import {
+  IN_PERSON_PLANS,
+  IN_PERSON_SECTION_HEADER,
+  InPersonPlanCard,
+  ONLINE_PLANS,
+  ONLINE_PLAN_BULLETS,
+  ONLINE_SECTION_HEADER,
+  OnlinePlan,
+} from '../data/plans';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -42,7 +51,7 @@ export function MembershipsScreen({ visible, onClose }: Props) {
           </Text>
         )}
 
-        <Text style={styles.sectionHeading}>ONLINE PLANS</Text>
+        <PlanSectionHeader title={ONLINE_SECTION_HEADER.title} subtitle={ONLINE_SECTION_HEADER.subtitle} />
         <View style={styles.plans}>
           {ONLINE_PLANS.map((plan) => (
             <View key={plan.key} style={styles.planCard}>
@@ -82,13 +91,13 @@ export function MembershipsScreen({ visible, onClose }: Props) {
           ))}
         </View>
 
-        <Text style={[styles.sectionHeading, styles.sectionHeadingSpaced]}>IN-PERSON PLANS</Text>
+        <PlanSectionHeader title={IN_PERSON_SECTION_HEADER.title} subtitle={IN_PERSON_SECTION_HEADER.subtitle} spaced />
         <View style={styles.plans}>
           {IN_PERSON_PLANS.map((plan) => (
-            <View key={plan.key} style={[styles.planCard, plan.bestValue && styles.planCardBest]}>
-              {plan.bestValue && (
-                <View style={styles.bestValueBadge}>
-                  <Text style={styles.bestValueBadgeText}>BEST VALUE</Text>
+            <View key={plan.key} style={[styles.planCard, plan.topBanner && styles.planCardBest]}>
+              {plan.topBanner && (
+                <View style={styles.topBanner}>
+                  <Text style={styles.topBannerText}>{plan.topBanner}</Text>
                 </View>
               )}
               <View style={styles.planHeader}>
@@ -106,12 +115,17 @@ export function MembershipsScreen({ visible, onClose }: Props) {
                   </Text>
                 )}
 
-                {plan.bullets.map((bullet) => (
-                  <View key={bullet} style={styles.bulletRow}>
-                    <Ionicons name="checkmark" size={14} color={colors.green} />
-                    <Text style={styles.bulletText}>{bullet}</Text>
-                  </View>
-                ))}
+                {plan.bullets.map((bullet) => {
+                  const emphasized = bullet === plan.emphasizedBullet;
+                  return (
+                    <View key={bullet} style={[styles.bulletRow, emphasized && styles.bulletRowEmphasized]}>
+                      <Ionicons name="checkmark" size={14} color={emphasized ? colors.gold : colors.green} />
+                      <Text style={[styles.bulletText, emphasized && styles.bulletTextEmphasized]}>{bullet}</Text>
+                    </View>
+                  );
+                })}
+
+                {plan.clarifyingNote && <Text style={styles.clarifyingNote}>{plan.clarifyingNote}</Text>}
 
                 <Pressable
                   style={styles.selectButton}
@@ -145,16 +159,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 16,
   },
-  sectionHeading: {
-    color: colors.green,
-    fontFamily: fonts.headline,
-    fontSize: 20,
-    letterSpacing: 1,
-    marginBottom: 12,
-  },
-  sectionHeadingSpaced: {
-    marginTop: 28,
-  },
   plans: {
     gap: 16,
   },
@@ -169,21 +173,16 @@ const styles = StyleSheet.create({
     borderColor: colors.gold,
     borderWidth: 2,
   },
-  bestValueBadge: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
+  topBanner: {
     backgroundColor: colors.gold,
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    zIndex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
   },
-  bestValueBadgeText: {
+  topBannerText: {
     color: colors.greenDeep,
     fontFamily: fonts.labelBold,
-    fontSize: 10,
-    letterSpacing: 1,
+    fontSize: 13,
+    letterSpacing: 1.5,
   },
   planHeader: {
     backgroundColor: colors.green,
@@ -256,6 +255,25 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 14,
     lineHeight: 19,
+  },
+  bulletRowEmphasized: {
+    backgroundColor: 'rgba(229,184,11,0.14)',
+    borderRadius: 8,
+    marginHorizontal: -8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  bulletTextEmphasized: {
+    fontFamily: fonts.bodyBold,
+    color: colors.text,
+  },
+  clarifyingNote: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 10,
+    fontStyle: 'italic',
   },
   selectButton: {
     backgroundColor: colors.green,
