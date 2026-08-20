@@ -42,6 +42,7 @@ import { ScreenOverlay } from './src/components/ScreenOverlay';
 import { SidebarDrawer } from './src/components/SidebarDrawer';
 import { IdentitySidebar } from './src/components/IdentitySidebar';
 import { TourOverlay } from './src/components/TourOverlay';
+import { PurchaseCelebrationOverlay } from './src/components/PurchaseCelebrationOverlay';
 import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
 import { useTabBarHeight } from './src/lib/tabBarHeight';
@@ -358,6 +359,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       </ScreenOverlay>
       <TrialExpiryModal />
       <TourOverlay />
+      <PurchaseCelebrationOverlay />
     </NavigationContainer>
   );
 }

@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { StoryViewer } from './StoryViewer';
+import { StoryLockedModal } from './StoryLockedModal';
 import { DocsBadge } from './brand/DocsBadge';
+import { useMembership } from '../context/MembershipContext';
 import { useStories } from '../context/StoriesContext';
 import { useTour } from '../context/TourContext';
 import { colors, fonts } from '../theme';
@@ -21,7 +23,9 @@ type Props = {
 export function StoryRow({ compact = false }: Props) {
   const { activeStories, hasUnviewed } = useStories();
   const { registerTarget } = useTour();
+  const { storiesAccess } = useMembership();
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [lockedOpen, setLockedOpen] = useState(false);
 
   if (activeStories.length === 0) return null;
 
@@ -33,7 +37,7 @@ export function StoryRow({ compact = false }: Props) {
       <Pressable
         ref={compact ? registerTarget('story-ring') : undefined}
         style={compact ? styles.compactItem : styles.item}
-        onPress={() => setViewerOpen(true)}
+        onPress={() => (storiesAccess ? setViewerOpen(true) : setLockedOpen(true))}
         testID="story-ring-doc"
       >
         <View
@@ -60,6 +64,7 @@ export function StoryRow({ compact = false }: Props) {
       {viewerOpen && (
         <StoryViewer stories={activeStories} startIndex={0} onClose={() => setViewerOpen(false)} />
       )}
+      <StoryLockedModal visible={lockedOpen} onClose={() => setLockedOpen(false)} />
     </View>
   );
 }

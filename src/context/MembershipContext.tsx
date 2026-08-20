@@ -90,6 +90,9 @@ type MembershipContextValue = {
   wodAccessLevel: WodAccessLevel;
   cowsAccess: boolean;
   deckAccess: boolean;
+  // Doc's Daily Story — paid feature: trial, online paid, Monthly Unlimited
+  // (and admin). Guests and free-tier still see the story ring, just locked.
+  storiesAccess: boolean;
   communityAccess: 'full' | 'read_only' | 'none';
   // Class booking is available to every tier, including guests — kept as an explicit
   // flag (rather than assumed) so call sites read intent, not "true" literals.
@@ -103,6 +106,10 @@ type MembershipContextValue = {
   // editable later in Settings. Keyed to `email` so a future backend round
   // can sync it straight to Doc's email platform.
   newsletterOptIn: boolean;
+  // True right after a real paid purchase (online plan, Monthly Unlimited,
+  // 10 Class Pack) — never set by the free trial or Drop In — so the app
+  // shell can show the purchase celebration exactly once, then clear it.
+  justPurchased: boolean;
 
   startTrial: (email: string) => void;
   becomeMember: () => void;
@@ -114,6 +121,7 @@ type MembershipContextValue = {
   refundTenPackClass: () => void;
   useFirstClass: () => void;
   setNewsletterOptIn: (optIn: boolean) => void;
+  clearJustPurchased: () => void;
 };
 
 const MembershipContext = createContext<MembershipContextValue | undefined>(undefined);
@@ -127,6 +135,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   const [tenPackClassesRemaining, setTenPackClassesRemaining] = useState<number | null>(null);
   const [firstClassUsed, setFirstClassUsed] = useState(false);
   const [newsletterOptIn, setNewsletterOptIn] = useState(true);
+  const [justPurchased, setJustPurchased] = useState(false);
 
   const daysLeftInTrial = trialEndsAt
     ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
@@ -134,7 +143,11 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
 
   const value = useMemo<MembershipContextValue>(() => {
     const fullContentAccess = tier === 'admin' || tier === 'trial' || tier === 'online_paid' || tier === 'in_person_unlimited';
-    const wodAccessLevel: WodAccessLevel = fullContentAccess ? 'full' : tier === 'online_free' ? 'partial' : 'none';
+    const wodAccessLevel: WodAccessLevel = fullContentAccess
+      ? 'full'
+      : tier === 'online_free' || tier === 'guest'
+        ? 'partial'
+        : 'none';
     const communityAccess: 'full' | 'read_only' | 'none' =
       tier === 'drop_in' ? 'none' : tier === 'guest' ? 'read_only' : 'full';
 
@@ -152,11 +165,13 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       wodAccessLevel,
       cowsAccess: fullContentAccess,
       deckAccess: fullContentAccess,
+      storiesAccess: fullContentAccess,
       communityAccess,
       bookingAccess: true,
       tenPackClassesRemaining,
       firstClassUsed,
       newsletterOptIn,
+      justPurchased,
 
       startTrial: (enteredEmail: string) => {
         const endsAt = new Date();
@@ -170,11 +185,14 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       becomeMember: () => {
         setTier('online_paid');
         setSignedUp(true);
+        setJustPurchased(true);
       },
       selectInPersonPlan: (plan: InPersonPlan) => {
         setTier(plan === 'monthly_unlimited' ? 'in_person_unlimited' : plan === 'ten_pack' ? 'ten_pack' : 'drop_in');
         setSignedUp(true);
         if (plan === 'ten_pack') setTenPackClassesRemaining(TEN_PACK_SIZE);
+        // Drop In is a one-off, not a membership — no celebration for it.
+        if (plan !== 'drop_in') setJustPurchased(true);
       },
       becomeGuest: () => {
         setEmail(null);
@@ -199,6 +217,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         setTenPackClassesRemaining((prev) => Math.min(TEN_PACK_SIZE, (prev ?? 0) + 1)),
       useFirstClass: () => setFirstClassUsed(true),
       setNewsletterOptIn: (optIn: boolean) => setNewsletterOptIn(optIn),
+      clearJustPurchased: () => setJustPurchased(false),
     };
   }, [
     tier,
@@ -210,6 +229,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     tenPackClassesRemaining,
     firstClassUsed,
     newsletterOptIn,
+    justPurchased,
   ]);
 
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>;
