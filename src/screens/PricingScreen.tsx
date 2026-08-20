@@ -4,7 +4,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
 import { PlanSectionHeader } from '../components/PlanSectionHeader';
 import { ONLINE_PLANS, ONLINE_PLAN_BULLETS, ONLINE_SECTION_HEADER } from '../data/plans';
-import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -49,13 +48,7 @@ export default function PricingScreen({ onBack, onSelectPlan }: Props) {
                 </View>
               ))}
 
-              <Pressable
-                style={styles.selectButton}
-                onPress={() => {
-                  onSelectPlan();
-                  showAlert('Payments Coming Soon', 'This is a preview — no charge yet.');
-                }}
-              >
+              <Pressable style={styles.selectButton} onPress={onSelectPlan}>
                 <Text style={styles.selectButtonText}>CHOOSE {plan.name}</Text>
               </Pressable>
             </View>
