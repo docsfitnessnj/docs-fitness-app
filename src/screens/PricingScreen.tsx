@@ -2,7 +2,8 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
-import { ONLINE_PLANS, ONLINE_PLAN_BULLETS } from '../data/plans';
+import { PlanSectionHeader } from '../components/PlanSectionHeader';
+import { ONLINE_PLANS, ONLINE_PLAN_BULLETS, ONLINE_SECTION_HEADER } from '../data/plans';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -19,8 +20,7 @@ export default function PricingScreen({ onBack, onSelectPlan }: Props) {
         <Text style={styles.backText}>BACK</Text>
       </Pressable>
 
-      <Text style={styles.title}>BECOME A MEMBER</Text>
-      <Text style={styles.subtext}>Full access to Doc's WODs, COWS, The Deck, and Community.</Text>
+      <PlanSectionHeader title={ONLINE_SECTION_HEADER.title} subtitle={ONLINE_SECTION_HEADER.subtitle} />
 
       <ScrollView contentContainerStyle={styles.plans} showsVerticalScrollIndicator={false}>
         {ONLINE_PLANS.map((plan) => (
@@ -88,20 +88,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 1,
     marginLeft: 2,
-  },
-  title: {
-    color: colors.text,
-    fontFamily: fonts.headline,
-    fontSize: 34,
-    letterSpacing: 1,
-  },
-  subtext: {
-    color: colors.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 16,
-    marginTop: 8,
-    marginBottom: 28,
-    lineHeight: 22,
   },
   plans: {
     gap: 16,
