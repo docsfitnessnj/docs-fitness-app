@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { MembershipGate } from '../components/MembershipGate';
 import { Avatar } from '../components/Avatar';
+import { useBadges } from '../context/BadgeContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { colors, fonts } from '../theme';
 
@@ -38,6 +39,7 @@ function ChallengeHero() {
 
 function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>) => void }) {
   const displayName = useDisplayName();
+  const { recordCowKillerScore } = useBadges();
   const [kettlebell, setKettlebell] = useState('');
   const [score, setScore] = useState('');
 
@@ -46,6 +48,7 @@ function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>
   const submit = () => {
     if (!canSubmit) return;
     onSubmit({ name: displayName, kettlebell: kettlebell.trim() || '—', score: score.trim() });
+    recordCowKillerScore();
     setKettlebell('');
     setScore('');
   };

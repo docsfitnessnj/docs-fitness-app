@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '../components/AppModal';
 import { Avatar } from '../components/Avatar';
 import { MediaAttachmentPicker } from '../components/MediaAttachmentPicker';
+import { PostAuthorBadges } from '../components/PostAuthorBadges';
 import { PostDetailModal } from '../components/PostDetailModal';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { StoryRow } from '../components/StoryRow';
@@ -212,7 +213,10 @@ function PostCard({
       <View style={styles.postHeader}>
         <Avatar name={post.author} uri={post.author === displayName ? photoUri : undefined} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.postName}>{post.author}</Text>
+          <View style={styles.postNameRow}>
+            <Text style={styles.postName}>{post.author}</Text>
+            <PostAuthorBadges author={post.author} />
+          </View>
           <View style={styles.postMetaRow}>
             <Text style={styles.postTime}>{post.timeLabel}</Text>
             <Text style={styles.postMetaDot}>·</Text>
@@ -643,6 +647,10 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.bodySemiBold,
     fontSize: 15,
+  },
+  postNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   postMetaRow: {
     flexDirection: 'row',

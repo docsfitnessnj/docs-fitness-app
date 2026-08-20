@@ -31,6 +31,7 @@ import { CloseFriendsProvider } from './src/context/CloseFriendsContext';
 import { ProfileProvider } from './src/context/ProfileContext';
 import { StoriesProvider } from './src/context/StoriesContext';
 import { DeckProgressProvider } from './src/context/DeckProgressContext';
+import { BadgeProvider } from './src/context/BadgeContext';
 import { ClassSignUpProvider } from './src/context/ClassSignUpContext';
 import { TourProvider, useTour } from './src/context/TourContext';
 import { AppTopBar } from './src/components/AppTopBar';
@@ -65,6 +66,8 @@ import { AdminRosterScreen } from './src/screens/AdminRosterScreen';
 import { CloseFriendsScreen } from './src/screens/CloseFriendsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { TrophyCaseScreen } from './src/screens/TrophyCaseScreen';
+import { MemberManagerScreen } from './src/screens/MemberManagerScreen';
 
 const PHONE_FRAME_MAX_WIDTH = 480;
 const MAIN_COLUMN_DESKTOP_WIDTH = 640;
@@ -298,8 +301,17 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [closeFriendsOpen, setCloseFriendsOpen] = useState(false);
   const [adminRosterOpen, setAdminRosterOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [trophyCaseOpen, setTrophyCaseOpen] = useState(false);
+  const [memberManagerOpen, setMemberManagerOpen] = useState(false);
+  const [messagesDraft, setMessagesDraft] = useState<string | undefined>(undefined);
   const [scheduleOpen, setScheduleOpen] = useScheduleModalState();
   const [activeTab, setActiveTab] = useState('Community');
+
+  const openMessagesForJokerVerification = () => {
+    setTrophyCaseOpen(false);
+    setMessagesDraft("Here's proof I own the physical Deck of WODs — photo attached.");
+    onOpenMessages();
+  };
 
   return (
     <NavigationContainer
@@ -321,7 +333,14 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
         <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
       </ScreenOverlay>
       <ScreenOverlay visible={messagesOpen}>
-        <MessagesScreen visible={messagesOpen} onClose={onCloseMessages} />
+        <MessagesScreen
+          visible={messagesOpen}
+          onClose={() => {
+            setMessagesDraft(undefined);
+            onCloseMessages();
+          }}
+          initialDraft={messagesDraft}
+        />
       </ScreenOverlay>
       <ScreenOverlay visible={sidebarOpen} fullBleed>
         <SidebarDrawer
@@ -334,6 +353,8 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenMessages={onOpenMessages}
           onOpenAdminRoster={() => setAdminRosterOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
+          onOpenTrophyCase={() => setTrophyCaseOpen(true)}
+          onOpenMemberManager={() => setMemberManagerOpen(true)}
         />
       </ScreenOverlay>
       <ScreenOverlay visible={profileOpen}>
@@ -353,6 +374,16 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       </ScreenOverlay>
       <ScreenOverlay visible={settingsOpen}>
         <SettingsScreen visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={trophyCaseOpen}>
+        <TrophyCaseScreen
+          visible={trophyCaseOpen}
+          onClose={() => setTrophyCaseOpen(false)}
+          onVerifyJoker={openMessagesForJokerVerification}
+        />
+      </ScreenOverlay>
+      <ScreenOverlay visible={memberManagerOpen}>
+        <MemberManagerScreen visible={memberManagerOpen} onClose={() => setMemberManagerOpen(false)} />
       </ScreenOverlay>
       <ScreenOverlay visible={scheduleOpen}>
         <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
@@ -442,13 +473,15 @@ export default function App() {
               <ProfileProvider>
                 <StoriesProvider>
                   <DeckProgressProvider>
-                    <ClassSignUpProvider>
-                      <TourProvider>
-                        <View style={styles.webSurround}>
-                          <ResponsiveShell onLayoutRootView={onLayoutRootView} />
-                        </View>
-                      </TourProvider>
-                    </ClassSignUpProvider>
+                    <BadgeProvider>
+                      <ClassSignUpProvider>
+                        <TourProvider>
+                          <View style={styles.webSurround}>
+                            <ResponsiveShell onLayoutRootView={onLayoutRootView} />
+                          </View>
+                        </TourProvider>
+                      </ClassSignUpProvider>
+                    </BadgeProvider>
                   </DeckProgressProvider>
                 </StoriesProvider>
               </ProfileProvider>

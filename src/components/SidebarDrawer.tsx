@@ -22,6 +22,8 @@ type Props = {
   onOpenMessages: () => void;
   onOpenAdminRoster: () => void;
   onOpenSettings: () => void;
+  onOpenTrophyCase: () => void;
+  onOpenMemberManager: () => void;
 };
 
 type Row = {
@@ -45,6 +47,8 @@ export function SidebarDrawer({
   onOpenMessages,
   onOpenAdminRoster,
   onOpenSettings,
+  onOpenTrophyCase,
+  onOpenMemberManager,
 }: Props) {
   const navigation = useNavigation<any>();
   const { completedWorkouts } = useWorkoutLog();
@@ -75,6 +79,7 @@ export function SidebarDrawer({
       onPress: () => go(onOpenMyWorkouts),
     },
     { key: 'friends', label: 'CLOSE FRIENDS', icon: 'star-outline', onPress: () => go(onOpenCloseFriends) },
+    { key: 'trophy-case', label: 'THE TROPHY CASE', icon: 'trophy-outline', onPress: () => go(onOpenTrophyCase) },
     { key: 'schedule', label: 'BOATHOUSE SCHEDULE', icon: 'calendar-outline', onPress: () => go(openFullSchedule) },
     { key: 'merch', label: 'MERCH STORE', icon: 'bag-handle-outline', onPress: () => go(openMerchStore) },
     { key: 'message', label: 'MESSAGE DOC', icon: 'chatbubble-ellipses-outline', onPress: () => go(onOpenMessages) },
@@ -92,6 +97,12 @@ export function SidebarDrawer({
             label: 'CLASS ROSTER',
             icon: 'clipboard-outline' as const,
             onPress: () => go(onOpenAdminRoster),
+          },
+          {
+            key: 'member-manager',
+            label: 'MEMBER MANAGER',
+            icon: 'people-circle-outline' as const,
+            onPress: () => go(onOpenMemberManager),
           },
         ]
       : []),
