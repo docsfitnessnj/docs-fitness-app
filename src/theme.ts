@@ -48,7 +48,7 @@ export const fonts = {
 // identity sidebar. Keep this the single source of truth — don't let a
 // second variant creep back in.
 export const TAGLINE =
-  'Look and feel better than you did 10 years ago with just 2 hours of kettlebell training a week.';
+  'Look and feel better than you did 10 years ago with just 2 hours a week of kettlebell training.';
 
 export const LOCATION = {
   name: "Dr. John W. Holland Boathouse",
