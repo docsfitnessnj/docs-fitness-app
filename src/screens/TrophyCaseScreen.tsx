@@ -67,7 +67,7 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
     return (
       <View key={id} style={styles.card} testID={`trophy-case-badge-${id}`}>
         <View style={styles.cardTopRow}>
-          <BadgeIcon id={id} earned={earned} size={48} />
+          <BadgeIcon id={id} earned={earned} size={60} />
           <View style={styles.cardMain}>
             <Text style={styles.cardName}>{def.name}</Text>
             <Text style={styles.cardDescription}>{def.description}</Text>

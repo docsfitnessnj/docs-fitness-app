@@ -7,13 +7,26 @@ const UPSELL_STORAGE_KEY = 'docsfitness.deckUpsell.v1';
 const SHUFFLE_STORAGE_KEY = 'docsfitness.deckShuffleOrder.v1';
 const UPSELL_MIN_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
 
-function shuffledCardIds(): string[] {
-  const ids = DECK_CARDS.map((c) => c.id);
-  for (let i = ids.length - 1; i > 0; i--) {
+function shuffle<T>(items: T[]): T[] {
+  const shuffled = [...items];
+  for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [ids[i], ids[j]] = [ids[j], ids[i]];
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
-  return ids;
+  return shuffled;
+}
+
+function shuffledCardIds(): string[] {
+  return shuffle(DECK_CARDS.map((c) => c.id));
+}
+
+// Reshuffles only the positions held by not-yet-complete cards — a completed
+// card keeps the grid slot it was in the moment it got marked complete,
+// forever, while the face-down cards around it keep moving.
+function reshuffleUncompletedPositions(order: string[], completed: Record<string, boolean>): string[] {
+  const shuffledIncomplete = shuffle(order.filter((id) => !completed[id]));
+  let cursor = 0;
+  return order.map((id) => (completed[id] ? id : shuffledIncomplete[cursor++]));
 }
 
 type DeckProgressContextValue = {
@@ -22,9 +35,10 @@ type DeckProgressContextValue = {
   completedCount: number;
   totalCount: number;
   pickRandomUncompleted: () => string | null;
-  // Browse-mode card order, shuffled once per user and persisted so face-down
-  // cards don't telegraph their identity via suit/rank order.
+  // Browse-mode card order/positions, persisted. Completed cards are frozen
+  // in place; only the not-yet-complete slots move on reshuffle.
   browseOrder: string[];
+  reshuffleBrowseOrder: () => void;
   // "Complete your first card, then at most once a month" upsell for the physical deck.
   shouldOfferUpsell: boolean;
   recordUpsellShown: () => void;
@@ -37,7 +51,7 @@ export function DeckProgressProvider({ children }: { children: React.ReactNode }
   const [lastUpsellShownAt, setLastUpsellShownAt] = useState<number | null>(() =>
     loadJSON<number | null>(UPSELL_STORAGE_KEY, null)
   );
-  const [browseOrder] = useState<string[]>(() => {
+  const [browseOrder, setBrowseOrder] = useState<string[]>(() => {
     const stored = loadJSON<string[]>(SHUFFLE_STORAGE_KEY, []);
     const knownIds = new Set(DECK_CARDS.map((c) => c.id));
     const valid = stored.length === DECK_CARDS.length && stored.every((id) => knownIds.has(id));
@@ -55,6 +69,10 @@ export function DeckProgressProvider({ children }: { children: React.ReactNode }
     saveJSON(UPSELL_STORAGE_KEY, lastUpsellShownAt);
   }, [lastUpsellShownAt]);
 
+  useEffect(() => {
+    saveJSON(SHUFFLE_STORAGE_KEY, browseOrder);
+  }, [browseOrder]);
+
   const value = useMemo<DeckProgressContextValue>(() => {
     const completedCount = DECK_CARDS.filter((c) => completed[c.id]).length;
     const shouldOfferUpsell =
@@ -69,6 +87,7 @@ export function DeckProgressProvider({ children }: { children: React.ReactNode }
       completedCount,
       totalCount: DECK_CARDS.length,
       browseOrder,
+      reshuffleBrowseOrder: () => setBrowseOrder((prev) => reshuffleUncompletedPositions(prev, completed)),
       pickRandomUncompleted: () => {
         const pool = DECK_CARDS.filter((c) => !completed[c.id]);
         if (pool.length === 0) return null;

@@ -15,9 +15,9 @@ type Props = {
 // Views — matches the app's line-art icon language without needing an
 // icon-font glyph that doesn't exist for "chalk tally marks."
 function TallyMarks({ color, size }: { color: string; size: number }) {
-  const strokeW = Math.max(1.5, size * 0.09);
+  const strokeW = Math.max(2, size * 0.12);
   const strokeH = size * 0.62;
-  const gap = size * 0.14;
+  const gap = size * 0.13;
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -60,7 +60,7 @@ function BadgeGlyph({ id, color, size }: { id: BadgeId; color: string; size: num
       return <TallyMarks color={color} size={size} />;
     case 'day_one_doug':
       return (
-        <Text style={{ fontFamily: fonts.headline, fontSize: size * 0.46, color, letterSpacing: 0.5 }}>D1D</Text>
+        <Text style={{ fontFamily: fonts.headline, fontSize: size * 0.58, color, letterSpacing: 0.5 }}>D1D</Text>
       );
     case 'hundred_down':
       return (
@@ -96,7 +96,7 @@ export function BadgeIcon({ id, earned, size = 36 }: Props) {
         earned ? styles.frameEarned : styles.frameUnearned,
       ]}
     >
-      <BadgeGlyph id={id} color={earned ? colors.greenDeep : colors.textMuted} size={size * 0.56} />
+      <BadgeGlyph id={id} color={earned ? colors.greenDeep : colors.textMuted} size={size * 0.72} />
     </View>
   );
 }
