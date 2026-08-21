@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
 import { BadgeIcon } from '../components/icons/BadgeIcon';
-import { BADGE_MAP, BadgeId } from '../data/badges';
+import { BADGE_MAP, BadgeId, PERMANENT_DISPLAY_ORDER, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import { openDeckStore } from '../lib/links';
 import { HUNDRED_DOWN_TARGET, useBadges } from '../context/BadgeContext';
 import { useMembership } from '../context/MembershipContext';
@@ -14,9 +14,6 @@ type Props = {
   onClose: () => void;
   onVerifyJoker: () => void;
 };
-
-const PERMANENT_IDS: BadgeId[] = ['joker', 'day_one_doug', 'hundred_down'];
-const WEEKLY_IDS: BadgeId[] = ['on_fire', 'cow_killer', 'the_regular'];
 
 function formatEarnedDate(ts: number): string {
   return new Date(ts)
@@ -101,11 +98,11 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
         <Text style={styles.subtitle}>Six badges. Earn them, wear them.</Text>
 
         <Text style={styles.sectionHeading}>PERMANENT</Text>
-        {PERMANENT_IDS.map((id) => renderCard(id, permanentStatus(id)))}
+        {PERMANENT_DISPLAY_ORDER.map((id) => renderCard(id, permanentStatus(id)))}
 
         <Text style={[styles.sectionHeading, styles.sectionHeadingSpaced]}>THIS WEEK</Text>
         <Text style={styles.sectionNote}>Weekly badges reset every Monday.</Text>
-        {WEEKLY_IDS.map((id) => renderCard(id, weeklyStatus(id)))}
+        {WEEKLY_DISPLAY_ORDER.map((id) => renderCard(id, weeklyStatus(id)))}
 
         {isAdmin && (
           <Pressable

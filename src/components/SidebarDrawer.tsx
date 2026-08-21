@@ -63,26 +63,49 @@ export function SidebarDrawer({
 
   if (!visible) return null;
 
+  // Rows that open a stacked in-app screen (its own ModalHeader BACK button)
+  // stay nested under the open drawer — the drawer never closes, so backing
+  // out of the screen reveals the menu list again, not whatever tab was
+  // open behind it. Only rows that leave the hamburger flow entirely (an
+  // external link, or jumping straight to a tab) close the drawer first.
+  const openNested = (fn: () => void) => {
+    fn();
+  };
   const go = (fn: () => void) => {
     onClose();
     fn();
   };
 
   const rows: Row[] = [
-    { key: 'profile', label: 'PROFILE', icon: 'person-circle-outline', onPress: () => go(onOpenProfile) },
-    { key: 'memberships', label: 'MEMBERSHIPS', icon: 'card-outline', onPress: () => go(onOpenMemberships) },
+    { key: 'profile', label: 'PROFILE', icon: 'person-circle-outline', onPress: () => openNested(onOpenProfile) },
+    { key: 'memberships', label: 'MEMBERSHIPS', icon: 'card-outline', onPress: () => openNested(onOpenMemberships) },
     {
       key: 'workouts',
       label: 'MY WORKOUTS',
       icon: 'barbell-outline',
       meta: String(completedWorkouts.length),
-      onPress: () => go(onOpenMyWorkouts),
+      onPress: () => openNested(onOpenMyWorkouts),
     },
-    { key: 'friends', label: 'CLOSE FRIENDS', icon: 'star-outline', onPress: () => go(onOpenCloseFriends) },
-    { key: 'trophy-case', label: 'THE TROPHY CASE', icon: 'trophy-outline', onPress: () => go(onOpenTrophyCase) },
-    { key: 'schedule', label: 'BOATHOUSE SCHEDULE', icon: 'calendar-outline', onPress: () => go(openFullSchedule) },
+    { key: 'friends', label: 'CLOSE FRIENDS', icon: 'star-outline', onPress: () => openNested(onOpenCloseFriends) },
+    {
+      key: 'trophy-case',
+      label: 'THE TROPHY CASE',
+      icon: 'trophy-outline',
+      onPress: () => openNested(onOpenTrophyCase),
+    },
+    {
+      key: 'schedule',
+      label: 'BOATHOUSE SCHEDULE',
+      icon: 'calendar-outline',
+      onPress: () => openNested(openFullSchedule),
+    },
     { key: 'merch', label: 'MERCH STORE', icon: 'bag-handle-outline', onPress: () => go(openMerchStore) },
-    { key: 'message', label: 'MESSAGE DOC', icon: 'chatbubble-ellipses-outline', onPress: () => go(onOpenMessages) },
+    {
+      key: 'message',
+      label: 'MESSAGE DOC',
+      icon: 'chatbubble-ellipses-outline',
+      onPress: () => openNested(onOpenMessages),
+    },
     {
       key: 'deck',
       label: 'DECK OF WODS',
@@ -96,13 +119,13 @@ export function SidebarDrawer({
             key: 'admin-roster',
             label: 'CLASS ROSTER',
             icon: 'clipboard-outline' as const,
-            onPress: () => go(onOpenAdminRoster),
+            onPress: () => openNested(onOpenAdminRoster),
           },
           {
             key: 'member-manager',
             label: 'MEMBER MANAGER',
             icon: 'people-circle-outline' as const,
-            onPress: () => go(onOpenMemberManager),
+            onPress: () => openNested(onOpenMemberManager),
           },
         ]
       : []),
@@ -110,7 +133,7 @@ export function SidebarDrawer({
       key: 'settings',
       label: 'SETTINGS & NOTIFICATIONS',
       icon: 'settings-outline',
-      onPress: () => go(onOpenSettings),
+      onPress: () => openNested(onOpenSettings),
     },
   ];
 

@@ -332,16 +332,6 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       <ScreenOverlay visible={searchOpen}>
         <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={messagesOpen}>
-        <MessagesScreen
-          visible={messagesOpen}
-          onClose={() => {
-            setMessagesDraft(undefined);
-            onCloseMessages();
-          }}
-          initialDraft={messagesDraft}
-        />
-      </ScreenOverlay>
       <ScreenOverlay visible={sidebarOpen} fullBleed>
         <SidebarDrawer
           visible={sidebarOpen}
@@ -357,35 +347,50 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenMemberManager={() => setMemberManagerOpen(true)}
         />
       </ScreenOverlay>
-      <ScreenOverlay visible={profileOpen}>
+      {/* Rows nested under the drawer: fullBleed only while the drawer itself
+          is still open (opened from the hamburger), so backing out reveals
+          the menu list, not the tab bar underneath. Their other entry points
+          (e.g. desktop Messages, the schedule strip link) leave sidebarOpen
+          false and keep the original non-fullBleed behavior. */}
+      <ScreenOverlay visible={messagesOpen} fullBleed={sidebarOpen}>
+        <MessagesScreen
+          visible={messagesOpen}
+          onClose={() => {
+            setMessagesDraft(undefined);
+            onCloseMessages();
+          }}
+          initialDraft={messagesDraft}
+        />
+      </ScreenOverlay>
+      <ScreenOverlay visible={profileOpen} fullBleed={sidebarOpen}>
         <ProfileScreen visible={profileOpen} onClose={() => setProfileOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={membershipsOpen}>
+      <ScreenOverlay visible={membershipsOpen} fullBleed={sidebarOpen}>
         <MembershipsScreen visible={membershipsOpen} onClose={() => setMembershipsOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={myWorkoutsOpen}>
+      <ScreenOverlay visible={myWorkoutsOpen} fullBleed={sidebarOpen}>
         <MyWorkoutsScreen visible={myWorkoutsOpen} onClose={() => setMyWorkoutsOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={closeFriendsOpen}>
+      <ScreenOverlay visible={closeFriendsOpen} fullBleed={sidebarOpen}>
         <CloseFriendsScreen visible={closeFriendsOpen} onClose={() => setCloseFriendsOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={adminRosterOpen}>
+      <ScreenOverlay visible={adminRosterOpen} fullBleed={sidebarOpen}>
         <AdminRosterScreen visible={adminRosterOpen} onClose={() => setAdminRosterOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={settingsOpen}>
+      <ScreenOverlay visible={settingsOpen} fullBleed={sidebarOpen}>
         <SettingsScreen visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={trophyCaseOpen}>
+      <ScreenOverlay visible={trophyCaseOpen} fullBleed={sidebarOpen}>
         <TrophyCaseScreen
           visible={trophyCaseOpen}
           onClose={() => setTrophyCaseOpen(false)}
           onVerifyJoker={openMessagesForJokerVerification}
         />
       </ScreenOverlay>
-      <ScreenOverlay visible={memberManagerOpen}>
+      <ScreenOverlay visible={memberManagerOpen} fullBleed={sidebarOpen}>
         <MemberManagerScreen visible={memberManagerOpen} onClose={() => setMemberManagerOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={scheduleOpen}>
+      <ScreenOverlay visible={scheduleOpen} fullBleed={sidebarOpen}>
         <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
       </ScreenOverlay>
       <TrialExpiryModal />
