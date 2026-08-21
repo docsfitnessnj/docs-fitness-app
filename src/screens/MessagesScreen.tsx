@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,9 +12,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ModalHeader } from '../components/ModalHeader';
+import { MediaAttachmentPicker } from '../components/MediaAttachmentPicker';
+import { MediaAttachment } from '../lib/media';
 import { colors, fonts } from '../theme';
 
-type Message = { id: string; from: 'me' | 'doc'; text: string };
+type Message = { id: string; from: 'me' | 'doc'; text: string; media?: MediaAttachment | null };
 
 const SEED_MESSAGES: Message[] = [
   { id: 'seed-1', from: 'doc', text: "Drop your questions here and I'll get back to you personally. Real-time replies are coming soon." },
@@ -22,17 +25,32 @@ const SEED_MESSAGES: Message[] = [
 type Props = {
   visible: boolean;
   onClose: () => void;
+  // Prefills the draft and surfaces a photo attachment prompt above the
+  // input — used by THE JOKER's VERIFY OWNERSHIP flow, which needs Doc to
+  // see a photo of the physical deck.
+  initialDraft?: string;
 };
 
-export function MessagesScreen({ visible, onClose }: Props) {
+export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
   const [messages, setMessages] = useState<Message[]>(SEED_MESSAGES);
   const [draft, setDraft] = useState('');
+  const [media, setMedia] = useState<MediaAttachment | null>(null);
+  const [photoPromptVisible, setPhotoPromptVisible] = useState(false);
   const [voiceTooltipVisible, setVoiceTooltipVisible] = useState(false);
+
+  useEffect(() => {
+    if (visible && initialDraft) {
+      setDraft(initialDraft);
+      setPhotoPromptVisible(true);
+    }
+  }, [visible, initialDraft]);
 
   const send = () => {
     if (!draft.trim()) return;
-    setMessages((prev) => [...prev, { id: `msg-${prev.length}`, from: 'me', text: draft.trim() }]);
+    setMessages((prev) => [...prev, { id: `msg-${prev.length}`, from: 'me', text: draft.trim(), media }]);
     setDraft('');
+    setMedia(null);
+    setPhotoPromptVisible(false);
   };
 
   const showVoiceTooltip = () => {
@@ -55,12 +73,22 @@ export function MessagesScreen({ visible, onClose }: Props) {
             key={message.id}
             style={[styles.bubble, message.from === 'me' ? styles.bubbleMe : styles.bubbleDoc]}
           >
+            {message.media?.type === 'image' && (
+              <Image source={{ uri: message.media.uri }} style={styles.bubbleImage} />
+            )}
             <Text style={[styles.bubbleText, message.from === 'me' && styles.bubbleTextMe]}>
               {message.text}
             </Text>
           </View>
         ))}
       </ScrollView>
+
+      {photoPromptVisible && (
+        <View style={styles.photoPromptWrap} testID="verify-photo-prompt">
+          <Text style={styles.photoPromptLabel}>ATTACH A PHOTO OF YOUR DECK</Text>
+          <MediaAttachmentPicker media={media} onChange={setMedia} />
+        </View>
+      )}
 
       <View style={styles.inputRow}>
         <View style={styles.micWrap}>
@@ -127,6 +155,24 @@ const styles = StyleSheet.create({
   },
   bubbleTextMe: {
     color: colors.white,
+  },
+  bubbleImage: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 10,
+    marginBottom: 8,
+    backgroundColor: colors.background,
+  },
+  photoPromptWrap: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  photoPromptLabel: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 11,
+    letterSpacing: 1,
+    marginBottom: 8,
   },
   inputRow: {
     flexDirection: 'row',

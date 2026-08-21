@@ -20,7 +20,7 @@ type Props = {
 export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLabel }: Props) {
   const displayName = useDisplayName();
   const { addWodResultPost } = useCommunity();
-  const { getLog, updateLog: updateLogEntry, setLogMedia } = useWorkoutLog();
+  const { getLog, updateLog: updateLogEntry, setLogMedia, isCompleted, toggleCompleted } = useWorkoutLog();
 
   const log = getLog(dayKey);
 
@@ -28,7 +28,18 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
     updateLogEntry(dayKey, field, value);
   };
 
+  // The Trophy Case counts a workout the moment it's logged, not only when
+  // MARK COMPLETE is tapped separately — so logging results for a day that
+  // isn't already marked complete quietly marks it complete too (toggle is
+  // a flip, so this only ever fires when it's not already done).
+  const markCompleteIfNeeded = () => {
+    if (!isCompleted(dayKey)) {
+      toggleCompleted(dayKey, workoutTitle, dateLabel, Date.now());
+    }
+  };
+
   const handleSaveResults = () => {
+    markCompleteIfNeeded();
     showAlert('Saved', 'Your result is saved privately to My Workouts.');
     onClose();
   };
@@ -39,6 +50,7 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
       {
         text: 'Post',
         onPress: () => {
+          markCompleteIfNeeded();
           addWodResultPost(
             displayName,
             { workoutTitle, dateLabel, notes: log.notes.trim(), resultsLine: formatResultsLine(log) },

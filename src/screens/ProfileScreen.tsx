@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { ModalHeader } from '../components/ModalHeader';
 import { Avatar } from '../components/Avatar';
+import { ProfileBadgeCase } from '../components/ProfileBadgeCase';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
@@ -124,6 +125,8 @@ export function ProfileScreen({ visible, onClose }: Props) {
           <Pressable style={styles.saveButton} onPress={save} testID="save-profile">
             <Text style={styles.saveButtonText}>SAVE</Text>
           </Pressable>
+
+          <ProfileBadgeCase />
 
         <Text style={styles.footnote}>Saved on this device for now.</Text>
       </ScrollView>

@@ -78,6 +78,26 @@ export function getUpcomingDays(count: number, today: Date = new Date()): WeekDa
   });
 }
 
+// Monday 12:00 AM local for the week containing `today` — the shared clock
+// weekly badges reset against. Nothing needs to run at midnight Monday to
+// "reset" them: every read just re-derives "this week" from the current
+// date, so a badge earned last week naturally stops qualifying once the
+// date rolls past the new Monday.
+export function getWeekStart(today: Date = new Date()): Date {
+  const dayOfWeek = today.getDay();
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const monday = new Date(today);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() + mondayOffset);
+  return monday;
+}
+
+export function isThisWeek(timestamp: number, today: Date = new Date()): boolean {
+  const start = getWeekStart(today).getTime();
+  const end = start + 7 * 24 * 60 * 60 * 1000;
+  return timestamp >= start && timestamp < end;
+}
+
 export function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
