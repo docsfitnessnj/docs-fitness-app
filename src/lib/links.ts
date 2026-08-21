@@ -2,8 +2,10 @@ import { Linking } from 'react-native';
 import { showAlert } from './alert';
 import { LOCATION } from '../theme';
 
-export const MERCH_STORE_URL = 'https://docsfitness.example.com/merch';
-export const DECK_STORE_URL = 'https://docsfitness.example.com/shop/deck-of-wods';
+export const MERCH_STORE_URL =
+  'https://docs-fitness-merch.myshopify.com/collections/doc-s-fitness-merch?utm_source=docs_app&utm_medium=app&utm_campaign=merch';
+export const DECK_STORE_URL =
+  'https://docs-fitness-merch.myshopify.com/products/doc-s-deck-of-wods?utm_source=docs_app&utm_medium=app&utm_campaign=deck';
 
 export function openMerchStore() {
   Linking.openURL(MERCH_STORE_URL).catch(() => {

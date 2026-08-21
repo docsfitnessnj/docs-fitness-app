@@ -119,6 +119,7 @@ export default function DocsWodsScreen() {
           dayKey={dayKey}
           workoutTitle={wod.title}
           dateLabel={formatFullDate(selectedDay.date)}
+          date={selectedDay.date}
         />
       )}
     </ScreenContainer>

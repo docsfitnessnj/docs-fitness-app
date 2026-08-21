@@ -47,6 +47,7 @@ import { PurchaseCelebrationOverlay } from './src/components/PurchaseCelebration
 import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
 import { useTabBarHeight } from './src/lib/tabBarHeight';
+import { injectWebFocusStyles } from './src/lib/webFocusReset';
 import { colors, fonts } from './src/theme';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
@@ -75,6 +76,7 @@ const SIDEBAR_WIDTH = 320;
 const DESKTOP_BREAKPOINT = 900;
 
 SplashScreen.preventAutoHideAsync();
+injectWebFocusStyles();
 
 const Tab = createBottomTabNavigator();
 

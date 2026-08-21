@@ -111,8 +111,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
           {post.kind === 'wod' && post.meta ? (
             <View style={styles.wodBlock}>
               <Text style={styles.wodBadge}>WORKOUT COMPLETE</Text>
-              <Text style={styles.wodTitle}>{post.meta.workoutTitle}</Text>
-              <Text style={styles.wodDate}>{post.meta.dateLabel}</Text>
+              <Text style={styles.wodTitle}>{post.title}</Text>
               {!!post.meta.notes && <Text style={styles.wodNotes}>{post.meta.notes}</Text>}
               {!!post.meta.resultsLine && <Text style={styles.wodResults}>{post.meta.resultsLine}</Text>}
             </View>
