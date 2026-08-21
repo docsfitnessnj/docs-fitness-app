@@ -28,7 +28,7 @@ export function ProfileBadgeCase() {
               onPress={() => setSelected(def.id)}
               testID={`profile-badge-${def.id}`}
             >
-              <BadgeIcon id={def.id} earned={earned} size={52} />
+              <BadgeIcon id={def.id} earned={earned} size={62} />
               <Text style={[styles.cellLabel, !earned && styles.cellLabelUnearned]} numberOfLines={2}>
                 {def.name}
               </Text>

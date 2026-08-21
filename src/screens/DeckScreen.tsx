@@ -41,7 +41,7 @@ function ProgressLine({ completed, total }: { completed: number; total: number }
 }
 
 function ShuffleArea({ onDeal }: { onDeal: (card: DeckCardData) => void }) {
-  const { pickRandomUncompleted, completedCount, totalCount } = useDeckProgress();
+  const { pickRandomUncompleted, completedCount, totalCount, reshuffleBrowseOrder } = useDeckProgress();
   const [shuffling, setShuffling] = useState(false);
   const wiggle = useRef(new Animated.Value(0)).current;
 
@@ -50,6 +50,9 @@ function ShuffleArea({ onDeal }: { onDeal: (card: DeckCardData) => void }) {
   const handleShuffle = () => {
     if (shuffling || deckExhausted) return;
     setShuffling(true);
+    // Rearranges the browse-mode layout behind the scenes too, so it never
+    // shows the same face-down order twice even if the user hasn't looked.
+    reshuffleBrowseOrder();
     Animated.sequence([
       Animated.timing(wiggle, { toValue: 1, duration: 90, useNativeDriver: true }),
       Animated.timing(wiggle, { toValue: -1, duration: 90, useNativeDriver: true }),
@@ -165,8 +168,15 @@ function BrowseGrid({ onOpen }: { onOpen: (card: DeckCardData) => void }) {
 }
 
 function DeckOfWods() {
-  const { isComplete, toggleComplete, completedCount, totalCount, shouldOfferUpsell, recordUpsellShown } =
-    useDeckProgress();
+  const {
+    isComplete,
+    toggleComplete,
+    completedCount,
+    totalCount,
+    shouldOfferUpsell,
+    recordUpsellShown,
+    reshuffleBrowseOrder,
+  } = useDeckProgress();
   const [mode, setMode] = useState<Mode>('shuffle');
   const [selectedCard, setSelectedCard] = useState<DeckCardData | null>(null);
   const [upsellVisible, setUpsellVisible] = useState(false);
@@ -180,6 +190,13 @@ function DeckOfWods() {
     prevCompletedCount.current = completedCount;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completedCount]);
+
+  // Uncompleted cards reshuffle into new grid positions every time Browse
+  // mode is entered — completed cards are untouched (see reshuffleBrowseOrder).
+  useEffect(() => {
+    if (mode === 'browse') reshuffleBrowseOrder();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   return (
     <View>
