@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BadgeDetailModal } from './BadgeDetailModal';
 import { BadgeIcon } from './icons/BadgeIcon';
-import { BADGE_DEFS, BadgeId } from '../data/badges';
+import { BADGE_MAP, BadgeId, PERMANENT_DISPLAY_ORDER, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import { useBadges } from '../context/BadgeContext';
 import { colors, fonts } from '../theme';
 
@@ -18,7 +18,8 @@ export function ProfileBadgeCase() {
     <View style={styles.wrap}>
       <Text style={styles.heading}>TROPHY CASE</Text>
       <View style={styles.grid}>
-        {BADGE_DEFS.map((def) => {
+        {[...PERMANENT_DISPLAY_ORDER, ...WEEKLY_DISPLAY_ORDER].map((id) => {
+          const def = BADGE_MAP[id];
           const earned = earnedSet.has(def.id);
           return (
             <Pressable

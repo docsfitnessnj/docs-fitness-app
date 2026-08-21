@@ -75,3 +75,9 @@ export function sortBadgeIds(ids: BadgeId[]): BadgeId[] {
 }
 
 export const INLINE_BADGE_CAP = 4;
+
+// Display order for the Trophy Case screen and profile badge grid — grouped
+// permanents first (Doug, Hundred Down, Joker), then weeklies. Distinct from
+// `order`/sortBadgeIds above, which stays Joker-first for inline feed badges.
+export const PERMANENT_DISPLAY_ORDER: BadgeId[] = ['day_one_doug', 'hundred_down', 'joker'];
+export const WEEKLY_DISPLAY_ORDER: BadgeId[] = ['on_fire', 'cow_killer', 'the_regular'];
