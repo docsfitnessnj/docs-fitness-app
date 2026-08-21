@@ -9,7 +9,7 @@ import { useDisplayName } from './ProfileContext';
 import { useWorkoutLog } from './WorkoutLogContext';
 
 const STORAGE_KEY = 'docsfitness.badges.v1';
-const HUNDRED_DOWN_TARGET = 100;
+export const HUNDRED_DOWN_TARGET = 100;
 const REGULAR_TARGET = 3;
 
 type PersistedState = {
@@ -19,7 +19,7 @@ type PersistedState = {
   // Manual admin grants — currently just THE JOKER, keyed by member name.
   // Shaped as a per-member flag map so future manual flags slot in beside
   // `joker` without a schema change.
-  manualGrants: Record<string, { joker?: boolean }>;
+  manualGrants: Record<string, { joker?: boolean; jokerGrantedAt?: number }>;
   lastRecapMonthKey: string | null;
 };
 
@@ -45,11 +45,16 @@ type BadgeContextValue = {
   jokerEarned: boolean;
   dayOneDougEarned: boolean;
   hundredDownEarned: boolean;
+  // When each of my permanent badges was earned — null until earned. The
+  // Trophy Case shows this date once earned, progress toward it otherwise.
+  dayOneDougEarnedAt: number | null;
+  hundredDownEarnedAt: number | null;
 
   // Any author's badges (mine live-computed, others from roster demo data
   // + manual grants) — sorted Joker-first, weeklies, then permanents.
   getBadgesForAuthor: (name: string) => BadgeId[];
   hasManualJoker: (name: string) => boolean;
+  getJokerGrantedAt: (name: string) => number | null;
 
   recordCowKillerScore: () => void;
   grantJoker: (name: string) => void;
@@ -133,13 +138,16 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       jokerEarned,
       dayOneDougEarned,
       hundredDownEarned,
+      dayOneDougEarnedAt: state.dayOneDougEarnedAt,
+      hundredDownEarnedAt: state.hundredDownEarnedAt,
       getBadgesForAuthor,
       hasManualJoker: (name) => !!state.manualGrants[name]?.joker,
+      getJokerGrantedAt: (name) => state.manualGrants[name]?.jokerGrantedAt ?? null,
       recordCowKillerScore: () => setState((prev) => ({ ...prev, cowKillerPostedAt: Date.now() })),
       grantJoker: (name) =>
         setState((prev) => ({
           ...prev,
-          manualGrants: { ...prev.manualGrants, [name]: { ...prev.manualGrants[name], joker: true } },
+          manualGrants: { ...prev.manualGrants, [name]: { ...prev.manualGrants[name], joker: true, jokerGrantedAt: Date.now() } },
         })),
       revokeJoker: (name) =>
         setState((prev) => ({
