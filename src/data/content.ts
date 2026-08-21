@@ -110,6 +110,11 @@ export function formatFullDate(d: Date): string {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
+// Short, all-caps date used in auto-filled post titles, e.g. "AUG 17, 2026".
+export function formatShortDate(d: Date): string {
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
+}
+
 // Splits a movement string like "10 Kettlebell Swings" into a right-aligned
 // rep count and the movement name, for the "THE WORK" style movement rows.
 export function parseMoveRow(move: string): { reps?: string; name: string } {

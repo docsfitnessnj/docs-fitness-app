@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppModal } from './AppModal';
 import { MediaAttachmentPicker } from './MediaAttachmentPicker';
@@ -6,6 +6,7 @@ import { ModalHeader } from './ModalHeader';
 import { useCommunity } from '../context/CommunityContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { formatResultsLine, useWorkoutLog } from '../context/WorkoutLogContext';
+import { formatShortDate } from '../data/content';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -15,14 +16,24 @@ type Props = {
   dayKey: string;
   workoutTitle: string;
   dateLabel: string;
+  date: Date;
 };
 
-export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLabel }: Props) {
+export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLabel, date }: Props) {
   const displayName = useDisplayName();
   const { addWodResultPost } = useCommunity();
   const { getLog, updateLog: updateLogEntry, setLogMedia, isCompleted, toggleCompleted } = useWorkoutLog();
 
   const log = getLog(dayKey);
+
+  // Auto-fills as "WORKOUT NAME · DATE" but stays fully editable so the
+  // member can append their own note before posting to the community.
+  const defaultTitle = `${workoutTitle} · ${formatShortDate(date)}`;
+  const [title, setTitle] = useState(defaultTitle);
+  useEffect(() => {
+    setTitle(defaultTitle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayKey]);
 
   const updateLog = (field: 'rounds' | 'time' | 'kettlebell' | 'notes', value: string) => {
     updateLogEntry(dayKey, field, value);
@@ -53,6 +64,7 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
           markCompleteIfNeeded();
           addWodResultPost(
             displayName,
+            title,
             { workoutTitle, dateLabel, notes: log.notes.trim(), resultsLine: formatResultsLine(log) },
             log.media
           );
@@ -71,6 +83,16 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
         <ScrollView contentContainerStyle={styles.body}>
           <Text style={styles.workoutTitle}>{workoutTitle}</Text>
           <Text style={styles.dateLabel}>{dateLabel}</Text>
+
+          <Text style={styles.label}>POST TITLE</Text>
+          <TextInput
+            style={styles.input}
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Post title"
+            placeholderTextColor={colors.textMuted}
+            testID="log-results-title"
+          />
 
           <View style={styles.logRow}>
             <View style={styles.logField}>

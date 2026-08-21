@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '../components/AppModal';
 import { Avatar } from '../components/Avatar';
@@ -21,6 +21,9 @@ import { MediaAttachment } from '../lib/media';
 import { colors, fonts } from '../theme';
 
 const BOOKING_DAYS_AHEAD = 21;
+// ~4 lines at the body input's 22px line height — a modest starting box,
+// not a giant blank rectangle, that then grows with what's typed.
+const MIN_BODY_HEIGHT = 88;
 
 function ComposerBar({ onOpen }: { onOpen: () => void }) {
   const displayName = useDisplayName();
@@ -52,12 +55,14 @@ function CreatePostModal({
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [media, setMedia] = useState<MediaAttachment | null>(null);
+  const [bodyHeight, setBodyHeight] = useState(MIN_BODY_HEIGHT);
 
   React.useEffect(() => {
     if (visible) {
       setTitle(editingPost?.title ?? '');
       setBody(editingPost?.text ?? '');
       setMedia(editingPost?.media ?? null);
+      setBodyHeight(MIN_BODY_HEIGHT);
     }
   }, [visible, editingPost]);
 
@@ -65,6 +70,7 @@ function CreatePostModal({
     setTitle('');
     setBody('');
     setMedia(null);
+    setBodyHeight(MIN_BODY_HEIGHT);
   };
 
   const handleClose = () => {
@@ -72,8 +78,10 @@ function CreatePostModal({
     onClose();
   };
 
+  const canSubmit = title.trim().length > 0 && body.trim().length > 0;
+
   const handleSubmit = () => {
-    if (!body.trim()) return;
+    if (!canSubmit) return;
     if (editingPost) {
       updateTextPost(editingPost.id, title, body.trim(), media);
     } else {
@@ -91,38 +99,45 @@ function CreatePostModal({
             <Text style={styles.composeCancel}>CANCEL</Text>
           </Pressable>
           <Text style={styles.composeHeaderTitle}>{editingPost ? 'EDIT POST' : 'NEW POST'}</Text>
-          <Pressable onPress={handleSubmit} hitSlop={8} disabled={!body.trim()}>
-            <Text style={[styles.composePost, !body.trim() && styles.composePostDisabled]}>
+          <Pressable onPress={handleSubmit} hitSlop={8} disabled={!canSubmit}>
+            <Text style={[styles.composePost, !canSubmit && styles.composePostDisabled]}>
               {editingPost ? 'SAVE' : 'POST'}
             </Text>
           </Pressable>
         </View>
 
-        <View style={styles.composeAuthorRow}>
-          <Avatar name={displayName} uri={photoUri} />
-          <Text style={styles.composeAuthorName}>{displayName}</Text>
-        </View>
+        <ScrollView
+          style={styles.composeScroll}
+          contentContainerStyle={styles.composeScrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.composeAuthorRow}>
+            <Avatar name={displayName} uri={photoUri} />
+            <Text style={styles.composeAuthorName}>{displayName}</Text>
+          </View>
 
-        <TextInput
-          style={styles.composeTitleInput}
-          value={title}
-          onChangeText={setTitle}
-          placeholder="Title (optional)"
-          placeholderTextColor={colors.textMuted}
-        />
-        <TextInput
-          style={styles.composeBodyInput}
-          value={body}
-          onChangeText={setBody}
-          placeholder="LOG IT. POST IT."
-          placeholderTextColor={colors.textMuted}
-          multiline
-          autoFocus
-        />
+          <TextInput
+            style={styles.composeTitleInput}
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Title"
+            placeholderTextColor={colors.textMuted}
+            autoFocus
+          />
+          <TextInput
+            style={[styles.composeBodyInput, { height: Math.max(MIN_BODY_HEIGHT, bodyHeight) }]}
+            value={body}
+            onChangeText={setBody}
+            placeholder="LOG IT. POST IT."
+            placeholderTextColor={colors.textMuted}
+            multiline
+            onContentSizeChange={(e) => setBodyHeight(e.nativeEvent.contentSize.height)}
+          />
 
-        <View style={styles.composeMediaWrap}>
-          <MediaAttachmentPicker media={media} onChange={setMedia} />
-        </View>
+          <View style={styles.composeMediaWrap}>
+            <MediaAttachmentPicker media={media} onChange={setMedia} />
+          </View>
+        </ScrollView>
       </View>
     </AppModal>
   );
@@ -242,9 +257,8 @@ function PostCard({
           <Text style={styles.wodBadge}>WORKOUT COMPLETE</Text>
           <View style={styles.titleRow}>
             {post.unread && <View style={styles.unreadDot} />}
-            <Text style={styles.wodTitle}>{post.meta.workoutTitle}</Text>
+            <Text style={styles.wodTitle}>{post.title}</Text>
           </View>
-          <Text style={styles.wodDate}>{post.meta.dateLabel}</Text>
           {!!post.meta.notes && (
             <Text style={styles.wodNotes} numberOfLines={3}>
               {post.meta.notes}
@@ -547,13 +561,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingTop: 60,
-    paddingHorizontal: 20,
   },
   composeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 20,
     marginBottom: 20,
+  },
+  composeScroll: {
+    flex: 1,
+  },
+  composeScrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
   },
   composeHeaderTitle: {
     color: colors.text,
@@ -597,7 +618,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   composeBodyInput: {
-    flex: 1,
     color: colors.text,
     fontFamily: fonts.body,
     fontSize: 16,

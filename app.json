@@ -29,7 +29,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Doc's Fitness uses your photo library to set your profile picture."
+          "photosPermission": "Doc's Fitness uses your photos to let you share workout results and set your profile picture.",
+          "cameraPermission": "Doc's Fitness uses your camera to let you share workout photos and videos."
         }
       ]
     ],

@@ -71,12 +71,12 @@ export function SearchModal({ visible, onClose }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.searchRow}>
-        <Ionicons name="search" size={18} color={colors.textMuted} />
+        <Ionicons name="search" size={18} color={colors.green} />
         <TextInput
           style={styles.input}
           value={query}
           onChangeText={setQuery}
-          placeholder="Search workouts, deck cards, community..."
+          placeholder="Search the app"
           placeholderTextColor={colors.textMuted}
           autoFocus
         />

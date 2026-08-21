@@ -261,6 +261,7 @@ export function DayPanel({ day, wodUnlocked }: Props) {
           dayKey={dayKey}
           workoutTitle={wod.title}
           dateLabel={dateLabel}
+          date={day.date}
         />
       )}
     </View>

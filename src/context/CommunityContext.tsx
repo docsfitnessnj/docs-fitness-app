@@ -124,7 +124,7 @@ const SEED_POSTS: Post[] = [
 type CommunityContextValue = {
   posts: Post[];
   addTextPost: (author: string, title: string, text: string, category?: string, media?: MediaAttachment | null) => void;
-  addWodResultPost: (author: string, meta: WodPostMeta, media?: MediaAttachment | null) => void;
+  addWodResultPost: (author: string, title: string, meta: WodPostMeta, media?: MediaAttachment | null) => void;
   updateTextPost: (postId: string, title: string, text: string, media?: MediaAttachment | null) => void;
   deletePost: (postId: string) => void;
   toggleLike: (postId: string) => void;
@@ -168,13 +168,13 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           unread: false,
         });
       },
-      addWodResultPost: (author, meta, media = null) => {
+      addWodResultPost: (author, title, meta, media = null) => {
         addPost({
           id: nextId('post'),
           author,
           timeLabel: 'just now',
           createdAt: Date.now(),
-          title: meta.workoutTitle,
+          title: title.trim() || meta.workoutTitle,
           text: '',
           category: 'Workout',
           media,
