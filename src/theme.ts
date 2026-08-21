@@ -44,11 +44,11 @@ export const fonts = {
   labelBold: 'BarlowCondensed_700Bold',
 };
 
+// The one tagline, used everywhere: welcome screen, hamburger footer,
+// identity sidebar. Keep this the single source of truth — don't let a
+// second variant creep back in.
 export const TAGLINE =
-  'Become stronger than you were 10 years ago with just 2 hours a week of kettlebell training.';
-
-export const WELCOME_SUBTEXT =
-  'For those who want to become stronger now than they were 10 years ago with just 2 hours of kettlebell training a week.';
+  'Look and feel better than you did 10 years ago with just 2 hours of kettlebell training a week.';
 
 export const LOCATION = {
   name: "Dr. John W. Holland Boathouse",

@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput,
 import { Ionicons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
-import { colors, fonts, WELCOME_SUBTEXT } from '../theme';
+import { colors, fonts, TAGLINE } from '../theme';
 
 type Props = {
   onContinue: (email: string, newsletterOptIn: boolean) => void;
@@ -26,7 +26,7 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
           <DocsBadge variant="white" size={140} />
         </View>
         <Text style={styles.title}>DOC'S FITNESS</Text>
-        <Text style={styles.subtext}>{WELCOME_SUBTEXT}</Text>
+        <Text style={styles.subtext}>{TAGLINE}</Text>
 
         <View style={styles.form}>
           <Text style={styles.label}>EMAIL ADDRESS</Text>
