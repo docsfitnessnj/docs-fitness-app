@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { ModalHeader } from '../components/ModalHeader';
 import { Avatar } from '../components/Avatar';
 import { ProfileBadgeCase } from '../components/ProfileBadgeCase';
+import { ProfilePhotoCropModal } from '../components/ProfilePhotoCropModal';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
@@ -15,14 +16,23 @@ type Props = {
 };
 
 export function ProfileScreen({ visible, onClose }: Props) {
-  const { photoUri, name, instagramHandle, funFact, setPhotoUri, setName, setInstagramHandle, setFunFact } =
-    useProfile();
+  const {
+    photoUri,
+    name,
+    instagramHandle,
+    favoriteQuote,
+    setPhotoUri,
+    setName,
+    setInstagramHandle,
+    setFavoriteQuote,
+  } = useProfile();
   const displayName = useDisplayName();
 
   const [draftPhotoUri, setDraftPhotoUri] = useState(photoUri);
   const [draftName, setDraftName] = useState(name);
   const [draftHandle, setDraftHandle] = useState(instagramHandle);
-  const [draftFunFact, setDraftFunFact] = useState(funFact);
+  const [draftQuote, setDraftQuote] = useState(favoriteQuote);
+  const [cropUri, setCropUri] = useState<string | null>(null);
 
   // Reset the draft to the saved values every time the sheet opens.
   useEffect(() => {
@@ -30,38 +40,46 @@ export function ProfileScreen({ visible, onClose }: Props) {
       setDraftPhotoUri(photoUri);
       setDraftName(name);
       setDraftHandle(instagramHandle);
-      setDraftFunFact(funFact);
+      setDraftQuote(favoriteQuote);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   const isDirty =
-    draftPhotoUri !== photoUri || draftName !== name || draftHandle !== instagramHandle || draftFunFact !== funFact;
+    draftPhotoUri !== photoUri || draftName !== name || draftHandle !== instagramHandle || draftQuote !== favoriteQuote;
 
   const pickPhoto = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      showAlert('Permission Needed', 'Allow photo access to set a profile picture.');
+      showAlert(
+        'Permission Needed',
+        "Doc's Fitness uses your photos to let you share workout results and set your profile picture. Turn on photo library access in Settings to continue.",
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings().catch(() => {}) },
+        ]
+      );
       return;
     }
-    // allowsEditing + a locked 1:1 aspect gives the OS's native square crop/zoom
-    // step before the photo ever comes back to the app.
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
       quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {
-      setDraftPhotoUri(result.assets[0].uri);
+      setCropUri(result.assets[0].uri);
     }
+  };
+
+  const confirmCrop = (uri: string) => {
+    setDraftPhotoUri(uri);
+    setCropUri(null);
   };
 
   const save = () => {
     setPhotoUri(draftPhotoUri);
     setName(draftName);
     setInstagramHandle(draftHandle);
-    setFunFact(draftFunFact);
+    setFavoriteQuote(draftQuote);
     onClose();
   };
 
@@ -113,12 +131,12 @@ export function ProfileScreen({ visible, onClose }: Props) {
             />
           </View>
 
-          <Text style={styles.label}>FUN FACT</Text>
+          <Text style={styles.label}>FAVORITE QUOTE (OPTIONAL)</Text>
           <TextInput
             style={styles.input}
-            value={draftFunFact}
-            onChangeText={setDraftFunFact}
-            placeholder="One line about you"
+            value={draftQuote}
+            onChangeText={setDraftQuote}
+            placeholder="One line that keeps you going"
             placeholderTextColor={colors.textMuted}
           />
 
@@ -128,8 +146,15 @@ export function ProfileScreen({ visible, onClose }: Props) {
 
           <ProfileBadgeCase />
 
-        <Text style={styles.footnote}>Saved on this device for now.</Text>
+        <Text style={styles.footnote}>Saved on this device — it'll be here next time you open the app.</Text>
       </ScrollView>
+
+      <ProfilePhotoCropModal
+        visible={cropUri !== null}
+        uri={cropUri}
+        onCancel={() => setCropUri(null)}
+        onConfirm={confirmCrop}
+      />
     </View>
   );
 }

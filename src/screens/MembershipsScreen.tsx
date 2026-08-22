@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ModalHeader } from '../components/ModalHeader';
 import { PlanSectionHeader } from '../components/PlanSectionHeader';
-import { useMembership } from '../context/MembershipContext';
+import { MembershipTier, useMembership } from '../context/MembershipContext';
 import {
   IN_PERSON_PLANS,
   IN_PERSON_SECTION_HEADER,
@@ -21,23 +21,63 @@ type Props = {
   onClose: () => void;
 };
 
+function priceNumber(price: string): number {
+  return parseInt(price.replace(/[^0-9]/g, ''), 10) || 0;
+}
+
+// The plan card price that corresponds to the account's current tier, so a
+// switch confirmation can note the price difference — null for tiers with
+// no comparable card price (guest, admin, expired free).
+function currentTierPrice(tier: MembershipTier): number | null {
+  switch (tier) {
+    case 'online_paid':
+      return priceNumber(ONLINE_PLANS.find((p) => p.key === 'monthly')!.price);
+    case 'in_person_unlimited':
+      return priceNumber(IN_PERSON_PLANS.find((p) => p.key === 'monthly_unlimited')!.price);
+    case 'ten_pack':
+      return priceNumber(IN_PERSON_PLANS.find((p) => p.key === 'ten_pack')!.price);
+    case 'drop_in':
+      return priceNumber(IN_PERSON_PLANS.find((p) => p.key === 'drop_in')!.price);
+    default:
+      return null;
+  }
+}
+
+function priceDifferenceLine(currentTier: MembershipTier, nextPrice: number): string {
+  const current = currentTierPrice(currentTier);
+  if (current === null) return '';
+  const diff = nextPrice - current;
+  if (diff === 0) return ' Same price as your current plan.';
+  return diff > 0
+    ? ` That's $${diff} more than your current plan.`
+    : ` That's $${Math.abs(diff)} less than your current plan.`;
+}
+
 export function MembershipsScreen({ visible, onClose }: Props) {
   const { tier, daysLeftInTrial, tenPackClassesRemaining, becomeMember, selectInPersonPlan } = useMembership();
 
   if (!visible) return null;
 
   const chooseOnline = (plan: OnlinePlan) => {
-    showAlert(`Confirm ${plan.name}?`, `${plan.price}${plan.cadence} — this is a preview, no charge yet.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Confirm', onPress: () => becomeMember() },
-    ]);
+    showAlert(
+      `Confirm Switch To ${plan.name}?`,
+      `${plan.price}${plan.cadence} — this is a preview, no charge yet.${priceDifferenceLine(tier, priceNumber(plan.price))}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', onPress: () => becomeMember() },
+      ]
+    );
   };
 
   const chooseInPerson = (plan: InPersonPlanCard) => {
-    showAlert(`Confirm ${plan.name}?`, `${plan.price}${plan.cadence} — this is a preview, no charge yet.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Confirm', onPress: () => selectInPersonPlan(plan.key) },
-    ]);
+    showAlert(
+      `Confirm Switch To ${plan.name}?`,
+      `${plan.price}${plan.cadence} — this is a preview, no charge yet.${priceDifferenceLine(tier, priceNumber(plan.price))}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', onPress: () => selectInPersonPlan(plan.key) },
+      ]
+    );
   };
 
   return (

@@ -110,6 +110,12 @@ type MembershipContextValue = {
   // 10 Class Pack) — never set by the free trial or Drop In — so the app
   // shell can show the purchase celebration exactly once, then clear it.
   justPurchased: boolean;
+  // Only meaningful for the two recurring-billing tiers (online_paid,
+  // in_person_unlimited) — null for one-off/non-recurring tiers.
+  planRenewsAt: Date | null;
+  // Set by requestCancellation, shown in Settings — access continues through
+  // planRenewsAt/trialEndsAt even once flagged.
+  cancellationRequested: boolean;
 
   startTrial: (email: string) => void;
   becomeMember: () => void;
@@ -122,7 +128,13 @@ type MembershipContextValue = {
   useFirstClass: () => void;
   setNewsletterOptIn: (optIn: boolean) => void;
   clearJustPurchased: () => void;
+  requestCancellation: () => void;
+  keepMembership: () => void;
+  signOut: () => void;
 };
+
+const RENEWAL_CYCLE_DAYS = 30;
+const RECURRING_TIERS: MembershipTier[] = ['online_paid', 'in_person_unlimited'];
 
 const MembershipContext = createContext<MembershipContextValue | undefined>(undefined);
 
@@ -136,12 +148,19 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   const [firstClassUsed, setFirstClassUsed] = useState(false);
   const [newsletterOptIn, setNewsletterOptIn] = useState(true);
   const [justPurchased, setJustPurchased] = useState(false);
+  const [planStartedAt, setPlanStartedAt] = useState<number | null>(null);
+  const [cancellationRequested, setCancellationRequested] = useState(false);
 
   const daysLeftInTrial = trialEndsAt
     ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : null;
 
   const value = useMemo<MembershipContextValue>(() => {
+    const planRenewsAt =
+      RECURRING_TIERS.includes(tier) && planStartedAt
+        ? new Date(planStartedAt + RENEWAL_CYCLE_DAYS * 24 * 60 * 60 * 1000)
+        : null;
+
     const fullContentAccess = tier === 'admin' || tier === 'trial' || tier === 'online_paid' || tier === 'in_person_unlimited';
     const wodAccessLevel: WodAccessLevel = fullContentAccess
       ? 'full'
@@ -172,6 +191,8 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       firstClassUsed,
       newsletterOptIn,
       justPurchased,
+      planRenewsAt,
+      cancellationRequested,
 
       startTrial: (enteredEmail: string) => {
         const endsAt = new Date();
@@ -186,6 +207,8 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         setTier('online_paid');
         setSignedUp(true);
         setJustPurchased(true);
+        setPlanStartedAt(Date.now());
+        setCancellationRequested(false);
       },
       selectInPersonPlan: (plan: InPersonPlan) => {
         setTier(plan === 'monthly_unlimited' ? 'in_person_unlimited' : plan === 'ten_pack' ? 'ten_pack' : 'drop_in');
@@ -193,6 +216,8 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         if (plan === 'ten_pack') setTenPackClassesRemaining(TEN_PACK_SIZE);
         // Drop In is a one-off, not a membership — no celebration for it.
         if (plan !== 'drop_in') setJustPurchased(true);
+        if (plan === 'monthly_unlimited') setPlanStartedAt(Date.now());
+        setCancellationRequested(false);
       },
       becomeGuest: () => {
         setEmail(null);
@@ -210,6 +235,9 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         if (nextTier === 'ten_pack' && tenPackClassesRemaining === null) {
           setTenPackClassesRemaining(TEN_PACK_SIZE);
         }
+        if (RECURRING_TIERS.includes(nextTier) && planStartedAt === null) {
+          setPlanStartedAt(Date.now());
+        }
       },
       dismissTrialWarning: () => setTrialWarningDismissed(true),
       useTenPackClass: () => setTenPackClassesRemaining((prev) => Math.max(0, (prev ?? TEN_PACK_SIZE) - 1)),
@@ -218,9 +246,25 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       useFirstClass: () => setFirstClassUsed(true),
       setNewsletterOptIn: (optIn: boolean) => setNewsletterOptIn(optIn),
       clearJustPurchased: () => setJustPurchased(false),
+      requestCancellation: () => setCancellationRequested(true),
+      keepMembership: () => setCancellationRequested(false),
+      signOut: () => {
+        setSignedUp(false);
+        setTier('trial');
+        setEmail(null);
+        setTrialEndsAt(null);
+        setTrialWarningDismissed(false);
+        setTenPackClassesRemaining(null);
+        setFirstClassUsed(false);
+        setJustPurchased(false);
+        setPlanStartedAt(null);
+        setCancellationRequested(false);
+      },
     };
   }, [
     tier,
+    planStartedAt,
+    cancellationRequested,
     signedUp,
     email,
     trialEndsAt,
