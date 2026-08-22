@@ -25,7 +25,7 @@ const TTH_ROWS: ClassRow[] = [
 ];
 
 const SATURDAY_ROWS: ClassRow[] = [
-  { id: 'sat-815a', time: '8:15 AM', className: 'Sabbath Saturday', classType: 'Hybrid' },
+  { id: 'sat-815a', time: '8:15 AM', className: 'Savage Saturday', classType: 'Hybrid' },
 ];
 
 export const SCHEDULE: ScheduleSection[] = [

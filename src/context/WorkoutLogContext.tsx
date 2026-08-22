@@ -1,5 +1,9 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { MediaAttachment } from '../lib/media';
+import { loadJSON, saveJSON } from '../lib/storage';
+
+const LOGS_STORAGE_KEY = 'docsfitness.workoutLogs.v1';
+const COMPLETED_STORAGE_KEY = 'docsfitness.workoutCompleted.v1';
 
 export type WorkoutLog = {
   rounds: string;
@@ -24,7 +28,7 @@ export function formatLogSummary(log: WorkoutLog): string {
   const parts = [
     log.rounds.trim() && `Rounds: ${log.rounds.trim()}`,
     log.time.trim() && `Time: ${log.time.trim()}`,
-    log.kettlebell.trim() && `KB: ${log.kettlebell.trim()}`,
+    log.kettlebell.trim() && `KB: ${log.kettlebell.trim()} kg`,
   ].filter(Boolean) as string[];
   const summary = parts.join(' · ');
   if (log.notes.trim()) {
@@ -38,7 +42,7 @@ export function formatLogSummary(log: WorkoutLog): string {
 // are optional and a post can be subject + notes only.
 export function formatResultsLine(log: WorkoutLog): string | undefined {
   const parts = [
-    log.kettlebell.trim() && log.kettlebell.trim().toUpperCase(),
+    log.kettlebell.trim() && `${log.kettlebell.trim()} KG`,
     log.rounds.trim() && `${log.rounds.trim().toUpperCase()} ROUNDS`,
     log.time.trim() && log.time.trim().toUpperCase(),
   ].filter(Boolean) as string[];
@@ -65,8 +69,18 @@ type WorkoutLogContextValue = {
 const WorkoutLogContext = createContext<WorkoutLogContextValue | undefined>(undefined);
 
 export function WorkoutLogProvider({ children }: { children: React.ReactNode }) {
-  const [logs, setLogs] = useState<Record<string, WorkoutLog>>({});
-  const [completed, setCompleted] = useState<Record<string, CompletedMeta>>({});
+  const [logs, setLogs] = useState<Record<string, WorkoutLog>>(() => loadJSON(LOGS_STORAGE_KEY, {}));
+  const [completed, setCompleted] = useState<Record<string, CompletedMeta>>(() =>
+    loadJSON(COMPLETED_STORAGE_KEY, {})
+  );
+
+  useEffect(() => {
+    saveJSON(LOGS_STORAGE_KEY, logs);
+  }, [logs]);
+
+  useEffect(() => {
+    saveJSON(COMPLETED_STORAGE_KEY, completed);
+  }, [completed]);
 
   const value = useMemo<WorkoutLogContextValue>(() => {
     const completedWorkouts = Object.entries(completed)

@@ -5,17 +5,27 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { MembershipGate } from '../components/MembershipGate';
 import { Avatar } from '../components/Avatar';
 import { useBadges } from '../context/BadgeContext';
+import { useChallenge } from '../context/ChallengeContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { colors, fonts } from '../theme';
 
-type Entry = { rank: number; name: string; kettlebell: string; score: string; tag: 'Boathouse Crew' | 'Virtual' };
+export const CHALLENGE_TITLE = 'SWING CHALLENGE';
 
-const INITIAL_ENTRIES: Entry[] = [
-  { rank: 1, name: 'J. Marino', kettlebell: '35lb', score: '8:42', tag: 'Boathouse Crew' },
-  { rank: 2, name: 'K. Alvarez', kettlebell: '26lb', score: '9:05', tag: 'Boathouse Crew' },
-  { rank: 3, name: 'T. Ruiz', kettlebell: '35lb', score: '9:18', tag: 'Virtual' },
-  { rank: 4, name: 'S. Boyle', kettlebell: '26lb', score: '9:47', tag: 'Boathouse Crew' },
-  { rank: 5, name: 'D. Castillo', kettlebell: '18lb', score: '10:02', tag: 'Virtual' },
+type Entry = {
+  rank: number;
+  name: string;
+  kettlebell: string;
+  rounds: string;
+  time: string;
+  tag: 'Boathouse Crew' | 'Virtual';
+};
+
+const DEMO_ENTRIES: Entry[] = [
+  { rank: 1, name: 'J. Marino', kettlebell: '16', rounds: '12', time: '8:42', tag: 'Boathouse Crew' },
+  { rank: 2, name: 'K. Alvarez', kettlebell: '12', rounds: '11', time: '9:05', tag: 'Boathouse Crew' },
+  { rank: 3, name: 'T. Ruiz', kettlebell: '16', rounds: '10', time: '9:18', tag: 'Virtual' },
+  { rank: 4, name: 'S. Boyle', kettlebell: '12', rounds: '10', time: '9:47', tag: 'Boathouse Crew' },
+  { rank: 5, name: 'D. Castillo', kettlebell: '8', rounds: '9', time: '10:02', tag: 'Virtual' },
 ];
 
 function ChallengeHero() {
@@ -26,7 +36,7 @@ function ChallengeHero() {
         <Ionicons name="flame" size={14} color={colors.greenDeep} />
         <Text style={styles.badgeText}>THIS WEEK'S CHALLENGE OF THE WEEK</Text>
       </View>
-      <Text style={styles.heroTitle}>SWING CHALLENGE</Text>
+      <Text style={styles.heroTitle}>{CHALLENGE_TITLE}</Text>
       <Text style={styles.heroSubtext}>
         Rack up as many kettlebell swings as you can, for time. No shortcuts, no excuses.
       </Text>
@@ -40,17 +50,24 @@ function ChallengeHero() {
 function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>) => void }) {
   const displayName = useDisplayName();
   const { recordCowKillerScore } = useBadges();
+  const [time, setTime] = useState('');
+  const [rounds, setRounds] = useState('');
   const [kettlebell, setKettlebell] = useState('');
-  const [score, setScore] = useState('');
 
-  const canSubmit = score.trim().length > 0;
+  const canSubmit = time.trim().length > 0;
 
   const submit = () => {
     if (!canSubmit) return;
-    onSubmit({ name: displayName, kettlebell: kettlebell.trim() || '—', score: score.trim() });
+    onSubmit({
+      name: displayName,
+      kettlebell: kettlebell.trim() || '—',
+      rounds: rounds.trim() || '—',
+      time: time.trim(),
+    });
     recordCowKillerScore();
+    setTime('');
+    setRounds('');
     setKettlebell('');
-    setScore('');
   };
 
   return (
@@ -59,26 +76,37 @@ function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>
 
       <View style={styles.formRow}>
         <View style={styles.formField}>
-          <Text style={styles.label}>SCORE / TIME</Text>
+          <Text style={styles.label}>TIME</Text>
           <TextInput
             style={styles.input}
-            value={score}
-            onChangeText={setScore}
+            value={time}
+            onChangeText={setTime}
             placeholder="e.g. 9:42"
             placeholderTextColor={colors.textMuted}
           />
         </View>
         <View style={styles.formField}>
-          <Text style={styles.label}>BELL SIZE</Text>
+          <Text style={styles.label}>ROUNDS</Text>
           <TextInput
             style={styles.input}
-            value={kettlebell}
-            onChangeText={setKettlebell}
-            placeholder="e.g. 35lb"
+            value={rounds}
+            onChangeText={setRounds}
+            placeholder="e.g. 12"
             placeholderTextColor={colors.textMuted}
+            keyboardType="numeric"
           />
         </View>
       </View>
+
+      <Text style={styles.label}>KETTLEBELL SIZE (KG)</Text>
+      <TextInput
+        style={styles.input}
+        value={kettlebell}
+        onChangeText={setKettlebell}
+        placeholder="e.g. 16"
+        placeholderTextColor={colors.textMuted}
+        keyboardType="numeric"
+      />
 
       <Pressable style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]} disabled={!canSubmit} onPress={submit}>
         <Text style={styles.submitButtonText}>POST SCORE</Text>
@@ -96,10 +124,10 @@ function LeaderboardRow({ entry }: { entry: Entry }) {
       <View style={styles.rowMain}>
         <Text style={styles.name}>{entry.name}</Text>
         <Text style={styles.rowMeta}>
-          {entry.kettlebell} KB · {entry.tag}
+          {entry.rounds} rounds · {entry.kettlebell} KG KB · {entry.tag}
         </Text>
       </View>
-      <Text style={styles.score}>{entry.score}</Text>
+      <Text style={styles.score}>{entry.time}</Text>
     </View>
   );
 }
@@ -118,10 +146,29 @@ function Leaderboard({ entries }: { entries: Entry[] }) {
 }
 
 function DocsCowsContent() {
-  const [entries, setEntries] = useState<Entry[]>(INITIAL_ENTRIES);
+  const { entries: myEntries, addEntry: addChallengeEntry } = useChallenge();
+
+  const postedEntries: Entry[] = myEntries
+    .filter((e) => e.challengeTitle === CHALLENGE_TITLE)
+    .map((e, i) => ({
+      rank: DEMO_ENTRIES.length + i + 1,
+      name: e.author,
+      kettlebell: e.kettlebell,
+      rounds: e.rounds,
+      time: e.time,
+      tag: e.tag,
+    }));
+  const entries = [...DEMO_ENTRIES, ...postedEntries];
 
   const addEntry = (entry: Omit<Entry, 'rank' | 'tag'>) => {
-    setEntries((prev) => [...prev, { ...entry, rank: prev.length + 1, tag: 'Boathouse Crew' }]);
+    addChallengeEntry({
+      author: entry.name,
+      challengeTitle: CHALLENGE_TITLE,
+      kettlebell: entry.kettlebell,
+      rounds: entry.rounds,
+      time: entry.time,
+      tag: 'Boathouse Crew',
+    });
   };
 
   return (

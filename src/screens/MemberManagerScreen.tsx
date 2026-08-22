@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
 import { BadgeIcon } from '../components/icons/BadgeIcon';
 import { BADGE_DEFS } from '../data/badges';
-import { MEMBER_ROSTER, RosterMember } from '../data/roster';
+import { MEMBER_ROSTER, PLAN_SECTIONS, PlanKey, RosterMember, planKeyLabel } from '../data/roster';
 import { useBadges } from '../context/BadgeContext';
 import { useDisplayName } from '../context/ProfileContext';
-import { planLabel, useMembership } from '../context/MembershipContext';
+import { MembershipTier, planLabel, useMembership } from '../context/MembershipContext';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -15,41 +14,68 @@ type Props = {
   onClose: () => void;
 };
 
+// Maps the live signed-in account's membership tier onto the same plan
+// buckets the static roster uses, so the current member slots into the
+// grouped list next to everyone else. Tiers with no paid-plan equivalent
+// (admin, guest, expired free) are excluded from the roster entirely.
+function tierToPlanKey(tier: MembershipTier): PlanKey | undefined {
+  switch (tier) {
+    case 'in_person_unlimited':
+      return 'monthly_unlimited';
+    case 'ten_pack':
+      return 'ten_pack';
+    case 'drop_in':
+      return 'drop_in';
+    case 'trial':
+      return 'trial';
+    // The app doesn't yet distinguish monthly vs. annual online billing —
+    // every online_paid account is bucketed as Monthly until that's tracked.
+    case 'online_paid':
+      return 'monthly_online';
+    default:
+      return undefined;
+  }
+}
+
 // This is how Doc approves a verified physical-deck owner: search the
 // roster, open a member, flip THE JOKER on. Structured as a per-member
 // manual-grant map in BadgeContext so future manual flags (beyond Joker)
 // slot in the same way.
 export function MemberManagerScreen({ visible, onClose }: Props) {
-  const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<RosterMember | null>(null);
   const displayName = useDisplayName();
-  const { tier } = useMembership();
+  const membership = useMembership();
   const badges = useBadges();
 
   if (!visible) return null;
 
-  // The signed-in account is also a searchable "member" — its plan comes
-  // from live membership state rather than the static roster.
-  const allMembers: RosterMember[] = [
-    ...(MEMBER_ROSTER.some((m) => m.name === displayName)
-      ? []
-      : [{ name: displayName, planLabel: planLabel(tier), demoBadges: [] }]),
-    ...MEMBER_ROSTER,
-  ];
+  const myPlanKey = tierToPlanKey(membership.tier);
+  const myEntry: RosterMember | null =
+    myPlanKey && !MEMBER_ROSTER.some((m) => m.name === displayName)
+      ? {
+          name: displayName,
+          planKey: myPlanKey,
+          joinDate: 'THIS DEVICE',
+          classesRemaining: myPlanKey === 'ten_pack' ? membership.tenPackClassesRemaining ?? undefined : undefined,
+          daysRemaining: myPlanKey === 'trial' ? membership.daysLeftInTrial ?? undefined : undefined,
+          demoBadges: [],
+        }
+      : null;
 
-  const results = query.trim()
-    ? allMembers.filter((m) => m.name.toLowerCase().includes(query.trim().toLowerCase()))
-    : allMembers;
+  const allMembers: RosterMember[] = [...(myEntry ? [myEntry] : []), ...MEMBER_ROSTER];
+
+  const membersForPlan = (key: PlanKey) => allMembers.filter((m) => m.planKey === key);
 
   if (selected) {
     const memberJoker = badges.getBadgesForAuthor(selected.name).includes('joker');
-    const memberPlan = selected.name === displayName ? planLabel(tier) : selected.planLabel;
+    const memberPlan = selected.planKey ? planKeyLabel(selected.planKey) : planLabel(membership.tier);
     return (
       <View style={styles.container}>
         <ModalHeader title={selected.name} onBack={() => setSelected(null)} backTestID="member-detail-back" />
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
           <Text style={styles.planLabel}>PLAN</Text>
           <Text style={styles.planValue}>{memberPlan}</Text>
+          <Text style={styles.joinDate}>MEMBER SINCE {selected.joinDate}</Text>
 
           <Text style={[styles.planLabel, styles.badgesLabel]}>BADGES</Text>
           <View style={styles.badgeGrid}>
@@ -89,33 +115,54 @@ export function MemberManagerScreen({ visible, onClose }: Props) {
   return (
     <View style={styles.container}>
       <ModalHeader title="MEMBER MANAGER" onBack={onClose} backTestID="close-member-manager" />
-      <View style={styles.searchWrap}>
-        <Ionicons name="search" size={16} color={colors.textMuted} />
-        <TextInput
-          style={styles.searchInput}
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search members by name"
-          placeholderTextColor={colors.textMuted}
-          testID="member-search-input"
-        />
-      </View>
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        {results.map((m) => (
-          <Pressable
-            key={m.name}
-            style={styles.memberRow}
-            onPress={() => setSelected(m)}
-            testID={`member-row-${m.name}`}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.memberName}>{m.name}</Text>
-              <Text style={styles.memberPlan}>{m.name === displayName ? planLabel(tier) : m.planLabel}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-          </Pressable>
+        {PLAN_SECTIONS.map(({ section, plans }) => (
+          <View key={section} style={styles.section}>
+            <Text style={styles.sectionHeading}>{section}</Text>
+            {plans.map((plan) => {
+              const members = membersForPlan(plan.key);
+              return (
+                <View key={plan.key} style={styles.planGroup}>
+                  <View style={styles.planGroupHeader}>
+                    <Text style={styles.planGroupTitle}>{plan.label}</Text>
+                    <Text style={styles.planGroupCount}>{members.length}</Text>
+                  </View>
+                  {members.length === 0 ? (
+                    <Text style={styles.emptyPlanText}>No members on this plan.</Text>
+                  ) : (
+                    members.map((m) => {
+                      const earnedIds = new Set(badges.getBadgesForAuthor(m.name));
+                      return (
+                        <Pressable
+                          key={m.name}
+                          style={styles.memberRow}
+                          onPress={() => setSelected(m)}
+                          testID={`member-row-${m.name}`}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.memberName}>{m.name}</Text>
+                            <Text style={styles.memberMeta}>
+                              JOINED {m.joinDate}
+                              {plan.key === 'ten_pack' && m.classesRemaining != null
+                                ? ` · ${m.classesRemaining} CLASSES LEFT`
+                                : ''}
+                              {plan.key === 'trial' && m.daysRemaining != null ? ` · ${m.daysRemaining} DAYS LEFT` : ''}
+                            </Text>
+                            <View style={styles.miniBadgeRow}>
+                              {BADGE_DEFS.map((def) => (
+                                <BadgeIcon key={def.id} id={def.id} earned={earnedIds.has(def.id)} size={18} />
+                              ))}
+                            </View>
+                          </View>
+                        </Pressable>
+                      );
+                    })
+                  )}
+                </View>
+              );
+            })}
+          </View>
         ))}
-        {results.length === 0 && <Text style={styles.emptyText}>No members match "{query}".</Text>}
       </ScrollView>
     </View>
   );
@@ -127,28 +174,46 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     paddingTop: 60,
   },
-  searchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    marginHorizontal: 20,
-    marginBottom: 16,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 11,
-    color: colors.text,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 14,
-  },
   body: {
     paddingHorizontal: 20,
     paddingBottom: 40,
+  },
+  section: {
+    marginBottom: 8,
+  },
+  sectionHeading: {
+    color: colors.green,
+    fontFamily: fonts.headline,
+    fontSize: 20,
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  planGroup: {
+    marginBottom: 18,
+  },
+  planGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  planGroupTitle: {
+    color: colors.text,
+    fontFamily: fonts.bodyBold,
+    fontSize: 14,
+    letterSpacing: 0.3,
+  },
+  planGroupCount: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelBold,
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  emptyPlanText: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    marginBottom: 8,
   },
   memberRow: {
     flexDirection: 'row',
@@ -158,19 +223,25 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 10,
+    paddingVertical: 12,
+    marginBottom: 8,
   },
   memberName: {
     color: colors.text,
     fontFamily: fonts.bodyBold,
     fontSize: 15,
   },
-  memberPlan: {
+  memberMeta: {
     color: colors.textMuted,
     fontFamily: fonts.label,
-    fontSize: 12,
+    fontSize: 11,
+    letterSpacing: 0.3,
     marginTop: 2,
+  },
+  miniBadgeRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 8,
   },
   emptyText: {
     color: colors.textMuted,
@@ -191,7 +262,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.headline,
     fontSize: 22,
     letterSpacing: 0.5,
-    marginBottom: 8,
+  },
+  joinDate: {
+    color: colors.textMuted,
+    fontFamily: fonts.label,
+    fontSize: 12,
+    letterSpacing: 0.5,
+    marginTop: 4,
   },
   badgesLabel: {
     marginTop: 20,

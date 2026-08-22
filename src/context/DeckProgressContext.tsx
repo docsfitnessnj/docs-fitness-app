@@ -3,6 +3,7 @@ import { DECK_CARDS } from '../data/deckCards';
 import { loadJSON, saveJSON } from '../lib/storage';
 
 const STORAGE_KEY = 'docsfitness.deckProgress.v1';
+const COMPLETED_AT_STORAGE_KEY = 'docsfitness.deckProgressCompletedAt.v1';
 const UPSELL_STORAGE_KEY = 'docsfitness.deckUpsell.v1';
 const SHUFFLE_STORAGE_KEY = 'docsfitness.deckShuffleOrder.v1';
 const UPSELL_MIN_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -39,6 +40,8 @@ type DeckProgressContextValue = {
   // in place; only the not-yet-complete slots move on reshuffle.
   browseOrder: string[];
   reshuffleBrowseOrder: () => void;
+  // When each completed card was first marked complete — drives My Workouts.
+  completedAt: Record<string, number>;
   // "Complete your first card, then at most once a month" upsell for the physical deck.
   shouldOfferUpsell: boolean;
   recordUpsellShown: () => void;
@@ -48,6 +51,9 @@ const DeckProgressContext = createContext<DeckProgressContextValue | undefined>(
 
 export function DeckProgressProvider({ children }: { children: React.ReactNode }) {
   const [completed, setCompleted] = useState<Record<string, boolean>>(() => loadJSON(STORAGE_KEY, {}));
+  const [completedAt, setCompletedAt] = useState<Record<string, number>>(() =>
+    loadJSON(COMPLETED_AT_STORAGE_KEY, {})
+  );
   const [lastUpsellShownAt, setLastUpsellShownAt] = useState<number | null>(() =>
     loadJSON<number | null>(UPSELL_STORAGE_KEY, null)
   );
@@ -64,6 +70,10 @@ export function DeckProgressProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     saveJSON(STORAGE_KEY, completed);
   }, [completed]);
+
+  useEffect(() => {
+    saveJSON(COMPLETED_AT_STORAGE_KEY, completedAt);
+  }, [completedAt]);
 
   useEffect(() => {
     saveJSON(UPSELL_STORAGE_KEY, lastUpsellShownAt);
@@ -83,11 +93,19 @@ export function DeckProgressProvider({ children }: { children: React.ReactNode }
       isComplete: (id) => !!completed[id],
       toggleComplete: (id) => {
         setCompleted((prev) => ({ ...prev, [id]: !prev[id] }));
+        setCompletedAt((prev) => {
+          if (completed[id]) {
+            const { [id]: _removed, ...rest } = prev;
+            return rest;
+          }
+          return { ...prev, [id]: Date.now() };
+        });
       },
       completedCount,
       totalCount: DECK_CARDS.length,
       browseOrder,
       reshuffleBrowseOrder: () => setBrowseOrder((prev) => reshuffleUncompletedPositions(prev, completed)),
+      completedAt,
       pickRandomUncompleted: () => {
         const pool = DECK_CARDS.filter((c) => !completed[c.id]);
         if (pool.length === 0) return null;
@@ -96,7 +114,7 @@ export function DeckProgressProvider({ children }: { children: React.ReactNode }
       shouldOfferUpsell,
       recordUpsellShown: () => setLastUpsellShownAt(Date.now()),
     };
-  }, [completed, lastUpsellShownAt, browseOrder]);
+  }, [completed, completedAt, lastUpsellShownAt, browseOrder]);
 
   return <DeckProgressContext.Provider value={value}>{children}</DeckProgressContext.Provider>;
 }

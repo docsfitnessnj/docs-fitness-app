@@ -117,13 +117,14 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             </View>
           </View>
 
-          <Text style={styles.label}>KETTLEBELL SIZE</Text>
+          <Text style={styles.label}>KETTLEBELL SIZE (KG)</Text>
           <TextInput
             style={styles.input}
             value={log.kettlebell}
             onChangeText={(v) => updateLog('kettlebell', v)}
-            placeholder="e.g. 35lb"
+            placeholder="e.g. 16"
             placeholderTextColor={colors.textMuted}
+            keyboardType="numeric"
           />
 
           <Text style={styles.label}>NOTES</Text>

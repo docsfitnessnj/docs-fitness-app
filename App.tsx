@@ -31,6 +31,7 @@ import { CloseFriendsProvider } from './src/context/CloseFriendsContext';
 import { ProfileProvider } from './src/context/ProfileContext';
 import { StoriesProvider } from './src/context/StoriesContext';
 import { DeckProgressProvider } from './src/context/DeckProgressContext';
+import { ChallengeProvider } from './src/context/ChallengeContext';
 import { BadgeProvider } from './src/context/BadgeContext';
 import { ClassSignUpProvider } from './src/context/ClassSignUpContext';
 import { TourProvider, useTour } from './src/context/TourContext';
@@ -380,7 +381,14 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
         <AdminRosterScreen visible={adminRosterOpen} onClose={() => setAdminRosterOpen(false)} />
       </ScreenOverlay>
       <ScreenOverlay visible={settingsOpen} fullBleed={sidebarOpen}>
-        <SettingsScreen visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        <SettingsScreen
+          visible={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          onOpenMemberships={() => {
+            setSettingsOpen(false);
+            setMembershipsOpen(true);
+          }}
+        />
       </ScreenOverlay>
       <ScreenOverlay visible={trophyCaseOpen} fullBleed={sidebarOpen}>
         <TrophyCaseScreen
@@ -480,15 +488,17 @@ export default function App() {
               <ProfileProvider>
                 <StoriesProvider>
                   <DeckProgressProvider>
-                    <BadgeProvider>
-                      <ClassSignUpProvider>
-                        <TourProvider>
-                          <View style={styles.webSurround}>
-                            <ResponsiveShell onLayoutRootView={onLayoutRootView} />
-                          </View>
-                        </TourProvider>
-                      </ClassSignUpProvider>
-                    </BadgeProvider>
+                    <ChallengeProvider>
+                      <BadgeProvider>
+                        <ClassSignUpProvider>
+                          <TourProvider>
+                            <View style={styles.webSurround}>
+                              <ResponsiveShell onLayoutRootView={onLayoutRootView} />
+                            </View>
+                          </TourProvider>
+                        </ClassSignUpProvider>
+                      </BadgeProvider>
+                    </ChallengeProvider>
                   </DeckProgressProvider>
                 </StoriesProvider>
               </ProfileProvider>

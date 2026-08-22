@@ -188,6 +188,8 @@ export function DayPanel({ day, wodUnlocked }: Props) {
 
       <ScheduleStrip />
 
+      <View style={styles.sectionDivider} />
+
       <Pressable
         style={styles.wodBar}
         onPress={() => setWodExpanded((v) => !v)}
@@ -198,13 +200,13 @@ export function DayPanel({ day, wodUnlocked }: Props) {
           {isComplete && (
             <Ionicons
               name="checkmark-circle"
-              size={16}
+              size={20}
               color={colors.green}
               style={styles.wodBarCheck}
               testID="wod-bar-complete-check"
             />
           )}
-          <Ionicons name={wodExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+          <Ionicons name={wodExpanded ? 'chevron-up' : 'chevron-down'} size={22} color={colors.textMuted} />
         </View>
       </Pressable>
 
@@ -284,6 +286,11 @@ const styles = StyleSheet.create({
     padding: 18,
     marginBottom: 18,
   },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: colors.hairline,
+    marginBottom: 18,
+  },
   wodBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -291,15 +298,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.hairline,
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
     marginBottom: 14,
   },
   wodBarLabel: {
     color: colors.text,
     fontFamily: fonts.labelBold,
-    fontSize: 13,
+    fontSize: 17,
     letterSpacing: 0.8,
   },
   wodBarRight: {
@@ -307,7 +314,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   wodBarCheck: {
-    marginRight: 8,
+    marginRight: 10,
   },
   cardHeading: {
     color: colors.text,

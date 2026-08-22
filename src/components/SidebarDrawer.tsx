@@ -4,8 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { DocsBadge } from './brand/DocsBadge';
 import { MembershipToggle } from './MembershipToggle';
+import { useChallenge } from '../context/ChallengeContext';
 import { useDeckProgress } from '../context/DeckProgressContext';
 import { useMembership } from '../context/MembershipContext';
+import { useDisplayName } from '../context/ProfileContext';
 import { useTour } from '../context/TourContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { openMerchStore, openLocationMaps } from '../lib/links';
@@ -52,9 +54,16 @@ export function SidebarDrawer({
 }: Props) {
   const navigation = useNavigation<any>();
   const { completedWorkouts } = useWorkoutLog();
-  const { completedCount, totalCount } = useDeckProgress();
+  const { completedCount, totalCount, completedAt: deckCompletedAt } = useDeckProgress();
+  const { entries: challengeEntries } = useChallenge();
+  const displayName = useDisplayName();
   const { isAdmin } = useMembership();
   const tour = useTour();
+
+  const myWorkoutsCount =
+    completedWorkouts.length +
+    Object.keys(deckCompletedAt).length +
+    challengeEntries.filter((e) => e.author === displayName).length;
 
   const resetTour = () => {
     tour.resetForTesting();
@@ -83,7 +92,7 @@ export function SidebarDrawer({
       key: 'workouts',
       label: 'MY WORKOUTS',
       icon: 'barbell-outline',
-      meta: String(completedWorkouts.length),
+      meta: String(myWorkoutsCount),
       onPress: () => openNested(onOpenMyWorkouts),
     },
     { key: 'friends', label: 'CLOSE FRIENDS', icon: 'star-outline', onPress: () => openNested(onOpenCloseFriends) },
@@ -148,7 +157,7 @@ export function SidebarDrawer({
           </View>
 
           <View style={styles.badgeWrap}>
-            <DocsBadge variant="black" size={64} />
+            <DocsBadge variant="white" size={104} />
           </View>
 
           <View>
