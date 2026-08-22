@@ -26,7 +26,7 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
           <DocsBadge variant="white" size={140} />
         </View>
         <Text style={styles.title}>DOC'S FITNESS</Text>
-        <Text style={styles.subtext}>{TAGLINE}</Text>
+        <Text style={styles.tagline}>{TAGLINE.toUpperCase()}</Text>
 
         <View style={styles.form}>
           <Text style={styles.label}>EMAIL ADDRESS</Text>
@@ -128,11 +128,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 18,
   },
-  subtext: {
-    color: colors.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 19,
+  // Bolder, present treatment for this screen only — a clean stacked
+  // statement under the wordmark, not competing with its Bebas headline
+  // size. Other tagline placements (hamburger footer, etc.) keep the
+  // quieter fonts.body treatment.
+  tagline: {
+    color: colors.text,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 17,
+    lineHeight: 25,
+    letterSpacing: 1.35,
     textAlign: 'center',
     marginBottom: 28,
   },
