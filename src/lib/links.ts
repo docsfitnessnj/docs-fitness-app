@@ -1,6 +1,19 @@
-import { Linking } from 'react-native';
+import { Linking, Share } from 'react-native';
 import { showAlert } from './alert';
-import { LOCATION } from '../theme';
+import { LOCATION, TAGLINE } from '../theme';
+
+export const APP_SHARE_URL = 'https://docsfitnessnj.github.io/docs-fitness-app';
+
+// Opens the device share sheet with a short invite message + app link. Web
+// only supports this when the browser implements the Web Share API
+// (react-native-web's Share.share rejects otherwise), so this falls back to
+// just showing the message the member can copy by hand.
+export function shareInvite() {
+  const message = `Train with me at Doc's Fitness. ${TAGLINE} ${APP_SHARE_URL}`;
+  Share.share({ message, url: APP_SHARE_URL, title: "Doc's Fitness" }).catch(() => {
+    showAlert('Share Doc’s Fitness', message);
+  });
+}
 
 export const MERCH_STORE_URL =
   'https://docs-fitness-merch.myshopify.com/collections/doc-s-fitness-merch?utm_source=docs_app&utm_medium=app&utm_campaign=merch';

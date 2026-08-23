@@ -8,9 +8,12 @@ import { colors, fonts, TAGLINE } from '../theme';
 type Props = {
   onContinue: (email: string, newsletterOptIn: boolean) => void;
   onBrowseAsGuest: () => void;
+  // Present whenever this screen is reached from the About page rather than
+  // being the app's own entry point.
+  onBack?: () => void;
 };
 
-export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
+export default function WelcomeScreen({ onContinue, onBrowseAsGuest, onBack }: Props) {
   const [email, setEmail] = useState('');
   const [newsletterOptIn, setNewsletterOptIn] = useState(true);
 
@@ -21,6 +24,12 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest }: Props) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      {onBack && (
+        <Pressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="welcome-back">
+          <Ionicons name="chevron-back" size={20} color={colors.text} />
+          <Text style={styles.backText}>BACK</Text>
+        </Pressable>
+      )}
       <View style={styles.content}>
         <View style={styles.brandMark}>
           <DocsBadge variant="white" size={140} />
@@ -79,6 +88,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'absolute',
+    top: 60,
+    left: 24,
+    zIndex: 1,
+  },
+  backText: {
+    color: colors.text,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 14,
+    letterSpacing: 1,
+    marginLeft: 2,
   },
   content: {
     flex: 1,
