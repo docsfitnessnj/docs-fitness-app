@@ -46,10 +46,12 @@ import { IdentitySidebar } from './src/components/IdentitySidebar';
 import { TourOverlay } from './src/components/TourOverlay';
 import { PurchaseCelebrationOverlay } from './src/components/PurchaseCelebrationOverlay';
 import { useScheduleModalState } from './src/lib/scheduleModal';
+import { useMembershipsModalState } from './src/lib/membershipsModal';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
 import { useTabBarHeight } from './src/lib/tabBarHeight';
 import { injectWebFocusStyles } from './src/lib/webFocusReset';
-import { colors, fonts } from './src/theme';
+import { navigationRef } from './src/lib/navigationRef';
+import { colors, fonts, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from './src/theme';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import HowDoYouTrainScreen from './src/screens/HowDoYouTrainScreen';
@@ -72,9 +74,11 @@ import { TrophyCaseScreen } from './src/screens/TrophyCaseScreen';
 import { MemberManagerScreen } from './src/screens/MemberManagerScreen';
 
 const PHONE_FRAME_MAX_WIDTH = 480;
-const MAIN_COLUMN_DESKTOP_WIDTH = 640;
-const SIDEBAR_WIDTH = 320;
-const DESKTOP_BREAKPOINT = 900;
+const MAIN_COLUMN_DESKTOP_WIDTH = 840;
+const MAIN_COLUMN_DESKTOP_WIDTH_LARGE = 900;
+const SIDEBAR_WIDTH = 340;
+const SIDEBAR_WIDTH_LARGE = 360;
+const LAYOUT_GAP = 32;
 
 SplashScreen.preventAutoHideAsync();
 injectWebFocusStyles();
@@ -299,7 +303,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [membershipsOpen, setMembershipsOpen] = useState(false);
+  const [membershipsOpen, setMembershipsOpen] = useMembershipsModalState();
   const [myWorkoutsOpen, setMyWorkoutsOpen] = useState(false);
   const [closeFriendsOpen, setCloseFriendsOpen] = useState(false);
   const [adminRosterOpen, setAdminRosterOpen] = useState(false);
@@ -318,6 +322,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
 
   return (
     <NavigationContainer
+      ref={navigationRef}
       onStateChange={(state) => {
         const route = state?.routes[state.index ?? 0];
         if (route) setActiveTab(route.name);
@@ -420,11 +425,18 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
   const [messagesOpen, setMessagesOpen] = useState(false);
 
   const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
+  const isLargeDesktop = isDesktop && width >= LARGE_DESKTOP_BREAKPOINT;
   const showSidebar = isDesktop && signedUp;
-  const mainColumnMaxWidth = signedUp && isDesktop ? MAIN_COLUMN_DESKTOP_WIDTH : PHONE_FRAME_MAX_WIDTH;
+  const mainColumnMaxWidth =
+    signedUp && isDesktop
+      ? isLargeDesktop
+        ? MAIN_COLUMN_DESKTOP_WIDTH_LARGE
+        : MAIN_COLUMN_DESKTOP_WIDTH
+      : PHONE_FRAME_MAX_WIDTH;
+  const sidebarWidth = isLargeDesktop ? SIDEBAR_WIDTH_LARGE : SIDEBAR_WIDTH;
 
   return (
-    <View style={styles.layoutRow}>
+    <View style={[styles.layoutRow, showSidebar && { gap: LAYOUT_GAP }]}>
       <View
         style={[styles.mainColumn, Platform.OS === 'web' && { maxWidth: mainColumnMaxWidth }]}
         onLayout={onLayoutRootView}
@@ -445,7 +457,7 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
       </View>
 
       {showSidebar && (
-        <View style={styles.sidebarColumn}>
+        <View style={[styles.sidebarColumn, { width: sidebarWidth }]}>
           <IdentitySidebar onOpenMessages={() => setMessagesOpen(true)} />
         </View>
       )}
@@ -536,9 +548,8 @@ const styles = StyleSheet.create({
       : null),
   },
   sidebarColumn: {
-    width: SIDEBAR_WIDTH,
     paddingTop: 60,
-    paddingHorizontal: 20,
+    paddingRight: 8,
   },
   mainAppRoot: {
     flex: 1,

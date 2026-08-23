@@ -54,3 +54,10 @@ export const LOCATION = {
   name: "Dr. John W. Holland Boathouse",
   city: 'Ventnor City, NJ',
 };
+
+// Window width (web only) at which the layout switches from a single
+// phone-sized column to the wider main-column + identity-sidebar pair.
+export const DESKTOP_BREAKPOINT = 900;
+// A second, larger threshold — big monitors get a further size bump rather
+// than just more empty margin around the same phone-tuned column.
+export const LARGE_DESKTOP_BREAKPOINT = 1600;
