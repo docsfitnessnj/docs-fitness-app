@@ -5,28 +5,11 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { MembershipGate } from '../components/MembershipGate';
 import { Avatar } from '../components/Avatar';
 import { useBadges } from '../context/BadgeContext';
-import { useChallenge } from '../context/ChallengeContext';
+import { CHALLENGE_TITLE, LeaderboardEntry, useChallenge, useChallengeLeaderboard } from '../context/ChallengeContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { colors, fonts } from '../theme';
 
-export const CHALLENGE_TITLE = 'SWING CHALLENGE';
-
-type Entry = {
-  rank: number;
-  name: string;
-  kettlebell: string;
-  rounds: string;
-  time: string;
-  tag: 'Boathouse Crew' | 'Virtual';
-};
-
-const DEMO_ENTRIES: Entry[] = [
-  { rank: 1, name: 'J. Marino', kettlebell: '16', rounds: '12', time: '8:42', tag: 'Boathouse Crew' },
-  { rank: 2, name: 'K. Alvarez', kettlebell: '12', rounds: '11', time: '9:05', tag: 'Boathouse Crew' },
-  { rank: 3, name: 'T. Ruiz', kettlebell: '16', rounds: '10', time: '9:18', tag: 'Virtual' },
-  { rank: 4, name: 'S. Boyle', kettlebell: '12', rounds: '10', time: '9:47', tag: 'Boathouse Crew' },
-  { rank: 5, name: 'D. Castillo', kettlebell: '8', rounds: '9', time: '10:02', tag: 'Virtual' },
-];
+type Entry = LeaderboardEntry;
 
 function ChallengeHero() {
   return (
@@ -146,19 +129,8 @@ function Leaderboard({ entries }: { entries: Entry[] }) {
 }
 
 function DocsCowsContent() {
-  const { entries: myEntries, addEntry: addChallengeEntry } = useChallenge();
-
-  const postedEntries: Entry[] = myEntries
-    .filter((e) => e.challengeTitle === CHALLENGE_TITLE)
-    .map((e, i) => ({
-      rank: DEMO_ENTRIES.length + i + 1,
-      name: e.author,
-      kettlebell: e.kettlebell,
-      rounds: e.rounds,
-      time: e.time,
-      tag: e.tag,
-    }));
-  const entries = [...DEMO_ENTRIES, ...postedEntries];
+  const { addEntry: addChallengeEntry } = useChallenge();
+  const entries = useChallengeLeaderboard();
 
   const addEntry = (entry: Omit<Entry, 'rank' | 'tag'>) => {
     addChallengeEntry({

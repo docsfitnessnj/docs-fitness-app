@@ -18,6 +18,7 @@ import { useTour } from '../context/TourContext';
 import { getUpcomingDays, isDayWodUnlocked } from '../data/content';
 import { showAlert } from '../lib/alert';
 import { MediaAttachment } from '../lib/media';
+import { useIsDesktop } from '../lib/responsive';
 import { colors, fonts } from '../theme';
 
 const BOOKING_DAYS_AHEAD = 21;
@@ -29,12 +30,19 @@ function ComposerBar({ onOpen }: { onOpen: () => void }) {
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
   const { registerTarget } = useTour();
+  const isDesktop = useIsDesktop();
   return (
-    <Pressable ref={registerTarget('composer-bar')} style={styles.composerBar} onPress={onOpen}>
-      <Avatar name={displayName} uri={photoUri} />
+    <Pressable
+      ref={registerTarget('composer-bar')}
+      style={[styles.composerBar, isDesktop && styles.composerBarDesktop]}
+      onPress={onOpen}
+    >
+      <Avatar name={displayName} uri={photoUri} size={isDesktop ? 44 : 36} />
       <View style={styles.composerField}>
-        <Text style={styles.composerPlaceholder}>LOG IT. POST IT.</Text>
-        <Ionicons name="add-circle" size={22} color={colors.gold} />
+        <Text style={[styles.composerPlaceholder, isDesktop && styles.composerPlaceholderDesktop]}>
+          LOG IT. POST IT.
+        </Text>
+        <Ionicons name="add-circle" size={isDesktop ? 26 : 22} color={colors.gold} />
       </View>
     </Pressable>
   );
@@ -166,6 +174,7 @@ function PostCard({
   const { isAdmin } = useMembership();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
+  const isDesktop = useIsDesktop();
 
   const isOwn = post.author === displayName;
 
@@ -214,7 +223,7 @@ function PostCard({
 
   return (
     <Pressable
-      style={[styles.post, post.pinned && styles.postPinned]}
+      style={[styles.post, isDesktop && styles.postDesktop, post.pinned && styles.postPinned]}
       onPress={openDetail}
       testID={`post-card-${post.id}`}
     >
@@ -226,10 +235,14 @@ function PostCard({
       )}
 
       <View style={styles.postHeader}>
-        <Avatar name={post.author} uri={post.author === displayName ? photoUri : undefined} />
+        <Avatar
+          name={post.author}
+          uri={post.author === displayName ? photoUri : undefined}
+          size={isDesktop ? 44 : 36}
+        />
         <View style={{ flex: 1 }}>
           <View style={styles.postNameRow}>
-            <Text style={styles.postName}>{post.author}</Text>
+            <Text style={[styles.postName, isDesktop && styles.postNameDesktop]}>{post.author}</Text>
             <PostAuthorBadges author={post.author} />
           </View>
           <View style={styles.postMetaRow}>
@@ -257,7 +270,7 @@ function PostCard({
           <Text style={styles.wodBadge}>WORKOUT COMPLETE</Text>
           <View style={styles.titleRow}>
             {post.unread && <View style={styles.unreadDot} />}
-            <Text style={styles.wodTitle}>{post.title}</Text>
+            <Text style={[styles.wodTitle, isDesktop && styles.wodTitleDesktop]}>{post.title}</Text>
           </View>
           {!!post.meta.notes && (
             <Text style={styles.wodNotes} numberOfLines={3}>
@@ -270,10 +283,10 @@ function PostCard({
         <View>
           <View style={styles.titleRow}>
             {post.unread && <View style={styles.unreadDot} />}
-            <Text style={styles.postTitle}>{post.title}</Text>
+            <Text style={[styles.postTitle, isDesktop && styles.postTitleDesktop]}>{post.title}</Text>
           </View>
           <View style={styles.previewRow}>
-            <Text style={styles.postText} numberOfLines={3}>
+            <Text style={[styles.postText, isDesktop && styles.postTextDesktop]} numberOfLines={3}>
               {post.text}
             </Text>
             {post.media && (
@@ -486,6 +499,10 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 14,
   },
+  composerBarDesktop: {
+    padding: 16,
+    marginBottom: 18,
+  },
   composerField: {
     flex: 1,
     flexDirection: 'row',
@@ -501,6 +518,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.headline,
     fontSize: 16,
     letterSpacing: 0.5,
+  },
+  composerPlaceholderDesktop: {
+    fontSize: 19,
   },
   guestBanner: {
     flexDirection: 'row',
@@ -636,6 +656,11 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 14,
   },
+  postDesktop: {
+    padding: 22,
+    marginBottom: 18,
+    borderRadius: 16,
+  },
   postPinned: {
     borderWidth: 1.5,
     borderColor: colors.gold,
@@ -667,6 +692,9 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.bodySemiBold,
     fontSize: 15,
+  },
+  postNameDesktop: {
+    fontSize: 17,
   },
   postNameRow: {
     flexDirection: 'row',
@@ -717,6 +745,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     marginBottom: 4,
   },
+  postTitleDesktop: {
+    fontSize: 27,
+  },
   previewRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -728,6 +759,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 21,
     marginBottom: 6,
+  },
+  postTextDesktop: {
+    fontSize: 17,
+    lineHeight: 25,
   },
   thumbnail: {
     width: 56,
@@ -763,6 +798,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.headline,
     fontSize: 24,
     letterSpacing: 0.5,
+  },
+  wodTitleDesktop: {
+    fontSize: 29,
   },
   wodDate: {
     color: colors.textMuted,

@@ -52,3 +52,34 @@ export function rowsForDate(date: Date): ClassRow[] {
 
 export const LOCATION_NAME = "Dr. John W. Holland Boathouse";
 export const LOCATION_CITY = 'Ventnor City, NJ';
+
+function parseTimeToMinutes(time: string): number {
+  const match = time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!match) return 0;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const meridiem = match[3].toUpperCase();
+  if (meridiem === 'PM' && hours !== 12) hours += 12;
+  if (meridiem === 'AM' && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+}
+
+export type NextClass = { date: Date; row: ClassRow };
+
+// The next class starting from `from` — today's remaining classes first
+// (time-aware, so a class earlier today doesn't show as "next"), otherwise
+// the first class on the next day that has any. Sunday has none, so this
+// always resolves within a week.
+export function findNextClass(from: Date): NextClass | null {
+  const nowMinutes = from.getHours() * 60 + from.getMinutes();
+  for (let offset = 0; offset < 8; offset++) {
+    const date = new Date(from);
+    date.setDate(date.getDate() + offset);
+    const rows = rowsForDate(date);
+    const candidates = offset === 0 ? rows.filter((row) => parseTimeToMinutes(row.time) >= nowMinutes) : rows;
+    if (candidates.length > 0) {
+      return { date, row: candidates[0] };
+    }
+  }
+  return null;
+}

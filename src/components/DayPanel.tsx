@@ -3,24 +3,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LogResultsModal } from './LogResultsModal';
 import { ScheduleStrip } from './ScheduleStrip';
-import { useClassSignUp } from '../context/ClassSignUpContext';
-import { planLabel, useMembership } from '../context/MembershipContext';
-import { useDisplayName } from '../context/ProfileContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatDateKey, formatFullDate, parseMoveRow, WeekDay } from '../data/content';
 import { LOCATION_NAME, rowsForDate } from '../data/schedule';
 import { openLocationMaps } from '../lib/links';
-import { showAlert } from '../lib/alert';
+import { useIsDesktop } from '../lib/responsive';
+import { useClassBooking } from '../lib/useClassBooking';
 import { colors, fonts } from '../theme';
-
-// Tiers that book a class instantly, no payment gate — Doc's own account
-// and the unlimited in-person plan.
-const INSTANT_BOOK_TIERS = ['admin', 'in_person_unlimited'];
-// Tiers that see the "want unlimited classes?" upsell line inside the $30
-// drop-in paywall — online-only members who don't already have an
-// in-person plan.
-const ONLINE_ONLY_TIERS = ['trial', 'online_paid', 'online_free'];
-const DROP_IN_PRICE = 30;
 
 type Props = {
   day: WeekDay;
@@ -32,9 +21,8 @@ type Props = {
 // not a stack of screens.
 export function DayPanel({ day, wodUnlocked }: Props) {
   const { isCompleted, toggleCompleted } = useWorkoutLog();
-  const { isSignedUp, signUp, cancelSignUp } = useClassSignUp();
-  const membership = useMembership();
-  const displayName = useDisplayName();
+  const { isSignedUp, handleSignUp: signUpForClass, handleCancel: cancelClass } = useClassBooking();
+  const isDesktop = useIsDesktop();
   const [logOpen, setLogOpen] = useState(false);
   const [wodExpanded, setWodExpanded] = useState(false);
 
@@ -51,103 +39,18 @@ export function DayPanel({ day, wodUnlocked }: Props) {
     toggleCompleted(dayKey, wod.title, dateLabel, day.date.getTime());
   };
 
-  const bookClass = (row: (typeof scheduleRows)[number], opts?: { firstClass?: boolean }) => {
-    signUp({
-      dateKey,
-      classId: row.id,
-      className: row.className,
-      classType: row.classType,
-      time: row.time,
-      dayLabel: weekdayName,
-      memberName: displayName,
-      planType: planLabel(membership.tier),
-      firstClass: !!opts?.firstClass,
-    });
-  };
-
-  const showDropInGate = (row: (typeof scheduleRows)[number]) => {
-    const upsell = ONLINE_ONLY_TIERS.includes(membership.tier)
-      ? '\n\nWant unlimited classes? See Monthly Unlimited in Memberships.'
-      : '';
-    showAlert(`Class Drop In Is $${DROP_IN_PRICE}`, `${row.className} · ${weekdayName} · ${row.time}${upsell}`, [
-      { text: 'Not Now', style: 'cancel' },
-      {
-        text: `Pay $${DROP_IN_PRICE} and Book`,
-        onPress: () => {
-          bookClass(row);
-          showAlert("YOU'RE IN", `Payment simulated — ${row.className} · ${weekdayName} · ${row.time}`);
-        },
-      },
-    ]);
-  };
-
-  const handleSignUp = (row: (typeof scheduleRows)[number]) => {
-    if (INSTANT_BOOK_TIERS.includes(membership.tier)) {
-      bookClass(row);
-      showAlert("YOU'RE IN", `${row.className} · ${weekdayName} · ${row.time}`);
-      return;
-    }
-
-    if (membership.tier === 'ten_pack') {
-      const remaining = membership.tenPackClassesRemaining ?? 0;
-      if (remaining <= 0) {
-        showAlert('No Classes Left', 'Your 10 Class Pack is used up. Grab a new pack or switch plans in Memberships.');
-        return;
-      }
-      bookClass(row);
-      membership.useTenPackClass();
-      showAlert("YOU'RE IN", `${row.className} · ${weekdayName} · ${row.time}\n${remaining - 1} classes left`);
-      return;
-    }
-
-    // Everyone left over here is about to hit the $30 drop-in gate — ask,
-    // casually, whether they've trained at Doc's before so first-timers can
-    // book free instead. Only offered once per account.
-    if (!membership.firstClassUsed) {
-      showAlert("Have You Trained at Doc's Fitness Before?", undefined, [
-        {
-          text: 'FIRST TIME HERE',
-          onPress: () => {
-            membership.useFirstClass();
-            bookClass(row, { firstClass: true });
-            showAlert(
-              'Your First Class Is On Us',
-              `You're in — ${row.className} · ${weekdayName} · ${row.time}.`
-            );
-          },
-        },
-        {
-          text: "I'VE BEEN BEFORE",
-          onPress: () => showDropInGate(row),
-        },
-      ]);
-      return;
-    }
-
-    showDropInGate(row);
-  };
-
-  const handleCancel = (row: (typeof scheduleRows)[number]) => {
-    showAlert('Cancel This Class?', `${row.className} · ${weekdayName} · ${row.time}`, [
-      { text: 'Keep My Spot', style: 'cancel' },
-      {
-        text: 'Cancel Class',
-        style: 'destructive',
-        onPress: () => {
-          cancelSignUp(dateKey, row.id);
-          if (membership.tier === 'ten_pack') membership.refundTenPackClass();
-        },
-      },
-    ]);
-  };
+  const handleSignUp = (row: (typeof scheduleRows)[number]) => signUpForClass(row, dateKey, weekdayName);
+  const handleCancel = (row: (typeof scheduleRows)[number]) => cancelClass(row, dateKey, weekdayName);
 
   return (
     <View>
-      <Text style={styles.dateHeading}>{dateLabel.toUpperCase()}</Text>
+      <Text style={[styles.dateHeading, isDesktop && styles.dateHeadingDesktop]}>{dateLabel.toUpperCase()}</Text>
 
       {scheduleRows.length > 0 && (
         <View style={styles.card}>
-          <Text style={styles.cardHeading}>DOC'S FITNESS GROUP TRAINING (IN PERSON)</Text>
+          <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>
+            DOC'S FITNESS GROUP TRAINING (IN PERSON)
+          </Text>
           {scheduleRows.map((row) => {
             const signedUp = isSignedUp(dateKey, row.id);
             return (
@@ -195,7 +98,7 @@ export function DayPanel({ day, wodUnlocked }: Props) {
         onPress={() => setWodExpanded((v) => !v)}
         testID="wod-bar-toggle"
       >
-        <Text style={styles.wodBarLabel}>DOC'S WORKOUT OF THE DAY</Text>
+        <Text style={[styles.wodBarLabel, isDesktop && styles.wodBarLabelDesktop]}>DOC'S WORKOUT OF THE DAY</Text>
         <View style={styles.wodBarRight}>
           {isComplete && (
             <Ionicons
@@ -213,7 +116,7 @@ export function DayPanel({ day, wodUnlocked }: Props) {
       {wodExpanded &&
         (wod && wodUnlocked ? (
           <View style={styles.card}>
-            <Text style={styles.cardHeading}>{wod.title}</Text>
+            <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>{wod.title}</Text>
             {wod.moves.map((move, index) => {
               const parsed = parseMoveRow(move);
               return (
@@ -278,6 +181,9 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     marginBottom: 10,
   },
+  dateHeadingDesktop: {
+    fontSize: 14,
+  },
   card: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -309,6 +215,9 @@ const styles = StyleSheet.create({
     fontSize: 17,
     letterSpacing: 0.8,
   },
+  wodBarLabelDesktop: {
+    fontSize: 20,
+  },
   wodBarRight: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -322,6 +231,9 @@ const styles = StyleSheet.create({
     fontSize: 22,
     letterSpacing: 0.5,
     marginBottom: 12,
+  },
+  cardHeadingDesktop: {
+    fontSize: 26,
   },
   moveRow: {
     flexDirection: 'row',

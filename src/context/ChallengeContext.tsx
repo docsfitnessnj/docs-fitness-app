@@ -3,7 +3,30 @@ import { loadJSON, saveJSON } from '../lib/storage';
 
 const STORAGE_KEY = 'docsfitness.challengeEntries.v1';
 
+// Single source of truth for the current Challenge of the Week — used by
+// both the Weekly Challenge tab and the desktop sidebar's preview module.
+export const CHALLENGE_TITLE = 'SWING CHALLENGE';
+
 export type ChallengeTag = 'Boathouse Crew' | 'Virtual';
+
+export type LeaderboardEntry = {
+  rank: number;
+  name: string;
+  kettlebell: string;
+  rounds: string;
+  time: string;
+  tag: ChallengeTag;
+};
+
+// Seed rows standing in for the rest of the gym until there's a real
+// backend — the Weekly Challenge tab appends real submissions after these.
+const DEMO_ENTRIES: LeaderboardEntry[] = [
+  { rank: 1, name: 'J. Marino', kettlebell: '16', rounds: '12', time: '8:42', tag: 'Boathouse Crew' },
+  { rank: 2, name: 'K. Alvarez', kettlebell: '12', rounds: '11', time: '9:05', tag: 'Boathouse Crew' },
+  { rank: 3, name: 'T. Ruiz', kettlebell: '16', rounds: '10', time: '9:18', tag: 'Virtual' },
+  { rank: 4, name: 'S. Boyle', kettlebell: '12', rounds: '10', time: '9:47', tag: 'Boathouse Crew' },
+  { rank: 5, name: 'D. Castillo', kettlebell: '8', rounds: '9', time: '10:02', tag: 'Virtual' },
+];
 
 export type ChallengeEntry = {
   id: string;
@@ -60,4 +83,21 @@ export function useChallenge() {
     throw new Error('useChallenge must be used within a ChallengeProvider');
   }
   return ctx;
+}
+
+// Demo rows plus this week's real submissions, in posting order — shared by
+// the Weekly Challenge tab (full board) and the sidebar's top-3 preview.
+export function useChallengeLeaderboard(): LeaderboardEntry[] {
+  const { entries } = useChallenge();
+  const posted: LeaderboardEntry[] = entries
+    .filter((e) => e.challengeTitle === CHALLENGE_TITLE)
+    .map((e, i) => ({
+      rank: DEMO_ENTRIES.length + i + 1,
+      name: e.author,
+      kettlebell: e.kettlebell,
+      rounds: e.rounds,
+      time: e.time,
+      tag: e.tag,
+    }));
+  return [...DEMO_ENTRIES, ...posted];
 }
