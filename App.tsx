@@ -236,14 +236,21 @@ type OnboardingStep = 'about' | 'email' | 'signIn' | 'howDoYouTrain' | 'onlineSt
 // through the email screen so it can skip "How do you train?" entirely.
 type EntryIntent = 'onlineTrial' | 'bookClass' | null;
 
+type OnboardingFlowProps = {
+  // Lifted to ResponsiveShell so it can give the About step a full-bleed
+  // desktop layout instead of the narrow phone-frame column every other
+  // onboarding screen uses.
+  step: OnboardingStep;
+  setStep: (step: OnboardingStep) => void;
+};
+
 // Fewest possible clicks: About -> Continue -> (skip if a door was tapped,
 // else How do you train) -> (pick a path) -> in. TRAIN ONLINE lands on a
 // single trial-start screen (with a skip-to-pricing link); TRAIN AT THE
 // BOATHOUSE goes straight to plan selection. Guests skip this whole flow
 // from the email screen.
-function OnboardingFlow() {
+function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
   const { startTrial, becomeMember, selectInPersonPlan, becomeGuest, signIn, setNewsletterOptIn } = useMembership();
-  const [step, setStep] = useState<OnboardingStep>('about');
   const [email, setEmail] = useState('');
   const [intent, setIntent] = useState<EntryIntent>(null);
 
@@ -476,16 +483,23 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
   const { signedUp } = useMembership();
   const { width } = useWindowDimensions();
   const [messagesOpen, setMessagesOpen] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('about');
 
   const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
   const isLargeDesktop = isDesktop && width >= LARGE_DESKTOP_BREAKPOINT;
   const showSidebar = isDesktop && signedUp;
+  // The About page is a landing page and reads full-bleed on desktop; every
+  // other onboarding step (email capture, plan pickers) stays in the narrow
+  // phone-frame column like the rest of the pre-signup flow.
+  const aboutFullBleed = !signedUp && isDesktop && onboardingStep === 'about';
   const mainColumnMaxWidth =
     signedUp && isDesktop
       ? isLargeDesktop
         ? MAIN_COLUMN_DESKTOP_WIDTH_LARGE
         : MAIN_COLUMN_DESKTOP_WIDTH
-      : PHONE_FRAME_MAX_WIDTH;
+      : aboutFullBleed
+        ? undefined
+        : PHONE_FRAME_MAX_WIDTH;
   const sidebarWidth = isLargeDesktop ? SIDEBAR_WIDTH_LARGE : SIDEBAR_WIDTH;
 
   return (
@@ -502,7 +516,7 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
               onCloseMessages={() => setMessagesOpen(false)}
             />
           ) : (
-            <OnboardingFlow />
+            <OnboardingFlow step={onboardingStep} setStep={setOnboardingStep} />
           )}
           <AlertHost />
           <StatusBar style="dark" />

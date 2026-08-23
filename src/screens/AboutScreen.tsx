@@ -1,56 +1,61 @@
-import React from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { ModalHeader } from '../components/ModalHeader';
 import { openLocationMaps, shareInvite } from '../lib/links';
-import { colors, fonts, TAGLINE } from '../theme';
+import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT } from '../theme';
 
 const CREW_PHOTO = require('../../assets/brand/crew-photo.jpg');
-// The photo's real pixel dimensions (1179x740) — locking the frame to this
-// ratio means "cover" can never crop anyone out; the frame IS the shape.
+// The photo's real pixel dimensions (1179x740). react-native-web's Image
+// doesn't reliably honor a CSS `aspectRatio` style here — it falls back to
+// the source asset's raw pixel height regardless of the rendered width,
+// which either crops (resizeMode="cover") or letterboxes with blank space
+// (resizeMode="contain") depending on how far off that guess is. Measuring
+// the container's actual width via onLayout and computing an explicit
+// pixel height from it sidesteps that entirely: full width, height fully
+// determined by the image's own proportions, no crop, no zoom.
 const CREW_PHOTO_RATIO = 1179 / 740;
+
+const DESKTOP_CONTENT_WIDTH = 1100;
 
 type WhatsInsideRow = {
   key: string;
   title: string;
   text: string;
-  icon: React.ReactNode;
+  icon: (size: number) => React.ReactNode;
 };
-
-const ICON_SIZE = 22;
-const ICON_COLOR = colors.white;
 
 const WHATS_INSIDE: WhatsInsideRow[] = [
   {
     key: 'wods',
     title: "DOC'S WODS",
     text: "Five workouts a week, programmed by Doc. Log your results, track everything.",
-    icon: <Ionicons name="flame-outline" size={ICON_SIZE} color={ICON_COLOR} />,
+    icon: (size) => <Ionicons name="flame-outline" size={size} color={colors.white} />,
   },
   {
     key: 'cows',
     title: 'THE CHALLENGE OF THE WEEK',
     text: 'A weekly challenge with a live leaderboard. Post your time and see where you stand.',
-    icon: <Ionicons name="trophy-outline" size={ICON_SIZE} color={ICON_COLOR} />,
+    icon: (size) => <Ionicons name="trophy-outline" size={size} color={colors.white} />,
   },
   {
     key: 'deck',
     title: 'THE DECK OF WODS',
     text: '54 workouts built as a deck of cards. Shuffle it and let it deal you your day.',
-    icon: <MaterialCommunityIcons name="cards-playing-spade-outline" size={ICON_SIZE} color={ICON_COLOR} />,
+    icon: (size) => <MaterialCommunityIcons name="cards-playing-spade-outline" size={size} color={colors.white} />,
   },
   {
     key: 'community',
     title: 'THE COMMUNITY',
     text: 'Supportive and friendly. Share your work if you want to, or just read along and get pushed by people doing the same thing.',
-    icon: <Ionicons name="people-outline" size={ICON_SIZE} color={ICON_COLOR} />,
+    icon: (size) => <Ionicons name="people-outline" size={size} color={colors.white} />,
   },
   {
     key: 'classes',
     title: 'CLASS SIGN UP',
     text: 'Book in person group training right from the app.',
-    icon: <Ionicons name="calendar-outline" size={ICON_SIZE} color={ICON_COLOR} />,
+    icon: (size) => <Ionicons name="calendar-outline" size={size} color={colors.white} />,
   },
 ];
 
@@ -67,6 +72,10 @@ type Props = {
 };
 
 export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignIn }: Props) {
+  const { width } = useWindowDimensions();
+  const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
+  const [photoWidth, setPhotoWidth] = useState(0);
+
   return (
     <View style={styles.container}>
       {variant === 'inApp' && onBack && (
@@ -74,100 +83,125 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
       )}
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
-          <DocsBadge variant="white" size={104} />
-          <Text style={styles.heroTitle}>WELCOME TO{'\n'}DOC'S FITNESS</Text>
-          <Text style={styles.heroTagline}>{TAGLINE.toUpperCase()}</Text>
+        <View style={[styles.hero, isDesktop && styles.heroDesktop]}>
+          <DocsBadge variant="white" size={isDesktop ? 128 : 104} />
+          <Text style={[styles.heroTitle, isDesktop && styles.heroTitleDesktop]}>WELCOME TO{'\n'}DOC'S FITNESS</Text>
+          <Text style={[styles.heroTagline, isDesktop && styles.heroTaglineDesktop]}>{TAGLINE.toUpperCase()}</Text>
         </View>
 
-        <Image
-          source={CREW_PHOTO}
-          style={{ width: '100%', aspectRatio: CREW_PHOTO_RATIO }}
-          resizeMode="cover"
-          testID="about-crew-photo"
-        />
-
-        <View style={styles.section}>
-          <Text style={styles.sectionHeading}>TRAIN WITH THE DOC'S CREW, ANYWHERE</Text>
-          <Text style={styles.sectionBody}>
-            Five kettlebell workouts a week, a weekly challenge with a live leaderboard, and a community that shows
-            up. Do it from your garage, a hotel room, or at the boathouse with us in Ventnor City.
-          </Text>
-
-          <Pressable style={styles.locationCard} onPress={openLocationMaps} testID="about-location-card">
-            <Ionicons name="location-outline" size={20} color={colors.gold} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.locationName}>Doc's Fitness</Text>
-              <Text style={styles.locationText}>Ventnor City, NJ. Group training six days a week.</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
-          </Pressable>
+        <View onLayout={(e) => setPhotoWidth(e.nativeEvent.layout.width)}>
+          {photoWidth > 0 && (
+            <Image
+              source={CREW_PHOTO}
+              style={{ width: photoWidth, height: photoWidth / CREW_PHOTO_RATIO }}
+              resizeMode="contain"
+              testID="about-crew-photo"
+            />
+          )}
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionHeading}>WHAT'S INSIDE</Text>
-          {WHATS_INSIDE.map((row) => (
-            <View key={row.key} style={styles.insideRow}>
-              <View style={styles.insideIconTile}>{row.icon}</View>
+        <View style={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}>
+          <View style={[styles.section, isDesktop && styles.sectionDesktop]}>
+            <Text style={[styles.sectionHeading, isDesktop && styles.sectionHeadingDesktop]}>
+              TRAIN WITH THE DOC'S CREW, ANYWHERE
+            </Text>
+            <Text style={[styles.sectionBody, isDesktop && styles.sectionBodyDesktop]}>
+              Five kettlebell workouts a week, a weekly challenge with a live leaderboard, and a community that shows
+              up. Do it from your garage, a hotel room, or at the boathouse with us in Ventnor City.
+            </Text>
+
+            <Pressable style={styles.locationCard} onPress={openLocationMaps} testID="about-location-card">
+              <Ionicons name="location-outline" size={20} color={colors.gold} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.insideTitle}>{row.title}</Text>
-                <Text style={styles.insideText}>{row.text}</Text>
+                <Text style={styles.locationName}>Doc's Fitness</Text>
+                <Text style={styles.locationText}>Ventnor City, NJ. Group training six days a week.</Text>
               </View>
+              <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
+            </Pressable>
+          </View>
+
+          <View style={[styles.section, isDesktop && styles.sectionDesktop]}>
+            <Text style={[styles.sectionHeading, isDesktop && styles.sectionHeadingDesktop]}>WHAT'S INSIDE</Text>
+            <View style={isDesktop && styles.insideGridDesktop}>
+              {WHATS_INSIDE.map((row) => (
+                <View key={row.key} style={isDesktop ? styles.insideCardDesktop : styles.insideRow}>
+                  <View style={[styles.insideIconTile, isDesktop && styles.insideIconTileDesktop]}>
+                    {row.icon(isDesktop ? 26 : 22)}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.insideTitle, isDesktop && styles.insideTitleDesktop]}>{row.title}</Text>
+                    <Text style={[styles.insideText, isDesktop && styles.insideTextDesktop]}>{row.text}</Text>
+                  </View>
+                </View>
+              ))}
             </View>
-          ))}
+          </View>
         </View>
 
         <View style={styles.docBand}>
-          <Text style={styles.docBandHeading}>WHO'S DOC</Text>
-          <Text style={styles.docBandText}>
-            AJ Holland. The original Doc was his grandfather, and the name stuck. A former professional athlete with
-            over 20 years of kettlebell experience and part of the StrongFirst family, he built Doc's Fitness on one
-            promise: look and feel better than you did 10 years ago with just 2 hours a week of kettlebell workouts.
-          </Text>
-        </View>
-
-        <View style={styles.doorsSection}>
-          <View style={styles.doorCard}>
-            <View style={styles.doorBanner}>
-              <Text style={styles.doorBannerText}>2 WEEKS FREE</Text>
-            </View>
-            <View style={styles.doorBody}>
-              <Text style={styles.doorTitle}>TRAIN ONLINE</Text>
-              <Text style={styles.doorText}>Everything in the app, from anywhere. Your first two weeks are on us.</Text>
-              <Pressable style={styles.doorButton} onPress={onStartFree} testID="about-start-free">
-                <Text style={styles.doorButtonText}>START FREE</Text>
-              </Pressable>
-            </View>
-          </View>
-
-          <Pressable style={styles.inviteButton} onPress={shareInvite} testID="about-invite-friend">
-            <Ionicons name="share-social-outline" size={18} color={colors.green} />
-            <Text style={styles.inviteButtonText}>INVITE A FRIEND</Text>
-          </Pressable>
-
-          <View style={styles.doorCard}>
-            <View style={styles.doorBanner}>
-              <Text style={styles.doorBannerText}>FIRST CLASS FREE</Text>
-            </View>
-            <View style={styles.doorBody}>
-              <Text style={styles.doorTitle}>TRAIN IN PERSON</Text>
-              <Text style={styles.doorText}>
-                Group training at Doc's Fitness in Ventnor City. Come see what it's like.
-              </Text>
-              <Pressable style={styles.doorButton} onPress={onBookClass} testID="about-book-class">
-                <Text style={styles.doorButtonText}>BOOK YOUR CLASS</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-
-        {onSignIn && (
-          <Pressable style={styles.signInRow} onPress={onSignIn} hitSlop={8} testID="about-sign-in">
-            <Text style={styles.signInText}>
-              Already a member? <Text style={styles.signInLink}>Sign in.</Text>
+          <View style={[styles.docBandInner, isDesktop && styles.docBandInnerDesktop]}>
+            <Text style={styles.docBandHeading}>WHO'S DOC</Text>
+            <Text style={[styles.docBandText, isDesktop && styles.docBandTextDesktop]}>
+              AJ Holland. The original Doc was his grandfather, and the name stuck. A former professional athlete
+              with over 20 years of kettlebell experience and part of the StrongFirst family, he built Doc's Fitness
+              on one promise: look and feel better than you did 10 years ago with just 2 hours a week of kettlebell
+              workouts.
             </Text>
-          </Pressable>
-        )}
+          </View>
+        </View>
+
+        <View style={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}>
+          <View style={[styles.doorsSection, isDesktop && styles.doorsSectionDesktop]}>
+            <View style={isDesktop && styles.doorsRowDesktop}>
+              <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
+                <View style={styles.doorBanner}>
+                  <Text style={styles.doorBannerText}>2 WEEKS FREE</Text>
+                </View>
+                <View style={styles.doorBody}>
+                  <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>TRAIN ONLINE</Text>
+                  <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
+                    Everything in the app, from anywhere. Your first two weeks are on us.
+                  </Text>
+                  <Pressable style={styles.doorButton} onPress={onStartFree} testID="about-start-free">
+                    <Text style={styles.doorButtonText}>START FREE</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
+                <View style={styles.doorBanner}>
+                  <Text style={styles.doorBannerText}>FIRST CLASS FREE</Text>
+                </View>
+                <View style={styles.doorBody}>
+                  <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>TRAIN IN PERSON</Text>
+                  <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
+                    Group training at Doc's Fitness in Ventnor City. Come see what it's like.
+                  </Text>
+                  <Pressable style={styles.doorButton} onPress={onBookClass} testID="about-book-class">
+                    <Text style={styles.doorButtonText}>BOOK YOUR CLASS</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+
+            <Pressable
+              style={[styles.inviteButton, isDesktop && styles.inviteButtonDesktop]}
+              onPress={shareInvite}
+              testID="about-invite-friend"
+            >
+              <Ionicons name="share-social-outline" size={18} color={colors.green} />
+              <Text style={styles.inviteButtonText}>INVITE A FRIEND</Text>
+            </Pressable>
+          </View>
+
+          {onSignIn && (
+            <Pressable style={styles.signInRow} onPress={onSignIn} hitSlop={8} testID="about-sign-in">
+              <Text style={styles.signInText}>
+                Already a member? <Text style={styles.signInLink}>Sign in.</Text>
+              </Text>
+            </Pressable>
+          )}
+        </View>
       </ScrollView>
     </View>
   );
@@ -188,6 +222,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 28,
   },
+  heroDesktop: {
+    paddingTop: 24,
+    paddingBottom: 48,
+  },
   heroTitle: {
     color: colors.text,
     fontFamily: fonts.headline,
@@ -196,6 +234,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textAlign: 'center',
     marginTop: 14,
+  },
+  heroTitleDesktop: {
+    fontSize: 54,
+    lineHeight: 56,
+    marginTop: 20,
   },
   heroTagline: {
     color: colors.text,
@@ -206,9 +249,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 12,
   },
+  heroTaglineDesktop: {
+    fontSize: 19,
+    lineHeight: 28,
+    marginTop: 16,
+    maxWidth: 640,
+  },
+  // Passthrough on mobile — sections keep their own paddingHorizontal.
+  // On desktop this becomes the centered ~1100px reading column, and the
+  // sections inside drop their own horizontal padding in favor of this one.
+  contentContainer: {},
+  contentContainerDesktop: {
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: DESKTOP_CONTENT_WIDTH,
+    paddingHorizontal: 40,
+  },
   section: {
     paddingHorizontal: 20,
     marginTop: 26,
+  },
+  sectionDesktop: {
+    paddingHorizontal: 0,
+    marginTop: 56,
   },
   sectionHeading: {
     color: colors.text,
@@ -217,12 +280,22 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 10,
   },
+  sectionHeadingDesktop: {
+    fontSize: 34,
+    marginBottom: 16,
+  },
   sectionBody: {
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 15,
     lineHeight: 21,
     marginBottom: 16,
+  },
+  sectionBodyDesktop: {
+    fontSize: 17,
+    lineHeight: 26,
+    maxWidth: 760,
+    marginBottom: 24,
   },
   locationCard: {
     flexDirection: 'row',
@@ -249,6 +322,20 @@ const styles = StyleSheet.create({
     gap: 14,
     marginBottom: 18,
   },
+  // 3-across grid on desktop, wrapping to a 2nd row for the 5th card. Each
+  // card grows evenly to fill its row instead of hugging a fixed width.
+  insideGridDesktop: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 28,
+  },
+  insideCardDesktop: {
+    flexGrow: 1,
+    flexBasis: 280,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+  },
   insideIconTile: {
     width: 46,
     height: 46,
@@ -257,6 +344,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  insideIconTileDesktop: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+  },
   insideTitle: {
     color: colors.text,
     fontFamily: fonts.bodyBold,
@@ -264,17 +356,34 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     marginBottom: 3,
   },
+  insideTitleDesktop: {
+    fontSize: 17,
+    marginBottom: 5,
+  },
   insideText: {
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 14,
     lineHeight: 19,
   },
+  insideTextDesktop: {
+    fontSize: 15,
+    lineHeight: 21,
+  },
   docBand: {
     backgroundColor: colors.green,
-    paddingHorizontal: 24,
     paddingVertical: 32,
     marginTop: 30,
+  },
+  docBandInner: {
+    paddingHorizontal: 24,
+  },
+  docBandInnerDesktop: {
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: DESKTOP_CONTENT_WIDTH,
+    paddingHorizontal: 40,
+    alignItems: 'center',
   },
   docBandHeading: {
     color: colors.goldBright,
@@ -289,10 +398,25 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
+  docBandTextDesktop: {
+    fontSize: 18,
+    lineHeight: 27,
+    maxWidth: 760,
+    textAlign: 'center',
+  },
   doorsSection: {
     paddingHorizontal: 20,
     marginTop: 30,
     gap: 16,
+  },
+  doorsSectionDesktop: {
+    paddingHorizontal: 0,
+    marginTop: 56,
+    gap: 24,
+  },
+  doorsRowDesktop: {
+    flexDirection: 'row',
+    gap: 24,
   },
   doorCard: {
     backgroundColor: colors.white,
@@ -300,6 +424,9 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     borderRadius: 14,
     overflow: 'hidden',
+  },
+  doorCardDesktop: {
+    flex: 1,
   },
   doorBanner: {
     backgroundColor: colors.gold,
@@ -322,12 +449,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 6,
   },
+  doorTitleDesktop: {
+    fontSize: 30,
+    marginBottom: 10,
+  },
   doorText: {
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 14,
     lineHeight: 19,
     marginBottom: 16,
+  },
+  doorTextDesktop: {
+    fontSize: 16,
+    lineHeight: 22,
+    marginBottom: 20,
   },
   doorButton: {
     backgroundColor: colors.green,
@@ -350,6 +486,12 @@ const styles = StyleSheet.create({
     borderColor: colors.green,
     borderRadius: 10,
     paddingVertical: 14,
+  },
+  // Centered beneath the two doors instead of sandwiched between them.
+  inviteButtonDesktop: {
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 400,
   },
   inviteButtonText: {
     color: colors.green,
