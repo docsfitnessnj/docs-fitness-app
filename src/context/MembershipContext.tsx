@@ -120,7 +120,14 @@ type MembershipContextValue = {
   startTrial: (email: string) => void;
   becomeMember: () => void;
   selectInPersonPlan: (plan: InPersonPlan) => void;
-  becomeGuest: () => void;
+  // Optional email lets the About page's BOOK YOUR CLASS door capture an
+  // email without committing to a paid plan yet — same guest capabilities
+  // (booking access, first-class-free), just not anonymous.
+  becomeGuest: (email?: string) => void;
+  // A returning member signing back in — full online access, no trial
+  // dates, and (unlike becomeMember) no purchase celebration since nothing
+  // was just bought.
+  signIn: (email: string) => void;
   setDevTier: (tier: MembershipTier) => void;
   dismissTrialWarning: () => void;
   useTenPackClass: () => void;
@@ -219,9 +226,14 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         if (plan === 'monthly_unlimited') setPlanStartedAt(Date.now());
         setCancellationRequested(false);
       },
-      becomeGuest: () => {
-        setEmail(null);
+      becomeGuest: (email) => {
+        setEmail(email ?? null);
         setTier('guest');
+        setSignedUp(true);
+      },
+      signIn: (enteredEmail) => {
+        setEmail(enteredEmail);
+        setTier('online_paid');
         setSignedUp(true);
       },
       setDevTier: (nextTier: MembershipTier) => {

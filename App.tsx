@@ -54,6 +54,8 @@ import { navigationRef } from './src/lib/navigationRef';
 import { colors, fonts, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from './src/theme';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
+import { AboutScreen } from './src/screens/AboutScreen';
+import SignInScreen from './src/screens/SignInScreen';
 import HowDoYouTrainScreen from './src/screens/HowDoYouTrainScreen';
 import OnlineStartScreen from './src/screens/OnlineStartScreen';
 import PricingScreen from './src/screens/PricingScreen';
@@ -228,18 +230,49 @@ function RootNavigator({ tabBarHidden }: RootNavigatorProps) {
   );
 }
 
-type OnboardingStep = 'email' | 'howDoYouTrain' | 'onlineStart' | 'pricing' | 'inPersonPlans';
+type OnboardingStep = 'about' | 'email' | 'signIn' | 'howDoYouTrain' | 'onlineStart' | 'pricing' | 'inPersonPlans';
 
-// Fewest possible clicks: Continue -> How do you train -> (pick a path) -> in.
-// TRAIN ONLINE lands on a single trial-start screen (with a skip-to-pricing
-// link); TRAIN AT THE BOATHOUSE goes straight to plan selection. Guests skip
-// this whole flow from the email screen.
+// The choice a door on the About page already made for the user, carried
+// through the email screen so it can skip "How do you train?" entirely.
+type EntryIntent = 'onlineTrial' | 'bookClass' | null;
+
+// Fewest possible clicks: About -> Continue -> (skip if a door was tapped,
+// else How do you train) -> (pick a path) -> in. TRAIN ONLINE lands on a
+// single trial-start screen (with a skip-to-pricing link); TRAIN AT THE
+// BOATHOUSE goes straight to plan selection. Guests skip this whole flow
+// from the email screen.
 function OnboardingFlow() {
-  const { startTrial, becomeMember, selectInPersonPlan, becomeGuest, setNewsletterOptIn } = useMembership();
-  const [step, setStep] = useState<OnboardingStep>('email');
+  const { startTrial, becomeMember, selectInPersonPlan, becomeGuest, signIn, setNewsletterOptIn } = useMembership();
+  const [step, setStep] = useState<OnboardingStep>('about');
   const [email, setEmail] = useState('');
+  const [intent, setIntent] = useState<EntryIntent>(null);
 
   switch (step) {
+    case 'email':
+      return (
+        <WelcomeScreen
+          onBack={() => setStep('about')}
+          onContinue={(enteredEmail, newsletterOptIn) => {
+            setEmail(enteredEmail);
+            setNewsletterOptIn(newsletterOptIn);
+            if (intent === 'onlineTrial') {
+              startTrial(enteredEmail);
+            } else if (intent === 'bookClass') {
+              becomeGuest(enteredEmail);
+            } else {
+              setStep('howDoYouTrain');
+            }
+          }}
+          onBrowseAsGuest={() => becomeGuest()}
+        />
+      );
+    case 'signIn':
+      return (
+        <SignInScreen
+          onBack={() => setStep('about')}
+          onSignIn={(enteredEmail) => signIn(enteredEmail)}
+        />
+      );
     case 'howDoYouTrain':
       return (
         <HowDoYouTrainScreen
@@ -264,13 +297,17 @@ function OnboardingFlow() {
       );
     default:
       return (
-        <WelcomeScreen
-          onContinue={(enteredEmail, newsletterOptIn) => {
-            setEmail(enteredEmail);
-            setNewsletterOptIn(newsletterOptIn);
-            setStep('howDoYouTrain');
+        <AboutScreen
+          variant="onboarding"
+          onStartFree={() => {
+            setIntent('onlineTrial');
+            setStep('email');
           }}
-          onBrowseAsGuest={() => becomeGuest()}
+          onBookClass={() => {
+            setIntent('bookClass');
+            setStep('email');
+          }}
+          onSignIn={() => setStep('signIn')}
         />
       );
   }
@@ -306,6 +343,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [membershipsOpen, setMembershipsOpen] = useMembershipsModalState();
   const [myWorkoutsOpen, setMyWorkoutsOpen] = useState(false);
   const [closeFriendsOpen, setCloseFriendsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [adminRosterOpen, setAdminRosterOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [trophyCaseOpen, setTrophyCaseOpen] = useState(false);
@@ -353,6 +391,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenTrophyCase={() => setTrophyCaseOpen(true)}
           onOpenMemberManager={() => setMemberManagerOpen(true)}
+          onOpenAbout={() => setAboutOpen(true)}
         />
       </ScreenOverlay>
       {/* Rows nested under the drawer: fullBleed only while the drawer itself
@@ -381,6 +420,20 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       </ScreenOverlay>
       <ScreenOverlay visible={closeFriendsOpen} fullBleed={sidebarOpen}>
         <CloseFriendsScreen visible={closeFriendsOpen} onClose={() => setCloseFriendsOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={aboutOpen} fullBleed={sidebarOpen}>
+        <AboutScreen
+          variant="inApp"
+          onBack={() => setAboutOpen(false)}
+          onStartFree={() => {
+            setAboutOpen(false);
+            setMembershipsOpen(true);
+          }}
+          onBookClass={() => {
+            setAboutOpen(false);
+            setMembershipsOpen(true);
+          }}
+        />
       </ScreenOverlay>
       <ScreenOverlay visible={adminRosterOpen} fullBleed={sidebarOpen}>
         <AdminRosterScreen visible={adminRosterOpen} onClose={() => setAdminRosterOpen(false)} />
