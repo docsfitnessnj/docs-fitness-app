@@ -1,9 +1,18 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
-import { colors, fonts, TAGLINE } from '../theme';
+import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
 
 type Props = {
   onContinue: (email: string, newsletterOptIn: boolean) => void;
@@ -16,6 +25,9 @@ type Props = {
 export default function WelcomeScreen({ onContinue, onBrowseAsGuest, onBack }: Props) {
   const [email, setEmail] = useState('');
   const [newsletterOptIn, setNewsletterOptIn] = useState(true);
+  const { width } = useWindowDimensions();
+  const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
+  const isLargeDesktop = isDesktop && width >= LARGE_DESKTOP_BREAKPOINT;
 
   const canSubmit = email.trim().length > 3 && email.includes('@');
 
@@ -30,12 +42,22 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest, onBack }: P
           <Text style={styles.backText}>BACK</Text>
         </Pressable>
       )}
-      <View style={styles.content}>
-        <View style={styles.brandMark}>
-          <DocsBadge variant="white" size={140} />
+      <View style={[styles.content, isDesktop && styles.contentDesktop]}>
+        <View style={[styles.brandMark, isDesktop && styles.brandMarkDesktop]}>
+          <DocsBadge variant="white" size={isLargeDesktop ? 220 : isDesktop ? 190 : 140} />
         </View>
-        <Text style={styles.title}>DOC'S FITNESS</Text>
-        <Text style={styles.tagline}>{TAGLINE.toUpperCase()}</Text>
+        <Text style={[styles.title, isDesktop && styles.titleDesktop, isLargeDesktop && styles.titleLargeDesktop]}>
+          DOC'S FITNESS
+        </Text>
+        <Text
+          style={[
+            styles.tagline,
+            isDesktop && styles.taglineDesktop,
+            isLargeDesktop && styles.taglineLargeDesktop,
+          ]}
+        >
+          {TAGLINE.toUpperCase()}
+        </Text>
 
         <View style={styles.form}>
           <Text style={styles.label}>EMAIL ADDRESS</Text>
@@ -110,8 +132,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 28,
   },
+  // Generous vertical padding so the hero reads as a real hero section on
+  // desktop instead of a header strip sitting atop the form.
+  contentDesktop: {
+    paddingVertical: 72,
+  },
   brandMark: {
     marginBottom: 8,
+  },
+  brandMarkDesktop: {
+    marginBottom: 20,
   },
   footer: {
     marginTop: 40,
@@ -124,6 +154,16 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textAlign: 'center',
     marginBottom: 10,
+  },
+  titleDesktop: {
+    fontSize: 66,
+    lineHeight: 68,
+    marginBottom: 16,
+  },
+  titleLargeDesktop: {
+    fontSize: 88,
+    lineHeight: 90,
+    marginBottom: 20,
   },
   form: {
     width: '100%',
@@ -164,6 +204,17 @@ const styles = StyleSheet.create({
     letterSpacing: 1.35,
     textAlign: 'center',
     marginBottom: 28,
+  },
+  taglineDesktop: {
+    fontSize: 21,
+    lineHeight: 30,
+    maxWidth: 700,
+    marginBottom: 40,
+  },
+  taglineLargeDesktop: {
+    fontSize: 24,
+    lineHeight: 34,
+    marginBottom: 48,
   },
   checkboxRow: {
     flexDirection: 'row',
