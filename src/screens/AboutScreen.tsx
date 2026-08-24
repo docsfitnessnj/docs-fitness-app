@@ -126,15 +126,6 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
               Five kettlebell workouts a week, a weekly challenge with a live leaderboard, and a community that shows
               up. Do it from your garage, a hotel room, or at the boathouse with us in Ventnor City.
             </Text>
-
-            <Pressable style={styles.locationCard} onPress={openLocationMaps} testID="about-location-card">
-              <Ionicons name="location-outline" size={20} color={colors.gold} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.locationName}>Doc's Fitness</Text>
-                <Text style={styles.locationText}>Ventnor City, NJ. Group training six days a week.</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
-            </Pressable>
           </View>
 
           <View style={[styles.section, isDesktop && styles.sectionDesktop]}>
@@ -210,6 +201,19 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
               <Text style={styles.inviteButtonText}>INVITE A FRIEND</Text>
             </Pressable>
           </View>
+
+          <Pressable
+            style={[styles.locationCard, isDesktop && styles.locationCardDesktop]}
+            onPress={openLocationMaps}
+            testID="about-location-card"
+          >
+            <Ionicons name="location-outline" size={20} color={colors.gold} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.locationName}>Doc's Fitness</Text>
+              <Text style={styles.locationText}>Ventnor City, NJ. Group training six days a week.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
+          </Pressable>
 
           {onSignIn && (
             <Pressable style={styles.signInRow} onPress={onSignIn} hitSlop={8} testID="about-sign-in">
@@ -331,6 +335,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.greenDeep,
     borderRadius: 12,
     padding: 16,
+    marginTop: 24,
+    marginHorizontal: 20,
+  },
+  locationCardDesktop: {
+    marginTop: 32,
+    marginHorizontal: 0,
   },
   locationName: {
     color: colors.white,
