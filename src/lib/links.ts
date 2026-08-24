@@ -1,6 +1,6 @@
 import { Linking, Share } from 'react-native';
 import { showAlert } from './alert';
-import { LOCATION, TAGLINE } from '../theme';
+import { LOCATION } from '../theme';
 
 export const APP_SHARE_URL = 'https://docsfitnessnj.github.io/docs-fitness-app';
 
@@ -9,7 +9,7 @@ export const APP_SHARE_URL = 'https://docsfitnessnj.github.io/docs-fitness-app';
 // (react-native-web's Share.share rejects otherwise), so this falls back to
 // just showing the message the member can copy by hand.
 export function shareInvite() {
-  const message = `Train with me at Doc's Fitness. ${TAGLINE} ${APP_SHARE_URL}`;
+  const message = `Doc's Fitness — kettlebell workouts, a weekly challenge, and class booking, all in one app. ${APP_SHARE_URL}`;
   Share.share({ message, url: APP_SHARE_URL, title: "Doc's Fitness" }).catch(() => {
     showAlert('Share Doc’s Fitness', message);
   });

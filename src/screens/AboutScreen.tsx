@@ -4,7 +4,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { ModalHeader } from '../components/ModalHeader';
 import { openLocationMaps, shareInvite } from '../lib/links';
-import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT } from '../theme';
+import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
 
 const CREW_PHOTO = require('../../assets/brand/crew-photo.jpg');
 // The photo's real pixel dimensions (1179x740). react-native-web's Image
@@ -74,6 +74,7 @@ type Props = {
 export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignIn }: Props) {
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
+  const isLargeDesktop = isDesktop && width >= LARGE_DESKTOP_BREAKPOINT;
   const [photoWidth, setPhotoWidth] = useState(0);
 
   return (
@@ -84,9 +85,25 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={[styles.hero, isDesktop && styles.heroDesktop]}>
-          <DocsBadge variant="white" size={isDesktop ? 128 : 104} />
-          <Text style={[styles.heroTitle, isDesktop && styles.heroTitleDesktop]}>WELCOME TO{'\n'}DOC'S FITNESS</Text>
-          <Text style={[styles.heroTagline, isDesktop && styles.heroTaglineDesktop]}>{TAGLINE.toUpperCase()}</Text>
+          <DocsBadge variant="white" size={isLargeDesktop ? 220 : isDesktop ? 190 : 104} />
+          <Text
+            style={[
+              styles.heroTitle,
+              isDesktop && styles.heroTitleDesktop,
+              isLargeDesktop && styles.heroTitleLargeDesktop,
+            ]}
+          >
+            WELCOME TO{'\n'}DOC'S FITNESS
+          </Text>
+          <Text
+            style={[
+              styles.heroTagline,
+              isDesktop && styles.heroTaglineDesktop,
+              isLargeDesktop && styles.heroTaglineLargeDesktop,
+            ]}
+          >
+            {TAGLINE.toUpperCase()}
+          </Text>
         </View>
 
         <View onLayout={(e) => setPhotoWidth(e.nativeEvent.layout.width)}>
@@ -223,8 +240,8 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
   },
   heroDesktop: {
-    paddingTop: 24,
-    paddingBottom: 48,
+    paddingTop: 72,
+    paddingBottom: 80,
   },
   heroTitle: {
     color: colors.text,
@@ -236,9 +253,14 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   heroTitleDesktop: {
-    fontSize: 54,
-    lineHeight: 56,
-    marginTop: 20,
+    fontSize: 66,
+    lineHeight: 68,
+    marginTop: 28,
+  },
+  heroTitleLargeDesktop: {
+    fontSize: 88,
+    lineHeight: 90,
+    marginTop: 32,
   },
   heroTagline: {
     color: colors.text,
@@ -250,10 +272,15 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   heroTaglineDesktop: {
-    fontSize: 19,
-    lineHeight: 28,
-    marginTop: 16,
-    maxWidth: 640,
+    fontSize: 21,
+    lineHeight: 30,
+    marginTop: 20,
+    maxWidth: 700,
+  },
+  heroTaglineLargeDesktop: {
+    fontSize: 24,
+    lineHeight: 34,
+    marginTop: 24,
   },
   // Passthrough on mobile — sections keep their own paddingHorizontal.
   // On desktop this becomes the centered ~1100px reading column, and the
