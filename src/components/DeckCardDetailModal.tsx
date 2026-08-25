@@ -2,7 +2,9 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
+import { TappableMovementText } from './movement/TappableMovementText';
 import { DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
+import { openMovementVault } from '../lib/movementVaultModal';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -38,7 +40,18 @@ export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplet
             {card.movements.map((move, index) => (
               <View key={index} style={styles.moveRow}>
                 <View style={[styles.bullet, { backgroundColor: suitColor }]} />
-                <Text style={styles.moveText}>{move}</Text>
+                <TappableMovementText
+                  style={styles.moveText}
+                  text={move}
+                  // This card renders in a true Modal (portaled above every
+                  // ScreenOverlay — see ModalRootContext), so the vault
+                  // would open uninteractive underneath it unless this
+                  // modal closes first.
+                  onOpenMovement={(movementId) => {
+                    onClose();
+                    openMovementVault(movementId);
+                  }}
+                />
               </View>
             ))}
 

@@ -11,6 +11,7 @@ import { useDisplayName } from '../context/ProfileContext';
 import { useTour } from '../context/TourContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { openMerchStore, openLocationMaps } from '../lib/links';
+import { openMovementVault } from '../lib/movementVaultModal';
 import { openFullSchedule } from '../lib/scheduleModal';
 import { colors, fonts, TAGLINE, LOCATION } from '../theme';
 
@@ -109,6 +110,12 @@ export function SidebarDrawer({
       label: 'THE TROPHY CASE',
       icon: 'trophy-outline',
       onPress: () => openNested(onOpenTrophyCase),
+    },
+    {
+      key: 'movement-vault',
+      label: 'THE MOVEMENT VAULT',
+      icon: 'play-circle-outline',
+      onPress: () => openNested(() => openMovementVault()),
     },
     {
       key: 'schedule',
