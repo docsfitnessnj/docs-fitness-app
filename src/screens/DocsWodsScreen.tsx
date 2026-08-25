@@ -5,9 +5,11 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { DateStrip } from '../components/DateStrip';
 import { LogResultsModal } from '../components/LogResultsModal';
 import { UpgradeBanner } from '../components/UpgradeBanner';
+import { TappableMovementText } from '../components/movement/TappableMovementText';
 import { useMembership } from '../context/MembershipContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatFullDate, getCurrentWeek, isDayWodUnlocked, parseMoveRow } from '../data/content';
+import { openMovementVault } from '../lib/movementVaultModal';
 import { colors, fonts } from '../theme';
 
 function LockedDay() {
@@ -83,7 +85,11 @@ export default function DocsWodsScreen() {
               const parsed = parseMoveRow(move);
               return (
                 <View key={index} style={styles.wodRow}>
-                  <Text style={styles.wodRowText}>{parsed.name}</Text>
+                  <TappableMovementText
+                    style={styles.wodRowText}
+                    text={parsed.name}
+                    onOpenMovement={openMovementVault}
+                  />
                   {parsed.reps ? <Text style={styles.wodRowReps}>{parsed.reps}</Text> : null}
                 </View>
               );
@@ -108,6 +114,15 @@ export default function DocsWodsScreen() {
                 <Text style={styles.logButtonText}>LOG RESULTS</Text>
               </Pressable>
             </View>
+
+            <Pressable
+              style={styles.lookupButton}
+              onPress={() => openMovementVault()}
+              testID="lookup-movement"
+            >
+              <Ionicons name="play-circle-outline" size={16} color={colors.textMuted} />
+              <Text style={styles.lookupButtonText}>LOOK UP A MOVEMENT</Text>
+            </Pressable>
           </View>
         </View>
       )}
@@ -245,6 +260,20 @@ const styles = StyleSheet.create({
     color: colors.green,
     fontFamily: fonts.labelBold,
     fontSize: 13,
+    letterSpacing: 1,
+  },
+  lookupButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingVertical: 10,
+  },
+  lookupButtonText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
     letterSpacing: 1,
   },
 });

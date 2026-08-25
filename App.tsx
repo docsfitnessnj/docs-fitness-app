@@ -46,6 +46,7 @@ import { IdentitySidebar } from './src/components/IdentitySidebar';
 import { TourOverlay } from './src/components/TourOverlay';
 import { PurchaseCelebrationOverlay } from './src/components/PurchaseCelebrationOverlay';
 import { useScheduleModalState } from './src/lib/scheduleModal';
+import { useMovementVaultModalState } from './src/lib/movementVaultModal';
 import { useMembershipsModalState } from './src/lib/membershipsModal';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
 import { useTabBarHeight } from './src/lib/tabBarHeight';
@@ -73,6 +74,7 @@ import { CloseFriendsScreen } from './src/screens/CloseFriendsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TrophyCaseScreen } from './src/screens/TrophyCaseScreen';
+import { MovementVaultScreen } from './src/screens/MovementVaultScreen';
 import { MemberManagerScreen } from './src/screens/MemberManagerScreen';
 
 const PHONE_FRAME_MAX_WIDTH = 480;
@@ -357,6 +359,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [memberManagerOpen, setMemberManagerOpen] = useState(false);
   const [messagesDraft, setMessagesDraft] = useState<string | undefined>(undefined);
   const [scheduleOpen, setScheduleOpen] = useScheduleModalState();
+  const [movementVaultOpen, setMovementVaultOpen, movementVaultInitialId] = useMovementVaultModalState();
   const [activeTab, setActiveTab] = useState('Community');
 
   const openMessagesForJokerVerification = () => {
@@ -467,6 +470,13 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       </ScreenOverlay>
       <ScreenOverlay visible={scheduleOpen} fullBleed={sidebarOpen}>
         <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={movementVaultOpen} fullBleed={sidebarOpen}>
+        <MovementVaultScreen
+          visible={movementVaultOpen}
+          onClose={() => setMovementVaultOpen(false)}
+          initialMovementId={movementVaultInitialId}
+        />
       </ScreenOverlay>
       <TrialExpiryModal />
       <TourOverlay />

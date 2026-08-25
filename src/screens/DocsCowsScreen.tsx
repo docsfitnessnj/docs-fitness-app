@@ -4,9 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { MembershipGate } from '../components/MembershipGate';
 import { Avatar } from '../components/Avatar';
+import { TappableMovementText } from '../components/movement/TappableMovementText';
 import { useBadges } from '../context/BadgeContext';
 import { CHALLENGE_TITLE, LeaderboardEntry, useChallenge, useChallengeLeaderboard } from '../context/ChallengeContext';
 import { useDisplayName } from '../context/ProfileContext';
+import { openMovementVault } from '../lib/movementVaultModal';
 import { colors, fonts } from '../theme';
 
 type Entry = LeaderboardEntry;
@@ -20,9 +22,12 @@ function ChallengeHero() {
         <Text style={styles.badgeText}>THIS WEEK'S CHALLENGE OF THE WEEK</Text>
       </View>
       <Text style={styles.heroTitle}>{CHALLENGE_TITLE}</Text>
-      <Text style={styles.heroSubtext}>
-        Rack up as many kettlebell swings as you can, for time. No shortcuts, no excuses.
-      </Text>
+      <TappableMovementText
+        style={styles.heroSubtext}
+        linkStyle={styles.heroSubtextLink}
+        text="Rack up as many kettlebell swings as you can, for time. No shortcuts, no excuses."
+        onOpenMovement={openMovementVault}
+      />
       <View style={styles.heroDivider} />
       <Text style={styles.daysLeftLabel}>DAYS LEFT</Text>
       <Text style={styles.daysLeft}>4</Text>
@@ -208,6 +213,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginTop: 8,
     lineHeight: 20,
+  },
+  heroSubtextLink: {
+    color: colors.goldBright,
+    fontFamily: fonts.bodySemiBold,
+    textDecorationLine: 'underline',
   },
   heroDivider: {
     height: 1,
