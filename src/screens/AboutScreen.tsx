@@ -128,6 +128,42 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
             </Text>
           </View>
 
+          <View style={[styles.doorsSection, isDesktop && styles.doorsSectionDesktop]}>
+            <View style={isDesktop && styles.doorsRowDesktop}>
+              <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
+                <View style={styles.doorBanner}>
+                  <Text style={styles.doorBannerText}>2 WEEKS FREE</Text>
+                </View>
+                <View style={styles.doorBody}>
+                  <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>TRAIN ONLINE</Text>
+                  <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
+                    Everything in the app, from anywhere. Your first two weeks are on us.
+                  </Text>
+                  <Pressable style={styles.doorButton} onPress={onStartFree} testID="about-start-free">
+                    <Text style={styles.doorButtonText}>START FREE</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
+                <View style={styles.doorBanner}>
+                  <Text style={styles.doorBannerText}>FIRST CLASS FREE</Text>
+                </View>
+                <View style={styles.doorBody}>
+                  <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>
+                    TRAIN IN PERSON AT DOC'S FITNESS
+                  </Text>
+                  <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
+                    Group training at Doc's Fitness in Ventnor City. Come see what it's like.
+                  </Text>
+                  <Pressable style={styles.doorButton} onPress={onBookClass} testID="about-book-class">
+                    <Text style={styles.doorButtonText}>BOOK YOUR CLASS</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+
           <View style={[styles.section, isDesktop && styles.sectionDesktop]}>
             <Text style={[styles.sectionHeading, isDesktop && styles.sectionHeadingDesktop]}>WHAT'S INSIDE</Text>
             <View style={isDesktop && styles.insideGridDesktop}>
@@ -159,49 +195,6 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
         </View>
 
         <View style={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}>
-          <View style={[styles.doorsSection, isDesktop && styles.doorsSectionDesktop]}>
-            <View style={isDesktop && styles.doorsRowDesktop}>
-              <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
-                <View style={styles.doorBanner}>
-                  <Text style={styles.doorBannerText}>2 WEEKS FREE</Text>
-                </View>
-                <View style={styles.doorBody}>
-                  <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>TRAIN ONLINE</Text>
-                  <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
-                    Everything in the app, from anywhere. Your first two weeks are on us.
-                  </Text>
-                  <Pressable style={styles.doorButton} onPress={onStartFree} testID="about-start-free">
-                    <Text style={styles.doorButtonText}>START FREE</Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
-                <View style={styles.doorBanner}>
-                  <Text style={styles.doorBannerText}>FIRST CLASS FREE</Text>
-                </View>
-                <View style={styles.doorBody}>
-                  <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>TRAIN IN PERSON</Text>
-                  <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
-                    Group training at Doc's Fitness in Ventnor City. Come see what it's like.
-                  </Text>
-                  <Pressable style={styles.doorButton} onPress={onBookClass} testID="about-book-class">
-                    <Text style={styles.doorButtonText}>BOOK YOUR CLASS</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-
-            <Pressable
-              style={[styles.inviteButton, isDesktop && styles.inviteButtonDesktop]}
-              onPress={shareInvite}
-              testID="about-invite-friend"
-            >
-              <Ionicons name="share-social-outline" size={18} color={colors.green} />
-              <Text style={styles.inviteButtonText}>INVITE A FRIEND</Text>
-            </Pressable>
-          </View>
-
           <Pressable
             style={[styles.locationCard, isDesktop && styles.locationCardDesktop]}
             onPress={openLocationMaps}
@@ -213,6 +206,15 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
               <Text style={styles.locationText}>Ventnor City, NJ. Group training six days a week.</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
+          </Pressable>
+
+          <Pressable
+            style={[styles.inviteButton, isDesktop && styles.inviteButtonDesktop]}
+            onPress={shareInvite}
+            testID="about-invite-friend"
+          >
+            <Ionicons name="share-social-outline" size={18} color={colors.green} />
+            <Text style={styles.inviteButtonText}>INVITE A FRIEND</Text>
           </Pressable>
 
           {onSignIn && (
@@ -444,12 +446,10 @@ const styles = StyleSheet.create({
   doorsSection: {
     paddingHorizontal: 20,
     marginTop: 30,
-    gap: 16,
   },
   doorsSectionDesktop: {
     paddingHorizontal: 0,
     marginTop: 56,
-    gap: 24,
   },
   doorsRowDesktop: {
     flexDirection: 'row',
@@ -523,12 +523,14 @@ const styles = StyleSheet.create({
     borderColor: colors.green,
     borderRadius: 10,
     paddingVertical: 14,
+    marginTop: 16,
   },
-  // Centered beneath the two doors instead of sandwiched between them.
+  // Centered below the location card instead of sandwiched between the doors.
   inviteButtonDesktop: {
     alignSelf: 'center',
     width: '100%',
     maxWidth: 400,
+    marginTop: 20,
   },
   inviteButtonText: {
     color: colors.green,
