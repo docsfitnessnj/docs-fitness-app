@@ -128,37 +128,6 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
             </Text>
           </View>
 
-          <View style={[styles.section, isDesktop && styles.sectionDesktop]}>
-            <Text style={[styles.sectionHeading, isDesktop && styles.sectionHeadingDesktop]}>WHAT'S INSIDE</Text>
-            <View style={isDesktop && styles.insideGridDesktop}>
-              {WHATS_INSIDE.map((row) => (
-                <View key={row.key} style={isDesktop ? styles.insideCardDesktop : styles.insideRow}>
-                  <View style={[styles.insideIconTile, isDesktop && styles.insideIconTileDesktop]}>
-                    {row.icon(isDesktop ? 26 : 22)}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.insideTitle, isDesktop && styles.insideTitleDesktop]}>{row.title}</Text>
-                    <Text style={[styles.insideText, isDesktop && styles.insideTextDesktop]}>{row.text}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.docBand}>
-          <View style={[styles.docBandInner, isDesktop && styles.docBandInnerDesktop]}>
-            <Text style={styles.docBandHeading}>WHO'S DOC</Text>
-            <Text style={[styles.docBandText, isDesktop && styles.docBandTextDesktop]}>
-              AJ Holland. The original Doc was his grandfather, and the name stuck. A former professional athlete
-              with over 20 years of kettlebell experience and part of the StrongFirst family, he built Doc's Fitness
-              on one promise: look and feel better than you did 10 years ago with just 2 hours a week of kettlebell
-              workouts.
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}>
           <View style={[styles.doorsSection, isDesktop && styles.doorsSectionDesktop]}>
             <View style={isDesktop && styles.doorsRowDesktop}>
               <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
@@ -191,17 +160,39 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
                 </View>
               </View>
             </View>
-
-            <Pressable
-              style={[styles.inviteButton, isDesktop && styles.inviteButtonDesktop]}
-              onPress={shareInvite}
-              testID="about-invite-friend"
-            >
-              <Ionicons name="share-social-outline" size={18} color={colors.green} />
-              <Text style={styles.inviteButtonText}>INVITE A FRIEND</Text>
-            </Pressable>
           </View>
 
+          <View style={[styles.section, isDesktop && styles.sectionDesktop]}>
+            <Text style={[styles.sectionHeading, isDesktop && styles.sectionHeadingDesktop]}>WHAT'S INSIDE</Text>
+            <View style={isDesktop && styles.insideGridDesktop}>
+              {WHATS_INSIDE.map((row) => (
+                <View key={row.key} style={isDesktop ? styles.insideCardDesktop : styles.insideRow}>
+                  <View style={[styles.insideIconTile, isDesktop && styles.insideIconTileDesktop]}>
+                    {row.icon(isDesktop ? 26 : 22)}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.insideTitle, isDesktop && styles.insideTitleDesktop]}>{row.title}</Text>
+                    <Text style={[styles.insideText, isDesktop && styles.insideTextDesktop]}>{row.text}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.docBand}>
+          <View style={[styles.docBandInner, isDesktop && styles.docBandInnerDesktop]}>
+            <Text style={styles.docBandHeading}>WHO'S DOC</Text>
+            <Text style={[styles.docBandText, isDesktop && styles.docBandTextDesktop]}>
+              AJ Holland. The original Doc was his grandfather, and the name stuck. A former professional athlete
+              with over 20 years of kettlebell experience and part of the StrongFirst family, he built Doc's Fitness
+              on one promise: look and feel better than you did 10 years ago with just 2 hours a week of kettlebell
+              workouts.
+            </Text>
+          </View>
+        </View>
+
+        <View style={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}>
           <Pressable
             style={[styles.locationCard, isDesktop && styles.locationCardDesktop]}
             onPress={openLocationMaps}
@@ -213,6 +204,15 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
               <Text style={styles.locationText}>Ventnor City, NJ. Group training six days a week.</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
+          </Pressable>
+
+          <Pressable
+            style={[styles.inviteButton, isDesktop && styles.inviteButtonDesktop]}
+            onPress={shareInvite}
+            testID="about-invite-friend"
+          >
+            <Ionicons name="share-social-outline" size={18} color={colors.green} />
+            <Text style={styles.inviteButtonText}>INVITE A FRIEND</Text>
           </Pressable>
 
           {onSignIn && (
@@ -523,12 +523,14 @@ const styles = StyleSheet.create({
     borderColor: colors.green,
     borderRadius: 10,
     paddingVertical: 14,
+    marginTop: 16,
   },
-  // Centered beneath the two doors instead of sandwiched between them.
+  // Centered beneath the location card instead of sandwiched between the doors.
   inviteButtonDesktop: {
     alignSelf: 'center',
     width: '100%',
     maxWidth: 400,
+    marginTop: 20,
   },
   inviteButtonText: {
     color: colors.green,
