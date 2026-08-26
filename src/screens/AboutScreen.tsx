@@ -181,7 +181,9 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
                   <Text style={styles.doorBannerText}>FIRST CLASS FREE</Text>
                 </View>
                 <View style={styles.doorBody}>
-                  <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>TRAIN IN PERSON</Text>
+                  <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>
+                    TRAIN IN PERSON AT DOC'S FITNESS
+                  </Text>
                   <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
                     Group training at Doc's Fitness in Ventnor City. Come see what it's like.
                   </Text>
