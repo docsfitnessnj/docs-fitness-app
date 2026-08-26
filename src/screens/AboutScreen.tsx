@@ -164,6 +164,21 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
             </View>
           </View>
 
+          {onSignIn && (
+            <Pressable
+              style={[styles.signInRowProminent, isDesktop && styles.signInRowProminentDesktop]}
+              onPress={onSignIn}
+              hitSlop={8}
+              testID="about-sign-in-upper"
+            >
+              <Text
+                style={[styles.signInTextProminent, isDesktop && styles.signInTextProminentDesktop]}
+              >
+                Already a member? <Text style={styles.signInLinkProminent}>Sign in.</Text>
+              </Text>
+            </Pressable>
+          )}
+
           <View style={[styles.section, isDesktop && styles.sectionDesktop]}>
             <Text style={[styles.sectionHeading, isDesktop && styles.sectionHeadingDesktop]}>WHAT'S INSIDE</Text>
             <View style={isDesktop && styles.insideGridDesktop}>
@@ -550,6 +565,29 @@ const styles = StyleSheet.create({
   signInLink: {
     color: colors.green,
     fontFamily: fonts.bodySemiBold,
+    textDecorationLine: 'underline',
+  },
+  // The upper instance, right under the doors — heavier and a touch larger
+  // than the quiet footer version so it reads clearly to a returning member
+  // without competing with the two green door buttons above it.
+  signInRowProminent: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  signInRowProminentDesktop: {
+    marginTop: 28,
+  },
+  signInTextProminent: {
+    color: colors.text,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 15,
+  },
+  signInTextProminentDesktop: {
+    fontSize: 16,
+  },
+  signInLinkProminent: {
+    color: colors.green,
+    fontFamily: fonts.bodyBold,
     textDecorationLine: 'underline',
   },
 });
