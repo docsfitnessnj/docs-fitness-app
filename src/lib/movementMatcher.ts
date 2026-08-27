@@ -14,14 +14,37 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// The real video titles are exact movement names with no hand-curated
+// aliases, but deck/WOD text mixes singular and plural forms of the same
+// move ("Swing" vs "Swings", "Bent Row" vs "Bent Rows"). Since a match is
+// always the whole phrase, adding/stripping a trailing s|es only ever
+// touches the last word, so this is safe for multi-word names too.
+function pluralVariants(name: string): string[] {
+  const variants = new Set<string>([name]);
+  if (name.endsWith('es')) variants.add(name.slice(0, -2));
+  if (name.endsWith('s')) variants.add(name.slice(0, -1));
+  if (!name.endsWith('s')) {
+    variants.add(`${name}s`);
+    variants.add(`${name}es`);
+  }
+  return Array.from(variants);
+}
+
 // Longest alias first, so e.g. "Kettlebell Swings" matches whole rather
 // than the shorter "Swings" alias eating part of it and leaving "Kettlebell"
 // as stray plain text.
 const ALIAS_ENTRIES: AliasEntry[] = MOVEMENTS.flatMap((movement) =>
-  [movement.name, ...movement.aliases].map((alias) => ({ alias, movement }))
+  pluralVariants(movement.name).map((alias) => ({ alias, movement }))
 ).sort((a, b) => b.alias.length - a.alias.length);
 
-const ALIAS_LOOKUP = new Map<string, Movement>(ALIAS_ENTRIES.map((entry) => [entry.alias.toLowerCase(), entry.movement]));
+// Several real videos share an identical name (Doc re-shot some movements).
+// The first one wins any ambiguous match, so linking is deterministic
+// instead of depending on array/insertion order.
+const ALIAS_LOOKUP = new Map<string, Movement>();
+for (const entry of ALIAS_ENTRIES) {
+  const key = entry.alias.toLowerCase();
+  if (!ALIAS_LOOKUP.has(key)) ALIAS_LOOKUP.set(key, entry.movement);
+}
 
 const MATCHER = new RegExp(`\\b(${ALIAS_ENTRIES.map((entry) => escapeRegExp(entry.alias)).join('|')})\\b`, 'gi');
 
