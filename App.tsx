@@ -359,7 +359,8 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [memberManagerOpen, setMemberManagerOpen] = useState(false);
   const [messagesDraft, setMessagesDraft] = useState<string | undefined>(undefined);
   const [scheduleOpen, setScheduleOpen] = useScheduleModalState();
-  const [movementVaultOpen, setMovementVaultOpen, movementVaultInitialId] = useMovementVaultModalState();
+  const [movementVaultOpen, setMovementVaultOpen, movementVaultInitialId, movementVaultReturnLabel] =
+    useMovementVaultModalState();
   const [activeTab, setActiveTab] = useState('Community');
 
   const openMessagesForJokerVerification = () => {
@@ -476,6 +477,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           visible={movementVaultOpen}
           onClose={() => setMovementVaultOpen(false)}
           initialMovementId={movementVaultInitialId}
+          initialReturnLabel={movementVaultReturnLabel}
         />
       </ScreenOverlay>
       <TrialExpiryModal />

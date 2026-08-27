@@ -88,7 +88,7 @@ export default function DocsWodsScreen() {
                   <TappableMovementText
                     style={styles.wodRowText}
                     text={parsed.name}
-                    onOpenMovement={openMovementVault}
+                    onOpenMovement={(movementId) => openMovementVault(movementId, 'WORKOUT')}
                   />
                   {parsed.reps ? <Text style={styles.wodRowReps}>{parsed.reps}</Text> : null}
                 </View>
