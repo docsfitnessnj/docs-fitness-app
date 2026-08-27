@@ -15,6 +15,10 @@ type Props = {
   // Set when opened by tapping a movement name elsewhere in the app —
   // jumps straight to that movement's detail view instead of the list.
   initialMovementId?: string;
+  // Names where that direct-to-detail open came from ("WORKOUT", "DECK
+  // CARD", "CHALLENGE") — shown on the BACK button and used to send the
+  // user back there instead of into the vault's own list.
+  initialReturnLabel?: string;
 };
 
 type Section = { title: string; data: Movement[] };
@@ -31,16 +35,22 @@ function buildSections(movements: Movement[]): Section[] {
     .map(([title, data]) => ({ title, data }));
 }
 
-export function MovementVaultScreen({ visible, onClose, initialMovementId }: Props) {
+export function MovementVaultScreen({ visible, onClose, initialMovementId, initialReturnLabel }: Props) {
   const navigation = useNavigation<any>();
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | undefined>(initialMovementId);
+  // True while the detail view on screen is still the one the vault was
+  // opened directly into (a tapped movement name), rather than one the user
+  // reached by browsing the list themselves. Only in that state should BACK
+  // return to wherever the vault was opened from instead of the list.
+  const [directEntry, setDirectEntry] = useState(!!initialMovementId);
 
   // Every fresh open (including re-opening straight into a different
   // movement's detail view) should start from a clean slate.
   useEffect(() => {
     if (visible) {
       setSelectedId(initialMovementId);
+      setDirectEntry(!!initialMovementId);
       setQuery('');
     }
   }, [visible, initialMovementId]);
@@ -51,9 +61,23 @@ export function MovementVaultScreen({ visible, onClose, initialMovementId }: Pro
 
   if (selected) {
     const references = findReferencesForMovement(selected);
+    const handleDetailBack = () => {
+      if (directEntry) {
+        // Never insert the vault's list into the stack for a direct open —
+        // back retraces to wherever the user actually came from.
+        onClose();
+      } else {
+        setSelectedId(undefined);
+      }
+    };
     return (
       <View style={styles.container}>
-        <ModalHeader title={selected.name} onBack={() => setSelectedId(undefined)} backTestID="movement-detail-back" />
+        <ModalHeader
+          title={selected.name}
+          onBack={handleDetailBack}
+          backTestID="movement-detail-back"
+          backLabel={directEntry && initialReturnLabel ? `BACK TO ${initialReturnLabel}` : undefined}
+        />
 
         <ScrollView contentContainerStyle={styles.detailBody} showsVerticalScrollIndicator={false}>
           <MovementVideoPlayer video={selected.video} />
@@ -129,7 +153,13 @@ export function MovementVaultScreen({ visible, onClose, initialMovementId }: Pro
         renderItem={({ item }) => (
           <Pressable
             style={styles.movementRow}
-            onPress={() => setSelectedId(item.id)}
+            onPress={() => {
+              // Reached via the list itself, not a direct link — BACK from
+              // this detail view belongs on the list, not wherever the
+              // vault first opened from.
+              setDirectEntry(false);
+              setSelectedId(item.id);
+            }}
             testID={`vault-movement-${item.id}`}
           >
             <Text style={styles.movementRowText}>{item.name}</Text>

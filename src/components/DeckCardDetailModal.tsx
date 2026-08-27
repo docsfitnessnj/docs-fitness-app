@@ -49,7 +49,7 @@ export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplet
                   // modal closes first.
                   onOpenMovement={(movementId) => {
                     onClose();
-                    openMovementVault(movementId);
+                    openMovementVault(movementId, 'DECK CARD');
                   }}
                 />
               </View>

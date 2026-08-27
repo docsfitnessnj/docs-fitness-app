@@ -26,7 +26,7 @@ function ChallengeHero() {
         style={styles.heroSubtext}
         linkStyle={styles.heroSubtextLink}
         text="Rack up as many kettlebell swings as you can, for time. No shortcuts, no excuses."
-        onOpenMovement={openMovementVault}
+        onOpenMovement={(movementId) => openMovementVault(movementId, 'CHALLENGE')}
       />
       <View style={styles.heroDivider} />
       <Text style={styles.daysLeftLabel}>DAYS LEFT</Text>
