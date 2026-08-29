@@ -23,6 +23,12 @@ type Props = {
 
 type Section = { title: string; data: Movement[] };
 
+// Most movements have a short, glanceable cue list, but a handful run long
+// (a combo move with several distinct steps). Past this many, cues collapse
+// behind a "SHOW MORE" toggle so the detail view doesn't open into a wall
+// of bullets.
+const VISIBLE_CUES_LIMIT = 5;
+
 function buildSections(movements: Movement[]): Section[] {
   const groups = new Map<string, Movement[]>();
   for (const movement of [...movements].sort((a, b) => a.name.localeCompare(b.name))) {
@@ -44,6 +50,7 @@ export function MovementVaultScreen({ visible, onClose, initialMovementId, initi
   // reached by browsing the list themselves. Only in that state should BACK
   // return to wherever the vault was opened from instead of the list.
   const [directEntry, setDirectEntry] = useState(!!initialMovementId);
+  const [cuesExpanded, setCuesExpanded] = useState(false);
 
   // Every fresh open (including re-opening straight into a different
   // movement's detail view) should start from a clean slate.
@@ -54,6 +61,12 @@ export function MovementVaultScreen({ visible, onClose, initialMovementId, initi
       setQuery('');
     }
   }, [visible, initialMovementId]);
+
+  // A newly opened detail view always starts with any long cue list
+  // collapsed, whether it was reached by browsing or opened directly.
+  useEffect(() => {
+    setCuesExpanded(false);
+  }, [selectedId]);
 
   if (!visible) return null;
 
@@ -82,13 +95,33 @@ export function MovementVaultScreen({ visible, onClose, initialMovementId, initi
         <ScrollView contentContainerStyle={styles.detailBody} showsVerticalScrollIndicator={false}>
           <MovementVideoPlayer video={selected.video} />
 
-          <Text style={styles.cuesHeading}>COACHING CUES</Text>
-          {selected.cues.map((cue, index) => (
-            <View key={index} style={styles.cueRow}>
-              <View style={styles.cueBullet} />
-              <Text style={styles.cueText}>{cue}</Text>
-            </View>
-          ))}
+          {selected.cues.length > 0 && (
+            <>
+              <Text style={styles.cuesHeading}>COACHING CUES</Text>
+              {(cuesExpanded ? selected.cues : selected.cues.slice(0, VISIBLE_CUES_LIMIT)).map((cue, index) => (
+                <View key={index} style={styles.cueRow}>
+                  <View style={styles.cueBullet} />
+                  <Text style={styles.cueText}>{cue}</Text>
+                </View>
+              ))}
+              {selected.cues.length > VISIBLE_CUES_LIMIT && (
+                <Pressable
+                  style={styles.showMoreCues}
+                  onPress={() => setCuesExpanded((prev) => !prev)}
+                  testID="movement-cues-toggle"
+                >
+                  <Text style={styles.showMoreCuesText}>
+                    {cuesExpanded ? 'READ LESS' : 'READ MORE'}
+                  </Text>
+                  <Ionicons
+                    name={cuesExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={14}
+                    color={colors.green}
+                  />
+                </Pressable>
+              )}
+            </>
+          )}
 
           {references.length > 0 && (
             <>
@@ -267,6 +300,19 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 15,
     lineHeight: 21,
+  },
+  showMoreCues: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 5,
+    marginTop: 2,
+  },
+  showMoreCuesText: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 12,
+    letterSpacing: 0.5,
   },
   referencesHeading: {
     color: colors.text,
