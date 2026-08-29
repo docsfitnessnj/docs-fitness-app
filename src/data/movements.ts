@@ -51,7 +51,7 @@ export const MOVEMENTS: Movement[] = [
   },
   {
     id: "1-2-kneeling-windmills",
-    name: "1/2 Kneeling Windmills",
+    name: "1/2 Kneeling Windmills (Wrong Leg Version)",
     originalTitle: "1/2 Kneeling Windmills #DocsFitness #Kettlebell #DocsCues #Workout",
     video: { type: 'youtube', youtubeId: "WStneafGsF4" },
     cues: [
@@ -128,7 +128,11 @@ export const MOVEMENTS: Movement[] = [
     video: { type: 'youtube', youtubeId: "-FD0WsvzUEg" },
     cues: [
       "Hike the bell back as if you were hiking a football back 50m.",
-      "Repeat until strong",
+      "Then perform a single arm swing, exchanging hands on the way UP.",
+      "More specifically, the last 10% of the single arm swing is when you are floating the horns of the bell into the other hand.",
+      "Then allow gravity and the weight of the bell to drop down into the next rep on the other side.",
+      "Continue on for time or number of reps in the workout.",
+      "Repeat until strong.",
     ],
   },
   {
