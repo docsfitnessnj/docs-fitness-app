@@ -369,11 +369,15 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Dead Stop Swing Walkouts #DocsFitness #DocsCues #Kettlebell #Workout",
     video: { type: 'youtube', youtubeId: "uKJA_90RUew" },
     cues: [
-      "Start with the bell about a foot from you. Hinge hips back and down as if you're about to perform your swing",
-      "Always maintaining a solid hinge with your knees below your hips and your hips below your shoulders.",
-      "Bell drops with control. Reset, aka park, the bell in its starting position.",
-      "Walk your hands out into a high plank position. Perform a pushup or modify this with no pushup.",
-      "Walk your hands back. Connect your heels to the ground. Set yourself up for another incredibly powerful rep of the swing!",
+      "Start with the bell about a foot in front of you.",
+      "Hinge hips back and down as if you're about to perform your swing.",
+      "Always maintain a solid hinge with your knees below your hips and your hips below your shoulders.",
+      "Tilt the bell back toward you, hike it back between your legs, and perform your first swing.",
+      "Allow the bell to drop as if you're about to perform another swing.",
+      "Instead of swinging again, reset — aka park — the bell in its starting position.",
+      "Walk your hands out into a high plank position. Perform a pushup or modify with no pushup.",
+      "Walk your hands back. Connect your heels to the ground.",
+      "Set yourself up for another incredibly powerful rep of the swing!",
     ],
   },
   {
@@ -382,11 +386,12 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Dead Stop Swings",
     video: { type: 'youtube', youtubeId: "bb0s5Onc4cA" },
     cues: [
-      "Stand with your feet just outside of shoulder width slightly angle outward with the bell about 1ft in front of you.",
-      "Karate chop hips back and down as if you were about to perform a sumo dead",
-      "Reach out for the handle of the bell. Tilt it towards you and pack your lats.",
-      "Let the bell descend down towards your hips and reset the bell back it started.",
-      "In other words, perform one powerful swing at a time. Continuing to reset after each rep",
+      "Stand with your feet just outside shoulder width, slightly angled outward, with the bell about 1ft in front of you.",
+      "Karate chop your hips back and down as if you were about to perform a sumo dead.",
+      "Reach out for the handle of the bell. Tilt it toward you and pack your lats.",
+      "Hike the bell back and drive your feet through the ground to perform one kettlebell swing.",
+      "Let the bell descend down toward your hips and reset the bell back to where it started.",
+      "In other words, perform one powerful swing at a time, resetting after each rep.",
     ],
   },
   {
@@ -418,8 +423,11 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Double Clean & Jerk #baseball #kettlebell #kettlebellworkout #kettlebellkings #strengthtraining",
     video: { type: 'youtube', youtubeId: "_RD0FXEHCyU" },
     cues: [
-      "Get bell into an offset racked position with your knuckles below chin and a vertical forearm.",
-      "Create tension throughout your whole body. Slightly bend your knees.",
+      "Perform a double clean to get both bells into a racked position. (All double clean standards apply.)",
+      "Knuckles below your chin, vertical forearms. Create tension throughout your whole body.",
+      "Drop: slightly bend your knees. Drive: extend up as both bells travel to about three-quarters arm extension.",
+      "Drop again underneath the bells, fully extending your arms overhead.",
+      "Stand tall. The rhythm is: drop, drive, drop, stand.",
     ],
   },
   {
@@ -564,9 +572,12 @@ export const MOVEMENTS: Movement[] = [
     video: { type: 'youtube', youtubeId: "Mwc1nfDiiOg" },
     cues: [
       "Kettlebell Figure Eight begins the same way you would start a traditional Single Arm Kettlebell Swing.",
-      "To initiate the movement, perform a single-arm kettlebell swing by hinging at the hips and leaning the upper body forward, keeping the back flat.",
-      "As you swing the kettlebell back between the upper thighs, your free hand will move behind you and take hold of the kettlebell.",
-      "Perform a side lunge {Ball of bell side is MORE challenging vs. Handle of bell side is less challenging}",
+      "To initiate the movement, perform a single-arm kettlebell swing by hinging at the hips, keeping the back flat.",
+      "As you swing the kettlebell back between the upper thighs, your free hand moves behind you to take hold of the kettlebell.",
+      "Catch the bell in a Shot-Put Grip: horns gripped in one hand, ball of the bell resting in your palm.",
+      "This is also called a palm clean grip — like you're about to throw a shot put.",
+      "From the shot-put position, press the bell to the sky.",
+      "Perform a side lunge. {Ball of bell side is MORE challenging vs. Handle of bell side is less challenging}",
     ],
   },
   {
@@ -608,7 +619,11 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Goblet Clean + Goblet Squat #DocsFitness #Kettlebell #DocsCues",
     video: { type: 'youtube', youtubeId: "9ujz6RWIqZg" },
     cues: [
-      "Explode up on your exhale, Then repeat the combo of moves",
+      "Start with the bell on the ground between your heels.",
+      "Grab the horns of the bell with both hands, using a loose grip in the fingertips.",
+      "Drive your feet through the ground and zip the bell up, sliding your hands to the sides of the horns.",
+      "From the goblet position: inhale as you descend down into your squat.",
+      "Exhale as your hips explode up. Repeat the clean-to-squat combo.",
     ],
   },
   {
@@ -617,7 +632,11 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Goblet Clean + Goblet Squat #DocsFitness #Kettlebell #DocsCues #Workout",
     video: { type: 'youtube', youtubeId: "EXOagmNXZiU" },
     cues: [
-      "Explode up on your exhale, Then repeat the combo of moves",
+      "Start with the bell on the ground between your heels.",
+      "Grab the horns of the bell with both hands, using a loose grip in the fingertips.",
+      "Drive your feet through the ground and zip the bell up, sliding your hands to the sides of the horns.",
+      "From the goblet position: inhale as you descend down into your squat.",
+      "Exhale as your hips explode up. Repeat the clean-to-squat combo.",
     ],
   },
   {
@@ -721,7 +740,11 @@ export const MOVEMENTS: Movement[] = [
     video: { type: 'youtube', youtubeId: "3d90avw31IE" },
     cues: [
       "Stand directly over the bells with your feet just outside your hips and slightly angled outward.",
-      "Sink back and down into your hips creating that \"greater than\" symbol with your knees under your hips and your hips under your shoulders.",
+      "Sink back and down into your hips, creating that \"greater than\" symbol.",
+      "Knees under your hips, hips under your shoulders.",
+      "Press the left bell down through your hand as you row the right bell.",
+      "Give yourself a thumbs up — bicep connected to your rib cage, elbowing the sky.",
+      "Repeat on the other side.",
     ],
   },
   {
@@ -731,7 +754,11 @@ export const MOVEMENTS: Movement[] = [
     video: { type: 'youtube', youtubeId: "wdwlbWpD2GM" },
     cues: [
       "Stand directly over the bells with your feet just outside your hips and slightly angled outward.",
-      "Sink back and down into your hips creating that \"greater than\" symbol with your knees under your hips and your hips under your shoulders.",
+      "Sink back and down into your hips, creating that \"greater than\" symbol.",
+      "Knees under your hips, hips under your shoulders.",
+      "Press the left bell down through your hand as you row the right bell.",
+      "Give yourself a thumbs up — bicep connected to your rib cage, elbowing the sky.",
+      "Repeat on the other side.",
     ],
   },
   {
@@ -740,9 +767,12 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Halo + Finger Thumb Press #DocsFitness #Kettlebell #DocsCues #Workout",
     video: { type: 'youtube', youtubeId: "SHZyTVkDz4M" },
     cues: [
-      "Grab the bell in a 2 handed bottoms up grip (aka a finger thumb press grip)",
-      "Start with the bell under your chin with your elbows close to your midline",
+      "Grab the bell in a 2 handed bottoms up grip (aka a finger thumb press grip).",
+      "Start with the bell under your chin with your elbows close to your midline.",
+      "Rotate the bell around your head — behind the base of your skull and back under your chin.",
       "Be sure to keep the bell as tight as possible to your head.",
+      "Repeat in the opposite direction.",
+      "After completing the halo, press the bell to the sky.",
     ],
   },
   {
@@ -824,8 +854,11 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Kettlebell Jerk #kettlebell #kettlebellworkout #kettlebellkings #strengthtraining #docsfitness #fyp",
     video: { type: 'youtube', youtubeId: "fKHp85mksfg" },
     cues: [
-      "Get bell into an offset racked position with your knuckles below chin and a vertical forearm.",
+      "Get the bell into a racked position with your knuckles below your chin and a vertical forearm.",
       "Create tension throughout your whole body. Slightly bend your knees.",
+      "Drop: slightly bend your knees. Drive: extend up as the bell travels to about three-quarters arm extension.",
+      "Drop again underneath the bell, fully extending your arm overhead.",
+      "Stand tall. The rhythm is: drop, drive, drop, stand.",
     ],
   },
   {
@@ -1048,7 +1081,8 @@ export const MOVEMENTS: Movement[] = [
     video: { type: 'youtube', youtubeId: "xNMgT70iw0g" },
     cues: [
       "Start with the kettlebells secured in a single or double racked position.",
-      "While driving your knuckle(s) to the sky.",
+      "Drop by slightly bending your knees, then drive — extending your hips forward and pushing the bell(s) to the sky.",
+      "Drive your knuckle(s) to the sky. Hence the name: push press.",
     ],
   },
   {
@@ -1067,8 +1101,9 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Racked Thrusters #kettlebell #kettlebellworkout #kettlebellkings #strengthtraining #docsfitness #fyp",
     video: { type: 'youtube', youtubeId: "SpXcc7abyiA" },
     cues: [
-      "Safely double clean both bells into a racked position",
+      "Safely double clean both bells into a racked position.",
       "Deep inhale. Lower down into a racked squat just below 90 degrees.",
+      "Drive up and stand tall, pressing the bells to the sky as you rotate your knuckles forward.",
     ],
   },
   {
@@ -1117,9 +1152,11 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Reverse Crunches #bodyweight  #bodyweightworkout #kettlebellkings #strengthtraining",
     video: { type: 'youtube', youtubeId: "wk0M0j6RSCQ" },
     cues: [
-      "Lie down on the floor with your legs fully extended and arms to the side of your torso with the palms on the floor.",
-      "Your hands can be behind your head, by the side, or under your butt.",
-      "Hold the contraction for a second and move your legs back to the starting position while exhaling.",
+      "Lie down on the floor with your legs fully extended and your palms on the floor beside you.",
+      "Your hands can be behind your head, by your side, or under your butt.",
+      "Kick both legs out fully, then pull your knees in toward your chest.",
+      "Lift your hips and kick your heels to the sky, keeping your legs together the entire time.",
+      "Hold the contraction for a second, then lower your legs back to the starting position while exhaling.",
       "Repeat for the recommended amount of repetitions.",
     ],
   },
@@ -1160,8 +1197,13 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Single Leg Deadlift (SLDL) #DocsFitness #Kettlebell #DocsCues #Workout",
     video: { type: 'youtube', youtubeId: "A09mG6__4rQ" },
     cues: [
-      "Pick up bell with right hand. Flex right foot, quad, and glute.",
+      "Pick up the bell with your right hand. Flex your right foot, quad, and glute.",
       "Pick a point on the ground and stare at it to help with balance.",
+      "Same hand, same bell, same leg traveling back.",
+      "Hinge your hips as that same-side leg slides back behind you and the bell travels toward the ground.",
+      "Bend your standing knee — think of performing a deadlift on just one leg.",
+      "There is knee bend here. This is different than an RDL.",
+      "Switch sides.",
     ],
   },
   {
@@ -1195,9 +1237,12 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Snatches #DocsFitness #Kettlebell #DocsCues #Workout",
     video: { type: 'youtube', youtubeId: "CqG97-9jTMo" },
     cues: [
-      "Perform all of the standards of the single arm swing",
-      "Assume an overhead bell grip for a slight pause",
-      "Then drop/pull the bell down a foot in front of you, hike bell back between legs to perform another snatch",
+      "Perform all of the standards of the single arm swing.",
+      "The only difference between the swing and the snatch is the bell's destination.",
+      "As the bell floats above your forehead, loosen your grip and punch your hand through the horns.",
+      "Assume a strong overhead position for a slight pause — arm fully extended, locked out or as close as you can be.",
+      "Flip the bell over your wrist, catch it, and hike it back between your legs.",
+      "Punch your opposite arm back to mirror both arms, generating as much power from both sides.",
     ],
   },
   {
@@ -1206,9 +1251,12 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Snatches #kettlebell #kettlebellworkout #kettlebellkings #strengthtraining #docsfitness #fyp",
     video: { type: 'youtube', youtubeId: "r3GFZqy6xC0" },
     cues: [
-      "Perform all of the standards of the single arm swing",
-      "Assume an overhead bell grip for a slight pause",
-      "Then drop/pull the bell down a foot in front of you, hike bell back between legs to perform another snatch",
+      "Perform all of the standards of the single arm swing.",
+      "The only difference between the swing and the snatch is the bell's destination.",
+      "As the bell floats above your forehead, loosen your grip and punch your hand through the horns.",
+      "Assume a strong overhead position for a slight pause — arm fully extended, locked out or as close as you can be.",
+      "Flip the bell over your wrist, catch it, and hike it back between your legs.",
+      "Punch your opposite arm back to mirror both arms, generating as much power from both sides.",
     ],
   },
   {
@@ -1217,9 +1265,11 @@ export const MOVEMENTS: Movement[] = [
     originalTitle: "Staggered Rows #DocsFitness #Kettlebell #DocsCues #Workout",
     video: { type: 'youtube', youtubeId: "XinVCf2qgsw" },
     cues: [
-      "Stand in a staggered stance with your left foot forward and your right foot about a 2 feet back",
-      "Have the bell next to your front heel. Hinge your hips back with your knees, under your hips, and hips under your shoulders.",
-      "To protect your back and feel more secure you can drive your opposite forearm against the inside part of your left (front) knee.",
+      "Stand in a staggered stance with your left foot forward and your right foot about 2 feet back.",
+      "Have the bell next to your front heel. Hinge your hips back — knees under hips, hips under shoulders.",
+      "To protect your back and feel more secure, drive your opposite forearm against the inside of your front knee.",
+      "As you row, give yourself a thumbs up — bicep passing your rib cage, elbowing the sky.",
+      "Switch sides.",
     ],
   },
   {
