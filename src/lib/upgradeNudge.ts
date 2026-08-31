@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { loadJSON, saveJSON } from './storage';
 import { showAlert } from './alert';
+import { openMemberships } from './membershipsModal';
 
 const STORAGE_KEY = 'docsfitness.lastUpgradeNudgeAt.v1';
 const MIN_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -19,7 +20,7 @@ export function useWeeklyUpgradeNudge(active: boolean) {
       "You're on the free plan — 2 of 5 weekly WODs, no COWS, no Deck. Upgrade any time for full access.",
       [
         { text: 'Not now', style: 'cancel' },
-        { text: 'See Plans', onPress: () => showAlert('Payments Coming Soon', 'This is a preview — no charge yet.') },
+        { text: 'See Plans', onPress: () => openMemberships('unlock') },
       ]
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps

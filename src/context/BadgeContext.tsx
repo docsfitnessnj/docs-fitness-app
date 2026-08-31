@@ -16,10 +16,13 @@ type PersistedState = {
   dayOneDougEarnedAt: number | null;
   hundredDownEarnedAt: number | null;
   cowKillerPostedAt: number | null;
-  // Manual admin grants — currently just THE JOKER, keyed by member name.
-  // Shaped as a per-member flag map so future manual flags slot in beside
-  // `joker` without a schema change.
-  manualGrants: Record<string, { joker?: boolean; jokerGrantedAt?: number }>;
+  // Manual/one-time grants keyed by member name — THE JOKER (admin-toggled)
+  // and THE FOUNDING 50 (granted once at signup, never revoked in the UI:
+  // it's permanent even after the member later cancels).
+  manualGrants: Record<
+    string,
+    { joker?: boolean; jokerGrantedAt?: number; foundingFifty?: boolean; foundingFiftyGrantedAt?: number }
+  >;
   lastRecapMonthKey: string | null;
 };
 
@@ -43,6 +46,7 @@ type BadgeContextValue = {
   regularProgress: { count: number; target: number; earned: boolean };
   cowKillerEarned: boolean;
   jokerEarned: boolean;
+  foundingFiftyEarned: boolean;
   dayOneDougEarned: boolean;
   hundredDownEarned: boolean;
   // When each of my permanent badges was earned — null until earned. The
@@ -55,10 +59,14 @@ type BadgeContextValue = {
   getBadgesForAuthor: (name: string) => BadgeId[];
   hasManualJoker: (name: string) => boolean;
   getJokerGrantedAt: (name: string) => number | null;
+  getFoundingFiftyGrantedAt: (name: string) => number | null;
 
   recordCowKillerScore: () => void;
   grantJoker: (name: string) => void;
   revokeJoker: (name: string) => void;
+  // One-way — granted automatically the moment a member claims a Founding
+  // 50 spot, and never revoked from here even if they later cancel.
+  grantFoundingFifty: (name: string) => void;
   // Dev-only: force-generate this month's recap post right now, ignoring
   // the "only on the 1st, only once" gate — for testing/preview.
   previewMonthlyRecap: () => void;
@@ -96,6 +104,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     const dayOneDougEarned = state.dayOneDougEarnedAt !== null;
     const hundredDownEarned = state.hundredDownEarnedAt !== null;
     const jokerEarned = !!state.manualGrants[displayName]?.joker;
+    const foundingFiftyEarned = !!state.manualGrants[displayName]?.foundingFifty;
     const cowKillerEarned = state.cowKillerPostedAt !== null && isThisWeek(state.cowKillerPostedAt);
 
     const week = getCurrentWeek();
@@ -110,6 +119,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     const regularProgress = { count: regularCount, target: REGULAR_TARGET, earned: regularCount >= REGULAR_TARGET };
 
     const myBadgeIds: BadgeId[] = [
+      ...(foundingFiftyEarned ? (['founding_50'] as BadgeId[]) : []),
       ...(jokerEarned ? (['joker'] as BadgeId[]) : []),
       ...(onFireProgress.earned ? (['on_fire'] as BadgeId[]) : []),
       ...(cowKillerEarned ? (['cow_killer'] as BadgeId[]) : []),
@@ -126,6 +136,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       const ids = new Set<BadgeId>(demo);
       if (manualJoker === true) ids.add('joker');
       if (manualJoker === false) ids.delete('joker');
+      if (state.manualGrants[name]?.foundingFifty) ids.add('founding_50');
       return sortBadgeIds(Array.from(ids));
     };
 
@@ -136,6 +147,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       regularProgress,
       cowKillerEarned,
       jokerEarned,
+      foundingFiftyEarned,
       dayOneDougEarned,
       hundredDownEarned,
       dayOneDougEarnedAt: state.dayOneDougEarnedAt,
@@ -143,6 +155,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       getBadgesForAuthor,
       hasManualJoker: (name) => !!state.manualGrants[name]?.joker,
       getJokerGrantedAt: (name) => state.manualGrants[name]?.jokerGrantedAt ?? null,
+      getFoundingFiftyGrantedAt: (name) => state.manualGrants[name]?.foundingFiftyGrantedAt ?? null,
       recordCowKillerScore: () => setState((prev) => ({ ...prev, cowKillerPostedAt: Date.now() })),
       grantJoker: (name) =>
         setState((prev) => ({
@@ -153,6 +166,14 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
         setState((prev) => ({
           ...prev,
           manualGrants: { ...prev.manualGrants, [name]: { ...prev.manualGrants[name], joker: false } },
+        })),
+      grantFoundingFifty: (name) =>
+        setState((prev) => ({
+          ...prev,
+          manualGrants: {
+            ...prev.manualGrants,
+            [name]: { ...prev.manualGrants[name], foundingFifty: true, foundingFiftyGrantedAt: Date.now() },
+          },
         })),
       previewMonthlyRecap: () => {
         addTextPost('Doc', buildRecapTitle(), buildRecapBody({ getBadgesForAuthor, displayName }), 'Announcement');

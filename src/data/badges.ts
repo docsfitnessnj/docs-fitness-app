@@ -2,7 +2,14 @@
 // which bucket (permanent vs. weekly) each belongs to, so the feed, the
 // profile badge case, and the Trophy Case screen never drift apart.
 
-export type BadgeId = 'joker' | 'on_fire' | 'cow_killer' | 'the_regular' | 'day_one_doug' | 'hundred_down';
+export type BadgeId =
+  | 'founding_50'
+  | 'joker'
+  | 'on_fire'
+  | 'cow_killer'
+  | 'the_regular'
+  | 'day_one_doug'
+  | 'hundred_down';
 
 export type BadgeKind = 'permanent' | 'weekly';
 
@@ -17,6 +24,13 @@ export type BadgeDef = {
 };
 
 export const BADGE_DEFS: BadgeDef[] = [
+  {
+    id: 'founding_50',
+    name: 'THE FOUNDING 50',
+    description: 'One of the first 50. This badge can never be earned again.',
+    kind: 'permanent',
+    order: -1,
+  },
   {
     id: 'joker',
     name: 'THE JOKER',
@@ -76,8 +90,23 @@ export function sortBadgeIds(ids: BadgeId[]): BadgeId[] {
 
 export const INLINE_BADGE_CAP = 4;
 
-// Display order for the Trophy Case screen and profile badge grid — grouped
-// permanents first (Doug, Hundred Down, Joker), then weeklies. Distinct from
-// `order`/sortBadgeIds above, which stays Joker-first for inline feed badges.
-export const PERMANENT_DISPLAY_ORDER: BadgeId[] = ['day_one_doug', 'hundred_down', 'joker'];
+// Display order for the Trophy Case screen and profile badge grid — Founding
+// 50 first (while it's live/held), then the grouped permanents (Doug,
+// Hundred Down, Joker), then weeklies. Distinct from `order`/sortBadgeIds
+// above, which stays Joker-first for inline feed badges.
+export const PERMANENT_DISPLAY_ORDER: BadgeId[] = ['founding_50', 'day_one_doug', 'hundred_down', 'joker'];
 export const WEEKLY_DISPLAY_ORDER: BadgeId[] = ['on_fire', 'cow_killer', 'the_regular'];
+
+// THE FOUNDING 50 is gated behind its own launch flag — everywhere a full
+// badge catalog is listed (not just "badges someone actually holds"), drop
+// it from the list unless the flag is on or the viewer already holds it, so
+// a flag that's off truly shows nothing about the tier to anyone who hasn't
+// earned it (and never hides it from someone who has, even after the flag
+// is later switched off).
+export function permanentDisplayOrder(founding50Visible: boolean): BadgeId[] {
+  return founding50Visible ? PERMANENT_DISPLAY_ORDER : PERMANENT_DISPLAY_ORDER.filter((id) => id !== 'founding_50');
+}
+
+export function visibleBadgeDefs(founding50Visible: boolean): BadgeDef[] {
+  return founding50Visible ? BADGE_DEFS : BADGE_DEFS.filter((def) => def.id !== 'founding_50');
+}

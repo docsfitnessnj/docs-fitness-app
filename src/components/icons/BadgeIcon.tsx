@@ -50,6 +50,29 @@ function TallyMarks({ color, size }: { color: string; size: number }) {
 
 function BadgeGlyph({ id, color, size }: { id: BadgeId; color: string; size: number }) {
   switch (id) {
+    case 'founding_50':
+      return (
+        <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+          <MaterialCommunityIcons
+            name="crown-outline"
+            size={size * 0.4}
+            color={color}
+            style={{ position: 'absolute', top: -size * 0.08 }}
+          />
+          <Text
+            style={{
+              position: 'absolute',
+              top: size * 0.34,
+              fontFamily: fonts.headline,
+              fontSize: size * 0.44,
+              color,
+              letterSpacing: 0.5,
+            }}
+          >
+            50
+          </Text>
+        </View>
+      );
     case 'joker':
       return <MaterialCommunityIcons name="cards-playing-outline" size={size} color={color} />;
     case 'on_fire':

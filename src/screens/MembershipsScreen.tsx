@@ -2,7 +2,9 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ModalHeader } from '../components/ModalHeader';
+import { FoundingFiftyCard } from '../components/FoundingFiftyCard';
 import { PlanSectionHeader } from '../components/PlanSectionHeader';
+import { FOUNDING_FIFTY_PRICE, useFoundingFifty } from '../context/FoundingFiftyContext';
 import { MembershipTier, useMembership } from '../context/MembershipContext';
 import {
   IN_PERSON_PLANS,
@@ -14,11 +16,18 @@ import {
   OnlinePlan,
 } from '../data/plans';
 import { showAlert } from '../lib/alert';
+import { useClaimFoundingFifty } from '../lib/useClaimFoundingFifty';
 import { colors, fonts } from '../theme';
 
 type Props = {
   visible: boolean;
   onClose: () => void;
+  // True whenever this screen was opened from a locked-state prompt (a
+  // gated tab, a locked WOD day, a locked story) rather than browsed to
+  // directly — narrows the in-person section to Monthly Unlimited, the only
+  // in-person plan that unlocks app features, so 10 Class Pack and Drop In
+  // (which don't) can't muddy a decision that's specifically about unlocking.
+  onlyFullAccess?: boolean;
 };
 
 function priceNumber(price: string): number {
@@ -32,6 +41,8 @@ function currentTierPrice(tier: MembershipTier): number | null {
   switch (tier) {
     case 'online_paid':
       return priceNumber(ONLINE_PLANS.find((p) => p.key === 'monthly')!.price);
+    case 'founding_50':
+      return FOUNDING_FIFTY_PRICE;
     case 'in_person_unlimited':
       return priceNumber(IN_PERSON_PLANS.find((p) => p.key === 'monthly_unlimited')!.price);
     case 'ten_pack':
@@ -53,10 +64,15 @@ function priceDifferenceLine(currentTier: MembershipTier, nextPrice: number): st
     : ` That's $${Math.abs(diff)} less than your current plan.`;
 }
 
-export function MembershipsScreen({ visible, onClose }: Props) {
+export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: Props) {
   const { tier, daysLeftInTrial, tenPackClassesRemaining, becomeMember, selectInPersonPlan } = useMembership();
+  const founding50 = useFoundingFifty();
+  const claimFoundingFifty = useClaimFoundingFifty();
 
   if (!visible) return null;
+
+  const inPersonPlans = onlyFullAccess ? IN_PERSON_PLANS.filter((p) => p.key === 'monthly_unlimited') : IN_PERSON_PLANS;
+  const showFoundingFifty = founding50.enabled && !founding50.soldOut;
 
   const chooseOnline = (plan: OnlinePlan) => {
     showAlert(
@@ -65,6 +81,17 @@ export function MembershipsScreen({ visible, onClose }: Props) {
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Confirm', onPress: () => becomeMember() },
+      ]
+    );
+  };
+
+  const chooseFoundingFifty = () => {
+    showAlert(
+      'Confirm THE FOUNDING 50?',
+      `$${FOUNDING_FIFTY_PRICE}/month, locked in for as long as you're a member — this is a preview, no charge yet.${priceDifferenceLine(tier, FOUNDING_FIFTY_PRICE)}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', onPress: () => claimFoundingFifty() },
       ]
     );
   };
@@ -82,9 +109,16 @@ export function MembershipsScreen({ visible, onClose }: Props) {
 
   return (
     <View style={styles.container}>
-      <ModalHeader title="MEMBERSHIPS" onBack={onClose} backTestID="close-memberships" />
+      <ModalHeader
+        title={onlyFullAccess ? 'UNLOCK EVERYTHING' : 'MEMBERSHIPS'}
+        onBack={onClose}
+        backTestID="close-memberships"
+      />
 
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+        {onlyFullAccess && (
+          <Text style={styles.unlockIntro}>These plans include full access to the app.</Text>
+        )}
         {tier === 'trial' && daysLeftInTrial !== null && (
           <Text style={styles.trialLine}>
             {daysLeftInTrial} day{daysLeftInTrial === 1 ? '' : 's'} left in your trial
@@ -93,6 +127,13 @@ export function MembershipsScreen({ visible, onClose }: Props) {
 
         <PlanSectionHeader title={ONLINE_SECTION_HEADER.title} subtitle={ONLINE_SECTION_HEADER.subtitle} />
         <View style={styles.plans}>
+          {showFoundingFifty && (
+            <FoundingFiftyCard
+              spotsRemaining={founding50.spotsRemaining}
+              capacity={founding50.capacity}
+              onPress={chooseFoundingFifty}
+            />
+          )}
           {ONLINE_PLANS.map((plan) => (
             <View key={plan.key} style={styles.planCard}>
               <View style={styles.planHeader}>
@@ -133,7 +174,7 @@ export function MembershipsScreen({ visible, onClose }: Props) {
 
         <PlanSectionHeader title={IN_PERSON_SECTION_HEADER.title} subtitle={IN_PERSON_SECTION_HEADER.subtitle} spaced />
         <View style={styles.plans}>
-          {IN_PERSON_PLANS.map((plan) => (
+          {inPersonPlans.map((plan) => (
             <View key={plan.key} style={[styles.planCard, plan.topBanner && styles.planCardBest]}>
               {plan.topBanner && (
                 <View style={styles.topBanner}>
@@ -199,6 +240,12 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontFamily: fonts.bodyMedium,
     fontSize: 13,
+    marginBottom: 16,
+  },
+  unlockIntro: {
+    color: colors.text,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
     marginBottom: 16,
   },
   plans: {

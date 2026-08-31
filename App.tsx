@@ -33,6 +33,7 @@ import { StoriesProvider } from './src/context/StoriesContext';
 import { DeckProgressProvider } from './src/context/DeckProgressContext';
 import { ChallengeProvider } from './src/context/ChallengeContext';
 import { BadgeProvider } from './src/context/BadgeContext';
+import { FoundingFiftyProvider } from './src/context/FoundingFiftyContext';
 import { ClassSignUpProvider } from './src/context/ClassSignUpContext';
 import { TourProvider, useTour } from './src/context/TourContext';
 import { AppTopBar } from './src/components/AppTopBar';
@@ -47,7 +48,8 @@ import { TourOverlay } from './src/components/TourOverlay';
 import { PurchaseCelebrationOverlay } from './src/components/PurchaseCelebrationOverlay';
 import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useMovementVaultModalState } from './src/lib/movementVaultModal';
-import { useMembershipsModalState } from './src/lib/membershipsModal';
+import { openMemberships, useMembershipsModalState } from './src/lib/membershipsModal';
+import { useClaimFoundingFifty } from './src/lib/useClaimFoundingFifty';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
 import { useTabBarHeight } from './src/lib/tabBarHeight';
 import { injectWebFocusStyles } from './src/lib/webFocusReset';
@@ -70,6 +72,7 @@ import { MessagesScreen } from './src/screens/MessagesScreen';
 import { MyWorkoutsScreen } from './src/screens/MyWorkoutsScreen';
 import { MembershipsScreen } from './src/screens/MembershipsScreen';
 import { AdminRosterScreen } from './src/screens/AdminRosterScreen';
+import { FoundingFiftyAdminScreen } from './src/screens/FoundingFiftyAdminScreen';
 import { CloseFriendsScreen } from './src/screens/CloseFriendsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
@@ -253,6 +256,7 @@ type OnboardingFlowProps = {
 // from the email screen.
 function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
   const { startTrial, becomeMember, selectInPersonPlan, becomeGuest, signIn, setNewsletterOptIn } = useMembership();
+  const claimFoundingFifty = useClaimFoundingFifty();
   const [email, setEmail] = useState('');
   const [intent, setIntent] = useState<EntryIntent>(null);
 
@@ -299,7 +303,13 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
         />
       );
     case 'pricing':
-      return <PricingScreen onBack={() => setStep('onlineStart')} onSelectPlan={() => becomeMember()} />;
+      return (
+        <PricingScreen
+          onBack={() => setStep('onlineStart')}
+          onSelectPlan={() => becomeMember()}
+          onSelectFoundingFifty={() => claimFoundingFifty()}
+        />
+      );
     case 'inPersonPlans':
       return (
         <InPersonPlansScreen onBack={() => setStep('howDoYouTrain')} onSelectPlan={(plan) => selectInPersonPlan(plan)} />
@@ -349,7 +359,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [membershipsOpen, setMembershipsOpen] = useMembershipsModalState();
+  const [membershipsOpen, setMembershipsOpen, membershipsMode] = useMembershipsModalState();
   const [myWorkoutsOpen, setMyWorkoutsOpen] = useState(false);
   const [closeFriendsOpen, setCloseFriendsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -357,6 +367,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [trophyCaseOpen, setTrophyCaseOpen] = useState(false);
   const [memberManagerOpen, setMemberManagerOpen] = useState(false);
+  const [foundingFiftyAdminOpen, setFoundingFiftyAdminOpen] = useState(false);
   const [messagesDraft, setMessagesDraft] = useState<string | undefined>(undefined);
   const [scheduleOpen, setScheduleOpen] = useScheduleModalState();
   const [movementVaultOpen, setMovementVaultOpen, movementVaultInitialId, movementVaultReturnLabel] =
@@ -404,7 +415,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           visible={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           onOpenProfile={() => setProfileOpen(true)}
-          onOpenMemberships={() => setMembershipsOpen(true)}
+          onOpenMemberships={() => openMemberships('all')}
           onOpenMyWorkouts={() => setMyWorkoutsOpen(true)}
           onOpenCloseFriends={() => setCloseFriendsOpen(true)}
           onOpenMessages={onOpenMessages}
@@ -412,6 +423,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenTrophyCase={() => setTrophyCaseOpen(true)}
           onOpenMemberManager={() => setMemberManagerOpen(true)}
+          onOpenFoundingFiftyAdmin={() => setFoundingFiftyAdminOpen(true)}
           onOpenAbout={() => setAboutOpen(true)}
         />
       </ScreenOverlay>
@@ -434,7 +446,11 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
         <ProfileScreen visible={profileOpen} onClose={() => setProfileOpen(false)} />
       </ScreenOverlay>
       <ScreenOverlay visible={membershipsOpen} fullBleed={sidebarOpen}>
-        <MembershipsScreen visible={membershipsOpen} onClose={() => setMembershipsOpen(false)} />
+        <MembershipsScreen
+          visible={membershipsOpen}
+          onClose={() => setMembershipsOpen(false)}
+          onlyFullAccess={membershipsMode === 'unlock'}
+        />
       </ScreenOverlay>
       <ScreenOverlay visible={myWorkoutsOpen} fullBleed={sidebarOpen}>
         <MyWorkoutsScreen visible={myWorkoutsOpen} onClose={() => setMyWorkoutsOpen(false)} />
@@ -448,11 +464,11 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onBack={() => setAboutOpen(false)}
           onStartFree={() => {
             setAboutOpen(false);
-            setMembershipsOpen(true);
+            openMemberships('all');
           }}
           onBookClass={() => {
             setAboutOpen(false);
-            setMembershipsOpen(true);
+            openMemberships('all');
           }}
         />
       </ScreenOverlay>
@@ -465,7 +481,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onClose={() => setSettingsOpen(false)}
           onOpenMemberships={() => {
             setSettingsOpen(false);
-            setMembershipsOpen(true);
+            openMemberships('all');
           }}
         />
       </ScreenOverlay>
@@ -478,6 +494,9 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       </ScreenOverlay>
       <ScreenOverlay visible={memberManagerOpen} fullBleed={sidebarOpen}>
         <MemberManagerScreen visible={memberManagerOpen} onClose={() => setMemberManagerOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={foundingFiftyAdminOpen} fullBleed={sidebarOpen}>
+        <FoundingFiftyAdminScreen visible={foundingFiftyAdminOpen} onClose={() => setFoundingFiftyAdminOpen(false)} />
       </ScreenOverlay>
       <ScreenOverlay visible={scheduleOpen} fullBleed={sidebarOpen}>
         <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
@@ -591,13 +610,15 @@ export default function App() {
                   <DeckProgressProvider>
                     <ChallengeProvider>
                       <BadgeProvider>
-                        <ClassSignUpProvider>
-                          <TourProvider>
-                            <View style={styles.webSurround}>
-                              <ResponsiveShell onLayoutRootView={onLayoutRootView} />
-                            </View>
-                          </TourProvider>
-                        </ClassSignUpProvider>
+                        <FoundingFiftyProvider>
+                          <ClassSignUpProvider>
+                            <TourProvider>
+                              <View style={styles.webSurround}>
+                                <ResponsiveShell onLayoutRootView={onLayoutRootView} />
+                              </View>
+                            </TourProvider>
+                          </ClassSignUpProvider>
+                        </FoundingFiftyProvider>
                       </BadgeProvider>
                     </ChallengeProvider>
                   </DeckProgressProvider>

@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
 import { BadgeIcon } from '../components/icons/BadgeIcon';
-import { BADGE_DEFS } from '../data/badges';
+import { visibleBadgeDefs } from '../data/badges';
 import { MEMBER_ROSTER, PLAN_SECTIONS, PlanKey, RosterMember, planKeyLabel } from '../data/roster';
 import { useBadges } from '../context/BadgeContext';
+import { useFoundingFifty } from '../context/FoundingFiftyContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { MembershipTier, planLabel, useMembership } from '../context/MembershipContext';
 import { colors, fonts } from '../theme';
@@ -46,6 +47,7 @@ export function MemberManagerScreen({ visible, onClose }: Props) {
   const displayName = useDisplayName();
   const membership = useMembership();
   const badges = useBadges();
+  const founding50 = useFoundingFifty();
 
   if (!visible) return null;
 
@@ -79,7 +81,7 @@ export function MemberManagerScreen({ visible, onClose }: Props) {
 
           <Text style={[styles.planLabel, styles.badgesLabel]}>BADGES</Text>
           <View style={styles.badgeGrid}>
-            {BADGE_DEFS.map((def) => {
+            {visibleBadgeDefs(founding50.enabled || badges.getBadgesForAuthor(selected.name).includes('founding_50')).map((def) => {
               const earned = badges.getBadgesForAuthor(selected.name).includes(def.id);
               return (
                 <View key={def.id} style={styles.badgeCell}>
@@ -149,7 +151,7 @@ export function MemberManagerScreen({ visible, onClose }: Props) {
                               {plan.key === 'trial' && m.daysRemaining != null ? ` · ${m.daysRemaining} DAYS LEFT` : ''}
                             </Text>
                             <View style={styles.miniBadgeRow}>
-                              {BADGE_DEFS.map((def) => (
+                              {visibleBadgeDefs(founding50.enabled || earnedIds.has('founding_50')).map((def) => (
                                 <BadgeIcon key={def.id} id={def.id} earned={earnedIds.has(def.id)} size={18} />
                               ))}
                             </View>

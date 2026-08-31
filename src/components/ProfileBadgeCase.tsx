@@ -2,23 +2,26 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BadgeDetailModal } from './BadgeDetailModal';
 import { BadgeIcon } from './icons/BadgeIcon';
-import { BADGE_MAP, BadgeId, PERMANENT_DISPLAY_ORDER, WEEKLY_DISPLAY_ORDER } from '../data/badges';
+import { BADGE_MAP, BadgeId, permanentDisplayOrder, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import { useBadges } from '../context/BadgeContext';
+import { useFoundingFifty } from '../context/FoundingFiftyContext';
 import { colors, fonts } from '../theme';
 
-// All 6 badges, earned in gold, unearned as gray silhouettes — tapping any
-// of them (earned or not) opens the name + description, so the grays
-// double as an ad for how to earn them.
+// All badges, earned in gold, unearned as gray silhouettes — tapping any of
+// them (earned or not) opens the name + description, so the grays double as
+// an ad for how to earn them.
 export function ProfileBadgeCase() {
   const { myBadgeIds } = useBadges();
+  const founding50 = useFoundingFifty();
   const [selected, setSelected] = useState<BadgeId | null>(null);
   const earnedSet = new Set(myBadgeIds);
+  const permanentIds = permanentDisplayOrder(founding50.enabled || earnedSet.has('founding_50'));
 
   return (
     <View style={styles.wrap}>
       <Text style={styles.heading}>TROPHY CASE</Text>
       <View style={styles.grid}>
-        {[...PERMANENT_DISPLAY_ORDER, ...WEEKLY_DISPLAY_ORDER].map((id) => {
+        {[...permanentIds, ...WEEKLY_DISPLAY_ORDER].map((id) => {
           const def = BADGE_MAP[id];
           const earned = earnedSet.has(def.id);
           return (

@@ -2,9 +2,10 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
 import { BadgeIcon } from '../components/icons/BadgeIcon';
-import { BADGE_MAP, BadgeId, PERMANENT_DISPLAY_ORDER, WEEKLY_DISPLAY_ORDER } from '../data/badges';
+import { BADGE_MAP, BadgeId, permanentDisplayOrder, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import { openDeckStore } from '../lib/links';
 import { HUNDRED_DOWN_TARGET, useBadges } from '../context/BadgeContext';
+import { useFoundingFifty } from '../context/FoundingFiftyContext';
 import { useMembership } from '../context/MembershipContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { colors, fonts } from '../theme';
@@ -15,6 +16,8 @@ type Props = {
   onVerifyJoker: () => void;
 };
 
+const COUNT_WORDS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+
 function formatEarnedDate(ts: number): string {
   return new Date(ts)
     .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -23,14 +26,21 @@ function formatEarnedDate(ts: number): string {
 
 export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
   const badges = useBadges();
+  const founding50 = useFoundingFifty();
   const { isAdmin } = useMembership();
   const displayName = useDisplayName();
   const earnedSet = new Set(badges.myBadgeIds);
 
   if (!visible) return null;
 
+  const permanentIds = permanentDisplayOrder(founding50.enabled || earnedSet.has('founding_50'));
+
   const permanentStatus = (id: BadgeId): string => {
     switch (id) {
+      case 'founding_50': {
+        const grantedAt = badges.getFoundingFiftyGrantedAt(displayName);
+        return badges.foundingFiftyEarned && grantedAt ? `EARNED ${formatEarnedDate(grantedAt)}` : 'NOT YET EARNED';
+      }
       case 'joker': {
         const grantedAt = badges.getJokerGrantedAt(displayName);
         return badges.jokerEarned && grantedAt ? `EARNED ${formatEarnedDate(grantedAt)}` : 'NOT YET EARNED';
@@ -95,10 +105,13 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
 
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <Text style={styles.headline}>THE TROPHY CASE</Text>
-        <Text style={styles.subtitle}>Six badges. Earn them, wear them.</Text>
+        <Text style={styles.subtitle}>
+          {COUNT_WORDS[permanentIds.length + WEEKLY_DISPLAY_ORDER.length] ?? permanentIds.length + WEEKLY_DISPLAY_ORDER.length}{' '}
+          badges. Earn them, wear them.
+        </Text>
 
         <Text style={styles.sectionHeading}>PERMANENT</Text>
-        {PERMANENT_DISPLAY_ORDER.map((id) => renderCard(id, permanentStatus(id)))}
+        {permanentIds.map((id) => renderCard(id, permanentStatus(id)))}
 
         <Text style={[styles.sectionHeading, styles.sectionHeadingSpaced]}>THIS WEEK</Text>
         <Text style={styles.sectionNote}>Weekly badges reset every Monday.</Text>

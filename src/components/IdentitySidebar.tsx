@@ -144,7 +144,7 @@ function JoinPromptModule() {
       <Text style={styles.joinPromptText}>
         Unlock every WOD, the full Deck of WODs, the Weekly Challenge, and the Trophy Case.
       </Text>
-      <Pressable style={styles.joinButton} onPress={openMemberships} testID="sidebar-join-button">
+      <Pressable style={styles.joinButton} onPress={() => openMemberships('unlock')} testID="sidebar-join-button">
         <Text style={styles.joinButtonText}>SEE MEMBERSHIPS</Text>
       </Pressable>
     </View>

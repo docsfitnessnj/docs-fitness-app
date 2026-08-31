@@ -39,7 +39,14 @@ const NOTIFICATION_ROWS: { key: keyof NotificationPrefs; label: string; subtext:
 
 // Tiers with an actual paid or trial plan to manage. Guest and expired-free
 // accounts see a simple "view plans" prompt instead of the full block.
-const MANAGEABLE_TIERS: MembershipTier[] = ['trial', 'online_paid', 'in_person_unlimited', 'ten_pack', 'drop_in'];
+const MANAGEABLE_TIERS: MembershipTier[] = [
+  'trial',
+  'online_paid',
+  'founding_50',
+  'in_person_unlimited',
+  'ten_pack',
+  'drop_in',
+];
 
 function formatDate(d: Date): string {
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
