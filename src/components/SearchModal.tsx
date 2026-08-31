@@ -79,6 +79,8 @@ export function SearchModal({ visible, onClose }: Props) {
           placeholder="Search the app"
           placeholderTextColor={colors.textMuted}
           autoFocus
+          nativeID="app-search-input"
+          aria-label="Search the app"
         />
         <Pressable onPress={onClose} hitSlop={8}>
           <Text style={styles.cancelText}>CANCEL</Text>

@@ -64,17 +64,19 @@ function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>
 
       <View style={styles.formRow}>
         <View style={styles.formField}>
-          <Text style={styles.label}>TIME</Text>
+          <Text nativeID="cowkiller-time-label" style={styles.label}>TIME</Text>
           <TextInput
             style={styles.input}
             value={time}
             onChangeText={setTime}
             placeholder="e.g. 9:42"
             placeholderTextColor={colors.textMuted}
+            nativeID="cowkiller-time-input"
+            aria-label="Time"
           />
         </View>
         <View style={styles.formField}>
-          <Text style={styles.label}>ROUNDS</Text>
+          <Text nativeID="cowkiller-rounds-label" style={styles.label}>ROUNDS</Text>
           <TextInput
             style={styles.input}
             value={rounds}
@@ -82,11 +84,13 @@ function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>
             placeholder="e.g. 12"
             placeholderTextColor={colors.textMuted}
             keyboardType="numeric"
+            nativeID="cowkiller-rounds-input"
+            aria-label="Rounds"
           />
         </View>
       </View>
 
-      <Text style={styles.label}>KETTLEBELL SIZE (KG)</Text>
+      <Text nativeID="cowkiller-kettlebell-label" style={styles.label}>KETTLEBELL SIZE (KG)</Text>
       <TextInput
         style={styles.input}
         value={kettlebell}
@@ -94,6 +98,8 @@ function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>
         placeholder="e.g. 16"
         placeholderTextColor={colors.textMuted}
         keyboardType="numeric"
+        nativeID="cowkiller-kettlebell-input"
+        aria-label="Kettlebell size in kilograms"
       />
 
       <Pressable style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]} disabled={!canSubmit} onPress={submit}>

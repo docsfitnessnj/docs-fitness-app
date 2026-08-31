@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { TourTargetKey, useTour } from '../context/TourContext';
+import { MeasurableNode, TourTargetKey, useTour } from '../context/TourContext';
+import { useIsDesktop } from '../lib/responsive';
 import { colors, fonts } from '../theme';
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -55,18 +56,31 @@ const CARD_GAP = 16;
 const CARD_MARGIN = 16;
 const SCREEN_EDGE_MARGIN = 20;
 const NAV_BUTTON_WIDTH = 88;
+// On phone the card naturally fills the screen width minus its margins —
+// on desktop's much wider main column, capping it keeps it sized like a
+// tip card instead of stretching into a banner, and lets it hug the
+// target horizontally instead of spanning the whole column.
+const MAX_CARD_WIDTH = 420;
+const MAX_CARD_WIDTH_DESKTOP = 460;
+// The spotlight's glow (box-shadow blur, "0 0 22px 5px") reaches well past
+// its own hard edge — pad the above/below placement math by more than that
+// blur radius so the card's edge never visually touches the glow.
+const GLOW_BLEED = 30;
 const TRANSITION_MS = 400;
 const CSS_TRANSITION = `left ${TRANSITION_MS}ms ease, top ${TRANSITION_MS}ms ease, width ${TRANSITION_MS}ms ease, height ${TRANSITION_MS}ms ease`;
 const CSS_RADIUS_TRANSITION = `border-radius ${TRANSITION_MS}ms ease`;
 
 export function TourOverlay() {
   const tour = useTour();
+  const isDesktop = useIsDesktop();
   const { width: winWidth, height: winHeight } = useWindowDimensions();
   const [rect, setRect] = useState<Rect | null>(null);
+  const [rootSize, setRootSize] = useState<{ width: number; height: number } | null>(null);
   const [cardHeight, setCardHeight] = useState(220);
   const [mounted, setMounted] = useState(false);
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
+  const rootRef = useRef<View>(null);
 
   const stop = STOPS[tour.stepIndex];
 
@@ -93,13 +107,31 @@ export function TourOverlay() {
   }, [tour.active, pulse]);
 
   useEffect(() => {
-    if (!tour.active) return undefined;
+    // The root only exists once `mounted` has flipped true and this
+    // component has actually rendered the ref'd view — without this guard,
+    // the very first run (the same tick `tour.active` turns true, one
+    // render before `mounted` catches up) finds rootRef.current still
+    // null, bails out, and — since none of this effect's other deps
+    // change once mounted does — never gets another chance to measure.
+    if (!tour.active || !mounted) return undefined;
     let cancelled = false;
     const measure = () => {
       const node = tour.getTargetNode(stop.key);
-      if (node && typeof node.measureInWindow === 'function') {
-        node.measureInWindow((x, y, width, height) => {
-          if (!cancelled) setRect({ x, y, width, height });
+      const root: MeasurableNode | null = rootRef.current;
+      if (node && root && typeof node.measureInWindow === 'function' && typeof root.measureInWindow === 'function') {
+        // Both measurements are window-relative, but the spotlight/card are
+        // positioned absolute *within this overlay's own root* — which on
+        // desktop's centered, narrower main column doesn't start at the
+        // window's left edge. Measuring the root too and subtracting its
+        // offset converts the target into root-relative coordinates, so the
+        // ring lands on the real element instead of drifting by however far
+        // the root itself is inset from the window (a no-op on phone, where
+        // the root already fills the window).
+        root.measureInWindow((rx, ry) => {
+          if (cancelled) return;
+          node.measureInWindow((x, y, width, height) => {
+            if (!cancelled) setRect({ x: x - rx, y: y - ry, width, height });
+          });
         });
       }
     };
@@ -108,23 +140,43 @@ export function TourOverlay() {
       cancelled = true;
       cancelAnimationFrame(id);
     };
-  }, [tour.active, tour.stepIndex, stop.key, winWidth, winHeight]);
+  }, [tour.active, mounted, tour.stepIndex, stop.key, winWidth, winHeight]);
 
   if (!mounted) return null;
 
   let content: React.ReactNode = null;
   if (rect) {
-    const spotLeft = rect.x - SPOTLIGHT_PADDING;
-    const spotTop = rect.y - SPOTLIGHT_PADDING;
-    const spotWidth = rect.width + SPOTLIGHT_PADDING * 2;
-    const spotHeight = rect.height + SPOTLIGHT_PADDING * 2;
+    const spotPadding = isDesktop ? SPOTLIGHT_PADDING + 2 : SPOTLIGHT_PADDING;
+    const spotLeft = rect.x - spotPadding;
+    const spotTop = rect.y - spotPadding;
+    const spotWidth = rect.width + spotPadding * 2;
+    const spotHeight = rect.height + spotPadding * 2;
     const radius = stop.radius === 'circle' ? Math.min(spotWidth, spotHeight) / 2 : stop.radius;
 
-    const roomBelow = winHeight - (rect.y + rect.height);
+    // The root (this overlay) is sized to whatever it's nested inside —
+    // the full window on phone, but only the main content column on
+    // desktop, which is narrower than the window and doesn't start at its
+    // left edge. Clamping the card to the root's own measured size (not
+    // the window's) keeps it from spilling past the column into the
+    // sidebar, or being sized for a width it doesn't actually have.
+    const containerWidth = rootSize?.width ?? winWidth;
+    const containerHeight = rootSize?.height ?? winHeight;
+    const maxCardWidth = isDesktop ? MAX_CARD_WIDTH_DESKTOP : MAX_CARD_WIDTH;
+    const cardWidth = Math.min(containerWidth - CARD_MARGIN * 2, maxCardWidth);
+    const targetCenterX = rect.x + rect.width / 2;
+    const cardLeft = Math.min(
+      Math.max(targetCenterX - cardWidth / 2, CARD_MARGIN),
+      containerWidth - CARD_MARGIN - cardWidth
+    );
+
+    // GLOW_BLEED keeps the card clear of the spotlight's own blur, not just
+    // its hard edge — without it the card can read as touching or covering
+    // the target even though their boxes technically don't overlap.
+    const roomBelow = containerHeight - (spotTop + spotHeight + GLOW_BLEED);
     const placeAbove = stop.key === 'tab-bar' || roomBelow < cardHeight + CARD_GAP + SCREEN_EDGE_MARGIN;
     const cardTop = placeAbove
-      ? Math.max(SCREEN_EDGE_MARGIN, spotTop - cardHeight - CARD_GAP)
-      : spotTop + spotHeight + CARD_GAP;
+      ? Math.max(SCREEN_EDGE_MARGIN, spotTop - GLOW_BLEED - cardHeight - CARD_GAP)
+      : spotTop + spotHeight + GLOW_BLEED + CARD_GAP;
 
     const isLast = tour.stepIndex === STOPS.length - 1;
 
@@ -178,11 +230,12 @@ export function TourOverlay() {
           style={
             [
               styles.card,
+              isDesktop && styles.cardDesktop,
               {
                 top: cardTop,
-                left: CARD_MARGIN,
-                right: CARD_MARGIN,
-                transitionProperty: 'top',
+                left: cardLeft,
+                width: cardWidth,
+                transitionProperty: 'top, left, width',
                 transitionDuration: `${TRANSITION_MS}ms`,
                 transitionTimingFunction: 'ease',
               },
@@ -200,8 +253,8 @@ export function TourOverlay() {
             </Pressable>
           </View>
 
-          <Text style={styles.title}>{stop.title}</Text>
-          <Text style={styles.body}>{stop.body}</Text>
+          <Text style={[styles.title, isDesktop && styles.titleDesktop]}>{stop.title}</Text>
+          <Text style={[styles.body, isDesktop && styles.bodyDesktop]}>{stop.body}</Text>
 
           <View style={styles.bottomRow}>
             <View style={styles.backSlot}>
@@ -229,8 +282,10 @@ export function TourOverlay() {
 
   return (
     <Animated.View
+      ref={rootRef}
       style={[styles.root, { opacity: overlayOpacity }]}
       pointerEvents={tour.active ? 'auto' : 'none'}
+      onLayout={(e) => setRootSize({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
       testID="tour-overlay"
     >
       {content}
@@ -254,6 +309,10 @@ const styles = StyleSheet.create({
     padding: 18,
     boxShadow: '0 12px 32px rgba(0,0,0,0.28)',
   } as any,
+  cardDesktop: {
+    borderRadius: 18,
+    padding: 24,
+  },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -279,12 +338,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 6,
   },
+  titleDesktop: {
+    fontSize: 30,
+  },
   body: {
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 18,
+  },
+  bodyDesktop: {
+    fontSize: 16,
+    lineHeight: 23,
   },
   bottomRow: {
     flexDirection: 'row',

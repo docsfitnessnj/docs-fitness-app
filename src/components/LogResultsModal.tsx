@@ -84,40 +84,46 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
           <Text style={styles.workoutTitle}>{workoutTitle}</Text>
           <Text style={styles.dateLabel}>{dateLabel}</Text>
 
-          <Text style={styles.label}>POST TITLE</Text>
+          <Text nativeID="log-results-title-label" style={styles.label}>POST TITLE</Text>
           <TextInput
             style={styles.input}
             value={title}
             onChangeText={setTitle}
             placeholder="Post title"
             placeholderTextColor={colors.textMuted}
+            nativeID="log-results-title-input"
+            aria-label="Post title"
             testID="log-results-title"
           />
 
           <View style={styles.logRow}>
             <View style={styles.logField}>
-              <Text style={styles.label}>ROUNDS</Text>
+              <Text nativeID="log-results-rounds-label" style={styles.label}>ROUNDS</Text>
               <TextInput
                 style={styles.input}
                 value={log.rounds}
                 onChangeText={(v) => updateLog('rounds', v)}
                 placeholder="e.g. 5"
                 placeholderTextColor={colors.textMuted}
+                nativeID="log-results-rounds-input"
+                aria-label="Rounds"
               />
             </View>
             <View style={styles.logField}>
-              <Text style={styles.label}>TIME</Text>
+              <Text nativeID="log-results-time-label" style={styles.label}>TIME</Text>
               <TextInput
                 style={styles.input}
                 value={log.time}
                 onChangeText={(v) => updateLog('time', v)}
                 placeholder="e.g. 9:42"
                 placeholderTextColor={colors.textMuted}
+                nativeID="log-results-time-input"
+                aria-label="Time"
               />
             </View>
           </View>
 
-          <Text style={styles.label}>KETTLEBELL SIZE (KG)</Text>
+          <Text nativeID="log-results-kettlebell-label" style={styles.label}>KETTLEBELL SIZE (KG)</Text>
           <TextInput
             style={styles.input}
             value={log.kettlebell}
@@ -125,9 +131,11 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             placeholder="e.g. 16"
             placeholderTextColor={colors.textMuted}
             keyboardType="numeric"
+            nativeID="log-results-kettlebell-input"
+            aria-label="Kettlebell size in kilograms"
           />
 
-          <Text style={styles.label}>NOTES</Text>
+          <Text nativeID="log-results-notes-label" style={styles.label}>NOTES</Text>
           <TextInput
             style={[styles.input, styles.notesInput]}
             value={log.notes}
@@ -135,6 +143,8 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             placeholder="How did it feel?"
             placeholderTextColor={colors.textMuted}
             multiline
+            nativeID="log-results-notes-input"
+            aria-label="Notes"
           />
 
           <Text style={styles.label}>PHOTO / VIDEO</Text>

@@ -108,6 +108,8 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
           placeholder="Type a message..."
           placeholderTextColor={colors.textMuted}
           onSubmitEditing={send}
+          nativeID="message-draft-input"
+          aria-label="Message"
         />
         <Pressable onPress={send} hitSlop={8} style={styles.sendButton}>
           <Ionicons name="send" size={18} color={colors.white} />
