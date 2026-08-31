@@ -46,6 +46,8 @@ export default function InPersonPlansScreen({ onBack, onSelectPlan }: Props) {
                 <Text style={styles.planCadence}>{plan.cadence}</Text>
               </Text>
 
+              {plan.bulletsHeading && <Text style={styles.bulletsHeading}>{plan.bulletsHeading}</Text>}
+
               {plan.bullets.map((bullet) => {
                 const emphasized = bullet === plan.emphasizedBullet;
                 return (
@@ -142,6 +144,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 15,
     color: colors.textMuted,
+  },
+  bulletsHeading: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 11,
+    letterSpacing: 1,
+    marginTop: 14,
   },
   bulletRow: {
     flexDirection: 'row',

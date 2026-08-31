@@ -30,11 +30,24 @@ function pluralVariants(name: string): string[] {
   return Array.from(variants);
 }
 
+// WOD/deck text sometimes spells out "Kettlebell" in front of a movement
+// whose vault name doesn't include it ("Kettlebell Swings" for the "Swings"
+// video). Add that as a whole-phrase alias too, so the entire written
+// phrase becomes one tap target instead of just the shorter matched name —
+// never just the equipment word alone, since "Kettlebell" alone isn't a
+// movement.
+function withKettlebellPrefix(variants: string[]): string[] {
+  const withPrefix = variants
+    .filter((v) => !/^(kettlebell|kb)\b/i.test(v))
+    .map((v) => `Kettlebell ${v}`);
+  return [...variants, ...withPrefix];
+}
+
 // Longest alias first, so e.g. "Kettlebell Swings" matches whole rather
 // than the shorter "Swings" alias eating part of it and leaving "Kettlebell"
 // as stray plain text.
 const ALIAS_ENTRIES: AliasEntry[] = MOVEMENTS.flatMap((movement) =>
-  pluralVariants(movement.name).map((alias) => ({ alias, movement }))
+  withKettlebellPrefix(pluralVariants(movement.name)).map((alias) => ({ alias, movement }))
 ).sort((a, b) => b.alias.length - a.alias.length);
 
 // Several real videos share an identical name (Doc re-shot some movements).

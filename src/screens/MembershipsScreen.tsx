@@ -155,6 +155,8 @@ export function MembershipsScreen({ visible, onClose }: Props) {
                   </Text>
                 )}
 
+                {plan.bulletsHeading && <Text style={styles.bulletsHeading}>{plan.bulletsHeading}</Text>}
+
                 {plan.bullets.map((bullet) => {
                   const emphasized = bullet === plan.emphasizedBullet;
                   return (
@@ -306,6 +308,13 @@ const styles = StyleSheet.create({
   bulletTextEmphasized: {
     fontFamily: fonts.bodyBold,
     color: colors.text,
+  },
+  bulletsHeading: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 11,
+    letterSpacing: 1,
+    marginTop: 14,
   },
   clarifyingNote: {
     color: colors.textMuted,
