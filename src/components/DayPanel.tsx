@@ -157,7 +157,10 @@ export function DayPanel({ day, wodUnlocked }: Props) {
         ) : wod && !wodUnlocked ? (
           <Pressable style={styles.lockedCard} onPress={() => openMemberships('unlock')} testID="day-panel-locked-unlock">
             <Ionicons name="lock-closed" size={24} color={colors.textMuted} />
-            <Text style={styles.lockedText}>Join to unlock this workout</Text>
+            <View style={styles.lockedLinkRow}>
+              <Text style={styles.lockedLinkText}>Join to unlock this workout</Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.green} />
+            </View>
           </Pressable>
         ) : (
           <View style={styles.lockedCard}>
@@ -334,6 +337,18 @@ const styles = StyleSheet.create({
     marginTop: 10,
     textAlign: 'center',
     paddingHorizontal: 24,
+  },
+  lockedLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  lockedLinkText: {
+    color: colors.green,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 15,
+    textDecorationLine: 'underline',
+    marginRight: 4,
   },
   classRow: {
     flexDirection: 'row',
