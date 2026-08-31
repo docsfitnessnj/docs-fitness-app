@@ -60,7 +60,7 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest, onBack }: P
         </Text>
 
         <View style={styles.form}>
-          <Text style={styles.label}>EMAIL ADDRESS</Text>
+          <Text nativeID="welcome-email-label" style={styles.label}>EMAIL ADDRESS</Text>
           <TextInput
             style={styles.input}
             value={email}
@@ -70,6 +70,9 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest, onBack }: P
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
+            autoComplete="email"
+            nativeID="welcome-email-input"
+            aria-label="Email address"
           />
 
           <Pressable

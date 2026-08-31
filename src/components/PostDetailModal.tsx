@@ -216,6 +216,8 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
             placeholderTextColor={colors.textMuted}
             onSubmitEditing={submitComment}
             onFocus={() => !canInteract && guestNudge()}
+            nativeID="post-detail-comment-input-field"
+            aria-label="Write a comment"
             testID="post-detail-comment-input"
           />
           <Pressable onPress={submitComment} hitSlop={8} testID="post-detail-send-comment">

@@ -131,6 +131,8 @@ function CreatePostModal({
             placeholder="Title"
             placeholderTextColor={colors.textMuted}
             autoFocus
+            nativeID="compose-post-title-input"
+            aria-label="Post title"
           />
           <TextInput
             style={[styles.composeBodyInput, { height: Math.max(MIN_BODY_HEIGHT, bodyHeight) }]}
@@ -140,6 +142,8 @@ function CreatePostModal({
             placeholderTextColor={colors.textMuted}
             multiline
             onContentSizeChange={(e) => setBodyHeight(e.nativeEvent.contentSize.height)}
+            nativeID="compose-post-body-input"
+            aria-label="Post body"
           />
 
           <View style={styles.composeMediaWrap}>

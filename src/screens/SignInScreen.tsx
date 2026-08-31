@@ -28,7 +28,7 @@ export default function SignInScreen({ onBack, onSignIn }: Props) {
         <Text style={styles.subtext}>Welcome back to Doc's Fitness.</Text>
 
         <View style={styles.form}>
-          <Text style={styles.label}>EMAIL ADDRESS</Text>
+          <Text nativeID="sign-in-email-label" style={styles.label}>EMAIL ADDRESS</Text>
           <TextInput
             style={styles.input}
             value={email}
@@ -38,10 +38,13 @@ export default function SignInScreen({ onBack, onSignIn }: Props) {
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
+            autoComplete="email"
+            nativeID="sign-in-email-input"
+            aria-label="Email address"
             testID="sign-in-email"
           />
 
-          <Text style={styles.label}>PASSWORD</Text>
+          <Text nativeID="sign-in-password-label" style={styles.label}>PASSWORD</Text>
           <TextInput
             style={styles.input}
             value={password}
@@ -49,6 +52,9 @@ export default function SignInScreen({ onBack, onSignIn }: Props) {
             placeholder="••••••••"
             placeholderTextColor={colors.textMuted}
             secureTextEntry
+            autoComplete="current-password"
+            nativeID="sign-in-password-input"
+            aria-label="Password"
             testID="sign-in-password"
           />
 

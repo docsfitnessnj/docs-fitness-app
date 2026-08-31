@@ -169,6 +169,8 @@ export function MovementVaultScreen({ visible, onClose, initialMovementId, initi
           placeholder="Search movements"
           placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
+          nativeID="vault-search-input-field"
+          aria-label="Search movements"
           testID="vault-search-input"
         />
       </View>

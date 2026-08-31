@@ -109,16 +109,19 @@ export function ProfileScreen({ visible, onClose }: Props) {
           </Pressable>
           <Text style={styles.photoHint}>Tap to choose and crop a photo</Text>
 
-          <Text style={styles.label}>NAME</Text>
+          <Text nativeID="profile-name-label" style={styles.label}>NAME</Text>
           <TextInput
             style={styles.input}
             value={draftName}
             onChangeText={setDraftName}
             placeholder={displayName}
             placeholderTextColor={colors.textMuted}
+            autoComplete="name"
+            nativeID="profile-name-input"
+            aria-label="Name"
           />
 
-          <Text style={styles.label}>INSTAGRAM HANDLE</Text>
+          <Text nativeID="profile-handle-label" style={styles.label}>INSTAGRAM HANDLE</Text>
           <View style={styles.handleRow}>
             <Text style={styles.handlePrefix}>@</Text>
             <TextInput
@@ -128,16 +131,21 @@ export function ProfileScreen({ visible, onClose }: Props) {
               placeholder="yourhandle"
               placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
+              autoComplete="username"
+              nativeID="profile-handle-input"
+              aria-label="Instagram handle"
             />
           </View>
 
-          <Text style={styles.label}>FAVORITE QUOTE (OPTIONAL)</Text>
+          <Text nativeID="profile-quote-label" style={styles.label}>FAVORITE QUOTE (OPTIONAL)</Text>
           <TextInput
             style={styles.input}
             value={draftQuote}
             onChangeText={setDraftQuote}
             placeholder="One line that keeps you going"
             placeholderTextColor={colors.textMuted}
+            nativeID="profile-quote-input"
+            aria-label="Favorite quote"
           />
 
           <Pressable style={styles.saveButton} onPress={save} testID="save-profile">
