@@ -73,7 +73,7 @@ export type InPersonPlanCard = {
 };
 
 const IN_PERSON_EXCLUSION_NOTE =
-  "Does not include Doc's WODs, The Deck of WODs, or The Challenge of the Week. Add those anytime with an online membership.";
+  "Does not include full app features — Doc's WODs, The Deck of WODs, and The Challenge of the Week. Unlock everything anytime with an online membership.";
 
 export const IN_PERSON_PLANS: InPersonPlanCard[] = [
   {
@@ -91,7 +91,7 @@ export const IN_PERSON_PLANS: InPersonPlanCard[] = [
     price: '$200',
     cadence: '',
     bulletsHeading: 'WHAT YOU GET',
-    bullets: ["Book Doc's Fitness classes in person", 'Full community access', 'The Movement Vault'],
+    bullets: ["Book Doc's Fitness for in person classes", 'Full community access', 'The Movement Vault'],
     clarifyingNote: IN_PERSON_EXCLUSION_NOTE,
   },
   {
@@ -100,7 +100,7 @@ export const IN_PERSON_PLANS: InPersonPlanCard[] = [
     price: '$25',
     cadence: '/ class',
     bulletsHeading: 'WHAT YOU GET',
-    bullets: ["Book Doc's Fitness classes in person", 'Full community access', 'The Movement Vault'],
+    bullets: ["Book Doc's Fitness for in person classes", 'Full community access', 'The Movement Vault'],
     clarifyingNote: IN_PERSON_EXCLUSION_NOTE,
   },
 ];
