@@ -3,10 +3,12 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LogResultsModal } from './LogResultsModal';
 import { ScheduleStrip } from './ScheduleStrip';
+import { TappableMovementText } from './movement/TappableMovementText';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatDateKey, formatFullDate, parseMoveRow, WeekDay } from '../data/content';
 import { LOCATION_NAME, rowsForDate } from '../data/schedule';
 import { openLocationMaps } from '../lib/links';
+import { openMovementVault } from '../lib/movementVaultModal';
 import { useIsDesktop } from '../lib/responsive';
 import { useClassBooking } from '../lib/useClassBooking';
 import { colors, fonts } from '../theme';
@@ -121,7 +123,11 @@ export function DayPanel({ day, wodUnlocked }: Props) {
               const parsed = parseMoveRow(move);
               return (
                 <View key={index} style={styles.moveRow}>
-                  <Text style={styles.moveName}>{parsed.name}</Text>
+                  <TappableMovementText
+                    style={styles.moveName}
+                    text={parsed.name}
+                    onOpenMovement={(movementId) => openMovementVault(movementId, 'WORKOUT')}
+                  />
                   {parsed.reps ? <Text style={styles.moveReps}>{parsed.reps}</Text> : null}
                 </View>
               );

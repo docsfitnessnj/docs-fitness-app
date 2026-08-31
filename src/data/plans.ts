@@ -66,13 +66,20 @@ export type InPersonPlanCard = {
   // include app/workout access, so the contrast with Monthly Unlimited is
   // obvious at a glance.
   clarifyingNote?: string;
+  // Small label above the bullet list ("WHAT YOU GET") — only the tiers
+  // that need the positive-framing treatment (10 Class Pack, Drop In) set
+  // this; Monthly Unlimited's bullets read fine without it.
+  bulletsHeading?: string;
 };
+
+const IN_PERSON_EXCLUSION_NOTE =
+  "Does not include Doc's WODs, The Deck of WODs, or The Challenge of the Week. Add those anytime with an online membership.";
 
 export const IN_PERSON_PLANS: InPersonPlanCard[] = [
   {
     key: 'monthly_unlimited',
-    name: 'MONTHLY UNLIMITED',
-    price: '$130',
+    name: 'MONTHLY UNLIMITED (IN-PERSON)',
+    price: '$120',
     cadence: '/ month',
     bullets: ["Unlimited Doc's Fitness classes", 'Book any class, any day', 'Full access to everything in this app'],
     topBanner: 'EVERYTHING INCLUDED',
@@ -80,18 +87,20 @@ export const IN_PERSON_PLANS: InPersonPlanCard[] = [
   },
   {
     key: 'ten_pack',
-    name: '10 CLASS PACK',
-    price: '$250',
+    name: '10 CLASS PACK (IN-PERSON)',
+    price: '$200',
     cadence: '',
-    bullets: ['Ten classes, expires 1 year from purchase', 'App community + booking access', 'Workouts locked'],
-    clarifyingNote: 'Class booking + community access. Workouts not included.',
+    bulletsHeading: 'WHAT YOU GET',
+    bullets: ["Book Doc's Fitness classes in person", 'Full community access', 'The Movement Vault'],
+    clarifyingNote: IN_PERSON_EXCLUSION_NOTE,
   },
   {
     key: 'drop_in',
-    name: 'DROP IN',
-    price: '$30',
+    name: 'DROP IN (IN-PERSON)',
+    price: '$25',
     cadence: '/ class',
-    bullets: ['Booking access only'],
-    clarifyingNote: 'Class booking + community access. Workouts not included.',
+    bulletsHeading: 'WHAT YOU GET',
+    bullets: ["Book Doc's Fitness classes in person", 'Full community access', 'The Movement Vault'],
+    clarifyingNote: IN_PERSON_EXCLUSION_NOTE,
   },
 ];

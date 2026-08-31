@@ -8,7 +8,7 @@ import { colors, fonts } from '../theme';
 // tiers, guest) stays intact in MembershipContext; this just gives testers
 // one obvious lever instead of cycling every named state. Covers all four
 // class-booking paths (unlimited instant-book, 10-pack decrement, online
-// member $30 paywall, guest $30 paywall) plus admin-only surfaces like the
+// member $25 paywall, guest $25 paywall) plus admin-only surfaces like the
 // community post menu's Pin/Unpin and the class roster.
 const CYCLE: MembershipTier[] = ['guest', 'online_paid', 'in_person_unlimited', 'ten_pack', 'admin'];
 
