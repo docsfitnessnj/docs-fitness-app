@@ -51,7 +51,7 @@ import { useMembershipsModalState } from './src/lib/membershipsModal';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
 import { useTabBarHeight } from './src/lib/tabBarHeight';
 import { injectWebFocusStyles } from './src/lib/webFocusReset';
-import { navigationRef } from './src/lib/navigationRef';
+import { navigateToTab, navigationRef } from './src/lib/navigationRef';
 import { colors, fonts, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from './src/theme';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
@@ -369,6 +369,16 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
     onOpenMessages();
   };
 
+  // A membership purchase can complete from deep inside the hamburger menu
+  // (Memberships), not just fresh out of onboarding — close whatever's open
+  // over the tab bar and jump to Community so GET STARTED always lands
+  // there, per spec.
+  const closeEverythingAndGoToCommunity = () => {
+    setSidebarOpen(false);
+    setMembershipsOpen(false);
+    navigateToTab('Community');
+  };
+
   return (
     <NavigationContainer
       ref={navigationRef}
@@ -482,7 +492,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       </ScreenOverlay>
       <TrialExpiryModal />
       <TourOverlay />
-      <PurchaseCelebrationOverlay />
+      <PurchaseCelebrationOverlay onGetStarted={closeEverythingAndGoToCommunity} />
     </NavigationContainer>
   );
 }

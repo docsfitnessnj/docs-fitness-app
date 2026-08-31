@@ -46,7 +46,7 @@ export function useClassBooking() {
         text: `PAY $${DROP_IN_PRICE} AND BOOK`,
         onPress: () => {
           bookClass(row, dateKey, weekdayName);
-          showAlert("YOU'RE IN", `Payment simulated — ${row.className} · ${weekdayName} · ${row.time}`);
+          showAlert("YOU'RE IN", `${row.className} · ${weekdayName} · ${row.time}`, [{ text: 'DONE' }]);
         },
       },
     ]);

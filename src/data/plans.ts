@@ -73,7 +73,7 @@ export type InPersonPlanCard = {
 };
 
 const IN_PERSON_EXCLUSION_NOTE =
-  "Does not include full app features — Doc's WODs, The Deck of WODs, and The Challenge of the Week. Unlock everything anytime with an online membership.";
+  "Does not include full app features — Doc's WODs, The Deck of WODs, and The Challenge of the Week. Unlock everything with an online membership, or go Monthly Unlimited in person and get the full app included.";
 
 export const IN_PERSON_PLANS: InPersonPlanCard[] = [
   {

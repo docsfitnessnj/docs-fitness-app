@@ -5,12 +5,20 @@ import { useMembership } from '../context/MembershipContext';
 import { useTour } from '../context/TourContext';
 import { colors, fonts } from '../theme';
 
+type Props = {
+  // Closes any nested screen/drawer still open behind the celebration and
+  // jumps to the Community tab, so GET STARTED always lands there — even
+  // when the purchase happened from deep inside the hamburger menu
+  // (Memberships), not just fresh out of onboarding.
+  onGetStarted?: () => void;
+};
+
 // Shown once, right after a real paid purchase (never the free trial, never
 // Drop In — see MembershipContext's justPurchased flag). Blocks the app
 // underneath until GET STARTED is tapped, so the spotlight tour (which
 // starts as soon as the Community tab mounts) is only ever seen after this
 // celebration is dismissed.
-export function PurchaseCelebrationOverlay() {
+export function PurchaseCelebrationOverlay({ onGetStarted }: Props) {
   const { justPurchased, clearJustPurchased } = useMembership();
   const tour = useTour();
 
@@ -18,6 +26,7 @@ export function PurchaseCelebrationOverlay() {
 
   const handleGetStarted = () => {
     clearJustPurchased();
+    onGetStarted?.();
     tour.start();
   };
 
