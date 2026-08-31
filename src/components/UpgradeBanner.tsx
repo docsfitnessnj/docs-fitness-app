@@ -28,6 +28,7 @@ export function UpgradeBanner({ message }: Props) {
       <Ionicons name="star" size={14} color={colors.gold} />
       <Pressable style={styles.textWrap} onPress={() => openMemberships('unlock')} testID="upgrade-banner-unlock">
         <Text style={styles.text}>{message}</Text>
+        <Ionicons name="chevron-forward" size={13} color={colors.green} />
       </Pressable>
       <Pressable onPress={dismiss} hitSlop={8} testID="upgrade-banner-dismiss">
         <Ionicons name="close" size={16} color={colors.textMuted} />
@@ -51,11 +52,15 @@ const styles = StyleSheet.create({
   },
   textWrap: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   text: {
-    color: colors.text,
+    color: colors.green,
     fontFamily: fonts.labelSemiBold,
     fontSize: 12,
     letterSpacing: 0.3,
+    textDecorationLine: 'underline',
+    marginRight: 4,
   },
 });
