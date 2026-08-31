@@ -16,6 +16,7 @@ import React, { createContext, useContext, useMemo, useState } from 'react';
 export type MembershipTier =
   | 'trial'
   | 'online_paid'
+  | 'founding_50'
   | 'in_person_unlimited'
   | 'online_free'
   | 'ten_pack'
@@ -48,6 +49,8 @@ export function planLabel(tier: MembershipTier): string {
       return 'Online Trial';
     case 'online_paid':
       return 'Online Member';
+    case 'founding_50':
+      return 'The Founding 50';
     case 'online_free':
       return 'Online (Free)';
     case 'in_person_unlimited':
@@ -119,6 +122,10 @@ type MembershipContextValue = {
 
   startTrial: (email: string) => void;
   becomeMember: () => void;
+  // Claims a Founding 50 spot — same full access as becomeMember's
+  // online_paid, but at the locked-in rate, tracked as its own tier so a
+  // later cancellation can't quietly resubscribe at the founding rate.
+  becomeFoundingFifty: () => void;
   selectInPersonPlan: (plan: InPersonPlan) => void;
   // Optional email lets the About page's BOOK YOUR CLASS door capture an
   // email without committing to a paid plan yet — same guest capabilities
@@ -141,7 +148,7 @@ type MembershipContextValue = {
 };
 
 const RENEWAL_CYCLE_DAYS = 30;
-const RECURRING_TIERS: MembershipTier[] = ['online_paid', 'in_person_unlimited'];
+const RECURRING_TIERS: MembershipTier[] = ['online_paid', 'founding_50', 'in_person_unlimited'];
 
 const MembershipContext = createContext<MembershipContextValue | undefined>(undefined);
 
@@ -168,7 +175,12 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         ? new Date(planStartedAt + RENEWAL_CYCLE_DAYS * 24 * 60 * 60 * 1000)
         : null;
 
-    const fullContentAccess = tier === 'admin' || tier === 'trial' || tier === 'online_paid' || tier === 'in_person_unlimited';
+    const fullContentAccess =
+      tier === 'admin' ||
+      tier === 'trial' ||
+      tier === 'online_paid' ||
+      tier === 'founding_50' ||
+      tier === 'in_person_unlimited';
     const wodAccessLevel: WodAccessLevel = fullContentAccess
       ? 'full'
       : tier === 'online_free' || tier === 'guest'
@@ -212,6 +224,13 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       },
       becomeMember: () => {
         setTier('online_paid');
+        setSignedUp(true);
+        setJustPurchased(true);
+        setPlanStartedAt(Date.now());
+        setCancellationRequested(false);
+      },
+      becomeFoundingFifty: () => {
+        setTier('founding_50');
         setSignedUp(true);
         setJustPurchased(true);
         setPlanStartedAt(Date.now());

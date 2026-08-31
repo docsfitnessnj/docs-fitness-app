@@ -18,6 +18,7 @@ import { useTour } from '../context/TourContext';
 import { getUpcomingDays, isDayWodUnlocked } from '../data/content';
 import { showAlert } from '../lib/alert';
 import { MediaAttachment } from '../lib/media';
+import { openMemberships } from '../lib/membershipsModal';
 import { useIsDesktop } from '../lib/responsive';
 import { colors, fonts } from '../theme';
 
@@ -376,10 +377,7 @@ function ClosedCommunityNotice() {
       <Text style={styles.closedSubtext}>
         Drop-In classes cover booking only. Add a class package or go Unlimited for full community access.
       </Text>
-      <Pressable
-        style={styles.closedButton}
-        onPress={() => showAlert('Unlock Everything', 'Membership purchases are coming soon.')}
-      >
+      <Pressable style={styles.closedButton} onPress={() => openMemberships('all')}>
         <Text style={styles.closedButtonText}>SEE PLANS</Text>
       </Pressable>
     </View>

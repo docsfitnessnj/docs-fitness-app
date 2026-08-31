@@ -8,6 +8,7 @@ import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatDateKey, formatFullDate, parseMoveRow, WeekDay } from '../data/content';
 import { LOCATION_NAME, rowsForDate } from '../data/schedule';
 import { openLocationMaps } from '../lib/links';
+import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useIsDesktop } from '../lib/responsive';
 import { useClassBooking } from '../lib/useClassBooking';
@@ -154,10 +155,10 @@ export function DayPanel({ day, wodUnlocked }: Props) {
             </View>
           </View>
         ) : wod && !wodUnlocked ? (
-          <View style={styles.lockedCard}>
+          <Pressable style={styles.lockedCard} onPress={() => openMemberships('unlock')} testID="day-panel-locked-unlock">
             <Ionicons name="lock-closed" size={24} color={colors.textMuted} />
             <Text style={styles.lockedText}>Join to unlock this workout</Text>
-          </View>
+          </Pressable>
         ) : (
           <View style={styles.lockedCard}>
             <Ionicons name="moon-outline" size={24} color={colors.textMuted} />

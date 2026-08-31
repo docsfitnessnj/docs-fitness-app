@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { TRIAL_WARNING_THRESHOLD, useMembership } from '../context/MembershipContext';
+import { ONLINE_PLANS } from '../data/plans';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -55,12 +56,13 @@ export function TrialExpiryModal() {
           </View>
 
           <View style={styles.planRow}>
-            <Pressable style={styles.planButton} onPress={() => choosePlan()}>
-              <Text style={styles.planButtonText}>$39/MONTH</Text>
-            </Pressable>
-            <Pressable style={styles.planButton} onPress={() => choosePlan()}>
-              <Text style={styles.planButtonText}>$351/YEAR</Text>
-            </Pressable>
+            {ONLINE_PLANS.map((plan) => (
+              <Pressable key={plan.key} style={styles.planButton} onPress={() => choosePlan()}>
+                <Text style={styles.planButtonText}>
+                  {plan.price} / {plan.cadence.replace('/ ', '').toUpperCase()}
+                </Text>
+              </Pressable>
+            ))}
           </View>
 
           <Pressable onPress={dismissTrialWarning} hitSlop={8} style={styles.laterLink}>

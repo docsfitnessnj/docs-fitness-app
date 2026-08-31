@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { showAlert } from '../lib/alert';
+import { openMemberships } from '../lib/membershipsModal';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -9,6 +9,10 @@ type Props = {
   // specific line (e.g. for a single locked feature like Doc's Daily Story)
   // to explain exactly what's behind the gate here.
   subtext?: string;
+  // Called just before opening the unlock plans screen — e.g. so a locked
+  // feature shown inside its own modal (Doc's Daily Story) can close itself
+  // first instead of leaving both screens stacked.
+  onUnlock?: () => void;
 };
 
 const DEFAULT_SUBTEXT = 'Daily workouts. The full Deck of WODs. Weekly challenges. Community.';
@@ -16,7 +20,12 @@ const DEFAULT_SUBTEXT = 'Daily workouts. The full Deck of WODs. Weekly challenge
 // The "JOIN THE BOATHOUSE" lock visual — shared by MembershipGate (wraps a
 // whole locked tab) and any locked-feature popup (e.g. the story ring for
 // guests/free members) that needs the exact same look with different copy.
-export function JoinBoathouseLock({ subtext = DEFAULT_SUBTEXT }: Props) {
+export function JoinBoathouseLock({ subtext = DEFAULT_SUBTEXT, onUnlock }: Props) {
+  const handleUnlock = () => {
+    onUnlock?.();
+    openMemberships('unlock');
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.lockCircle}>
@@ -24,11 +33,7 @@ export function JoinBoathouseLock({ subtext = DEFAULT_SUBTEXT }: Props) {
       </View>
       <Text style={styles.heading}>JOIN THE BOATHOUSE</Text>
       <Text style={styles.subtext}>{subtext}</Text>
-      <Pressable
-        style={styles.unlockButton}
-        onPress={() => showAlert('Unlock Everything', 'Membership purchases are coming soon.')}
-        testID="unlock-everything-button"
-      >
+      <Pressable style={styles.unlockButton} onPress={handleUnlock} testID="unlock-everything-button">
         <Text style={styles.unlockButtonText}>UNLOCK EVERYTHING</Text>
       </Pressable>
     </View>

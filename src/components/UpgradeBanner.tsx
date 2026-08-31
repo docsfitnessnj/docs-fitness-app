@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { loadJSON, saveJSON } from '../lib/storage';
-import { showAlert } from '../lib/alert';
+import { openMemberships } from '../lib/membershipsModal';
 import { colors, fonts } from '../theme';
 
 const STORAGE_KEY = 'docsfitness.upgradeBannerDismissed.v1';
@@ -26,10 +26,7 @@ export function UpgradeBanner({ message }: Props) {
   return (
     <View style={styles.banner}>
       <Ionicons name="star" size={14} color={colors.gold} />
-      <Pressable
-        style={styles.textWrap}
-        onPress={() => showAlert('Unlock Everything', 'Membership purchases are coming soon.')}
-      >
+      <Pressable style={styles.textWrap} onPress={() => openMemberships('unlock')} testID="upgrade-banner-unlock">
         <Text style={styles.text}>{message}</Text>
       </Pressable>
       <Pressable onPress={dismiss} hitSlop={8} testID="upgrade-banner-dismiss">

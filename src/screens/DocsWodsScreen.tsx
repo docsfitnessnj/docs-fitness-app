@@ -9,15 +9,16 @@ import { TappableMovementText } from '../components/movement/TappableMovementTex
 import { useMembership } from '../context/MembershipContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatFullDate, getCurrentWeek, isDayWodUnlocked, parseMoveRow } from '../data/content';
+import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { colors, fonts } from '../theme';
 
 function LockedDay() {
   return (
-    <View style={styles.lockedCard}>
+    <Pressable style={styles.lockedCard} onPress={() => openMemberships('unlock')} testID="wods-locked-day-unlock">
       <Ionicons name="lock-closed" size={26} color={colors.textMuted} />
       <Text style={styles.lockedText}>Join to unlock this workout</Text>
-    </View>
+    </Pressable>
   );
 }
 

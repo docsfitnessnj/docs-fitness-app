@@ -2,16 +2,22 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
+import { FoundingFiftyCard } from '../components/FoundingFiftyCard';
 import { PlanSectionHeader } from '../components/PlanSectionHeader';
+import { useFoundingFifty } from '../context/FoundingFiftyContext';
 import { ONLINE_PLANS, ONLINE_PLAN_BULLETS, ONLINE_SECTION_HEADER } from '../data/plans';
 import { colors, fonts } from '../theme';
 
 type Props = {
   onBack: () => void;
   onSelectPlan: () => void;
+  onSelectFoundingFifty: () => void;
 };
 
-export default function PricingScreen({ onBack, onSelectPlan }: Props) {
+export default function PricingScreen({ onBack, onSelectPlan, onSelectFoundingFifty }: Props) {
+  const founding50 = useFoundingFifty();
+  const showFoundingFifty = founding50.enabled && !founding50.soldOut;
+
   return (
     <View style={styles.container}>
       <Pressable onPress={onBack} hitSlop={8} style={styles.backButton}>
@@ -22,6 +28,13 @@ export default function PricingScreen({ onBack, onSelectPlan }: Props) {
       <PlanSectionHeader title={ONLINE_SECTION_HEADER.title} subtitle={ONLINE_SECTION_HEADER.subtitle} />
 
       <ScrollView contentContainerStyle={styles.plans} showsVerticalScrollIndicator={false}>
+        {showFoundingFifty && (
+          <FoundingFiftyCard
+            spotsRemaining={founding50.spotsRemaining}
+            capacity={founding50.capacity}
+            onPress={onSelectFoundingFifty}
+          />
+        )}
         {ONLINE_PLANS.map((plan) => (
           <View key={plan.key} style={styles.planCard}>
             <View style={styles.planHeader}>

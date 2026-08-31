@@ -18,7 +18,7 @@ export function StoryLockedModal({ visible, onClose }: Props) {
     <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
         <ModalHeader title="DOC'S DAILY STORY" onBack={onClose} backTestID="close-story-locked" />
-        <JoinBoathouseLock subtext="Doc's Daily Story is for members." />
+        <JoinBoathouseLock subtext="Doc's Daily Story is for members." onUnlock={onClose} />
       </View>
     </AppModal>
   );

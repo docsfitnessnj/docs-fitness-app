@@ -39,13 +39,13 @@ export const ONLINE_PLAN_BULLETS = [
 // Names carry the "(ONLINE)" tag so the track reads even out of context —
 // card, confirmation popup, receipt, anywhere the plan is named.
 export const ONLINE_PLANS: OnlinePlan[] = [
-  { key: 'monthly', name: 'MONTHLY (ONLINE)', price: '$37', cadence: '/ month' },
+  { key: 'monthly', name: 'MONTHLY (ONLINE)', price: '$57', cadence: '/ month' },
   {
     key: 'annual',
     name: 'ANNUAL (ONLINE)',
-    price: '$333',
+    price: '$497',
     cadence: '/ year',
-    banner: { title: '3 MONTHS FREE', subtitle: 'Pay for 9 months. Get 12.' },
+    banner: { title: '3 MONTHS FREE', subtitle: 'Save over $180 a year.' },
   },
 ];
 
