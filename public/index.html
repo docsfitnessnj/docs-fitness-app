@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
     <title>%WEB_TITLE%</title>
     <meta
       name="description"
@@ -66,12 +66,35 @@
     />
     <meta name="twitter:image" content="https://docsfitnessnj.github.io/docs-fitness-app/share-image-v2.jpg" />
 
-    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element
+
+         Extended past the stock reset to fix a white gap that showed up at
+         the bottom of the screen on iOS Safari — worst in the in-app
+         browsers Messages/Instagram open links in, but reproducible in
+         plain Safari too by scrolling so the toolbar collapses/expands.
+         Plain `100%` height on html/body resolves against a snapshot of
+         the viewport taken when the page loads and doesn't reliably
+         re-run when Safari's chrome shows or hides, so the page can end
+         up taller than the actual visible content — the leftover space
+         renders as bare white and is itself what makes the page
+         scrollable past its real content. `100dvh` (dynamic viewport
+         height) is re-evaluated live as the toolbar animates, so the page
+         height always tracks the real visible height instead of a stale
+         snapshot; `height: 100%` stays first as a fallback for any
+         browser that doesn't understand `dvh` (unsupported values are
+         ignored, so the earlier valid rule wins there, and the later one
+         wins everywhere `dvh` is supported). Explicit background-color on
+         html/body — matching colors.background in src/theme.ts — means
+         even if some future edge case leaves a sliver of gap, it reads as
+         the app's off-white, never bare browser-white. -->
     <style id="expo-reset">
-      /* These styles make the body full-height */
+      /* These styles make the body full-height, tracking Safari's
+         collapsing/expanding toolbar instead of a one-time snapshot. */
       html,
       body {
         height: 100%;
+        height: 100dvh;
+        background-color: #FBFBF9;
       }
       /* These styles disable body scrolling if you are using <ScrollView> */
       body {
@@ -81,7 +104,9 @@
       #root {
         display: flex;
         height: 100%;
+        height: 100dvh;
         flex: 1;
+        background-color: #FBFBF9;
       }
     </style>
   </head>
