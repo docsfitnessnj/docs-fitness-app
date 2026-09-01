@@ -3,7 +3,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { ModalHeader } from './ModalHeader';
-import { APP_SHARE_MESSAGE, APP_SHARE_URL, copyInviteLink, shareInvite } from '../lib/links';
+import { APP_SHARE_DESCRIPTION, APP_SHARE_MESSAGE, APP_SHARE_TITLE, APP_SHARE_URL, copyInviteLink, shareInvite } from '../lib/links';
 import { useIsDesktop } from '../lib/responsive';
 import { colors, fonts } from '../theme';
 
@@ -63,10 +63,11 @@ export function InviteFriendModal({ visible, onClose }: Props) {
                 )}
               </View>
               <View style={styles.previewBody}>
-                <Text style={styles.previewTitle}>Doc's Fitness</Text>
+                <Text style={styles.previewTitle} numberOfLines={2}>
+                  {APP_SHARE_TITLE}
+                </Text>
                 <Text style={styles.previewDescription} numberOfLines={2}>
-                  Train online or in person at Doc's Fitness. Kettlebell workouts, a weekly challenge, and class
-                  booking, all in one app.
+                  {APP_SHARE_DESCRIPTION}
                 </Text>
                 <Text style={styles.previewDomain}>{SHARE_DOMAIN}</Text>
               </View>

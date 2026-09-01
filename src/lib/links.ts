@@ -2,12 +2,18 @@ import { Linking, Platform, Share } from 'react-native';
 import { showAlert } from './alert';
 import { LOCATION } from '../theme';
 
-// Keep this in sync with public/index.html's og:url/og:image, which can't
-// import this constant since that file is served as-is, not bundled.
+// Keep this in sync with public/index.html's og:url/og:image/og:title/
+// og:description, which can't import these constants since that file is
+// served as-is, not bundled.
 export const APP_SHARE_URL = 'https://docsfitnessnj.github.io/docs-fitness-app';
 
-export const APP_SHARE_MESSAGE =
-  "Doc's Fitness — kettlebell workouts, a weekly challenge, and class booking, all in one app.";
+// The og:title / og:description text — also what the Invite a Friend
+// preview card shows as "what they'll see," so it stays a faithful preview
+// of the real link card.
+export const APP_SHARE_TITLE = "Join Doc's Fitness: Train Online or In Person";
+export const APP_SHARE_DESCRIPTION = 'Kettlebell workouts. Class booking. Weekly challenge. All in one app.';
+
+export const APP_SHARE_MESSAGE = `${APP_SHARE_TITLE}. ${APP_SHARE_DESCRIPTION}`;
 
 // Opens the device share sheet with the invite message and link as separate
 // fields (not one concatenated string) — iOS, Android, and the Web Share
