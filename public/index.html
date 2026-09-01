@@ -23,16 +23,19 @@
          shared. og:image/og:url must be fully-qualified absolute URLs per
          spec; relative paths aren't reliably resolved by every crawler.
 
-         The square image is listed FIRST and the wide 1200x630 image
-         second: several consumers that declare multiple og:image tags
-         (iMessage's LinkPresentation in particular) just take the first
-         one and center-crop it to whatever shape their card wants rather
-         than picking the best-fitting alternate — with the wide image
-         first, that cropped the headline text on both sides. Leading with
-         the square image means that crop is a no-op there, while
-         consumers that do handle multiple images/prefer widescreen (e.g.
-         Twitter/X, which reads its own dedicated twitter:image below) still
-         get the 1200x630 version. -->
+         A SINGLE og:image, pointing at the square 1200x1200 version, on
+         purpose. Two rounds of trying multiple og:image tags (wide first,
+         then square first) both still showed iMessage tiling/cropping the
+         image — reordering never changed the symptom, which means
+         iMessage isn't reliably respecting "first tag wins" the way its
+         behavior seemed to suggest, and there's no reliable way from here
+         to make a specific consumer choose the "right" one out of several.
+         A single square image removes that ambiguity entirely: every
+         consumer gets the same file, and a square image degrades
+         acceptably everywhere (including on wide-preferring cards), while
+         a wide image forced into iMessage's square-ish preview does not.
+         Twitter/X still gets its own dedicated wide image below via
+         twitter:image, a separate tag this doesn't touch. -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://docsfitnessnj.github.io/docs-fitness-app" />
     <meta property="og:title" content="Join Doc's Fitness: Train Online or In Person" />
@@ -43,10 +46,6 @@
     <meta property="og:image" content="https://docsfitnessnj.github.io/docs-fitness-app/share-image-square.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="1200" />
-    <meta property="og:image:alt" content="Doc's Fitness — kettlebell training, in person and online." />
-    <meta property="og:image" content="https://docsfitnessnj.github.io/docs-fitness-app/share-image.jpg" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="Doc's Fitness — kettlebell training, in person and online." />
 
     <!-- Twitter/X Card — mirrors the Open Graph tags above. -->
