@@ -12,7 +12,7 @@ type Props = {
   onClose: () => void;
 };
 
-const SHARE_IMAGE = require('../../assets/brand/share-image.jpg');
+const SHARE_IMAGE = require('../../assets/brand/share-image-v2.jpg');
 // The image's real pixel dimensions (1200x630) — same reasoning as the crew
 // photo on the About page: react-native-web's Image won't reliably honor a
 // CSS aspectRatio, so the height is computed from a measured width instead.

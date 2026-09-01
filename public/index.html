@@ -35,7 +35,16 @@
          acceptably everywhere (including on wide-preferring cards), while
          a wide image forced into iMessage's square-ish preview does not.
          Twitter/X still gets its own dedicated wide image below via
-         twitter:image, a separate tag this doesn't touch. -->
+         twitter:image, a separate tag this doesn't touch.
+
+         The "-v2" suffix on both filenames below is a deliberate cache bust:
+         social platforms (Instagram in particular) cache a scraped OG image
+         per-URL with no reliable public invalidation, so after the CTA text
+         was removed from the image content, Instagram kept serving its old
+         cached copy even though the deployed file was already correct. A
+         new filename is a new URL, which forces a fresh scrape everywhere.
+         If this image is ever regenerated again, bump the suffix again
+         (v3, v4, ...) rather than overwriting the same filename in place. -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://docsfitnessnj.github.io/docs-fitness-app" />
     <meta property="og:title" content="Join Doc's Fitness: Train Online or In Person" />
@@ -43,7 +52,7 @@
       property="og:description"
       content="Kettlebell workouts. Class booking. Weekly challenge. All in one app."
     />
-    <meta property="og:image" content="https://docsfitnessnj.github.io/docs-fitness-app/share-image-square.jpg" />
+    <meta property="og:image" content="https://docsfitnessnj.github.io/docs-fitness-app/share-image-square-v2.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="1200" />
     <meta property="og:image:alt" content="Doc's Fitness — kettlebell training, in person and online." />
@@ -55,7 +64,7 @@
       name="twitter:description"
       content="Kettlebell workouts. Class booking. Weekly challenge. All in one app."
     />
-    <meta name="twitter:image" content="https://docsfitnessnj.github.io/docs-fitness-app/share-image.jpg" />
+    <meta name="twitter:image" content="https://docsfitnessnj.github.io/docs-fitness-app/share-image-v2.jpg" />
 
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
     <style id="expo-reset">
