@@ -1,18 +1,42 @@
-import { Linking, Share } from 'react-native';
+import { Linking, Platform, Share } from 'react-native';
 import { showAlert } from './alert';
 import { LOCATION } from '../theme';
 
+// Keep this in sync with public/index.html's og:url/og:image, which can't
+// import this constant since that file is served as-is, not bundled.
 export const APP_SHARE_URL = 'https://docsfitnessnj.github.io/docs-fitness-app';
 
-// Opens the device share sheet with a short invite message + app link. Web
-// only supports this when the browser implements the Web Share API
-// (react-native-web's Share.share rejects otherwise), so this falls back to
-// just showing the message the member can copy by hand.
+export const APP_SHARE_MESSAGE =
+  "Doc's Fitness — kettlebell workouts, a weekly challenge, and class booking, all in one app.";
+
+// Opens the device share sheet with the invite message and link as separate
+// fields (not one concatenated string) — iOS, Android, and the Web Share
+// API all render them as distinct parts of the share sheet. Web only
+// supports this when the browser implements the Web Share API
+// (react-native-web's Share.share rejects otherwise); a user backing out of
+// the share sheet also rejects the same promise, so only the "unsupported"
+// case falls back to a plain alert with the message the member can copy by
+// hand — a cancel is silently a no-op, same as it would be natively.
 export function shareInvite() {
-  const message = `Doc's Fitness — kettlebell workouts, a weekly challenge, and class booking, all in one app. ${APP_SHARE_URL}`;
-  Share.share({ message, url: APP_SHARE_URL, title: "Doc's Fitness" }).catch(() => {
-    showAlert('Share Doc’s Fitness', message);
+  Share.share({ message: APP_SHARE_MESSAGE, url: APP_SHARE_URL, title: "Doc's Fitness" }).catch((err) => {
+    if (err?.name === 'AbortError') return;
+    showAlert('Share Doc’s Fitness', `${APP_SHARE_MESSAGE} ${APP_SHARE_URL}`);
   });
+}
+
+// Copies just the link — the shortcut offered alongside the full share
+// sheet. Returns whether the copy actually succeeded so the caller can show
+// the right confirmation state.
+export async function copyInviteLink(): Promise<boolean> {
+  if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(APP_SHARE_URL);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 export const MERCH_STORE_URL =
