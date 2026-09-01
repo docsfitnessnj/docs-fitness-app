@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { ModalHeader } from './ModalHeader';
 import { APP_SHARE_MESSAGE, APP_SHARE_URL, copyInviteLink, shareInvite } from '../lib/links';
+import { useIsDesktop } from '../lib/responsive';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -17,11 +18,17 @@ const SHARE_IMAGE = require('../../assets/brand/share-image.jpg');
 // CSS aspectRatio, so the height is computed from a measured width instead.
 const SHARE_IMAGE_RATIO = 1200 / 630;
 const SHARE_DOMAIN = APP_SHARE_URL.replace(/^https?:\/\//, '');
+// This modal can render over the About page's desktop full-bleed layout
+// (no phone-frame width cap in that context), so left uncapped the preview
+// image would stretch to the full browser width and push the buttons off
+// screen. Cap the whole column at a sensible reading width instead.
+const DESKTOP_CONTENT_MAX_WIDTH = 560;
 
 // What the member sees before the native share sheet opens — a preview of
 // exactly what a recipient will get (the link card a chat app will render,
 // plus the message text), with SHARE and a COPY LINK shortcut.
 export function InviteFriendModal({ visible, onClose }: Props) {
+  const isDesktop = useIsDesktop();
   const [cardWidth, setCardWidth] = useState(0);
   const [copied, setCopied] = useState(false);
 
@@ -42,43 +49,45 @@ export function InviteFriendModal({ visible, onClose }: Props) {
       <View style={styles.container}>
         <ModalHeader title="INVITE A FRIEND" onBack={onClose} backTestID="close-invite-friend" />
 
-        <View style={styles.body}>
-          <Text style={styles.sectionLabel}>WHAT THEY'LL SEE</Text>
-          <View style={styles.previewCard} testID="invite-link-preview">
-            <View onLayout={(e) => setCardWidth(e.nativeEvent.layout.width)}>
-              {cardWidth > 0 && (
-                <Image
-                  source={SHARE_IMAGE}
-                  style={{ width: cardWidth, height: cardWidth / SHARE_IMAGE_RATIO }}
-                  resizeMode="cover"
-                />
-              )}
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={[styles.body, isDesktop && { maxWidth: DESKTOP_CONTENT_MAX_WIDTH, alignSelf: 'center' }]}>
+            <Text style={styles.sectionLabel}>WHAT THEY'LL SEE</Text>
+            <View style={styles.previewCard} testID="invite-link-preview">
+              <View onLayout={(e) => setCardWidth(e.nativeEvent.layout.width)}>
+                {cardWidth > 0 && (
+                  <Image
+                    source={SHARE_IMAGE}
+                    style={{ width: cardWidth, height: cardWidth / SHARE_IMAGE_RATIO }}
+                    resizeMode="cover"
+                  />
+                )}
+              </View>
+              <View style={styles.previewBody}>
+                <Text style={styles.previewTitle}>Doc's Fitness</Text>
+                <Text style={styles.previewDescription} numberOfLines={2}>
+                  Train online or in person at Doc's Fitness. Kettlebell workouts, a weekly challenge, and class
+                  booking, all in one app.
+                </Text>
+                <Text style={styles.previewDomain}>{SHARE_DOMAIN}</Text>
+              </View>
             </View>
-            <View style={styles.previewBody}>
-              <Text style={styles.previewTitle}>Doc's Fitness</Text>
-              <Text style={styles.previewDescription} numberOfLines={2}>
-                Train online or in person at Doc's Fitness. Kettlebell workouts, a weekly challenge, and class
-                booking, all in one app.
-              </Text>
-              <Text style={styles.previewDomain}>{SHARE_DOMAIN}</Text>
+
+            <Text style={[styles.sectionLabel, styles.messageLabel]}>MESSAGE</Text>
+            <View style={styles.messageBubble}>
+              <Text style={styles.messageText}>{APP_SHARE_MESSAGE}</Text>
             </View>
+
+            <Pressable style={styles.shareButton} onPress={handleShare} testID="invite-share-button">
+              <Ionicons name="share-social-outline" size={18} color={colors.white} />
+              <Text style={styles.shareButtonText}>SHARE</Text>
+            </Pressable>
+
+            <Pressable style={styles.copyButton} onPress={handleCopy} testID="invite-copy-link">
+              <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={16} color={colors.green} />
+              <Text style={styles.copyButtonText}>{copied ? 'LINK COPIED' : 'COPY LINK'}</Text>
+            </Pressable>
           </View>
-
-          <Text style={[styles.sectionLabel, styles.messageLabel]}>MESSAGE</Text>
-          <View style={styles.messageBubble}>
-            <Text style={styles.messageText}>{APP_SHARE_MESSAGE}</Text>
-          </View>
-
-          <Pressable style={styles.shareButton} onPress={handleShare} testID="invite-share-button">
-            <Ionicons name="share-social-outline" size={18} color={colors.white} />
-            <Text style={styles.shareButtonText}>SHARE</Text>
-          </Pressable>
-
-          <Pressable style={styles.copyButton} onPress={handleCopy} testID="invite-copy-link">
-            <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={16} color={colors.green} />
-            <Text style={styles.copyButtonText}>{copied ? 'LINK COPIED' : 'COPY LINK'}</Text>
-          </Pressable>
-        </View>
+        </ScrollView>
       </View>
     </AppModal>
   );
@@ -90,7 +99,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     paddingTop: 60,
   },
+  scrollContent: {
+    flexGrow: 1,
+  },
   body: {
+    width: '100%',
     paddingHorizontal: 20,
     paddingBottom: 32,
   },
