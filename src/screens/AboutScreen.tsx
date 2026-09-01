@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
+import { InviteFriendModal } from '../components/InviteFriendModal';
 import { ModalHeader } from '../components/ModalHeader';
-import { openLocationMaps, shareInvite } from '../lib/links';
+import { openLocationMaps } from '../lib/links';
 import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
 
 const CREW_PHOTO = require('../../assets/brand/crew-photo.jpg');
@@ -76,6 +77,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
   const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
   const isLargeDesktop = isDesktop && width >= LARGE_DESKTOP_BREAKPOINT;
   const [photoWidth, setPhotoWidth] = useState(0);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -225,7 +227,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
 
           <Pressable
             style={[styles.inviteButton, isDesktop && styles.inviteButtonDesktop]}
-            onPress={shareInvite}
+            onPress={() => setInviteOpen(true)}
             testID="about-invite-friend"
           >
             <Ionicons name="share-social-outline" size={18} color={colors.green} />
@@ -241,6 +243,8 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
           )}
         </View>
       </ScrollView>
+
+      <InviteFriendModal visible={inviteOpen} onClose={() => setInviteOpen(false)} />
     </View>
   );
 }
