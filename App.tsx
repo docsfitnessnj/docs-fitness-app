@@ -52,6 +52,7 @@ import { openMemberships, useMembershipsModalState } from './src/lib/memberships
 import { useClaimFoundingFifty } from './src/lib/useClaimFoundingFifty';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
 import { useTabBarHeight } from './src/lib/tabBarHeight';
+import { useWebDocumentScroll } from './src/lib/webDocumentScroll';
 import { injectWebFocusStyles } from './src/lib/webFocusReset';
 import { navigateToTab, navigationRef } from './src/lib/navigationRef';
 import { colors, fonts, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from './src/theme';
@@ -526,6 +527,8 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
   const [messagesOpen, setMessagesOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('about');
 
+  useWebDocumentScroll(signedUp);
+
   const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
   const isLargeDesktop = isDesktop && width >= LARGE_DESKTOP_BREAKPOINT;
   const showSidebar = isDesktop && signedUp;
@@ -546,7 +549,11 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
   return (
     <View style={[styles.layoutRow, showSidebar && { gap: LAYOUT_GAP }]}>
       <View
-        style={[styles.mainColumn, Platform.OS === 'web' && { maxWidth: mainColumnMaxWidth }]}
+        style={[
+          styles.mainColumn,
+          Platform.OS === 'web' && { maxWidth: mainColumnMaxWidth },
+          Platform.OS === 'web' && !signedUp && styles.mainColumnUnclipped,
+        ]}
         onLayout={onLayoutRootView}
       >
         <ModalRootProvider>
@@ -656,6 +663,14 @@ const styles = StyleSheet.create({
           borderColor: colors.hairline,
         }
       : null),
+  },
+  // Pre-signup only (see useWebDocumentScroll): lets content grow past
+  // one viewport's height instead of clipping at mainColumn's own
+  // fixed-height box, so the browser's own document scroll can take
+  // over — overflow:hidden above exists for the signed-in, tab-bar
+  // layout, which stays on its own fixed-height internal scroller.
+  mainColumnUnclipped: {
+    overflow: 'visible',
   },
   sidebarColumn: {
     paddingTop: 60,
