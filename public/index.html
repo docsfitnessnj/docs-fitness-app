@@ -68,25 +68,63 @@
 
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element
 
-         Extended past the stock reset to fix a white gap that showed up at
-         the bottom of the screen on iOS Safari — worst in the in-app
-         browsers Messages/Instagram open links in, but reproducible in
-         plain Safari too by scrolling so the toolbar collapses/expands.
-         Plain `100%` height on html/body resolves against a snapshot of
-         the viewport taken when the page loads and doesn't reliably
-         re-run when Safari's chrome shows or hides, so the page can end
-         up taller than the actual visible content — the leftover space
-         renders as bare white and is itself what makes the page
-         scrollable past its real content. `100dvh` (dynamic viewport
-         height) is re-evaluated live as the toolbar animates, so the page
-         height always tracks the real visible height instead of a stale
-         snapshot; `height: 100%` stays first as a fallback for any
-         browser that doesn't understand `dvh` (unsupported values are
-         ignored, so the earlier valid rule wins there, and the later one
-         wins everywhere `dvh` is supported). Explicit background-color on
-         html/body — matching colors.background in src/theme.ts — means
-         even if some future edge case leaves a sliver of gap, it reads as
-         the app's off-white, never bare browser-white. -->
+         Extended past the stock reset to fix the app's full-screen height
+         on iOS, in two rounds:
+
+         Round 1 (plain `height: 100%`): on iOS Safari, `100%` resolves
+         against a snapshot of the viewport taken when the page loads and
+         doesn't reliably re-run when Safari's chrome shows or hides, so
+         the page could end up TALLER than the actual visible content —
+         extra space below the real content that read as a white gap and
+         made the page scrollable past its content.
+
+         Round 2 (`height: 100dvh`): fixed the above by tracking the
+         *current* browser-chrome state instead of a load-time snapshot,
+         but this app also turns off page-level scrolling (`body {
+         overflow: hidden }`, below) since only inner ScrollViews are
+         meant to scroll — so the outer document never receives the
+         scroll gesture that normally makes a toolbar (especially the
+         heavier top+bottom chrome some in-app browsers like Messages'
+         and Instagram's add) collapse. On a browser where `dvh` then
+         stays pinned to that chrome-heavy "small viewport" permanently,
+         `html`/`body`/`#root` end up genuinely, permanently shorter than
+         the physical screen — not a clipped child, an actually-short
+         `<html>` element — so the remaining space renders as the bare
+         browser canvas below it: unstyled, un-scrollable, and outside
+         the app's DOM entirely.
+
+         Fix: stop depending on any single CSS viewport unit's specific
+         browser behavior. The inline script below measures the real,
+         always-correct height the browser reports via
+         `visualViewport.height` / `window.innerHeight` and writes it to
+         the `--app-height` custom property, live, on every resize,
+         orientation change, and visualViewport change (toolbar
+         show/hide, keyboard open/close) — no dependence on whether a
+         given engine's `dvh` implementation is complete or correct.
+         `height: 100%` and `height: 100dvh` stay as progressively better
+         fallbacks (for no-JS/no-CSS-var and no-`dvh` engines
+         respectively; each later, supported rule simply overrides the
+         one before it), with `var(--app-height, 100dvh)` last and
+         authoritative once the script has run — which, being inline and
+         synchronous, is before first paint. Explicit background-color on
+         html/body/#root — matching colors.background in src/theme.ts —
+         is a last-resort backstop: even if some edge case here leaves a
+         sliver of gap, it reads as the app's off-white, never bare
+         browser-white. -->
+    <script>
+      (function () {
+        function setAppHeight() {
+          var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+          document.documentElement.style.setProperty('--app-height', h + 'px');
+        }
+        setAppHeight();
+        window.addEventListener('resize', setAppHeight);
+        window.addEventListener('orientationchange', setAppHeight);
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', setAppHeight);
+        }
+      })();
+    </script>
     <style id="expo-reset">
       /* These styles make the body full-height, tracking Safari's
          collapsing/expanding toolbar instead of a one-time snapshot. */
@@ -94,6 +132,7 @@
       body {
         height: 100%;
         height: 100dvh;
+        height: var(--app-height, 100dvh);
         background-color: #FBFBF9;
       }
       /* These styles disable body scrolling if you are using <ScrollView> */
@@ -105,6 +144,7 @@
         display: flex;
         height: 100%;
         height: 100dvh;
+        height: var(--app-height, 100dvh);
         flex: 1;
         background-color: #FBFBF9;
       }
