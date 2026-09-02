@@ -38,7 +38,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
 
   if (!post) return null;
 
-  const guestNudge = () => showAlert('Join to Participate', 'Sign up to like, comment, and post in the community.');
+  const interactionBlockedNudge = () => showAlert('Join to Participate', 'Sign up to like, comment, and post in the community.');
 
   const cancelEdit = () => {
     setEditingComment(null);
@@ -46,7 +46,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
   };
 
   const submitComment = () => {
-    if (!canInteract) return guestNudge();
+    if (!canInteract) return interactionBlockedNudge();
     if (!commentText.trim()) return;
     if (editingComment) {
       updateComment(post.id, editingComment.id, commentText.trim());
@@ -137,7 +137,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
               <Pressable
                 key={emoji}
                 style={styles.reactionPill}
-                onPress={() => (canInteract ? addReaction(post.id, emoji) : guestNudge())}
+                onPress={() => (canInteract ? addReaction(post.id, emoji) : interactionBlockedNudge())}
               >
                 <Text style={styles.reactionEmoji}>{emoji}</Text>
                 {post.reactions[emoji] > 0 && <Text style={styles.reactionCount}>{post.reactions[emoji]}</Text>}
@@ -148,7 +148,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
           <View style={styles.statsRow}>
             <Pressable
               style={styles.footerButton}
-              onPress={() => (canInteract ? toggleLike(post.id) : guestNudge())}
+              onPress={() => (canInteract ? toggleLike(post.id) : interactionBlockedNudge())}
               testID="post-detail-like"
             >
               <Ionicons
@@ -215,7 +215,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
             placeholder={canInteract ? 'Write a comment...' : 'Sign up to comment'}
             placeholderTextColor={colors.textMuted}
             onSubmitEditing={submitComment}
-            onFocus={() => !canInteract && guestNudge()}
+            onFocus={() => !canInteract && interactionBlockedNudge()}
             nativeID="post-detail-comment-input-field"
             aria-label="Write a comment"
             testID="post-detail-comment-input"

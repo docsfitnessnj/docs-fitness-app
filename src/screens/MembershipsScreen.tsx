@@ -36,7 +36,7 @@ function priceNumber(price: string): number {
 
 // The plan card price that corresponds to the account's current tier, so a
 // switch confirmation can note the price difference — null for tiers with
-// no comparable card price (guest, admin, expired free).
+// no comparable card price (admin, expired free).
 function currentTierPrice(tier: MembershipTier): number | null {
   switch (tier) {
     case 'online_paid':

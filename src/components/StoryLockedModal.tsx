@@ -10,9 +10,9 @@ type Props = {
   onClose: () => void;
 };
 
-// Doc's Daily Story is a paid feature — guests and free-tier members still
-// see the ring (gold-unviewed state and all), but tapping it opens this
-// instead of the real story viewer.
+// Doc's Daily Story is a paid feature — free-tier members still see the
+// ring (gold-unviewed state and all), but tapping it opens this instead of
+// the real story viewer.
 export function StoryLockedModal({ visible, onClose }: Props) {
   return (
     <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>

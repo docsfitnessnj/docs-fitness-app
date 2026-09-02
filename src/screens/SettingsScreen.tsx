@@ -37,8 +37,8 @@ const NOTIFICATION_ROWS: { key: keyof NotificationPrefs; label: string; subtext:
   { key: 'trialEnding', label: 'Trial Ending', subtext: 'A heads up before your trial runs out.' },
 ];
 
-// Tiers with an actual paid or trial plan to manage. Guest and expired-free
-// accounts see a simple "view plans" prompt instead of the full block.
+// Tiers with an actual paid or trial plan to manage. Expired-free accounts
+// see a simple "view plans" prompt instead of the full block.
 const MANAGEABLE_TIERS: MembershipTier[] = [
   'trial',
   'online_paid',

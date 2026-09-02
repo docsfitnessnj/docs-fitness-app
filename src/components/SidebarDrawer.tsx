@@ -213,7 +213,7 @@ export function SidebarDrawer({
 }
 
 // The icon column matches the header avatar's width (44) so every row's
-// label — GUEST/account name up top, PROFILE/MY WORKOUTS/etc below — starts
+// label — the account name up top, PROFILE/MY WORKOUTS/etc below — starts
 // at the same left edge instead of the label position depending on whether
 // the leading element is a 44px avatar or a 20px icon.
 function MenuRow({ row }: { row: Row }) {

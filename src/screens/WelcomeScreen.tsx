@@ -16,13 +16,12 @@ import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } 
 
 type Props = {
   onContinue: (email: string, newsletterOptIn: boolean) => void;
-  onBrowseAsGuest: () => void;
   // Present whenever this screen is reached from the About page rather than
   // being the app's own entry point.
   onBack?: () => void;
 };
 
-export default function WelcomeScreen({ onContinue, onBrowseAsGuest, onBack }: Props) {
+export default function WelcomeScreen({ onContinue, onBack }: Props) {
   const [email, setEmail] = useState('');
   const [newsletterOptIn, setNewsletterOptIn] = useState(true);
   const { width } = useWindowDimensions();
@@ -96,10 +95,6 @@ export default function WelcomeScreen({ onContinue, onBrowseAsGuest, onBack }: P
             <Text style={styles.continueButtonText}>CONTINUE</Text>
           </Pressable>
         </View>
-
-        <Pressable onPress={onBrowseAsGuest} hitSlop={8} style={styles.guestLink} testID="browse-as-guest">
-          <Text style={styles.guestLinkText}>Browse as guest</Text>
-        </Pressable>
 
         <View style={styles.footer}>
           <DocsHorizontalLockup width={130} />
@@ -260,15 +255,5 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelBold,
     fontSize: 15,
     letterSpacing: 1,
-  },
-  guestLink: {
-    alignItems: 'center',
-    marginTop: 24,
-  },
-  guestLinkText: {
-    color: colors.textMuted,
-    fontFamily: fonts.labelSemiBold,
-    fontSize: 14,
-    textDecorationLine: 'underline',
   },
 });

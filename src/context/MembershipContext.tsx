@@ -1,18 +1,16 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 
-// Every state a person (or Doc) can be in:
+// Every state a person (or Doc) can be in. There is no anonymous/guest
+// state — every account, whichever door it came through, has an email —
+// so every one of these is either full access ("Crew") or not ("Dockside").
 // - trial: 2-week free online trial, full access
 // - online_paid: paying online member, full access
 // - in_person_unlimited: Boathouse Monthly Unlimited — full app included
-// - online_free: online trial expired, no plan chosen — 2 of 5 weekly WODs, no COWS, no Deck
+// - online_free: no active plan (trial lapsed, or came in through BOOK YOUR
+//   CLASS and hasn't chosen one yet) — 2 of 5 weekly WODs, no COWS, no Deck
 // - ten_pack: Boathouse 10 Class Pack — community + booking, workouts locked
 // - drop_in: Boathouse Drop In — booking only, no community, workouts locked
-// - guest: browsing without an account — read-only community + booking, workouts locked
 // - admin: Doc's own account — full access + community moderation
-// The dev preview toggle only cycles the five states named in the product brief
-// (admin / online_paid / in_person_unlimited / online_free / guest); ten_pack and
-// drop_in are real outcomes of the In-Person Plans screen but aren't previewable there
-// since their capabilities are identical to guest's.
 export type MembershipTier =
   | 'trial'
   | 'online_paid'
@@ -21,19 +19,9 @@ export type MembershipTier =
   | 'online_free'
   | 'ten_pack'
   | 'drop_in'
-  | 'guest'
   | 'admin';
 
 export type InPersonPlan = 'monthly_unlimited' | 'ten_pack' | 'drop_in';
-
-export const DEV_PREVIEW_TIERS: MembershipTier[] = [
-  'admin',
-  'online_paid',
-  'in_person_unlimited',
-  'ten_pack',
-  'online_free',
-  'guest',
-];
 
 const TRIAL_LENGTH_DAYS = 14;
 const TRIAL_WARNING_THRESHOLD_DAYS = 3;
@@ -59,15 +47,13 @@ export function planLabel(tier: MembershipTier): string {
       return '10 Class Pack';
     case 'drop_in':
       return 'Drop In';
-    case 'guest':
-      return 'Guest';
     default:
       return tier;
   }
 }
 
 function deriveDisplayName(email: string | null): string {
-  if (!email) return 'Guest';
+  if (!email) return 'Member';
   const local = email.split('@')[0].replace(/[._-]+/g, ' ').trim();
   if (!local) return 'Member';
   return local
@@ -86,6 +72,12 @@ type MembershipContextValue = {
   trialEndsAt: Date | null;
   daysLeftInTrial: number | null;
   trialWarningDismissed: boolean;
+  // True the moment startTrial() is ever called for this account, and never
+  // reset back to false (short of a full signOut) — this is what lets the
+  // status banner tell "never trained here, first class is free" apart from
+  // "was on trial, it lapsed." Distinct from tier === 'trial', which is only
+  // true *during* an active trial.
+  hasEverTrialed: boolean;
 
   isAdmin: boolean;
   // Full access to Doc's WODs, COWS, The Deck, and Community.
@@ -94,11 +86,11 @@ type MembershipContextValue = {
   cowsAccess: boolean;
   deckAccess: boolean;
   // Doc's Daily Story — paid feature: trial, online paid, Monthly Unlimited
-  // (and admin). Guests and free-tier still see the story ring, just locked.
+  // (and admin). Free-tier still sees the story ring, just locked.
   storiesAccess: boolean;
-  communityAccess: 'full' | 'read_only' | 'none';
-  // Class booking is available to every tier, including guests — kept as an explicit
-  // flag (rather than assumed) so call sites read intent, not "true" literals.
+  communityAccess: 'full' | 'none';
+  // Class booking is available to every tier — kept as an explicit flag
+  // (rather than assumed) so call sites read intent, not "true" literals.
   bookingAccess: boolean;
   // Only meaningful for tier === 'ten_pack'; null otherwise.
   tenPackClassesRemaining: number | null;
@@ -127,15 +119,19 @@ type MembershipContextValue = {
   // later cancellation can't quietly resubscribe at the founding rate.
   becomeFoundingFifty: () => void;
   selectInPersonPlan: (plan: InPersonPlan) => void;
-  // Optional email lets the About page's BOOK YOUR CLASS door capture an
-  // email without committing to a paid plan yet — same guest capabilities
-  // (booking access, first-class-free), just not anonymous.
-  becomeGuest: (email?: string) => void;
+  // The About page's BOOK YOUR CLASS door — captures an email without
+  // committing to a paid plan yet, same as a lapsed trial (online_free):
+  // booking access, first-class-free, full (non-anonymous) community.
+  enterFreeTier: (email: string) => void;
   // A returning member signing back in — full online access, no trial
   // dates, and (unlike becomeMember) no purchase celebration since nothing
   // was just bought.
   signIn: (email: string) => void;
   setDevTier: (tier: MembershipTier) => void;
+  // Dev-preview-only: forces the "first time visitor" Dockside variant —
+  // online_free with no trial history — regardless of what was previewed
+  // before. See hasEverTrialed above.
+  previewFirstTimeVisitor: () => void;
   dismissTrialWarning: () => void;
   useTenPackClass: () => void;
   refundTenPackClass: () => void;
@@ -164,6 +160,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   const [justPurchased, setJustPurchased] = useState(false);
   const [planStartedAt, setPlanStartedAt] = useState<number | null>(null);
   const [cancellationRequested, setCancellationRequested] = useState(false);
+  const [hasEverTrialed, setHasEverTrialed] = useState(false);
 
   const daysLeftInTrial = trialEndsAt
     ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
@@ -181,13 +178,8 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       tier === 'online_paid' ||
       tier === 'founding_50' ||
       tier === 'in_person_unlimited';
-    const wodAccessLevel: WodAccessLevel = fullContentAccess
-      ? 'full'
-      : tier === 'online_free' || tier === 'guest'
-        ? 'partial'
-        : 'none';
-    const communityAccess: 'full' | 'read_only' | 'none' =
-      tier === 'drop_in' ? 'none' : tier === 'guest' ? 'read_only' : 'full';
+    const wodAccessLevel: WodAccessLevel = fullContentAccess ? 'full' : tier === 'online_free' ? 'partial' : 'none';
+    const communityAccess: 'full' | 'none' = tier === 'drop_in' ? 'none' : 'full';
 
     return {
       tier,
@@ -197,6 +189,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       trialEndsAt,
       daysLeftInTrial,
       trialWarningDismissed,
+      hasEverTrialed,
 
       isAdmin: tier === 'admin',
       fullContentAccess,
@@ -221,6 +214,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         setTrialWarningDismissed(false);
         setTier('trial');
         setSignedUp(true);
+        setHasEverTrialed(true);
       },
       becomeMember: () => {
         setTier('online_paid');
@@ -245,9 +239,9 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         if (plan === 'monthly_unlimited') setPlanStartedAt(Date.now());
         setCancellationRequested(false);
       },
-      becomeGuest: (email) => {
-        setEmail(email ?? null);
-        setTier('guest');
+      enterFreeTier: (enteredEmail) => {
+        setEmail(enteredEmail);
+        setTier('online_free');
         setSignedUp(true);
       },
       signIn: (enteredEmail) => {
@@ -263,12 +257,27 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
           endsAt.setDate(endsAt.getDate() + TRIAL_LENGTH_DAYS);
           setTrialEndsAt(endsAt);
         }
-        if (nextTier === 'ten_pack' && tenPackClassesRemaining === null) {
+        if (nextTier === 'ten_pack') {
+          // Always a fresh, round demo count — this is the preview path,
+          // not a real purchase, so there's no reason to leave it wherever
+          // a previous preview session happened to decrement it to.
           setTenPackClassesRemaining(TEN_PACK_SIZE);
         }
         if (RECURRING_TIERS.includes(nextTier) && planStartedAt === null) {
           setPlanStartedAt(Date.now());
         }
+        // Previewing one of the named Dockside tiers should reliably show
+        // that tier's own banner variant, not the first-time-visitor one —
+        // only the dedicated previewFirstTimeVisitor() below should ever
+        // show that state.
+        if (nextTier === 'online_free' || nextTier === 'ten_pack' || nextTier === 'drop_in') {
+          setHasEverTrialed(true);
+        }
+      },
+      previewFirstTimeVisitor: () => {
+        setTier('online_free');
+        setSignedUp(true);
+        setHasEverTrialed(false);
       },
       dismissTrialWarning: () => setTrialWarningDismissed(true),
       useTenPackClass: () => setTenPackClassesRemaining((prev) => Math.max(0, (prev ?? TEN_PACK_SIZE) - 1)),
@@ -290,6 +299,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         setJustPurchased(false);
         setPlanStartedAt(null);
         setCancellationRequested(false);
+        setHasEverTrialed(false);
       },
     };
   }, [
@@ -305,6 +315,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     firstClassUsed,
     newsletterOptIn,
     justPurchased,
+    hasEverTrialed,
   ]);
 
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>;

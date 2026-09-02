@@ -19,7 +19,7 @@ const DEFAULT_SUBTEXT = 'Daily workouts. The full Deck of WODs. Weekly challenge
 
 // The "JOIN THE BOATHOUSE" lock visual — shared by MembershipGate (wraps a
 // whole locked tab) and any locked-feature popup (e.g. the story ring for
-// guests/free members) that needs the exact same look with different copy.
+// free-tier members) that needs the exact same look with different copy.
 export function JoinBoathouseLock({ subtext = DEFAULT_SUBTEXT, onUnlock }: Props) {
   const handleUnlock = () => {
     onUnlock?.();
