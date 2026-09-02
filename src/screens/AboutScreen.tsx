@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { InviteFriendModal } from '../components/InviteFriendModal';
 import { ModalHeader } from '../components/ModalHeader';
+import { WebScrollScreen } from '../components/WebScrollScreen';
 import { openLocationMaps } from '../lib/links';
 import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
 
@@ -85,7 +86,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
         <ModalHeader title="ABOUT DOC'S FITNESS" onBack={onBack} backTestID="close-about" />
       )}
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <WebScrollScreen style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={[styles.hero, isDesktop && styles.heroDesktop]}>
           <DocsBadge variant="white" size={isLargeDesktop ? 220 : isDesktop ? 190 : 104} />
           <Text
@@ -242,7 +243,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
             </Pressable>
           )}
         </View>
-      </ScrollView>
+      </WebScrollScreen>
 
       <InviteFriendModal visible={inviteOpen} onClose={() => setInviteOpen(false)} />
     </View>
@@ -255,15 +256,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     paddingTop: 60,
   },
-  // Every other screen gets this from ScreenContainer's own ScrollView
-  // usage (see ScreenContainer.tsx) — this screen renders its ScrollView
-  // directly and was missing it. Without an explicit `flex: 1`, React
-  // Native Web's ScrollView falls back to `flex-basis: auto` (confirmed
-  // via computed style: "1 1 auto" here vs "1 1 0%" on every ancestor
-  // that does set flex:1) instead of `flex-basis: 0%` — content-based
-  // sizing instead of "grow to fill," which is exactly the kind of
-  // discrepancy a stricter/older WebKit flexbox implementation can size
-  // wrong even where Chromium happens to still get it right.
+  // Passed through to WebScrollScreen — a real ScrollView on native, a
+  // plain View on web (see that component for why).
   scroll: {
     flex: 1,
   },

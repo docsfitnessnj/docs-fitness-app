@@ -1,8 +1,9 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { InPersonPlan } from '../context/MembershipContext';
 import { PlanSectionHeader } from '../components/PlanSectionHeader';
+import { WebScrollScreen } from '../components/WebScrollScreen';
 import { IN_PERSON_PLANS, IN_PERSON_SECTION_HEADER, InPersonPlanCard } from '../data/plans';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
@@ -29,7 +30,7 @@ export default function InPersonPlansScreen({ onBack, onSelectPlan }: Props) {
 
       <PlanSectionHeader title={IN_PERSON_SECTION_HEADER.title} subtitle={IN_PERSON_SECTION_HEADER.subtitle} />
 
-      <ScrollView contentContainerStyle={styles.plans} showsVerticalScrollIndicator={false}>
+      <WebScrollScreen style={styles.scroll} contentContainerStyle={styles.plans} showsVerticalScrollIndicator={false}>
         {IN_PERSON_PLANS.map((plan) => (
           <View key={plan.key} style={[styles.planCard, plan.topBanner && styles.planCardBest]}>
             {plan.topBanner && (
@@ -70,7 +71,7 @@ export default function InPersonPlansScreen({ onBack, onSelectPlan }: Props) {
             </View>
           </View>
         ))}
-      </ScrollView>
+      </WebScrollScreen>
     </View>
   );
 }
@@ -81,6 +82,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     paddingHorizontal: 24,
     paddingTop: 60,
+  },
+  // Passed through to WebScrollScreen — a real ScrollView on native, a
+  // plain View on web (see that component for why).
+  scroll: {
+    flex: 1,
   },
   backButton: {
     flexDirection: 'row',
