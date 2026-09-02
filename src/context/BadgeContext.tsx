@@ -5,6 +5,7 @@ import { findRosterMember } from '../data/roster';
 import { loadJSON, saveJSON } from '../lib/storage';
 import { useCommunity } from './CommunityContext';
 import { useDeckProgress } from './DeckProgressContext';
+import { useMembership } from './MembershipContext';
 import { useDisplayName } from './ProfileContext';
 import { useWorkoutLog } from './WorkoutLogContext';
 
@@ -46,6 +47,10 @@ type BadgeContextValue = {
   regularProgress: { count: number; target: number; earned: boolean };
   cowKillerEarned: boolean;
   jokerEarned: boolean;
+  // Live-computed from membership.fullContentAccess, not a one-time grant —
+  // true exactly while the member currently has full access, false the
+  // instant they drop to Dockside, true again the instant they rejoin.
+  crewEarned: boolean;
   foundingFiftyEarned: boolean;
   dayOneDougEarned: boolean;
   hundredDownEarned: boolean;
@@ -80,6 +85,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
   const { completedWorkouts } = useWorkoutLog();
   const { completedCount: deckCompletedCount } = useDeckProgress();
   const { posts, addTextPost } = useCommunity();
+  const { fullContentAccess } = useMembership();
 
   useEffect(() => {
     saveJSON(STORAGE_KEY, state);
@@ -105,6 +111,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     const hundredDownEarned = state.hundredDownEarnedAt !== null;
     const jokerEarned = !!state.manualGrants[displayName]?.joker;
     const foundingFiftyEarned = !!state.manualGrants[displayName]?.foundingFifty;
+    const crewEarned = fullContentAccess;
     const cowKillerEarned = state.cowKillerPostedAt !== null && isThisWeek(state.cowKillerPostedAt);
 
     const week = getCurrentWeek();
@@ -119,6 +126,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     const regularProgress = { count: regularCount, target: REGULAR_TARGET, earned: regularCount >= REGULAR_TARGET };
 
     const myBadgeIds: BadgeId[] = [
+      ...(crewEarned ? (['crew'] as BadgeId[]) : []),
       ...(foundingFiftyEarned ? (['founding_50'] as BadgeId[]) : []),
       ...(jokerEarned ? (['joker'] as BadgeId[]) : []),
       ...(onFireProgress.earned ? (['on_fire'] as BadgeId[]) : []),
@@ -147,6 +155,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       regularProgress,
       cowKillerEarned,
       jokerEarned,
+      crewEarned,
       foundingFiftyEarned,
       dayOneDougEarned,
       hundredDownEarned,
@@ -180,7 +189,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, displayName, completedWorkouts, deckCompletedCount, posts, totalWorkoutsLogged]);
+  }, [state, displayName, completedWorkouts, deckCompletedCount, posts, totalWorkoutsLogged, fullContentAccess]);
 
   // Auto-generate the monthly recap on the 1st, once per month.
   useEffect(() => {

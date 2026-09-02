@@ -37,11 +37,11 @@ export function StatusBanner() {
         <Ionicons name="help-buoy-outline" size={20} color={colors.textMuted} />
         <View style={styles.textCol}>
           <Text style={styles.docksideTitle}>YOU'RE DOCKSIDE</Text>
-          <Text style={styles.docksideSubtitle}>2 DOC'S WODS A WEEK + COMMUNITY</Text>
+          <Text style={styles.docksideSubtitle}>ONLY 2 DOC'S WODS A WEEK + COMMUNITY</Text>
         </View>
       </View>
       <Pressable style={styles.joinButton} onPress={() => openMemberships('unlock')} testID="status-banner-join-crew">
-        <Text style={styles.joinButtonText}>JOIN THE CREW</Text>
+        <Text style={styles.joinButtonText}>JOIN THE CREW — FULL ACCESS</Text>
       </Pressable>
     </View>
   );

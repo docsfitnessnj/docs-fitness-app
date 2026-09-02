@@ -50,6 +50,8 @@ function TallyMarks({ color, size }: { color: string; size: number }) {
 
 function BadgeGlyph({ id, color, size }: { id: BadgeId; color: string; size: number }) {
   switch (id) {
+    case 'crew':
+      return <Ionicons name="boat-outline" size={size} color={color} />;
     case 'founding_50':
       return (
         <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
