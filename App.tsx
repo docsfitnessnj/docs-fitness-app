@@ -253,10 +253,10 @@ type OnboardingFlowProps = {
 // Fewest possible clicks: About -> Continue -> (skip if a door was tapped,
 // else How do you train) -> (pick a path) -> in. TRAIN ONLINE lands on a
 // single trial-start screen (with a skip-to-pricing link); TRAIN AT THE
-// BOATHOUSE goes straight to plan selection. Guests skip this whole flow
-// from the email screen.
+// BOATHOUSE goes straight to plan selection. Every path captures an email
+// on the way through — there's no anonymous/browse-without-an-account exit.
 function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
-  const { startTrial, becomeMember, selectInPersonPlan, becomeGuest, signIn, setNewsletterOptIn } = useMembership();
+  const { startTrial, becomeMember, selectInPersonPlan, enterFreeTier, signIn, setNewsletterOptIn } = useMembership();
   const claimFoundingFifty = useClaimFoundingFifty();
   const [email, setEmail] = useState('');
   const [intent, setIntent] = useState<EntryIntent>(null);
@@ -272,12 +272,11 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
             if (intent === 'onlineTrial') {
               startTrial(enteredEmail);
             } else if (intent === 'bookClass') {
-              becomeGuest(enteredEmail);
+              enterFreeTier(enteredEmail);
             } else {
               setStep('howDoYouTrain');
             }
           }}
-          onBrowseAsGuest={() => becomeGuest()}
         />
       );
     case 'signIn':

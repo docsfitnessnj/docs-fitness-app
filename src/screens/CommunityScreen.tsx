@@ -184,7 +184,8 @@ function PostCard({
 
   const isOwn = post.author === displayName;
 
-  const guestNudge = () => showAlert('Join to Participate', 'Sign up to like, comment, and post in the community.');
+  const interactionBlockedNudge = () =>
+    showAlert('Join to Participate', 'Sign up to like, comment, and post in the community.');
 
   const openDetail = () => {
     markRead(post.id);
@@ -315,7 +316,7 @@ function PostCard({
             style={styles.reactionPill}
             onPress={(e) => {
               e.stopPropagation();
-              canInteract ? addReaction(post.id, emoji) : guestNudge();
+              canInteract ? addReaction(post.id, emoji) : interactionBlockedNudge();
             }}
           >
             <Text style={styles.reactionEmoji}>{emoji}</Text>
@@ -330,7 +331,7 @@ function PostCard({
             style={styles.footerButton}
             onPress={(e) => {
               e.stopPropagation();
-              canInteract ? toggleLike(post.id) : guestNudge();
+              canInteract ? toggleLike(post.id) : interactionBlockedNudge();
             }}
           >
             <Ionicons
@@ -361,15 +362,6 @@ function PostCard({
   );
 }
 
-function GuestBanner() {
-  return (
-    <View style={styles.guestBanner}>
-      <Ionicons name="eye-outline" size={16} color={colors.textMuted} />
-      <Text style={styles.guestBannerText}>Browsing as guest — sign up to join the conversation.</Text>
-    </View>
-  );
-}
-
 function ClosedCommunityNotice() {
   return (
     <View style={styles.closedCard}>
@@ -394,13 +386,13 @@ function CommunityFeed({
   onOpenComposer: () => void;
   onEditPost: (post: Post) => void;
   onOpenDetail: (post: Post) => void;
-  communityAccess: 'full' | 'read_only';
+  communityAccess: 'full';
 }) {
   const { posts } = useCommunity();
   const canInteract = communityAccess === 'full';
   return (
     <View>
-      {canInteract ? <ComposerBar onOpen={onOpenComposer} /> : <GuestBanner />}
+      <ComposerBar onOpen={onOpenComposer} />
       {posts.map((post) => (
         <PostCard key={post.id} post={post} canInteract={canInteract} onEdit={onEditPost} onOpenDetail={onOpenDetail} />
       ))}
@@ -525,23 +517,6 @@ const styles = StyleSheet.create({
   },
   composerPlaceholderDesktop: {
     fontSize: 19,
-  },
-  guestBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 14,
-  },
-  guestBannerText: {
-    flex: 1,
-    color: colors.textMuted,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 13,
   },
   closedCard: {
     alignItems: 'center',

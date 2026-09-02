@@ -1,35 +1,75 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { MembershipTier, useMembership } from '../context/MembershipContext';
+import { useMembership } from '../context/MembershipContext';
 import { colors, fonts } from '../theme';
 
-// Dev-only preview control — cycles through the tiers that matter for
-// testing on tap. The full access-matrix logic (online tiers, in-person
-// tiers, guest) stays intact in MembershipContext; this just gives testers
-// one obvious lever instead of cycling every named state. Covers all four
-// class-booking paths (unlimited instant-book, 10-pack decrement, online
-// member $25 paywall, guest $25 paywall) plus admin-only surfaces like the
-// community post menu's Pin/Unpin and the class roster.
-const CYCLE: MembershipTier[] = ['guest', 'online_paid', 'in_person_unlimited', 'ten_pack', 'admin'];
+type Membership = ReturnType<typeof useMembership>;
 
-const LABELS: Partial<Record<MembershipTier, string>> = {
-  guest: 'NON-MEMBER',
-  online_paid: 'ONLINE MEMBER',
-  in_person_unlimited: 'UNLIMITED',
-  ten_pack: '10-PACK',
-  admin: 'ADMIN PREVIEW',
+// Dev-only preview control — cycles through the states that matter for
+// testing on tap. The full access-matrix logic stays intact in
+// MembershipContext; this just gives testers one obvious lever instead of
+// cycling every named state. Covers every Dockside status-banner variant
+// (first-time visitor, free tier, 10-Class Pack with its live count, Drop
+// In), both Crew tiers that matter for booking (online, in-person
+// unlimited), and Admin.
+//
+// FIRST VISIT and FREE TIER are both tier === 'online_free' under the
+// hood — they're told apart by hasEverTrialed, which is why `matches` and
+// `apply` are separate per-step functions rather than a plain tier list.
+type Step = {
+  label: string;
+  matches: (m: Membership) => boolean;
+  apply: (m: Membership) => void;
 };
 
+const STEPS: Step[] = [
+  {
+    label: 'FIRST VISIT',
+    matches: (m) => m.tier === 'online_free' && !m.hasEverTrialed,
+    apply: (m) => m.previewFirstTimeVisitor(),
+  },
+  {
+    label: 'FREE TIER',
+    matches: (m) => m.tier === 'online_free' && m.hasEverTrialed,
+    apply: (m) => m.setDevTier('online_free'),
+  },
+  {
+    label: '10-PACK',
+    matches: (m) => m.tier === 'ten_pack',
+    apply: (m) => m.setDevTier('ten_pack'),
+  },
+  {
+    label: 'DROP IN',
+    matches: (m) => m.tier === 'drop_in',
+    apply: (m) => m.setDevTier('drop_in'),
+  },
+  {
+    label: 'ONLINE MEMBER',
+    matches: (m) => m.tier === 'online_paid',
+    apply: (m) => m.setDevTier('online_paid'),
+  },
+  {
+    label: 'UNLIMITED',
+    matches: (m) => m.tier === 'in_person_unlimited',
+    apply: (m) => m.setDevTier('in_person_unlimited'),
+  },
+  {
+    label: 'ADMIN PREVIEW',
+    matches: (m) => m.tier === 'admin',
+    apply: (m) => m.setDevTier('admin'),
+  },
+];
+
 export function MembershipToggle() {
-  const { tier, setDevTier } = useMembership();
-  const index = CYCLE.indexOf(tier);
+  const membership = useMembership();
+  const index = STEPS.findIndex((step) => step.matches(membership));
   const safeIndex = index === -1 ? 0 : index;
 
-  const cycle = () => setDevTier(CYCLE[(safeIndex + 1) % CYCLE.length]);
+  const cycle = () => STEPS[(safeIndex + 1) % STEPS.length].apply(membership);
 
-  const isAdminPreview = tier === 'admin';
+  const isAdminPreview = membership.tier === 'admin';
   const isOn = safeIndex > 0;
-  const label = LABELS[tier] ?? 'NON-MEMBER';
+  const label = STEPS[safeIndex].label;
   const labelColor = isAdminPreview ? colors.scoreboardRed : isOn ? colors.goldBright : 'rgba(255,255,255,0.85)';
 
   return (

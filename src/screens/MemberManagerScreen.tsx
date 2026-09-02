@@ -18,7 +18,7 @@ type Props = {
 // Maps the live signed-in account's membership tier onto the same plan
 // buckets the static roster uses, so the current member slots into the
 // grouped list next to everyone else. Tiers with no paid-plan equivalent
-// (admin, guest, expired free) are excluded from the roster entirely.
+// (admin, expired free) are excluded from the roster entirely.
 function tierToPlanKey(tier: MembershipTier): PlanKey | undefined {
   switch (tier) {
     case 'in_person_unlimited':
