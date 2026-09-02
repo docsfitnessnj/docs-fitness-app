@@ -3,6 +3,7 @@
 // profile badge case, and the Trophy Case screen never drift apart.
 
 export type BadgeId =
+  | 'crew'
   | 'founding_50'
   | 'joker'
   | 'on_fire'
@@ -11,7 +12,11 @@ export type BadgeId =
   | 'day_one_doug'
   | 'hundred_down';
 
-export type BadgeKind = 'permanent' | 'weekly';
+// 'membership' is distinct from 'permanent': it reflects CURRENT membership
+// status (live-computed, not a one-time grant) — earned the moment access
+// starts, removed the moment it lapses, back the moment it resumes. Only
+// THE CREW badge uses this kind today.
+export type BadgeKind = 'permanent' | 'weekly' | 'membership';
 
 export type BadgeDef = {
   id: BadgeId;
@@ -24,6 +29,17 @@ export type BadgeDef = {
 };
 
 export const BADGE_DEFS: BadgeDef[] = [
+  {
+    id: 'crew',
+    name: 'CREW',
+    description:
+      "You're on the boat. Full access to everything Doc's Fitness has. Yours for as long as your membership is active.",
+    kind: 'membership',
+    // Sorts ahead of everything, including THE FOUNDING 50 — wherever a
+    // member's badges are listed together (the status banner, the
+    // Community feed), CREW is the first thing anyone sees.
+    order: -2,
+  },
   {
     id: 'founding_50',
     name: 'THE FOUNDING 50',
@@ -81,9 +97,9 @@ export const BADGE_MAP: Record<BadgeId, BadgeDef> = BADGE_DEFS.reduce(
   {} as Record<BadgeId, BadgeDef>
 );
 
-// Sorts a set of held badge ids into the app-wide display order (Joker,
-// then weeklies, then permanents) and caps how many are shown inline, with
-// the remainder collapsed into a count.
+// Sorts a set of held badge ids into the app-wide display order (Crew,
+// Founding 50, Joker, then weeklies, then permanent milestones) and caps how
+// many are shown inline, with the remainder collapsed into a count.
 export function sortBadgeIds(ids: BadgeId[]): BadgeId[] {
   return [...ids].sort((a, b) => BADGE_MAP[a].order - BADGE_MAP[b].order);
 }
@@ -96,6 +112,9 @@ export const INLINE_BADGE_CAP = 4;
 // above, which stays Joker-first for inline feed badges.
 export const PERMANENT_DISPLAY_ORDER: BadgeId[] = ['founding_50', 'day_one_doug', 'hundred_down', 'joker'];
 export const WEEKLY_DISPLAY_ORDER: BadgeId[] = ['on_fire', 'cow_killer', 'the_regular'];
+// THE CREW is the one 'membership'-kind badge — its own section on the
+// Trophy Case, above PERMANENT (see PERMANENT_DISPLAY_ORDER).
+export const MEMBERSHIP_DISPLAY_ORDER: BadgeId[] = ['crew'];
 
 // THE FOUNDING 50 is gated behind its own launch flag — everywhere a full
 // badge catalog is listed (not just "badges someone actually holds"), drop

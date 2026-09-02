@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
 import { BadgeIcon } from '../components/icons/BadgeIcon';
-import { BADGE_MAP, BadgeId, permanentDisplayOrder, WEEKLY_DISPLAY_ORDER } from '../data/badges';
+import { BADGE_MAP, BadgeId, MEMBERSHIP_DISPLAY_ORDER, permanentDisplayOrder, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import { openDeckStore } from '../lib/links';
 import { HUNDRED_DOWN_TARGET, useBadges } from '../context/BadgeContext';
 import { useFoundingFifty } from '../context/FoundingFiftyContext';
@@ -58,6 +58,9 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
     }
   };
 
+  const crewStatus = (): string =>
+    badges.crewEarned ? "ACTIVE — YOU'RE ON THE BOAT" : 'JOIN THE CREW TO EARN THIS';
+
   const weeklyStatus = (id: BadgeId): string => {
     switch (id) {
       case 'on_fire':
@@ -106,11 +109,16 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <Text style={styles.headline}>THE TROPHY CASE</Text>
         <Text style={styles.subtitle}>
-          {COUNT_WORDS[permanentIds.length + WEEKLY_DISPLAY_ORDER.length] ?? permanentIds.length + WEEKLY_DISPLAY_ORDER.length}{' '}
+          {COUNT_WORDS[MEMBERSHIP_DISPLAY_ORDER.length + permanentIds.length + WEEKLY_DISPLAY_ORDER.length] ??
+            MEMBERSHIP_DISPLAY_ORDER.length + permanentIds.length + WEEKLY_DISPLAY_ORDER.length}{' '}
           badges. Earn them, wear them.
         </Text>
 
-        <Text style={styles.sectionHeading}>PERMANENT</Text>
+        <Text style={styles.sectionHeading}>MEMBERSHIP</Text>
+        <Text style={styles.sectionNote}>Reflects your active membership — on while you have full access, off the moment you don't.</Text>
+        {MEMBERSHIP_DISPLAY_ORDER.map((id) => renderCard(id, crewStatus()))}
+
+        <Text style={[styles.sectionHeading, styles.sectionHeadingSpaced]}>PERMANENT</Text>
         {permanentIds.map((id) => renderCard(id, permanentStatus(id)))}
 
         <Text style={[styles.sectionHeading, styles.sectionHeadingSpaced]}>THIS WEEK</Text>
