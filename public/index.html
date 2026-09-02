@@ -37,14 +37,16 @@
          Twitter/X still gets its own dedicated wide image below via
          twitter:image, a separate tag this doesn't touch.
 
-         The "-v2" suffix on both filenames below is a deliberate cache bust:
-         social platforms (Instagram in particular) cache a scraped OG image
-         per-URL with no reliable public invalidation, so after the CTA text
-         was removed from the image content, Instagram kept serving its old
-         cached copy even though the deployed file was already correct. A
-         new filename is a new URL, which forces a fresh scrape everywhere.
-         If this image is ever regenerated again, bump the suffix again
-         (v3, v4, ...) rather than overwriting the same filename in place. -->
+         The "-v3" suffix on both filenames below is a deliberate cache bust
+         (v2 -> v3): the v2 file's pixels were re-verified correct (crew
+         photo composition, no CTA) both locally and by fetching the exact
+         file GitHub was serving at the deployed commit, so this wasn't a
+         bad regeneration — but a platform preview was still showing a
+         stale image, and per the same Instagram-caching precedent that
+         motivated v1 -> v2, the only reliable fix for a cache like that is
+         a brand new URL. If this image is ever regenerated again, bump
+         the suffix again (v4, v5, ...) rather than overwriting the same
+         filename in place. -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://docsfitnessnj.github.io/docs-fitness-app" />
     <meta property="og:title" content="Join Doc's Fitness: Train Online or In Person" />
@@ -52,7 +54,7 @@
       property="og:description"
       content="Kettlebell workouts. Class booking. Weekly challenge. All in one app."
     />
-    <meta property="og:image" content="https://docsfitnessnj.github.io/docs-fitness-app/share-image-square-v2.jpg" />
+    <meta property="og:image" content="https://docsfitnessnj.github.io/docs-fitness-app/share-image-square-v3.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="1200" />
     <meta property="og:image:alt" content="Doc's Fitness — kettlebell training, in person and online." />
@@ -64,7 +66,7 @@
       name="twitter:description"
       content="Kettlebell workouts. Class booking. Weekly challenge. All in one app."
     />
-    <meta name="twitter:image" content="https://docsfitnessnj.github.io/docs-fitness-app/share-image-v2.jpg" />
+    <meta name="twitter:image" content="https://docsfitnessnj.github.io/docs-fitness-app/share-image-v3.jpg" />
 
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element
 
@@ -93,24 +95,37 @@
          browser canvas below it: unstyled, un-scrollable, and outside
          the app's DOM entirely.
 
-         Fix: stop depending on any single CSS viewport unit's specific
-         browser behavior. The inline script below measures the real,
-         always-correct height the browser reports via
+         Round 3 (JS-measured `--app-height`): stopped depending on any
+         single CSS viewport unit's specific browser behavior. The inline
+         script measures the real height the browser reports via
          `visualViewport.height` / `window.innerHeight` and writes it to
-         the `--app-height` custom property, live, on every resize,
-         orientation change, and visualViewport change (toolbar
-         show/hide, keyboard open/close) — no dependence on whether a
-         given engine's `dvh` implementation is complete or correct.
-         `height: 100%` and `height: 100dvh` stay as progressively better
-         fallbacks (for no-JS/no-CSS-var and no-`dvh` engines
-         respectively; each later, supported rule simply overrides the
-         one before it), with `var(--app-height, 100dvh)` last and
-         authoritative once the script has run — which, being inline and
-         synchronous, is before first paint. Explicit background-color on
-         html/body/#root — matching colors.background in src/theme.ts —
-         is a last-resort backstop: even if some edge case here leaves a
-         sliver of gap, it reads as the app's off-white, never bare
-         browser-white. -->
+         the `--app-height` custom property on every resize, orientation
+         change, and visualViewport change — this is confirmed correct by
+         a full ancestor-chain measurement (html through every nested
+         container down to the ScrollView) that found every element's
+         bottom edge lands exactly on the viewport edge, with no
+         unaccounted-for shortfall.
+
+         Round 4 (this one — initial-measurement timing): the app was
+         still reported short on a real iPhone after round 3, which a
+         resize/orientationchange/visualViewport-resize listener alone
+         can't explain if nothing on the device ever resizes. The
+         remaining plausible gap is *before* any of those events fire:
+         on some in-app browsers `visualViewport.height` (or the chrome
+         reservation behind `window.innerHeight`) may not be settled yet
+         at the moment this synchronous inline script first runs — before
+         fonts/images have loaded and before the browser's own chrome has
+         finished laying itself out — so the very first `--app-height`
+         value can be a smaller, transient reading that then never
+         corrects itself, because no resize ever happens on that device
+         to re-trigger the listeners. Re-running the same measurement a
+         few more times right after load (`load`, `pageshow` — the event
+         that fires on Safari's back/forward-cache restores, which a
+         plain `load` listener misses — and a short burst of
+         `requestAnimationFrame` re-checks over the first ~1.5s) means
+         the value keeps self-correcting for a couple of seconds even
+         with zero user interaction, without depending on anything ever
+         resizing at all. -->
     <script>
       (function () {
         function setAppHeight() {
@@ -120,9 +135,22 @@
         setAppHeight();
         window.addEventListener('resize', setAppHeight);
         window.addEventListener('orientationchange', setAppHeight);
+        window.addEventListener('load', setAppHeight);
+        window.addEventListener('pageshow', setAppHeight);
         if (window.visualViewport) {
           window.visualViewport.addEventListener('resize', setAppHeight);
         }
+        // Keep re-measuring for a bit after load in case the browser's
+        // own chrome (or visualViewport's reading of it) hasn't settled
+        // yet when the checks above run — see "Round 4" above.
+        var settleStart = Date.now();
+        function settle() {
+          setAppHeight();
+          if (Date.now() - settleStart < 1500) {
+            requestAnimationFrame(settle);
+          }
+        }
+        requestAnimationFrame(settle);
       })();
     </script>
     <style id="expo-reset">
