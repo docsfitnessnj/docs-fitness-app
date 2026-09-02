@@ -85,7 +85,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
         <ModalHeader title="ABOUT DOC'S FITNESS" onBack={onBack} backTestID="close-about" />
       )}
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={[styles.hero, isDesktop && styles.heroDesktop]}>
           <DocsBadge variant="white" size={isLargeDesktop ? 220 : isDesktop ? 190 : 104} />
           <Text
@@ -254,6 +254,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingTop: 60,
+  },
+  // Every other screen gets this from ScreenContainer's own ScrollView
+  // usage (see ScreenContainer.tsx) — this screen renders its ScrollView
+  // directly and was missing it. Without an explicit `flex: 1`, React
+  // Native Web's ScrollView falls back to `flex-basis: auto` (confirmed
+  // via computed style: "1 1 auto" here vs "1 1 0%" on every ancestor
+  // that does set flex:1) instead of `flex-basis: 0%` — content-based
+  // sizing instead of "grow to fill," which is exactly the kind of
+  // discrepancy a stricter/older WebKit flexbox implementation can size
+  // wrong even where Chromium happens to still get it right.
+  scroll: {
+    flex: 1,
   },
   scrollContent: {
     paddingBottom: 48,
