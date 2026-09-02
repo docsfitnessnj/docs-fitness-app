@@ -7,6 +7,7 @@ import { MediaAttachmentPicker } from '../components/MediaAttachmentPicker';
 import { PostAuthorBadges } from '../components/PostAuthorBadges';
 import { PostDetailModal } from '../components/PostDetailModal';
 import { ScreenContainer } from '../components/ScreenContainer';
+import { StatusBanner } from '../components/StatusBanner';
 import { StoryRow } from '../components/StoryRow';
 import { DateStrip } from '../components/DateStrip';
 import { DayPanel } from '../components/DayPanel';
@@ -449,6 +450,7 @@ export default function CommunityScreen() {
 
   return (
     <ScreenContainer>
+      <StatusBanner />
       <DateStrip
         week={days}
         selectedIndex={selectedIndex}
