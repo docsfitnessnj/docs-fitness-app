@@ -28,6 +28,7 @@ type Props = {
   onOpenTrophyCase: () => void;
   onOpenMemberManager: () => void;
   onOpenFoundingFiftyAdmin: () => void;
+  onOpenContentLibrary: () => void;
   onOpenInvite: () => void;
 };
 
@@ -55,6 +56,7 @@ export function SidebarDrawer({
   onOpenTrophyCase,
   onOpenMemberManager,
   onOpenFoundingFiftyAdmin,
+  onOpenContentLibrary,
   onOpenInvite,
 }: Props) {
   const navigation = useNavigation<any>();
@@ -158,6 +160,12 @@ export function SidebarDrawer({
             label: 'THE FOUNDING 50',
             icon: 'ribbon-outline' as const,
             onPress: () => openNested(onOpenFoundingFiftyAdmin),
+          },
+          {
+            key: 'content-library',
+            label: 'CONTENT LIBRARY',
+            icon: 'file-tray-full-outline' as const,
+            onPress: () => openNested(onOpenContentLibrary),
           },
         ]
       : []),
