@@ -35,7 +35,27 @@ export function useWebDocumentScroll(locked: boolean) {
         el.style.removeProperty('min-height');
         el.style.removeProperty('overflow');
       });
-      return;
+      // #root is pinned with position: fixed instead of being left as a
+      // normal in-flow child of html/body — see the Round 5 comment above
+      // the viewport-sync script in public/index.html for the full why.
+      // In short: html/body are clipped to exactly the app's height for
+      // the tab bar (overflow: hidden), so a normal-flow #root has
+      // nowhere for iOS's keyboard-focus viewport pan to go and the whole
+      // app scrolls up out of the clipped box. Fixed positioning takes
+      // #root out of that box entirely (fixed elements aren't subject to
+      // an ancestor's overflow clipping) so the translateY(--app-offset-top)
+      // transform on #root in index.html can re-align it with the panned
+      // visual viewport.
+      root?.style.setProperty('position', 'fixed');
+      root?.style.setProperty('top', '0');
+      root?.style.setProperty('left', '0');
+      root?.style.setProperty('right', '0');
+      return () => {
+        root?.style.removeProperty('position');
+        root?.style.removeProperty('top');
+        root?.style.removeProperty('left');
+        root?.style.removeProperty('right');
+      };
     }
 
     targets.forEach((el) => {
@@ -43,6 +63,10 @@ export function useWebDocumentScroll(locked: boolean) {
       el.style.setProperty('min-height', '100%');
       el.style.setProperty('overflow', 'visible');
     });
+    root?.style.removeProperty('position');
+    root?.style.removeProperty('top');
+    root?.style.removeProperty('left');
+    root?.style.removeProperty('right');
 
     return () => {
       targets.forEach((el) => {
