@@ -10,9 +10,15 @@ const INLINE_SIZE = 18;
 // Small badge row next to an author's name on a post or comment — earned
 // badges only (never unearned/gray here), THE JOKER first, then currently-
 // held weeklies, then permanent milestones, capped with a +N overflow.
-export function PostAuthorBadges({ author }: { author: string }) {
+//
+// `exclude` lets a specific display context drop a badge from just its own
+// row (e.g. the status banner hiding Day One Doug, which assumes a first
+// workout that a brand-new Crew member hasn't necessarily logged yet) —
+// the badge itself stays fully earned and still shows everywhere else this
+// component is used unfiltered.
+export function PostAuthorBadges({ author, exclude }: { author: string; exclude?: BadgeId[] }) {
   const { getBadgesForAuthor } = useBadges();
-  const ids = getBadgesForAuthor(author);
+  const ids = exclude ? getBadgesForAuthor(author).filter((id) => !exclude.includes(id)) : getBadgesForAuthor(author);
 
   if (ids.length === 0) return null;
 
