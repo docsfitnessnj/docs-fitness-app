@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
 import { MembershipTier, planLabel, useMembership } from '../context/MembershipContext';
+import { requestAppReset } from '../lib/appReset';
 import { showAlert } from '../lib/alert';
-import { loadJSON, saveJSON } from '../lib/storage';
+import { clearAppStorage, loadJSON, saveJSON } from '../lib/storage';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -78,6 +79,28 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
 
   const effectiveDate =
     membership.tier === 'trial' ? membership.trialEndsAt : membership.planRenewsAt;
+
+  // Wipes every docsfitness.* localStorage key (membership, profile,
+  // badges, workout logs, the tour-completed flag, notification prefs —
+  // everything, not just membership) and remounts the whole provider tree
+  // (App.tsx's resetKey) so every context re-initializes from its own
+  // default state in one move — see clearAppStorage and appReset.ts for
+  // why this is more reliable than calling each context's own reset
+  // individually. Lands back on the pre-signup About page since
+  // MembershipContext's default is signedUp: false.
+  const confirmSignOut = () => {
+    showAlert("Sign out of Doc's Fitness?", undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: () => {
+          clearAppStorage();
+          requestAppReset();
+        },
+      },
+    ]);
+  };
 
   const handleCancelRequest = () => {
     const dateLine = effectiveDate ? `You'll keep access until ${formatDate(effectiveDate)}.` : '';
@@ -214,7 +237,7 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
               <Text style={styles.rowSubtext}>{membership.email ?? 'Not signed in with an email'}</Text>
             </View>
           </View>
-          <Pressable style={[styles.row, styles.rowLast]} onPress={membership.signOut} testID="sign-out">
+          <Pressable style={[styles.row, styles.rowLast]} onPress={confirmSignOut} testID="sign-out">
             <Text style={styles.signOutText}>SIGN OUT</Text>
           </Pressable>
         </View>
