@@ -53,7 +53,11 @@ export function StatusBanner() {
           <Text style={styles.crewSubtitle}>FULL ACCESS</Text>
         </View>
         <View style={styles.badgesWrap}>
-          <PostAuthorBadges author={displayName} />
+          {/* Day One Doug assumes a first workout already logged, which
+              isn't true for someone who just joined — hidden from the
+              banner only; it still earns and shows normally everywhere
+              else (Trophy Case, profile, posts/comments). */}
+          <PostAuthorBadges author={displayName} exclude={['day_one_doug']} />
         </View>
       </View>
     );
