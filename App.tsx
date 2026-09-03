@@ -43,6 +43,7 @@ import { AlertHost } from './src/components/AlertHost';
 import { ModalRootProvider } from './src/components/ModalRootContext';
 import { ScreenOverlay } from './src/components/ScreenOverlay';
 import { SidebarDrawer } from './src/components/SidebarDrawer';
+import { InviteFriendModal } from './src/components/InviteFriendModal';
 import { IdentitySidebar } from './src/components/IdentitySidebar';
 import { TourOverlay } from './src/components/TourOverlay';
 import { PurchaseCelebrationOverlay } from './src/components/PurchaseCelebrationOverlay';
@@ -362,7 +363,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [membershipsOpen, setMembershipsOpen, membershipsMode] = useMembershipsModalState();
   const [myWorkoutsOpen, setMyWorkoutsOpen] = useState(false);
   const [closeFriendsOpen, setCloseFriendsOpen] = useState(false);
-  const [aboutOpen, setAboutOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [adminRosterOpen, setAdminRosterOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [trophyCaseOpen, setTrophyCaseOpen] = useState(false);
@@ -424,7 +425,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenTrophyCase={() => setTrophyCaseOpen(true)}
           onOpenMemberManager={() => setMemberManagerOpen(true)}
           onOpenFoundingFiftyAdmin={() => setFoundingFiftyAdminOpen(true)}
-          onOpenAbout={() => setAboutOpen(true)}
+          onOpenInvite={() => setInviteOpen(true)}
         />
       </ScreenOverlay>
       {/* Rows nested under the drawer: fullBleed only while the drawer itself
@@ -458,20 +459,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       <ScreenOverlay visible={closeFriendsOpen} fullBleed={sidebarOpen}>
         <CloseFriendsScreen visible={closeFriendsOpen} onClose={() => setCloseFriendsOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={aboutOpen} fullBleed={sidebarOpen}>
-        <AboutScreen
-          variant="inApp"
-          onBack={() => setAboutOpen(false)}
-          onStartFree={() => {
-            setAboutOpen(false);
-            openMemberships('all');
-          }}
-          onBookClass={() => {
-            setAboutOpen(false);
-            openMemberships('all');
-          }}
-        />
-      </ScreenOverlay>
+      <InviteFriendModal visible={inviteOpen} onClose={() => setInviteOpen(false)} />
       <ScreenOverlay visible={adminRosterOpen} fullBleed={sidebarOpen}>
         <AdminRosterScreen visible={adminRosterOpen} onClose={() => setAdminRosterOpen(false)} />
       </ScreenOverlay>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Image, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { InviteFriendModal } from '../components/InviteFriendModal';
@@ -80,13 +80,23 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
   const [photoWidth, setPhotoWidth] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
 
+  // 'onboarding' relies on WebScrollScreen's natural-document-scroll trick
+  // (see that component and useWebDocumentScroll for why) — it only works
+  // because App.tsx un-clips the whole html/body/#root/mainColumn chain
+  // while signedUp is false. 'inApp' renders after sign-in, inside the
+  // normal fixed-viewport tab-bar shell (mainColumn stays overflow:
+  // hidden), so a plain View there has nothing to scroll it — content just
+  // gets clipped at the bottom. A real ScrollView is what every other
+  // in-app screen uses for exactly this reason.
+  const Scroller = variant === 'inApp' ? ScrollView : WebScrollScreen;
+
   return (
     <View style={styles.container}>
       {variant === 'inApp' && onBack && (
         <ModalHeader title="ABOUT DOC'S FITNESS" onBack={onBack} backTestID="close-about" />
       )}
 
-      <WebScrollScreen style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <Scroller style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={[styles.hero, isDesktop && styles.heroDesktop]}>
           <DocsBadge variant="white" size={isLargeDesktop ? 220 : isDesktop ? 190 : 104} />
           <Text
@@ -243,7 +253,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
             </Pressable>
           )}
         </View>
-      </WebScrollScreen>
+      </Scroller>
 
       <InviteFriendModal visible={inviteOpen} onClose={() => setInviteOpen(false)} />
     </View>
