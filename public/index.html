@@ -149,22 +149,6 @@
          panned visual viewport instead of leaving it behind. -->
     <script>
       (function () {
-        // Browsers restore a scrollable element's previous scroll offset
-        // after a reload/back-forward navigation by default (history.scrollRestoration
-        // === 'auto') — normally invisible on a page that scrolls the
-        // document itself, but this app's signed-in screens scroll an
-        // inner <ScrollView> div instead, and since MembershipContext now
-        // restores signedUp from localStorage, a reload can render that
-        // same scrollable div again quickly enough for the browser to
-        // match it up and reapply whatever offset it was at before — the
-        // Community tab opening already scrolled past its own header.
-        // 'manual' turns that off entirely; App.tsx's own
-        // useFocusEffect-driven reset (see ScreenContainer) is what
-        // establishes top-of-screen on mount/tab-focus instead.
-        if ('scrollRestoration' in history) {
-          history.scrollRestoration = 'manual';
-        }
-
         function syncViewport() {
           var vv = window.visualViewport;
           var h = (vv && vv.height) || window.innerHeight;
@@ -184,34 +168,17 @@
           window.visualViewport.addEventListener('resize', syncViewport);
           window.visualViewport.addEventListener('scroll', syncViewport);
         }
-        // Keep re-measuring for a bit after any trigger in case the
-        // browser's own chrome (or visualViewport's reading of it) hasn't
-        // settled yet when the first check runs — see "Round 4" above.
-        // Exposed as window.__docsFitnessResettleViewport so React code
-        // can re-arm this same burst at a *later* trigger than page load:
-        // useWebDocumentScroll calls it the moment the signed-in, fixed
-        // tab-bar layout (#root: position: fixed) engages, since
-        // MembershipContext's localStorage restore can now land a person
-        // straight into that layout within the first render — a point in
-        // time the original page-load-timed burst below was never
-        // designed to cover, and the same class of stale-measurement gap
-        // that produced the dead-space-below-the-tab-bar bug this
-        // approach already fixed once (see the height-reset comment
-        // block above the #root rule further down).
-        function settleFor(ms) {
-          var settleStart = Date.now();
-          function tick() {
-            syncViewport();
-            if (Date.now() - settleStart < ms) {
-              requestAnimationFrame(tick);
-            }
+        // Keep re-measuring for a bit after load in case the browser's
+        // own chrome (or visualViewport's reading of it) hasn't settled
+        // yet when the checks above run — see "Round 4" above.
+        var settleStart = Date.now();
+        function settle() {
+          syncViewport();
+          if (Date.now() - settleStart < 1500) {
+            requestAnimationFrame(settle);
           }
-          requestAnimationFrame(tick);
         }
-        window.__docsFitnessResettleViewport = function () {
-          settleFor(1200);
-        };
-        settleFor(1500);
+        requestAnimationFrame(settle);
       })();
     </script>
     <style id="expo-reset">
