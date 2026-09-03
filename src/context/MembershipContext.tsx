@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { loadJSON, saveJSON } from '../lib/storage';
 
 // Every state a person (or Doc) can be in. There is no anonymous/guest
 // state — every account, whichever door it came through, has an email —
@@ -148,19 +149,88 @@ const RECURRING_TIERS: MembershipTier[] = ['online_paid', 'founding_50', 'in_per
 
 const MembershipContext = createContext<MembershipContextValue | undefined>(undefined);
 
+// Persisted to localStorage (same loadJSON/saveJSON pattern as
+// ProfileContext) so an accidental or deliberate page reload restores the
+// signed-in state instead of dumping the person back on the pre-signup
+// Welcome screen. `justPurchased` is deliberately excluded — it's a
+// one-shot flag for showing the purchase celebration exactly once, and
+// should never re-trigger from a stale reload.
+const MEMBERSHIP_STORAGE_KEY = 'docsfitness.membership.v1';
+
+type PersistedMembership = {
+  tier: MembershipTier;
+  signedUp: boolean;
+  email: string | null;
+  trialEndsAt: string | null;
+  trialWarningDismissed: boolean;
+  tenPackClassesRemaining: number | null;
+  firstClassUsed: boolean;
+  newsletterOptIn: boolean;
+  planStartedAt: number | null;
+  cancellationRequested: boolean;
+  hasEverTrialed: boolean;
+};
+
+const DEFAULT_PERSISTED_MEMBERSHIP: PersistedMembership = {
+  tier: 'trial',
+  signedUp: false,
+  email: null,
+  trialEndsAt: null,
+  trialWarningDismissed: false,
+  tenPackClassesRemaining: null,
+  firstClassUsed: false,
+  newsletterOptIn: true,
+  planStartedAt: null,
+  cancellationRequested: false,
+  hasEverTrialed: false,
+};
+
 export function MembershipProvider({ children }: { children: React.ReactNode }) {
-  const [tier, setTier] = useState<MembershipTier>('trial');
-  const [signedUp, setSignedUp] = useState(false);
-  const [email, setEmail] = useState<string | null>(null);
-  const [trialEndsAt, setTrialEndsAt] = useState<Date | null>(null);
-  const [trialWarningDismissed, setTrialWarningDismissed] = useState(false);
-  const [tenPackClassesRemaining, setTenPackClassesRemaining] = useState<number | null>(null);
-  const [firstClassUsed, setFirstClassUsed] = useState(false);
-  const [newsletterOptIn, setNewsletterOptIn] = useState(true);
+  const [persisted] = useState(() => loadJSON(MEMBERSHIP_STORAGE_KEY, DEFAULT_PERSISTED_MEMBERSHIP));
+  const [tier, setTier] = useState<MembershipTier>(persisted.tier);
+  const [signedUp, setSignedUp] = useState(persisted.signedUp);
+  const [email, setEmail] = useState<string | null>(persisted.email);
+  const [trialEndsAt, setTrialEndsAt] = useState<Date | null>(
+    persisted.trialEndsAt ? new Date(persisted.trialEndsAt) : null
+  );
+  const [trialWarningDismissed, setTrialWarningDismissed] = useState(persisted.trialWarningDismissed);
+  const [tenPackClassesRemaining, setTenPackClassesRemaining] = useState<number | null>(
+    persisted.tenPackClassesRemaining
+  );
+  const [firstClassUsed, setFirstClassUsed] = useState(persisted.firstClassUsed);
+  const [newsletterOptIn, setNewsletterOptIn] = useState(persisted.newsletterOptIn);
   const [justPurchased, setJustPurchased] = useState(false);
-  const [planStartedAt, setPlanStartedAt] = useState<number | null>(null);
-  const [cancellationRequested, setCancellationRequested] = useState(false);
-  const [hasEverTrialed, setHasEverTrialed] = useState(false);
+  const [planStartedAt, setPlanStartedAt] = useState<number | null>(persisted.planStartedAt);
+  const [cancellationRequested, setCancellationRequested] = useState(persisted.cancellationRequested);
+  const [hasEverTrialed, setHasEverTrialed] = useState(persisted.hasEverTrialed);
+
+  useEffect(() => {
+    saveJSON(MEMBERSHIP_STORAGE_KEY, {
+      tier,
+      signedUp,
+      email,
+      trialEndsAt: trialEndsAt ? trialEndsAt.toISOString() : null,
+      trialWarningDismissed,
+      tenPackClassesRemaining,
+      firstClassUsed,
+      newsletterOptIn,
+      planStartedAt,
+      cancellationRequested,
+      hasEverTrialed,
+    } satisfies PersistedMembership);
+  }, [
+    tier,
+    signedUp,
+    email,
+    trialEndsAt,
+    trialWarningDismissed,
+    tenPackClassesRemaining,
+    firstClassUsed,
+    newsletterOptIn,
+    planStartedAt,
+    cancellationRequested,
+    hasEverTrialed,
+  ]);
 
   const daysLeftInTrial = trialEndsAt
     ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))

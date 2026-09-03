@@ -23,6 +23,7 @@ import {
 } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ModalHeader } from '../components/ModalHeader';
+import { MediaViewer } from '../components/MediaViewer';
 import { MediaAttachment } from '../lib/media';
 import { useMediaPicker } from '../lib/useMediaPicker';
 import { useKeyboardVisible } from '../lib/useKeyboardVisible';
@@ -94,6 +95,7 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
   const [media, setMedia] = useState<MediaAttachment | null>(null);
   const [photoPromptVisible, setPhotoPromptVisible] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [viewerMedia, setViewerMedia] = useState<MediaAttachment | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
@@ -186,8 +188,16 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
             key={message.id}
             style={[styles.bubble, message.from === 'me' ? styles.bubbleMe : styles.bubbleDoc]}
           >
-            {message.media?.type === 'image' && (
-              <Image source={{ uri: message.media.uri }} style={styles.bubbleImage} />
+            {message.media && (
+              <Pressable onPress={() => setViewerMedia(message.media!)} testID={`message-media-${message.id}`}>
+                {message.media.type === 'image' ? (
+                  <Image source={{ uri: message.media.uri }} style={styles.bubbleImage} />
+                ) : (
+                  <View style={styles.bubbleVideo}>
+                    <Ionicons name="play-circle" size={40} color={colors.white} />
+                  </View>
+                )}
+              </Pressable>
             )}
             {message.voice && (
               <VoiceMessageBubble uri={message.voice.uri} durationMs={message.voice.durationMs} mine={message.from === 'me'} />
@@ -272,6 +282,8 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
           </View>
         )}
       </View>
+
+      <MediaViewer media={viewerMedia} onClose={() => setViewerMedia(null)} filenameHint="docs-fitness-message" />
     </KeyboardAvoidingView>
   );
 }
@@ -324,6 +336,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 8,
     backgroundColor: colors.background,
+  },
+  bubbleVideo: {
+    width: 200,
+    aspectRatio: 1,
+    borderRadius: 10,
+    marginBottom: 8,
+    backgroundColor: colors.greenDeep,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   voiceRow: {
     flexDirection: 'row',

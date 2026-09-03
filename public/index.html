@@ -182,6 +182,23 @@
       })();
     </script>
     <style id="expo-reset">
+      /* Stops a downward drag inside any scroll container from chaining
+         past its own edge to the browser, which is what triggers a native
+         pull-to-refresh (a full page reload — on the signed-in app, that
+         reload used to land back on the pre-signup Welcome screen, having
+         nothing but in-memory state to restore from; see
+         MembershipContext's localStorage persistence for the other half of
+         that fix). overscroll-behavior only affects an element that is
+         itself scrollable, so applying it to every element here is a
+         no-op everywhere except the actual scroll containers (every
+         screen's <ScrollView>) — no need to hunt down and annotate each
+         one individually, and any ScrollView added later is covered too.
+         `contain` (not `none`) so a screen can still show its own
+         legitimate bounce/rubber-band at its own edges — it just never
+         hands that gesture up to the browser chrome. */
+      * {
+        overscroll-behavior-y: contain;
+      }
       /* These styles make the body full-height, tracking Safari's
          collapsing/expanding toolbar instead of a one-time snapshot. */
       html,
@@ -190,6 +207,7 @@
         height: 100dvh;
         height: var(--app-height, 100dvh);
         background-color: #FBFBF9;
+        overscroll-behavior-y: none;
       }
       /* These styles disable body scrolling if you are using <ScrollView> */
       body {
