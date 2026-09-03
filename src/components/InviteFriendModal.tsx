@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { ModalHeader } from './ModalHeader';
@@ -31,9 +31,19 @@ export function InviteFriendModal({ visible, onClose }: Props) {
   const isDesktop = useIsDesktop();
   const [cardWidth, setCardWidth] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [message, setMessage] = useState(APP_SHARE_MESSAGE);
+
+  // Fresh each time the sheet opens — an edit left over from a previous
+  // visit shouldn't silently carry into this one.
+  React.useEffect(() => {
+    if (visible) {
+      setMessage(APP_SHARE_MESSAGE);
+      setCopied(false);
+    }
+  }, [visible]);
 
   const handleShare = () => {
-    shareInvite();
+    shareInvite(message);
   };
 
   const handleCopy = async () => {
@@ -75,7 +85,18 @@ export function InviteFriendModal({ visible, onClose }: Props) {
 
             <Text style={[styles.sectionLabel, styles.messageLabel]}>MESSAGE</Text>
             <View style={styles.messageBubble}>
-              <Text style={styles.messageText}>{APP_SHARE_MESSAGE}</Text>
+              <TextInput
+                style={styles.messageInput}
+                value={message}
+                onChangeText={setMessage}
+                multiline
+                {...({ rows: 3 } as { rows?: number })}
+                placeholder={APP_SHARE_MESSAGE}
+                placeholderTextColor={colors.textMuted}
+                nativeID="invite-message-input"
+                aria-label="Invite message"
+                testID="invite-message-input"
+              />
             </View>
 
             <Pressable style={styles.shareButton} onPress={handleShare} testID="invite-share-button">
@@ -98,7 +119,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingTop: 60,
+    paddingTop: 48,
   },
   scrollContent: {
     flexGrow: 1,
@@ -106,17 +127,17 @@ const styles = StyleSheet.create({
   body: {
     width: '100%',
     paddingHorizontal: 20,
-    paddingBottom: 32,
+    paddingBottom: 16,
   },
   sectionLabel: {
     color: colors.textMuted,
     fontFamily: fonts.labelSemiBold,
     fontSize: 12,
     letterSpacing: 1,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   messageLabel: {
-    marginTop: 20,
+    marginTop: 12,
   },
   previewCard: {
     backgroundColor: colors.card,
@@ -126,7 +147,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   previewBody: {
-    padding: 14,
+    padding: 10,
   },
   previewTitle: {
     color: colors.text,
@@ -153,13 +174,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: 14,
-    padding: 14,
+    padding: 10,
   },
-  messageText: {
+  messageInput: {
     color: colors.text,
     fontFamily: fonts.bodyMedium,
     fontSize: 14,
     lineHeight: 20,
+    padding: 0,
   },
   shareButton: {
     flexDirection: 'row',
@@ -168,8 +190,8 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: colors.green,
     borderRadius: 10,
-    paddingVertical: 15,
-    marginTop: 24,
+    paddingVertical: 13,
+    marginTop: 14,
   },
   shareButtonText: {
     color: colors.white,
@@ -182,8 +204,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 14,
-    marginTop: 8,
+    borderWidth: 1.5,
+    borderColor: colors.green,
+    borderRadius: 10,
+    paddingVertical: 11,
+    marginTop: 6,
   },
   copyButtonText: {
     color: colors.green,

@@ -79,6 +79,24 @@ function VoiceMessageBubble({ uri, durationMs, mine }: { uri: string; durationMs
   );
 }
 
+// The PLAY control in the "review before sending" row — a recorded-but-
+// unsent voice note lives only in local state until SEND is tapped, so
+// this plays straight off the recorder's own output file.
+function VoiceReviewIndicator({ uri, durationMs }: { uri: string; durationMs: number }) {
+  const player = useAudioPlayer(uri);
+  const status = useAudioPlayerStatus(player);
+  const toggle = () => (status.playing ? player.pause() : player.play());
+  const totalSeconds = status.duration > 0 ? status.duration : durationMs / 1000;
+  const remaining = status.currentTime > 0 ? Math.max(totalSeconds - status.currentTime, 0) : totalSeconds;
+
+  return (
+    <Pressable style={styles.recordingIndicator} onPress={toggle} testID="voice-review-play">
+      <Ionicons name={status.playing ? 'pause' : 'play'} size={16} color={colors.green} />
+      <Text style={styles.recordingTime}>{formatClock(remaining)}</Text>
+    </Pressable>
+  );
+}
+
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -95,6 +113,7 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
   const [media, setMedia] = useState<MediaAttachment | null>(null);
   const [photoPromptVisible, setPhotoPromptVisible] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordedVoice, setRecordedVoice] = useState<VoiceNote | null>(null);
   const [viewerMedia, setViewerMedia] = useState<MediaAttachment | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
@@ -130,6 +149,26 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
     setPhotoPromptVisible(false);
   };
 
+  const unsendMessage = (id: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+  };
+
+  const openMessageMenu = (id: string) => {
+    showAlert('Message', undefined, [
+      {
+        text: 'Unsend',
+        style: 'destructive',
+        onPress: () => {
+          showAlert('Unsend this message?', undefined, [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Unsend', style: 'destructive', onPress: () => unsendMessage(id) },
+          ]);
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   const startRecording = async () => {
     const permission = await requestRecordingPermissionsAsync();
     if (!permission.granted) {
@@ -154,15 +193,26 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
     setIsRecording(false);
   };
 
-  const sendRecording = async () => {
+  const stopRecording = async () => {
     // recorder.currentTime only updates on pause/stop events, not live while
     // recording — recorderState.durationMillis (from the polling hook below)
     // is the one that's actually kept current during an active recording.
     const durationMs = recorderState.durationMillis;
     await recorder.stop();
     setIsRecording(false);
+    // Too short to be an intentional recording — silently back to idle
+    // rather than surfacing a review row for what was almost certainly an
+    // accidental tap.
     if (!recorder.uri || durationMs < MIN_VOICE_NOTE_MS) return;
-    setMessages((prev) => [...prev, { id: `msg-${prev.length}`, from: 'me', text: '', voice: { uri: recorder.uri!, durationMs } }]);
+    setRecordedVoice({ uri: recorder.uri, durationMs });
+  };
+
+  const discardRecordedVoice = () => setRecordedVoice(null);
+
+  const sendRecordedVoice = () => {
+    if (!recordedVoice) return;
+    setMessages((prev) => [...prev, { id: `msg-${prev.length}`, from: 'me', text: '', voice: recordedVoice }]);
+    setRecordedVoice(null);
   };
 
   if (!visible) return null;
@@ -184,9 +234,11 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
       >
         {messages.map((message) => (
-          <View
+          <Pressable
             key={message.id}
             style={[styles.bubble, message.from === 'me' ? styles.bubbleMe : styles.bubbleDoc]}
+            onLongPress={() => message.from === 'me' && openMessageMenu(message.id)}
+            testID={`message-bubble-${message.id}`}
           >
             {message.media && (
               <Pressable onPress={() => setViewerMedia(message.media!)} testID={`message-media-${message.id}`}>
@@ -207,7 +259,7 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
                 {message.text}
               </Text>
             )}
-          </View>
+          </Pressable>
         ))}
       </ScrollView>
 
@@ -242,7 +294,17 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
               <View style={styles.recordingDot} />
               <Text style={styles.recordingTime}>{formatClock((recorderState.durationMillis ?? 0) / 1000)}</Text>
             </View>
-            <Pressable onPress={sendRecording} hitSlop={8} style={styles.sendButton} testID="voice-send-button">
+            <Pressable onPress={stopRecording} hitSlop={8} style={styles.sendButton} testID="voice-stop-button">
+              <Ionicons name="stop" size={18} color={colors.white} />
+            </Pressable>
+          </View>
+        ) : recordedVoice ? (
+          <View style={styles.recordingRow} testID="voice-review-row">
+            <Pressable onPress={discardRecordedVoice} hitSlop={8} style={styles.recordingCancelButton} testID="voice-review-discard">
+              <Ionicons name="trash-outline" size={20} color={colors.textMuted} />
+            </Pressable>
+            <VoiceReviewIndicator uri={recordedVoice.uri} durationMs={recordedVoice.durationMs} />
+            <Pressable onPress={sendRecordedVoice} hitSlop={8} style={styles.sendButton} testID="voice-review-send">
               <Ionicons name="send" size={18} color={colors.white} />
             </Pressable>
           </View>

@@ -28,7 +28,7 @@ type Props = {
   onOpenTrophyCase: () => void;
   onOpenMemberManager: () => void;
   onOpenFoundingFiftyAdmin: () => void;
-  onOpenAbout: () => void;
+  onOpenInvite: () => void;
 };
 
 type Row = {
@@ -55,7 +55,7 @@ export function SidebarDrawer({
   onOpenTrophyCase,
   onOpenMemberManager,
   onOpenFoundingFiftyAdmin,
-  onOpenAbout,
+  onOpenInvite,
 }: Props) {
   const navigation = useNavigation<any>();
   const { completedWorkouts } = useWorkoutLog();
@@ -105,7 +105,7 @@ export function SidebarDrawer({
       key: 'invite',
       label: 'INVITE A FRIEND',
       icon: 'share-social-outline',
-      onPress: () => openNested(onOpenAbout),
+      onPress: () => openNested(onOpenInvite),
     },
     {
       key: 'trophy-case',

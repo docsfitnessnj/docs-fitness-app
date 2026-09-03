@@ -23,10 +23,10 @@ export const APP_SHARE_MESSAGE = `${APP_SHARE_TITLE}. ${APP_SHARE_DESCRIPTION}`;
 // the share sheet also rejects the same promise, so only the "unsupported"
 // case falls back to a plain alert with the message the member can copy by
 // hand — a cancel is silently a no-op, same as it would be natively.
-export function shareInvite() {
-  Share.share({ message: APP_SHARE_MESSAGE, url: APP_SHARE_URL, title: "Doc's Fitness" }).catch((err) => {
+export function shareInvite(message: string = APP_SHARE_MESSAGE) {
+  Share.share({ message, url: APP_SHARE_URL, title: "Doc's Fitness" }).catch((err) => {
     if (err?.name === 'AbortError') return;
-    showAlert('Share Doc’s Fitness', `${APP_SHARE_MESSAGE} ${APP_SHARE_URL}`);
+    showAlert('Share Doc’s Fitness', `${message} ${APP_SHARE_URL}`);
   });
 }
 
