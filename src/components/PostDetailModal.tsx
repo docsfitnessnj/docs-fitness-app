@@ -3,6 +3,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { Avatar } from './Avatar';
+import { MediaViewer } from './MediaViewer';
 import { ModalHeader } from './ModalHeader';
 import { PostAuthorBadges } from './PostAuthorBadges';
 import { Comment, Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
@@ -35,6 +36,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
   const { photoUri } = useProfile();
   const [commentText, setCommentText] = useState('');
   const [editingComment, setEditingComment] = useState<Comment | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   if (!post) return null;
 
@@ -122,15 +124,18 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
             </>
           )}
 
-          {post.media &&
-            (post.media.type === 'image' ? (
-              <Image source={{ uri: post.media.uri }} style={styles.media} resizeMode="cover" />
-            ) : (
-              <View style={styles.mediaVideo}>
-                <Ionicons name="play-circle" size={48} color={colors.white} />
-                <Text style={styles.mediaVideoText}>VIDEO ATTACHED</Text>
-              </View>
-            ))}
+          {post.media && (
+            <Pressable onPress={() => setViewerOpen(true)} testID="post-detail-media">
+              {post.media.type === 'image' ? (
+                <Image source={{ uri: post.media.uri }} style={styles.media} resizeMode="cover" />
+              ) : (
+                <View style={styles.mediaVideo}>
+                  <Ionicons name="play-circle" size={48} color={colors.white} />
+                  <Text style={styles.mediaVideoText}>VIDEO ATTACHED</Text>
+                </View>
+              )}
+            </Pressable>
+          )}
 
           <View style={styles.reactionRow}>
             {REACTION_EMOJIS.map((emoji) => (
@@ -225,6 +230,12 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
           </Pressable>
         </View>
       </View>
+
+      <MediaViewer
+        media={viewerOpen ? post.media ?? null : null}
+        onClose={() => setViewerOpen(false)}
+        filenameHint="docs-fitness-post"
+      />
     </AppModal>
   );
 }
