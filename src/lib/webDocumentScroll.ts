@@ -50,6 +50,15 @@ export function useWebDocumentScroll(locked: boolean) {
       root?.style.setProperty('top', '0');
       root?.style.setProperty('left', '0');
       root?.style.setProperty('right', '0');
+      // Re-arm index.html's --app-height/--app-offset-top settle burst
+      // right as the fixed tab-bar layout engages. Its own page-load-timed
+      // burst can no longer be assumed to still be running by the time
+      // this fires: MembershipContext's localStorage restore can land a
+      // person straight into this locked layout within the first render,
+      // and on a slower device the height/offset custom properties this
+      // layout depends on may still be settling — the same class of gap
+      // that produced the original dead-space-below-the-tab-bar bug.
+      (window as unknown as { __docsFitnessResettleViewport?: () => void }).__docsFitnessResettleViewport?.();
       return () => {
         root?.style.removeProperty('position');
         root?.style.removeProperty('top');

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -56,6 +56,7 @@ import { useTabBarHeight } from './src/lib/tabBarHeight';
 import { useWebDocumentScroll } from './src/lib/webDocumentScroll';
 import { injectWebFocusStyles } from './src/lib/webFocusReset';
 import { navigateToTab, navigationRef } from './src/lib/navigationRef';
+import { registerAppReset } from './src/lib/appReset';
 import { colors, fonts, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from './src/theme';
 
 import WelcomeScreen from './src/screens/WelcomeScreen';
@@ -589,13 +590,28 @@ export default function App() {
     }
   }, [fontsLoaded]);
 
+  // Sign out needs every provider below — membership, profile, badges,
+  // workout logs, the tour flag, all of it — back at its own default
+  // state, not just MembershipContext's. Rather than adding a matching
+  // reset() to each one, changing this key unmounts and remounts the
+  // whole subtree in one move, so every provider's own
+  // useState(() => loadJSON(...)) initializer re-runs — reading the
+  // storage clearAppStorage() just emptied, landing back on its default.
+  // requestAppReset (Settings, several providers down) triggers this via
+  // registerAppReset's callback channel — see appReset.ts.
+  const [resetKey, setResetKey] = useState(0);
+  useEffect(() => {
+    registerAppReset(() => setResetKey((k) => k + 1));
+    return () => registerAppReset(null);
+  }, []);
+
   if (!fontsLoaded) {
     return null;
   }
 
   return (
     <SafeAreaProvider>
-      <MembershipProvider>
+      <MembershipProvider key={resetKey}>
         <CommunityProvider>
           <WorkoutLogProvider>
             <CloseFriendsProvider>
