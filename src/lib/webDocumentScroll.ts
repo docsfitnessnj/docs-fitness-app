@@ -50,6 +50,9 @@ export function useWebDocumentScroll(locked: boolean) {
       root?.style.setProperty('top', '0');
       root?.style.setProperty('left', '0');
       root?.style.setProperty('right', '0');
+      // Let index.html's CSS var-driven transform apply — it's what
+      // re-aligns #root with the keyboard-panned visual viewport.
+      root?.style.removeProperty('transform');
       return () => {
         root?.style.removeProperty('position');
         root?.style.removeProperty('top');
@@ -67,6 +70,20 @@ export function useWebDocumentScroll(locked: boolean) {
     root?.style.removeProperty('top');
     root?.style.removeProperty('left');
     root?.style.removeProperty('right');
+    // index.html's #root rule applies transform: translateY(--app-offset-top)
+    // unconditionally, but that compensation only makes sense for the
+    // locked/fixed shell above — it exists to re-align a *fixed-position*
+    // #root with the visual viewport's keyboard-open pan. Here #root is a
+    // normal in-flow element inside the real document scroll, which
+    // already tracks the visual viewport correctly on its own. Left
+    // active, every visualViewport 'scroll' tick (which also fires during
+    // iOS's native elastic/momentum scroll correction — e.g. right after
+    // a page swap leaves the document shorter than the old scroll
+    // position) rewrites --app-offset-top and yanks the whole page via
+    // this transform, which is the vertical "shake" seen when a door
+    // button on the About page swaps in a shorter screen. Pinning it to
+    // 'none' here removes it from the equation entirely.
+    root?.style.setProperty('transform', 'none');
 
     return () => {
       targets.forEach((el) => {
@@ -74,6 +91,7 @@ export function useWebDocumentScroll(locked: boolean) {
         el.style.removeProperty('min-height');
         el.style.removeProperty('overflow');
       });
+      root?.style.removeProperty('transform');
     };
   }, [locked]);
 }

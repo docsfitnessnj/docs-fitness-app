@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -262,6 +262,23 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
   const claimFoundingFifty = useClaimFoundingFifty();
   const [email, setEmail] = useState('');
   const [intent, setIntent] = useState<EntryIntent>(null);
+
+  // Each step here swaps in a completely different screen under the same
+  // natural-document-scroll shell (see useWebDocumentScroll) rather than
+  // going through a real navigator — nothing else resets the browser's
+  // scroll position for us. Landing on a short screen (e.g. About ->
+  // Welcome) while still scrolled far down the previous, much taller one
+  // leaves scrollY pointing past the new, shorter document, and the
+  // browser has to correct that on its own with a visible rubber-band
+  // snap-back — the "shake" this fixes. useLayoutEffect (not useEffect)
+  // so this runs synchronously right after the DOM swaps to the new
+  // screen but before the browser paints a frame, so it never paints the
+  // new content at the stale, now out-of-bounds scroll position at all.
+  useLayoutEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.scrollTo(0, 0);
+    }
+  }, [step]);
 
   switch (step) {
     case 'email':
