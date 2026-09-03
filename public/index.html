@@ -125,27 +125,55 @@
          `requestAnimationFrame` re-checks over the first ~1.5s) means
          the value keeps self-correcting for a couple of seconds even
          with zero user interaction, without depending on anything ever
-         resizing at all. -->
+         resizing at all.
+
+         Round 5 (--app-offset-top, for the on-screen keyboard): getting
+         the height right (rounds 1-4) isn't enough once a screen has a
+         focused text input. Opening the keyboard shrinks
+         visualViewport.height as expected (--app-height tracks that
+         correctly), but iOS Safari separately auto-scrolls — pans the
+         *visual* viewport down within the *layout* viewport — to keep the
+         focused input clear of the keyboard, changing
+         visualViewport.offsetTop. WebKit deliberately positions
+         `position: fixed` elements against the layout viewport, not the
+         visual one (that's the whole reason the VisualViewport API
+         exists), so a fixed, correctly-*sized* #root still sits at the
+         layout viewport's untouched origin while the pan moves the
+         visible slice somewhere else entirely — the app scrolls up out of
+         view and what's left on screen is blank browser canvas above the
+         keyboard. --app-offset-top mirrors visualViewport.offsetTop, and
+         the signed-in layout (see useWebDocumentScroll.ts's `locked`
+         branch, which also switches #root to `position: fixed` so it
+         isn't clipped by html/body's fixed-height overflow:hidden box)
+         translates #root by that amount, sliding it back under the
+         panned visual viewport instead of leaving it behind. -->
     <script>
       (function () {
-        function setAppHeight() {
-          var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+        function syncViewport() {
+          var vv = window.visualViewport;
+          var h = (vv && vv.height) || window.innerHeight;
           document.documentElement.style.setProperty('--app-height', h + 'px');
+          document.documentElement.style.setProperty('--app-offset-top', (vv ? vv.offsetTop : 0) + 'px');
         }
-        setAppHeight();
-        window.addEventListener('resize', setAppHeight);
-        window.addEventListener('orientationchange', setAppHeight);
-        window.addEventListener('load', setAppHeight);
-        window.addEventListener('pageshow', setAppHeight);
+        syncViewport();
+        window.addEventListener('resize', syncViewport);
+        window.addEventListener('orientationchange', syncViewport);
+        window.addEventListener('load', syncViewport);
+        window.addEventListener('pageshow', syncViewport);
         if (window.visualViewport) {
-          window.visualViewport.addEventListener('resize', setAppHeight);
+          // 'resize' catches height changes (keyboard open/close, chrome
+          // collapse); 'scroll' catches offsetTop changing on its own,
+          // which happens when iOS pans to reveal a focused input without
+          // the visible height necessarily changing at the same instant.
+          window.visualViewport.addEventListener('resize', syncViewport);
+          window.visualViewport.addEventListener('scroll', syncViewport);
         }
         // Keep re-measuring for a bit after load in case the browser's
         // own chrome (or visualViewport's reading of it) hasn't settled
         // yet when the checks above run — see "Round 4" above.
         var settleStart = Date.now();
         function settle() {
-          setAppHeight();
+          syncViewport();
           if (Date.now() - settleStart < 1500) {
             requestAnimationFrame(settle);
           }
@@ -175,6 +203,10 @@
         height: var(--app-height, 100dvh);
         flex: 1;
         background-color: #FBFBF9;
+        /* Harmless (0px) unless useWebDocumentScroll.ts's `locked` branch
+           has also switched #root to position: fixed — see the Round 5
+           comment above the inline script for why. */
+        transform: translateY(var(--app-offset-top, 0px));
       }
     </style>
   </head>

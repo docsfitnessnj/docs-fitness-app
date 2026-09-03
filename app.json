@@ -32,6 +32,12 @@
           "photosPermission": "Doc's Fitness uses your photos to let you share workout results and set your profile picture.",
           "cameraPermission": "Doc's Fitness uses your camera to let you share workout photos and videos."
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Doc's Fitness uses your microphone to let you send voice notes to Doc."
+        }
       ]
     ],
     "experiments": {
