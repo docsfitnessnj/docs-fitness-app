@@ -35,6 +35,7 @@ import { ChallengeProvider } from './src/context/ChallengeContext';
 import { BadgeProvider } from './src/context/BadgeContext';
 import { FoundingFiftyProvider } from './src/context/FoundingFiftyContext';
 import { ClassSignUpProvider } from './src/context/ClassSignUpContext';
+import { ContentLibraryProvider } from './src/context/ContentLibraryContext';
 import { TourProvider, useTour } from './src/context/TourContext';
 import { AppTopBar } from './src/components/AppTopBar';
 import { SearchModal } from './src/components/SearchModal';
@@ -82,6 +83,7 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TrophyCaseScreen } from './src/screens/TrophyCaseScreen';
 import { MovementVaultScreen } from './src/screens/MovementVaultScreen';
 import { MemberManagerScreen } from './src/screens/MemberManagerScreen';
+import { ContentLibraryScreen } from './src/screens/ContentLibraryScreen';
 
 const PHONE_FRAME_MAX_WIDTH = 480;
 const MAIN_COLUMN_DESKTOP_WIDTH = 840;
@@ -387,6 +389,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [trophyCaseOpen, setTrophyCaseOpen] = useState(false);
   const [memberManagerOpen, setMemberManagerOpen] = useState(false);
   const [foundingFiftyAdminOpen, setFoundingFiftyAdminOpen] = useState(false);
+  const [contentLibraryOpen, setContentLibraryOpen] = useState(false);
   const [messagesDraft, setMessagesDraft] = useState<string | undefined>(undefined);
   const [scheduleOpen, setScheduleOpen] = useScheduleModalState();
   const [movementVaultOpen, setMovementVaultOpen, movementVaultInitialId, movementVaultReturnLabel] =
@@ -443,6 +446,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenTrophyCase={() => setTrophyCaseOpen(true)}
           onOpenMemberManager={() => setMemberManagerOpen(true)}
           onOpenFoundingFiftyAdmin={() => setFoundingFiftyAdminOpen(true)}
+          onOpenContentLibrary={() => setContentLibraryOpen(true)}
           onOpenInvite={() => setInviteOpen(true)}
         />
       </ScreenOverlay>
@@ -503,6 +507,9 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       </ScreenOverlay>
       <ScreenOverlay visible={foundingFiftyAdminOpen} fullBleed={sidebarOpen}>
         <FoundingFiftyAdminScreen visible={foundingFiftyAdminOpen} onClose={() => setFoundingFiftyAdminOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={contentLibraryOpen} fullBleed={sidebarOpen}>
+        <ContentLibraryScreen visible={contentLibraryOpen} onClose={() => setContentLibraryOpen(false)} />
       </ScreenOverlay>
       <ScreenOverlay visible={scheduleOpen} fullBleed={sidebarOpen}>
         <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
@@ -639,11 +646,13 @@ export default function App() {
                       <BadgeProvider>
                         <FoundingFiftyProvider>
                           <ClassSignUpProvider>
-                            <TourProvider>
-                              <View style={styles.webSurround}>
-                                <ResponsiveShell onLayoutRootView={onLayoutRootView} />
-                              </View>
-                            </TourProvider>
+                            <ContentLibraryProvider>
+                              <TourProvider>
+                                <View style={styles.webSurround}>
+                                  <ResponsiveShell onLayoutRootView={onLayoutRootView} />
+                                </View>
+                              </TourProvider>
+                            </ContentLibraryProvider>
                           </ClassSignUpProvider>
                         </FoundingFiftyProvider>
                       </BadgeProvider>
