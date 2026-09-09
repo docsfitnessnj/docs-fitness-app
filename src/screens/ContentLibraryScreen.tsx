@@ -9,6 +9,7 @@ import {
   WEEKLY_COW_TARGET,
   WEEKLY_WOD_TARGET,
   MonthGroup,
+  SCORING_TYPE_LABELS,
   WeekGroup,
   countMondaysInMonth,
   countWeekdaysInMonth,
@@ -364,6 +365,9 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
                                   <View style={styles.workoutMetaRow}>
                                     <TypePill type={w.type} />
                                     <Text style={styles.workoutDate}>{formatReleaseAt(w.releaseAt)}</Text>
+                                    {w.type === 'cow' && w.scoringType && (
+                                      <Text style={styles.workoutScoring}>{SCORING_TYPE_LABELS[w.scoringType]}</Text>
+                                    )}
                                   </View>
                                 </View>
                                 <StatusPill status={w.status} />
@@ -660,6 +664,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.label,
     fontSize: 11,
     letterSpacing: 0.3,
+  },
+  workoutScoring: {
+    color: colors.gold,
+    fontFamily: fonts.labelBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   typePill: {
     borderWidth: 1,

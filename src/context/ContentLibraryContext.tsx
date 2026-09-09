@@ -11,6 +11,18 @@ const STORAGE_KEY = 'contentLibraryDrafts.v1';
 
 export type ContentWorkoutType = 'wod' | 'cow';
 export type ContentWorkoutStatus = 'draft' | 'scheduled' | 'released';
+// How a Challenge of the Week is scored on the live leaderboard (see
+// LeaderboardEntry in ChallengeContext) — only meaningful for type 'cow';
+// a WOD entry leaves this unset. Required to save a COW entry (enforced in
+// ContentWorkoutForm) since the leaderboard can't render without knowing
+// which column(s) to show.
+export type ContentCowScoringType = 'time' | 'rounds' | 'rounds_reps';
+
+export const SCORING_TYPE_LABELS: Record<ContentCowScoringType, string> = {
+  time: 'TIME',
+  rounds: 'ROUNDS',
+  rounds_reps: 'ROUNDS + REPS',
+};
 
 export type ContentWorkout = {
   id: string;
@@ -25,6 +37,7 @@ export type ContentWorkout = {
   movements: string[];
   videoUrl: string;
   notes: string;
+  scoringType?: ContentCowScoringType;
   // Epoch ms — the moment this workout is meant to go live.
   releaseAt: number;
   status: ContentWorkoutStatus;
