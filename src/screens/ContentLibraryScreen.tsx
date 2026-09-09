@@ -141,8 +141,18 @@ function formatReleaseAt(ms: number): string {
 // file's storage-key comment); nothing in this screen is visible to members
 // unless its status is PUBLISHED.
 export function ContentLibraryScreen({ visible, onClose }: Props) {
-  const { workouts, addWorkout, updateWorkout, deleteWorkout, importWorkouts, publishWeek, unpublishWeek, publishDay, unpublishDay } =
-    useContentLibrary();
+  const {
+    workouts,
+    addWorkout,
+    updateWorkout,
+    deleteWorkout,
+    importWorkouts,
+    publishWeek,
+    unpublishWeek,
+    publishDay,
+    unpublishDay,
+    resetToSeed,
+  } = useContentLibrary();
   const [view, setView] = useState<LibraryView>({ kind: 'list' });
   // Kept in this same component instance (not reset by switching to the
   // form/bulk-import sub-views and back) so the tab choice persists while
@@ -249,6 +259,17 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
       />
     );
   }
+
+  const handleResetToSeed = () => {
+    showAlert(
+      'Reset to imported library?',
+      'This clears every local draft, edit, and manually-added entry on this device and reloads the full imported library exactly as shipped. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Reset', style: 'destructive', onPress: resetToSeed },
+      ]
+    );
+  };
 
   const handlePublishWeek = (weekStart: number, rows: ScheduleDayRow[]) => {
     const count = rows.filter((r) => r.workout).length;
@@ -440,6 +461,11 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
           </Text>
         </View>
 
+        <Pressable style={styles.resetToSeedButton} onPress={handleResetToSeed} testID="content-reset-to-seed">
+          <Ionicons name="refresh-outline" size={13} color={colors.textMuted} />
+          <Text style={styles.resetToSeedButtonText}>RESET TO SEED LIBRARY</Text>
+        </Pressable>
+
         <View style={styles.tabRow}>
           <Pressable
             style={[styles.tab, activeTab === 'wod' && styles.tabActive]}
@@ -537,6 +563,20 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelBold,
     fontSize: 12,
     letterSpacing: 0.5,
+  },
+  resetToSeedButton: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 16,
+  },
+  resetToSeedButtonText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    textDecorationLine: 'underline',
   },
   tabRow: {
     flexDirection: 'row',

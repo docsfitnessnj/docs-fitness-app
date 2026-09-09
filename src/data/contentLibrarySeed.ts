@@ -1,5 +1,13 @@
 import { ContentWorkout } from '../context/ContentLibraryContext';
 
+// Bump this whenever CONTENT_LIBRARY_SEED below gains content that should
+// reach devices that already have Content Library data stored locally —
+// see loadSeededArray in lib/storage.ts for how that merge works. This is
+// the first versioned seed (the 125-workout import); it starts at 1 so any
+// pre-existing, unversioned local data (which reads as version 0) merges
+// with it on next load instead of shadowing it forever.
+export const CONTENT_LIBRARY_SEED_VERSION = 1;
+
 // Seeded from the "Doc's App Workouts" YouTube playlist (125 items — see the
 // PR description for the fetch/parse/schedule details, since the fetch itself
 // isn't part of this codebase). Every entry starts as DRAFT and already carries
