@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { DocsBadge } from './brand/DocsBadge';
 import { BadgeIcon } from './icons/BadgeIcon';
 import { useBadges } from '../context/BadgeContext';
-import { CHALLENGE_TITLE, useChallengeLeaderboard } from '../context/ChallengeContext';
+import { useChallengeLeaderboard, useCurrentChallenge } from '../context/ChallengeContext';
 import { useMembership } from '../context/MembershipContext';
 import { BADGE_MAP, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import { formatDateKey, isSameDay } from '../data/content';
@@ -22,6 +22,7 @@ type Props = {
 };
 
 function ChallengeModule() {
+  const current = useCurrentChallenge();
   const leaderboard = useChallengeLeaderboard();
   const top3 = leaderboard.slice(0, 3);
 
@@ -31,7 +32,7 @@ function ChallengeModule() {
         <Ionicons name="flame" size={13} color={colors.gold} />
         <Text style={styles.cardHeading}>THIS WEEK'S CHALLENGE</Text>
       </View>
-      <Text style={styles.challengeTitle}>{CHALLENGE_TITLE}</Text>
+      <Text style={styles.challengeTitle}>{current.title}</Text>
       <View style={styles.leaderboard}>
         {top3.map((entry) => (
           <View key={entry.rank} style={styles.leaderRow}>

@@ -1,11 +1,18 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { ContentCowScoringType, useContentLibrary } from './ContentLibraryContext';
 import { loadJSON, saveJSON } from '../lib/storage';
 
 const STORAGE_KEY = 'docsfitness.challengeEntries.v1';
 
-// Single source of truth for the current Challenge of the Week — used by
-// both the Weekly Challenge tab and the desktop sidebar's preview module.
+// The one built-in Challenge of the Week, shown until Doc has a RELEASED
+// Challenge drafted in the admin Content Library — see useCurrentChallenge
+// below, which is what the Weekly Challenge tab and the sidebar's preview
+// module actually read from. Kept as the fallback rather than deleted so
+// the tab still shows something real on a fresh install / before Doc has
+// used the Content Library at all.
 export const CHALLENGE_TITLE = 'SWING CHALLENGE';
+const FALLBACK_DESCRIPTION = 'Rack up as many kettlebell swings as you can, for time. No shortcuts, no excuses.';
+const FALLBACK_DAYS_LEFT = 4;
 
 export type ChallengeTag = 'Boathouse Crew' | 'Virtual';
 
@@ -14,9 +21,45 @@ export type LeaderboardEntry = {
   name: string;
   kettlebell: string;
   rounds: string;
+  // Only meaningful for scoringType 'rounds_reps' — the partial round's
+  // rep count on top of `rounds`. Omitted otherwise.
+  reps?: string;
   time: string;
   tag: ChallengeTag;
 };
+
+// What the Weekly Challenge tab (and the sidebar's preview module) actually
+// render — either the built-in fallback above, or whichever Content
+// Library Challenge entry is currently RELEASED and already past its
+// release date, so a scheduled-but-not-yet-live entry never jumps the gun.
+export type CurrentChallenge = {
+  title: string;
+  format: string;
+  formatDescription: string;
+  movements: string[];
+  videoUrl: string;
+  // null only for the built-in fallback — every real Content Library COW
+  // entry always has one (enforced when it's saved).
+  scoringType: ContentCowScoringType | null;
+  daysLeft: number;
+  // null for the fallback; the live entry's own id otherwise, so callers
+  // can tell "no real challenge yet" apart from "a real one, coincidentally
+  // named the same as the fallback."
+  sourceId: string | null;
+};
+
+const FALLBACK_CHALLENGE: CurrentChallenge = {
+  title: CHALLENGE_TITLE,
+  format: '',
+  formatDescription: FALLBACK_DESCRIPTION,
+  movements: [],
+  videoUrl: '',
+  scoringType: null,
+  daysLeft: FALLBACK_DAYS_LEFT,
+  sourceId: null,
+};
+
+const CHALLENGE_RUN_LENGTH_DAYS = 7;
 
 // Seed rows standing in for the rest of the gym until there's a real
 // backend — the Weekly Challenge tab appends real submissions after these.
@@ -34,6 +77,7 @@ export type ChallengeEntry = {
   challengeTitle: string;
   kettlebell: string;
   rounds: string;
+  reps?: string;
   time: string;
   tag: ChallengeTag;
   createdAt: number;
@@ -85,17 +129,49 @@ export function useChallenge() {
   return ctx;
 }
 
+// The Content Library entry actually driving the Weekly Challenge tab right
+// now — the most recently released COW whose release date has already
+// passed (a SCHEDULED-but-future entry never jumps ahead of its own release
+// date), or the built-in fallback if Doc hasn't released one yet. Calls
+// useContentLibrary() directly rather than living inside
+// ContentLibraryProvider, since that provider sits *below* ChallengeProvider
+// in App.tsx's tree — this only works called from a component under both,
+// which every real caller (DocsCowsScreen, IdentitySidebar) already is.
+export function useCurrentChallenge(): CurrentChallenge {
+  const { workouts } = useContentLibrary();
+  const now = Date.now();
+  const live = workouts
+    .filter((w) => w.type === 'cow' && w.status === 'released' && w.releaseAt <= now)
+    .sort((a, b) => b.releaseAt - a.releaseAt)[0];
+
+  if (!live) return FALLBACK_CHALLENGE;
+
+  const daysSinceRelease = Math.floor((now - live.releaseAt) / (24 * 60 * 60 * 1000));
+  return {
+    title: live.name,
+    format: live.format,
+    formatDescription: live.formatDescription,
+    movements: live.movements,
+    videoUrl: live.videoUrl,
+    scoringType: live.scoringType ?? null,
+    daysLeft: Math.max(0, CHALLENGE_RUN_LENGTH_DAYS - daysSinceRelease),
+    sourceId: live.id,
+  };
+}
+
 // Demo rows plus this week's real submissions, in posting order — shared by
 // the Weekly Challenge tab (full board) and the sidebar's top-3 preview.
 export function useChallengeLeaderboard(): LeaderboardEntry[] {
   const { entries } = useChallenge();
+  const current = useCurrentChallenge();
   const posted: LeaderboardEntry[] = entries
-    .filter((e) => e.challengeTitle === CHALLENGE_TITLE)
+    .filter((e) => e.challengeTitle === current.title)
     .map((e, i) => ({
       rank: DEMO_ENTRIES.length + i + 1,
       name: e.author,
       kettlebell: e.kettlebell,
       rounds: e.rounds,
+      reps: e.reps,
       time: e.time,
       tag: e.tag,
     }));
