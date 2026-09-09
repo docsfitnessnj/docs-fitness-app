@@ -8,7 +8,10 @@ import {
   ContentWorkoutType,
   WEEKLY_COW_TARGET,
   WEEKLY_WOD_TARGET,
+  MonthGroup,
   WeekGroup,
+  countMondaysInMonth,
+  countWeekdaysInMonth,
   groupWorkoutsByMonth,
   monthLabel,
   useContentLibrary,
@@ -25,7 +28,10 @@ type Props = {
   onClose: () => void;
 };
 
-type LibraryView = { kind: 'list' } | { kind: 'form'; workout: ContentWorkout | null } | { kind: 'bulk' };
+type LibraryView =
+  | { kind: 'list' }
+  | { kind: 'form'; workout: ContentWorkout | null; defaultType?: ContentWorkoutType }
+  | { kind: 'bulk' };
 
 function upcomingWeekStart(): number {
   // "The following week" — the Monday-Sunday week after the one containing
@@ -34,12 +40,36 @@ function upcomingWeekStart(): number {
   return getWeekStart(new Date()).getTime() + 7 * 24 * 60 * 60 * 1000;
 }
 
-function weekGapSummary(group: Pick<WeekGroup, 'wodCount' | 'cowCount'>): string | null {
-  const missing: string[] = [];
-  if (group.wodCount < WEEKLY_WOD_TARGET) missing.push(`${WEEKLY_WOD_TARGET - group.wodCount} WOD${WEEKLY_WOD_TARGET - group.wodCount === 1 ? '' : 's'}`);
-  if (group.cowCount < WEEKLY_COW_TARGET) missing.push('Challenge of the Week');
-  if (missing.length === 0) return null;
-  return `Missing ${missing.join(' · ')}`;
+// Per-tab week completeness — deliberately ignores the OTHER type's count
+// entirely (a WODS-tab week isn't "incomplete" for lacking a Challenge, and
+// vice versa), unlike WeekGroup.isComplete which the RELEASE THIS WEEK
+// panel still uses for its combined 5+1 view.
+function isWeekCompleteForTab(week: Pick<WeekGroup, 'wodCount' | 'cowCount'>, tab: ContentWorkoutType): boolean {
+  return tab === 'wod' ? week.wodCount >= WEEKLY_WOD_TARGET : week.cowCount >= WEEKLY_COW_TARGET;
+}
+
+function weekGapTextForTab(week: Pick<WeekGroup, 'wodCount' | 'cowCount'>, tab: ContentWorkoutType): string | null {
+  if (tab === 'wod') {
+    const missing = WEEKLY_WOD_TARGET - week.wodCount;
+    return missing > 0 ? `Missing ${missing} WOD${missing === 1 ? '' : 's'}` : null;
+  }
+  return week.cowCount < WEEKLY_COW_TARGET ? 'Missing Challenge of the Week' : null;
+}
+
+// Month-header completion text — "18 of 22" for WODS (a literal weekday
+// tally for the calendar month, see countWeekdaysInMonth), "3 of 4" for
+// COWS (how many of the month's weeks — one Monday each — have a
+// Challenge). The two use different denominators on purpose: WODS targets
+// calendar days, COWS targets weeks.
+function monthCompletionLabel(month: MonthGroup, tab: ContentWorkoutType): string {
+  if (tab === 'wod') {
+    const filled = month.weeks.reduce((sum, w) => sum + w.wodCount, 0);
+    const expected = countWeekdaysInMonth(month.monthKey);
+    return `${filled} of ${expected}`;
+  }
+  const filled = month.weeks.filter((w) => w.cowCount >= WEEKLY_COW_TARGET).length;
+  const expected = countMondaysInMonth(month.monthKey);
+  return `${filled} of ${expected}`;
 }
 
 function TypePill({ type }: { type: ContentWorkoutType }) {
@@ -87,23 +117,35 @@ function formatReleaseAt(ms: number): string {
 export function ContentLibraryScreen({ visible, onClose }: Props) {
   const { workouts, addWorkout, updateWorkout, deleteWorkout, importWorkouts, releaseWeek } = useContentLibrary();
   const [view, setView] = useState<LibraryView>({ kind: 'list' });
+  // Kept in this same component instance (not reset by switching to the
+  // form/bulk-import sub-views and back) so the tab choice persists while
+  // navigating within the library, per spec — it only resets if the whole
+  // screen is closed and reopened.
+  const [activeTab, setActiveTab] = useState<ContentWorkoutType>('wod');
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => new Set());
 
-  const months = useMemo(() => groupWorkoutsByMonth(workouts), [workouts]);
+  const wodMonths = useMemo(() => groupWorkoutsByMonth(workouts.filter((w) => w.type === 'wod')), [workouts]);
+  const cowMonths = useMemo(() => groupWorkoutsByMonth(workouts.filter((w) => w.type === 'cow')), [workouts]);
+  const months = activeTab === 'wod' ? wodMonths : cowMonths;
 
-  // First render: open the month closest to today so the screen never lands
-  // on a wall of collapsed rows with nothing to look at.
+  // First render: open the month closest to today (checked against whichever
+  // tab has any content, so the screen never lands on a wall of collapsed
+  // rows with nothing to look at) so both tabs start already expanded.
   const [initialized, setInitialized] = useState(false);
-  if (!initialized && months.length > 0) {
+  if (!initialized && (wodMonths.length > 0 || cowMonths.length > 0)) {
     const todayMonth = new Date();
-    const closest = months.reduce((best, m) => {
-      const [y, mo] = m.monthKey.split('-').map(Number);
-      const diff = Math.abs(y * 12 + mo - (todayMonth.getFullYear() * 12 + todayMonth.getMonth()));
-      const [by, bmo] = best.monthKey.split('-').map(Number);
-      const bestDiff = Math.abs(by * 12 + bmo - (todayMonth.getFullYear() * 12 + todayMonth.getMonth()));
-      return diff < bestDiff ? m : best;
-    }, months[0]);
-    setExpandedMonths(new Set([closest.monthKey]));
+    const closestOf = (list: typeof wodMonths) =>
+      list.reduce((best, m) => {
+        const [y, mo] = m.monthKey.split('-').map(Number);
+        const diff = Math.abs(y * 12 + mo - (todayMonth.getFullYear() * 12 + todayMonth.getMonth()));
+        const [by, bmo] = best.monthKey.split('-').map(Number);
+        const bestDiff = Math.abs(by * 12 + bmo - (todayMonth.getFullYear() * 12 + todayMonth.getMonth()));
+        return diff < bestDiff ? m : best;
+      }, list[0]);
+    const toExpand = new Set<string>();
+    if (wodMonths.length > 0) toExpand.add(closestOf(wodMonths).monthKey);
+    if (cowMonths.length > 0) toExpand.add(closestOf(cowMonths).monthKey);
+    setExpandedMonths(toExpand);
     setInitialized(true);
   }
 
@@ -122,6 +164,7 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
     return (
       <ContentWorkoutForm
         workout={view.workout}
+        defaultType={view.defaultType}
         onBack={() => setView({ kind: 'list' })}
         onSave={(input) => {
           if (view.workout) updateWorkout(view.workout.id, input);
@@ -194,7 +237,7 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
         <View style={styles.actionRow}>
           <Pressable
             style={styles.actionButton}
-            onPress={() => setView({ kind: 'form', workout: null })}
+            onPress={() => setView({ kind: 'form', workout: null, defaultType: activeTab })}
             testID="content-new-workout"
           >
             <Ionicons name="add-circle-outline" size={16} color={colors.white} />
@@ -246,7 +289,23 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
           </Text>
         </View>
 
-        <Text style={styles.sectionHeading}>ALL WORKOUTS</Text>
+        <View style={styles.tabRow}>
+          <Pressable
+            style={[styles.tab, activeTab === 'wod' && styles.tabActive]}
+            onPress={() => setActiveTab('wod')}
+            testID="content-tab-wod"
+          >
+            <Text style={[styles.tabText, activeTab === 'wod' && styles.tabTextActive]}>DOC'S WODS</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.tab, activeTab === 'cow' && styles.tabActive]}
+            onPress={() => setActiveTab('cow')}
+            testID="content-tab-cow"
+          >
+            <Text style={[styles.tabText, activeTab === 'cow' && styles.tabTextActive]}>DOC'S COWS</Text>
+          </Pressable>
+        </View>
+
         {months.length === 0 ? (
           <Text style={styles.emptyText}>
             Nothing drafted yet. Add a workout above, or bulk-paste a batch to get started.
@@ -254,8 +313,6 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
         ) : (
           months.map((month) => {
             const isOpen = expandedMonths.has(month.monthKey);
-            const totalWorkouts = month.weeks.reduce((sum, w) => sum + w.workouts.length, 0);
-            const gapWeeks = month.weeks.filter((w) => !w.isComplete).length;
             return (
               <View key={month.monthKey} style={styles.monthCard}>
                 <Pressable
@@ -265,53 +322,55 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
                 >
                   <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={16} color={colors.text} />
                   <Text style={styles.monthTitle}>{monthLabel(month.monthKey)}</Text>
-                  <Text style={styles.monthMeta}>
-                    {totalWorkouts} workout{totalWorkouts === 1 ? '' : 's'}
-                    {gapWeeks > 0 ? ` · ${gapWeeks} week${gapWeeks === 1 ? '' : 's'} with gaps` : ' · complete'}
-                  </Text>
+                  <Text style={styles.monthMeta}>{monthCompletionLabel(month, activeTab)}</Text>
                 </Pressable>
 
                 {isOpen && (
                   <View style={styles.weekList}>
                     {month.weeks.map((week) => {
-                      const gapSummary = weekGapSummary(week);
+                      const isComplete = isWeekCompleteForTab(week, activeTab);
+                      const gapText = weekGapTextForTab(week, activeTab);
                       return (
                         <View key={week.weekStart} style={styles.weekCard} testID={`content-week-${week.weekStart}`}>
                           <View style={styles.weekHeader}>
                             <Text style={styles.weekLabel}>{weekLabel(week.weekStart)}</Text>
-                            <View style={[styles.weekBadge, week.isComplete ? styles.weekBadgeComplete : styles.weekBadgeGap]}>
+                            <View style={[styles.weekBadge, isComplete ? styles.weekBadgeComplete : styles.weekBadgeGap]}>
                               <Text
                                 style={[
                                   styles.weekBadgeText,
-                                  week.isComplete ? styles.weekBadgeTextComplete : styles.weekBadgeTextGap,
+                                  isComplete ? styles.weekBadgeTextComplete : styles.weekBadgeTextGap,
                                 ]}
                               >
-                                {week.isComplete ? 'COMPLETE' : 'GAPS'}
+                                {isComplete ? 'COMPLETE' : 'GAPS'}
                               </Text>
                             </View>
                           </View>
-                          {gapSummary && <Text style={styles.weekGapText}>{gapSummary}</Text>}
+                          {gapText && <Text style={styles.weekGapText}>{gapText}</Text>}
 
-                          {week.workouts.map((w) => (
-                            <Pressable
-                              key={w.id}
-                              style={styles.workoutRow}
-                              onPress={() => setView({ kind: 'form', workout: w })}
-                              testID={`content-workout-${w.id}`}
-                            >
-                              <View style={{ flex: 1 }}>
-                                <Text style={styles.workoutName} numberOfLines={1}>
-                                  {w.name}
-                                </Text>
-                                <View style={styles.workoutMetaRow}>
-                                  <TypePill type={w.type} />
-                                  <Text style={styles.workoutDate}>{formatReleaseAt(w.releaseAt)}</Text>
+                          {week.workouts.length === 0 ? (
+                            <Text style={styles.weekEmptyText}>Nothing scheduled this week.</Text>
+                          ) : (
+                            week.workouts.map((w) => (
+                              <Pressable
+                                key={w.id}
+                                style={styles.workoutRow}
+                                onPress={() => setView({ kind: 'form', workout: w })}
+                                testID={`content-workout-${w.id}`}
+                              >
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.workoutName} numberOfLines={1}>
+                                    {w.name}
+                                  </Text>
+                                  <View style={styles.workoutMetaRow}>
+                                    <TypePill type={w.type} />
+                                    <Text style={styles.workoutDate}>{formatReleaseAt(w.releaseAt)}</Text>
+                                  </View>
                                 </View>
-                              </View>
-                              <StatusPill status={w.status} />
-                              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-                            </Pressable>
-                          ))}
+                                <StatusPill status={w.status} />
+                                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                              </Pressable>
+                            ))
+                          )}
                         </View>
                       );
                     })}
@@ -462,17 +521,43 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 10,
   },
-  sectionHeading: {
-    color: colors.green,
-    fontFamily: fonts.headline,
-    fontSize: 20,
-    letterSpacing: 1,
-    marginBottom: 12,
+  tabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: colors.hairline,
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 9,
+  },
+  tabActive: {
+    backgroundColor: colors.green,
+  },
+  tabText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.5,
+  },
+  tabTextActive: {
+    color: colors.white,
   },
   emptyText: {
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 13,
+  },
+  weekEmptyText: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 10,
   },
   monthCard: {
     marginBottom: 12,
