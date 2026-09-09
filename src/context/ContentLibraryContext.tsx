@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getWeekStart } from '../data/content';
+import { CONTENT_LIBRARY_SEED } from '../data/contentLibrarySeed';
 import { loadJSON, saveJSON } from '../lib/storage';
 
 // Deliberately NOT prefixed "docsfitness." (see storage.ts's clearAppStorage,
@@ -10,7 +11,12 @@ import { loadJSON, saveJSON } from '../lib/storage';
 const STORAGE_KEY = 'contentLibraryDrafts.v1';
 
 export type ContentWorkoutType = 'wod' | 'cow';
-export type ContentWorkoutStatus = 'draft' | 'scheduled' | 'released';
+// 'published' is what members can actually see, once a real backend is
+// wired up — "scheduled" is a manual, single-entry-only intermediate state
+// (set from the workout form); the bulk PUBLISH/UNPUBLISH THIS WEEK and
+// per-day controls in the SCHEDULE tab only ever move an entry directly
+// between 'draft' and 'published'.
+export type ContentWorkoutStatus = 'draft' | 'scheduled' | 'published';
 // How a Challenge of the Week is scored on the live leaderboard (see
 // LeaderboardEntry in ChallengeContext) — only meaningful for type 'cow';
 // a WOD entry leaves this unset. Required to save a COW entry (enforced in
@@ -27,6 +33,10 @@ export const SCORING_TYPE_LABELS: Record<ContentCowScoringType, string> = {
 export type ContentWorkout = {
   id: string;
   name: string;
+  // The raw source title (e.g. straight off YouTube), unmodified — kept
+  // alongside the cleaned `name` in case the cleanup is ever imperfect,
+  // same reasoning as Movement's `originalTitle`.
+  originalTitle: string;
   type: ContentWorkoutType;
   // e.g. "30min AMRAP", "5 Rounds", "EMOM 12".
   format: string;
@@ -41,6 +51,11 @@ export type ContentWorkout = {
   // Epoch ms — the moment this workout is meant to go live.
   releaseAt: number;
   status: ContentWorkoutStatus;
+  // True once this entry occupies an actual day in the SCHEDULE tab's
+  // calendar (releaseAt is then that day, not just a placeholder default).
+  // A freshly-added entry (single form or bulk import) starts unscheduled
+  // — it shows as UNUSED in the WODS/COWS inventory list until it's placed.
+  scheduled?: boolean;
   createdAt: number;
   updatedAt: number;
 };
@@ -60,15 +75,20 @@ type ContentLibraryContextValue = {
   deleteWorkout: (id: string) => void;
   // Bulk paste import — already-parsed entries, appended as new drafts.
   importWorkouts: (inputs: ContentWorkoutInput[]) => void;
-  // Sets every workout whose releaseAt falls inside [weekStart, weekStart+7d)
-  // to RELEASED — the "REVIEW & PUBLISH" action for a given week.
-  releaseWeek: (weekStart: number) => void;
+  // Sets every scheduled workout whose releaseAt falls inside
+  // [weekStart, weekStart+7d) to PUBLISHED, or back to DRAFT — the bulk
+  // per-week actions in the SCHEDULE tab.
+  publishWeek: (weekStart: number) => void;
+  unpublishWeek: (weekStart: number) => void;
+  // Per-day equivalent, acting on one entry directly by id.
+  publishDay: (id: string) => void;
+  unpublishDay: (id: string) => void;
 };
 
 const ContentLibraryContext = createContext<ContentLibraryContextValue | undefined>(undefined);
 
 export function ContentLibraryProvider({ children }: { children: React.ReactNode }) {
-  const [workouts, setWorkouts] = useState<ContentWorkout[]>(() => loadJSON(STORAGE_KEY, []));
+  const [workouts, setWorkouts] = useState<ContentWorkout[]>(() => loadJSON(STORAGE_KEY, CONTENT_LIBRARY_SEED));
 
   useEffect(() => {
     saveJSON(STORAGE_KEY, workouts);
@@ -96,13 +116,27 @@ export function ContentLibraryProvider({ children }: { children: React.ReactNode
           ...inputs.map((input, i) => ({ ...input, id: nextId(), createdAt: now + i, updatedAt: now + i })),
         ]);
       },
-      releaseWeek: (weekStart) => {
+      publishWeek: (weekStart) => {
         const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
         setWorkouts((prev) =>
           prev.map((w) =>
-            w.releaseAt >= weekStart && w.releaseAt < weekEnd ? { ...w, status: 'released', updatedAt: Date.now() } : w
+            w.releaseAt >= weekStart && w.releaseAt < weekEnd ? { ...w, status: 'published', updatedAt: Date.now() } : w
           )
         );
+      },
+      unpublishWeek: (weekStart) => {
+        const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
+        setWorkouts((prev) =>
+          prev.map((w) =>
+            w.releaseAt >= weekStart && w.releaseAt < weekEnd ? { ...w, status: 'draft', updatedAt: Date.now() } : w
+          )
+        );
+      },
+      publishDay: (id) => {
+        setWorkouts((prev) => prev.map((w) => (w.id === id ? { ...w, status: 'published', updatedAt: Date.now() } : w)));
+      },
+      unpublishDay: (id) => {
+        setWorkouts((prev) => prev.map((w) => (w.id === id ? { ...w, status: 'draft', updatedAt: Date.now() } : w)));
       },
     }),
     [workouts]

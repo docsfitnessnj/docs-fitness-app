@@ -4,7 +4,7 @@ import { loadJSON, saveJSON } from '../lib/storage';
 
 const STORAGE_KEY = 'docsfitness.challengeEntries.v1';
 
-// The one built-in Challenge of the Week, shown until Doc has a RELEASED
+// The one built-in Challenge of the Week, shown until Doc has a PUBLISHED
 // Challenge drafted in the admin Content Library — see useCurrentChallenge
 // below, which is what the Weekly Challenge tab and the sidebar's preview
 // module actually read from. Kept as the fallback rather than deleted so
@@ -30,7 +30,7 @@ export type LeaderboardEntry = {
 
 // What the Weekly Challenge tab (and the sidebar's preview module) actually
 // render — either the built-in fallback above, or whichever Content
-// Library Challenge entry is currently RELEASED and already past its
+// Library Challenge entry is currently PUBLISHED and already past its
 // release date, so a scheduled-but-not-yet-live entry never jumps the gun.
 export type CurrentChallenge = {
   title: string;
@@ -130,9 +130,9 @@ export function useChallenge() {
 }
 
 // The Content Library entry actually driving the Weekly Challenge tab right
-// now — the most recently released COW whose release date has already
+// now — the most recently published COW whose release date has already
 // passed (a SCHEDULED-but-future entry never jumps ahead of its own release
-// date), or the built-in fallback if Doc hasn't released one yet. Calls
+// date), or the built-in fallback if Doc hasn't published one yet. Calls
 // useContentLibrary() directly rather than living inside
 // ContentLibraryProvider, since that provider sits *below* ChallengeProvider
 // in App.tsx's tree — this only works called from a component under both,
@@ -141,7 +141,7 @@ export function useCurrentChallenge(): CurrentChallenge {
   const { workouts } = useContentLibrary();
   const now = Date.now();
   const live = workouts
-    .filter((w) => w.type === 'cow' && w.status === 'released' && w.releaseAt <= now)
+    .filter((w) => w.type === 'cow' && w.status === 'published' && w.releaseAt <= now)
     .sort((a, b) => b.releaseAt - a.releaseAt)[0];
 
   if (!live) return FALLBACK_CHALLENGE;

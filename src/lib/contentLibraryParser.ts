@@ -24,7 +24,7 @@ Push-Ups
 Video: https://youtube.com/watch?v=example
 Notes: Scale swings to a lighter bell for beginners.
 Release: 2026-09-08 06:00
-Status: Scheduled
+Status: Published
 ---
 Name: SWING CHALLENGE
 Type: Challenge of the Week
@@ -71,7 +71,7 @@ function parseType(value: string): ContentWorkoutType {
 function parseStatus(value: string): ContentWorkoutStatus {
   const v = value.trim().toLowerCase();
   if (v.startsWith('sched')) return 'scheduled';
-  if (v.startsWith('rel')) return 'released';
+  if (v.startsWith('rel') || v.startsWith('pub')) return 'published';
   return 'draft';
 }
 
@@ -213,6 +213,7 @@ function parseBlock(block: string, blockIndex: number): ParsedEntry {
     blockIndex,
     input: {
       name,
+      originalTitle: name,
       type,
       format,
       formatDescription,
