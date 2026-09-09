@@ -1,4 +1,9 @@
-import { ContentWorkoutInput, ContentWorkoutStatus, ContentWorkoutType } from '../context/ContentLibraryContext';
+import {
+  ContentCowScoringType,
+  ContentWorkoutInput,
+  ContentWorkoutStatus,
+  ContentWorkoutType,
+} from '../context/ContentLibraryContext';
 
 // The bulk-paste format: one workout per block, separated by a line of
 // three or more dashes ("---"). Each block is a set of "Label: value"
@@ -31,7 +36,8 @@ Box Jumps
 Video: https://youtube.com/watch?v=example2
 Notes:
 Release: 2026-09-11 06:00
-Status: Draft`;
+Status: Draft
+Scoring: Rounds`;
 
 const LABELS = [
   'name',
@@ -43,6 +49,7 @@ const LABELS = [
   'notes',
   'release',
   'status',
+  'scoring',
 ] as const;
 type Label = (typeof LABELS)[number];
 
@@ -66,6 +73,17 @@ function parseStatus(value: string): ContentWorkoutStatus {
   if (v.startsWith('sched')) return 'scheduled';
   if (v.startsWith('rel')) return 'released';
   return 'draft';
+}
+
+// Forgiving on separators ("Rounds + Reps", "Rounds and Reps",
+// "Rounds/Reps") since this is free-typed paste text, not a picker.
+function parseScoringType(value: string): ContentCowScoringType | null {
+  const v = value.trim().toLowerCase();
+  if (!v) return null;
+  if (v.includes('round') && v.includes('rep')) return 'rounds_reps';
+  if (v.includes('round')) return 'rounds';
+  if (v.includes('time')) return 'time';
+  return null;
 }
 
 // Accepts "YYYY-MM-DD HH:MM" (24h) or "YYYY-MM-DD H:MM AM/PM". Returns null
@@ -105,6 +123,7 @@ function parseBlock(block: string, blockIndex: number): ParsedEntry {
   let notes = '';
   let releaseRaw = '';
   let status: ContentWorkoutStatus = 'draft';
+  let scoringRaw = '';
 
   let currentLabel: Label | null = null;
 
@@ -143,6 +162,9 @@ function parseBlock(block: string, blockIndex: number): ParsedEntry {
         case 'status':
           status = parseStatus(matched.value);
           break;
+        case 'scoring':
+          scoringRaw = matched.value;
+          break;
       }
       continue;
     }
@@ -170,6 +192,22 @@ function parseBlock(block: string, blockIndex: number): ParsedEntry {
     };
   }
 
+  // Same rule as the single-entry form: a Challenge can't be saved without
+  // a scoring type, since the leaderboard can't render without knowing
+  // which column(s) to show.
+  let scoringType: ContentCowScoringType | undefined;
+  if (type === 'cow') {
+    scoringType = parseScoringType(scoringRaw) ?? undefined;
+    if (!scoringType) {
+      return {
+        ok: false,
+        blockIndex,
+        name,
+        error: 'A Challenge needs a "Scoring:" line — Time, Rounds, or Rounds + Reps.',
+      };
+    }
+  }
+
   return {
     ok: true,
     blockIndex,
@@ -181,6 +219,7 @@ function parseBlock(block: string, blockIndex: number): ParsedEntry {
       movements,
       videoUrl,
       notes,
+      scoringType,
       releaseAt: releaseAt ?? Date.now(),
       status,
     },

@@ -3,10 +3,12 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { Ionicons } from '@expo/vector-icons';
 import { ModalHeader } from '../components/ModalHeader';
 import {
+  ContentCowScoringType,
   ContentWorkout,
   ContentWorkoutInput,
   ContentWorkoutStatus,
   ContentWorkoutType,
+  SCORING_TYPE_LABELS,
 } from '../context/ContentLibraryContext';
 import { parseReleaseAt } from '../lib/contentLibraryParser';
 import { findMovementInText } from '../lib/movementMatcher';
@@ -35,6 +37,10 @@ const STATUS_OPTIONS: { value: ContentWorkoutStatus; label: string }[] = [
   { value: 'scheduled', label: 'SCHEDULED' },
   { value: 'released', label: 'RELEASED' },
 ];
+
+const SCORING_TYPE_OPTIONS: { value: ContentCowScoringType; label: string }[] = (
+  ['time', 'rounds', 'rounds_reps'] as ContentCowScoringType[]
+).map((value) => ({ value, label: SCORING_TYPE_LABELS[value] }));
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -72,11 +78,14 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
   const [dateStr, setDateStr] = useState(dateStrOf(workout?.releaseAt ?? defaultReleaseAt()));
   const [timeStr, setTimeStr] = useState(timeStrOf(workout?.releaseAt ?? defaultReleaseAt()));
   const [status, setStatus] = useState<ContentWorkoutStatus>(workout?.status ?? 'draft');
+  const [scoringType, setScoringType] = useState<ContentCowScoringType | null>(workout?.scoringType ?? null);
   const [dateError, setDateError] = useState<string | null>(null);
 
   const movementLines = movementsText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
 
-  const canSave = name.trim().length > 0 && movementLines.length > 0;
+  // A Challenge needs a scoring type before it can go anywhere — the
+  // leaderboard can't render without knowing which column(s) to show.
+  const canSave = name.trim().length > 0 && movementLines.length > 0 && (type !== 'cow' || scoringType !== null);
 
   const handleSave = () => {
     const releaseAt = parseReleaseAt(`${dateStr.trim()} ${timeStr.trim()}`);
@@ -93,6 +102,7 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
       movements: movementLines,
       videoUrl: videoUrl.trim(),
       notes: notes.trim(),
+      scoringType: type === 'cow' ? scoringType ?? undefined : undefined,
       releaseAt,
       status,
     });
@@ -138,6 +148,29 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
             </Pressable>
           ))}
         </View>
+
+        {type === 'cow' && (
+          <>
+            <Text style={styles.label}>SCORING TYPE</Text>
+            <View style={styles.segmentRow}>
+              {SCORING_TYPE_OPTIONS.map((opt) => (
+                <Pressable
+                  key={opt.value}
+                  style={[styles.segment, scoringType === opt.value && styles.segmentActive]}
+                  onPress={() => setScoringType(opt.value)}
+                  testID={`content-form-scoring-${opt.value}`}
+                >
+                  <Text style={[styles.segmentText, scoringType === opt.value && styles.segmentTextActive]}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            {scoringType === null && (
+              <Text style={styles.hint}>Required for a Challenge — this decides which column(s) the leaderboard shows.</Text>
+            )}
+          </>
+        )}
 
         <Text style={styles.label}>FORMAT</Text>
         <TextInput
