@@ -1,7 +1,9 @@
-// THE MOVEMENT VAULT — real data, pulled from Doc's Movement Vault YouTube
-// playlist (109 videos, fetched via the YouTube Data API's playlistItems
-// endpoint — see the PR description for how, since the fetch itself isn't
-// part of this codebase).
+// THE MOVEMENT VAULT — real data, pulled from Doc's YouTube playlists via
+// the YouTube Data API's playlistItems endpoint (see each PR description
+// for how, since the fetch itself isn't part of this codebase): the
+// original Movement Vault playlist (109 videos), plus Doc's Bodyweight
+// Moves (23 videos, only 2 of which weren't already covered by the first
+// playlist — see that PR description for the video-ID overlap).
 //
 // One entry per video. `name` is a cleaned display name (channel branding,
 // hashtags, and boilerplate stripped from the raw YouTube title);
@@ -511,6 +513,18 @@ export const MOVEMENTS: Movement[] = [
       "Hike bells back between legs and perform a double clean as you simultaneously step your feet underneath you to shoulder width",
       "Then soften the knees, drop to a 1/4 squat and powerfully press bells to the sky with an exhale",
       "Continue on for given time/reps",
+    ],
+  },
+  {
+    id: "downward-dog-toe-touch",
+    name: "Downward Dog Toe Touch",
+    originalTitle: "Downward Dog Toe Touch #DocsFitness #BodyWeight #DocsCues",
+    video: { type: 'youtube', youtubeId: "22rdgQrOoog" },
+    cues: [
+      "Start in a high plank",
+      "Drive hips up into a downward dog position and use your right hand to reach back and tap your left toe",
+      "Come back to high plank and switch sides",
+      "If you're having trouble maintaining straight legs and reaching your toes then keep the legs straight and aim to tap your opposite shin or knee",
     ],
   },
   {
@@ -1175,6 +1189,17 @@ export const MOVEMENTS: Movement[] = [
     cues: [
       "Assume a high plank",
       "Tap and hold each shoulder with the opposite hand for 3 sec",
+      "Maintain a level spine, while keeping your hips as still as possible during the tapping of shoulders",
+    ],
+  },
+  {
+    id: "shoulder-taps",
+    name: "Shoulder Taps",
+    originalTitle: "Shoulder Taps #DocsFitness #BodyWeight #DocsCues",
+    video: { type: 'youtube', youtubeId: "vF_PQDThYRI" },
+    cues: [
+      "Assume a high plank",
+      "Tap each shoulder with the opposite hand with control",
       "Maintain a level spine, while keeping your hips as still as possible during the tapping of shoulders",
     ],
   },
