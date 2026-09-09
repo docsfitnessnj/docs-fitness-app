@@ -117,6 +117,42 @@ export function weekMonthKey(weekStart: number): string {
   return `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}`;
 }
 
+// Plain calendar-day count of this month's Monday-Friday dates — e.g.
+// September 2026 (a 30-day month starting on a Tuesday) has 22, not a
+// multiple of 5, since its first and last weeks are only partially inside
+// the month. Deliberately independent of the Monday-owns-the-week
+// convention above: that convention decides which week CARD a week
+// renders under, but the WODS tab's month-header count ("18 of 22") is a
+// literal weekday tally for the calendar month itself, so a boundary week
+// split across two months still adds up to the right total across both
+// month headers.
+export function countWeekdaysInMonth(monthKey: string): number {
+  const [year, month] = monthKey.split('-').map(Number);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  let count = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const weekday = new Date(year, month, day).getDay();
+    if (weekday >= 1 && weekday <= 5) count++;
+  }
+  return count;
+}
+
+// How many Mondays (i.e. how many distinct weeks) start inside this
+// calendar month — the COWS tab's target denominator ("3 of 4"). Computed
+// directly from the calendar rather than from `MonthGroup.weeks.length`,
+// since that array only contains weeks that already have at least one
+// entry — a month with zero Challenges drafted would otherwise show "0 of
+// 0" (looks complete) instead of "0 of 4" (visibly missing everything).
+export function countMondaysInMonth(monthKey: string): number {
+  const [year, month] = monthKey.split('-').map(Number);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  let count = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    if (new Date(year, month, day).getDay() === 1) count++;
+  }
+  return count;
+}
+
 export function monthLabel(monthKey: string): string {
   const [year, month] = monthKey.split('-').map(Number);
   return new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase();

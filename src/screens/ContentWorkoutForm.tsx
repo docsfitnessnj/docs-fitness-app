@@ -16,6 +16,10 @@ import { colors, fonts } from '../theme';
 type Props = {
   // Present when editing an existing entry; absent when creating a new one.
   workout: ContentWorkout | null;
+  // Pre-selects TYPE for a new entry (e.g. whichever tab Doc was on when
+  // she tapped NEW WORKOUT). Ignored once `workout` is set — editing always
+  // shows that entry's own type.
+  defaultType?: ContentWorkoutType;
   onSave: (input: ContentWorkoutInput) => void;
   onDelete?: () => void;
   onBack: () => void;
@@ -57,9 +61,9 @@ function defaultReleaseAt(): number {
 // form (no wizard steps) since every field is short and Doc is filling
 // these in from notes she already has, not discovering the shape as she
 // goes.
-export function ContentWorkoutForm({ workout, onSave, onDelete, onBack }: Props) {
+export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onBack }: Props) {
   const [name, setName] = useState(workout?.name ?? '');
-  const [type, setType] = useState<ContentWorkoutType>(workout?.type ?? 'wod');
+  const [type, setType] = useState<ContentWorkoutType>(workout?.type ?? defaultType ?? 'wod');
   const [format, setFormat] = useState(workout?.format ?? '');
   const [formatDescription, setFormatDescription] = useState(workout?.formatDescription ?? '');
   const [movementsText, setMovementsText] = useState(workout?.movements.join('\n') ?? '');
