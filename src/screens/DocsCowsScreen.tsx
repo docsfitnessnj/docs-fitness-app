@@ -6,14 +6,21 @@ import { MembershipGate } from '../components/MembershipGate';
 import { Avatar } from '../components/Avatar';
 import { TappableMovementText } from '../components/movement/TappableMovementText';
 import { useBadges } from '../context/BadgeContext';
-import { CHALLENGE_TITLE, LeaderboardEntry, useChallenge, useChallengeLeaderboard } from '../context/ChallengeContext';
+import { ContentCowScoringType } from '../context/ContentLibraryContext';
+import {
+  CurrentChallenge,
+  LeaderboardEntry,
+  useChallenge,
+  useChallengeLeaderboard,
+  useCurrentChallenge,
+} from '../context/ChallengeContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { colors, fonts } from '../theme';
 
 type Entry = LeaderboardEntry;
 
-function ChallengeHero() {
+function ChallengeHero({ current }: { current: CurrentChallenge }) {
   return (
     <View style={styles.hero}>
       <Text style={styles.ghostWatermark}>COW</Text>
@@ -21,28 +28,66 @@ function ChallengeHero() {
         <Ionicons name="flame" size={14} color={colors.greenDeep} />
         <Text style={styles.badgeText}>THIS WEEK'S CHALLENGE OF THE WEEK</Text>
       </View>
-      <Text style={styles.heroTitle}>{CHALLENGE_TITLE}</Text>
-      <TappableMovementText
-        style={styles.heroSubtext}
-        linkStyle={styles.heroSubtextLink}
-        text="Rack up as many kettlebell swings as you can, for time. No shortcuts, no excuses."
-        onOpenMovement={(movementId) => openMovementVault(movementId, 'CHALLENGE')}
-      />
+      <Text style={styles.heroTitle}>{current.title}</Text>
+      {!!current.format && <Text style={styles.heroFormat}>{current.format.toUpperCase()}</Text>}
+      {!!current.formatDescription && (
+        <TappableMovementText
+          style={styles.heroSubtext}
+          linkStyle={styles.heroSubtextLink}
+          text={current.formatDescription}
+          onOpenMovement={(movementId) => openMovementVault(movementId, 'CHALLENGE')}
+        />
+      )}
+      {current.movements.length > 0 && (
+        <View style={styles.heroMovements}>
+          {current.movements.map((move, i) => (
+            <View key={i} style={styles.heroMoveRow}>
+              <View style={styles.heroMoveDot} />
+              <TappableMovementText
+                style={styles.heroMoveText}
+                linkStyle={styles.heroSubtextLink}
+                text={move}
+                onOpenMovement={(movementId) => openMovementVault(movementId, 'CHALLENGE')}
+              />
+            </View>
+          ))}
+        </View>
+      )}
+      {!!current.videoUrl && (
+        <View style={styles.watchChip}>
+          <Ionicons name="play-circle-outline" size={16} color={colors.goldBright} />
+          <Text style={styles.watchChipText}>WATCH BREAKDOWN</Text>
+        </View>
+      )}
       <View style={styles.heroDivider} />
       <Text style={styles.daysLeftLabel}>DAYS LEFT</Text>
-      <Text style={styles.daysLeft}>4</Text>
+      <Text style={styles.daysLeft}>{current.daysLeft}</Text>
     </View>
   );
 }
 
-function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>) => void }) {
+function EntryForm({
+  scoringType,
+  onSubmit,
+}: {
+  scoringType: ContentCowScoringType | null;
+  onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>) => void;
+}) {
   const displayName = useDisplayName();
   const { recordCowKillerScore } = useBadges();
   const [time, setTime] = useState('');
   const [rounds, setRounds] = useState('');
+  const [reps, setReps] = useState('');
   const [kettlebell, setKettlebell] = useState('');
 
-  const canSubmit = time.trim().length > 0;
+  // null (the built-in fallback challenge) shows both TIME and ROUNDS, same
+  // as this screen always has — a real Content Library Challenge narrows
+  // to just the field(s) its own scoring type calls for.
+  const showTime = scoringType === null || scoringType === 'time';
+  const showRounds = scoringType === null || scoringType === 'rounds' || scoringType === 'rounds_reps';
+  const showReps = scoringType === 'rounds_reps';
+
+  const canSubmit = showRounds && !showTime ? rounds.trim().length > 0 : time.trim().length > 0;
 
   const submit = () => {
     if (!canSubmit) return;
@@ -50,11 +95,13 @@ function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>
       name: displayName,
       kettlebell: kettlebell.trim() || '—',
       rounds: rounds.trim() || '—',
-      time: time.trim(),
+      reps: showReps ? reps.trim() || '—' : undefined,
+      time: showTime ? time.trim() || '—' : '—',
     });
     recordCowKillerScore();
     setTime('');
     setRounds('');
+    setReps('');
     setKettlebell('');
   };
 
@@ -63,31 +110,50 @@ function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>
       <Text style={styles.formTitle}>POST YOUR SCORE</Text>
 
       <View style={styles.formRow}>
-        <View style={styles.formField}>
-          <Text nativeID="cowkiller-time-label" style={styles.label}>TIME</Text>
-          <TextInput
-            style={styles.input}
-            value={time}
-            onChangeText={setTime}
-            placeholder="e.g. 9:42"
-            placeholderTextColor={colors.textMuted}
-            nativeID="cowkiller-time-input"
-            aria-label="Time"
-          />
-        </View>
-        <View style={styles.formField}>
-          <Text nativeID="cowkiller-rounds-label" style={styles.label}>ROUNDS</Text>
-          <TextInput
-            style={styles.input}
-            value={rounds}
-            onChangeText={setRounds}
-            placeholder="e.g. 12"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="numeric"
-            nativeID="cowkiller-rounds-input"
-            aria-label="Rounds"
-          />
-        </View>
+        {showTime && (
+          <View style={styles.formField}>
+            <Text nativeID="cowkiller-time-label" style={styles.label}>TIME</Text>
+            <TextInput
+              style={styles.input}
+              value={time}
+              onChangeText={setTime}
+              placeholder="e.g. 9:42"
+              placeholderTextColor={colors.textMuted}
+              nativeID="cowkiller-time-input"
+              aria-label="Time"
+            />
+          </View>
+        )}
+        {showRounds && (
+          <View style={styles.formField}>
+            <Text nativeID="cowkiller-rounds-label" style={styles.label}>ROUNDS</Text>
+            <TextInput
+              style={styles.input}
+              value={rounds}
+              onChangeText={setRounds}
+              placeholder="e.g. 12"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              nativeID="cowkiller-rounds-input"
+              aria-label="Rounds"
+            />
+          </View>
+        )}
+        {showReps && (
+          <View style={styles.formField}>
+            <Text nativeID="cowkiller-reps-label" style={styles.label}>+ REPS</Text>
+            <TextInput
+              style={styles.input}
+              value={reps}
+              onChangeText={setReps}
+              placeholder="e.g. 8"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              nativeID="cowkiller-reps-input"
+              aria-label="Extra reps"
+            />
+          </View>
+        )}
       </View>
 
       <Text nativeID="cowkiller-kettlebell-label" style={styles.label}>KETTLEBELL SIZE (KG)</Text>
@@ -111,6 +177,11 @@ function EntryForm({ onSubmit }: { onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>
 
 function LeaderboardRow({ entry }: { entry: Entry }) {
   const isFirst = entry.rank === 1;
+  // Demo rows always carry a real time; a real rounds/rounds+reps-scored
+  // submission leaves time as the '—' placeholder (see EntryForm), so the
+  // big score column falls back to whichever field actually has the score.
+  const primaryScore =
+    entry.time !== '—' ? entry.time : `${entry.rounds}${entry.reps ? ` +${entry.reps}` : ''}`;
   return (
     <View style={styles.row}>
       <Text style={[styles.rank, isFirst && styles.rankFirst]}>{entry.rank}</Text>
@@ -118,10 +189,10 @@ function LeaderboardRow({ entry }: { entry: Entry }) {
       <View style={styles.rowMain}>
         <Text style={styles.name}>{entry.name}</Text>
         <Text style={styles.rowMeta}>
-          {entry.rounds} rounds · {entry.kettlebell} KG KB · {entry.tag}
+          {entry.rounds} rounds{entry.reps ? ` + ${entry.reps} reps` : ''} · {entry.kettlebell} KG KB · {entry.tag}
         </Text>
       </View>
-      <Text style={styles.score}>{entry.time}</Text>
+      <Text style={styles.score}>{primaryScore}</Text>
     </View>
   );
 }
@@ -141,14 +212,16 @@ function Leaderboard({ entries }: { entries: Entry[] }) {
 
 function DocsCowsContent() {
   const { addEntry: addChallengeEntry } = useChallenge();
+  const current = useCurrentChallenge();
   const entries = useChallengeLeaderboard();
 
   const addEntry = (entry: Omit<Entry, 'rank' | 'tag'>) => {
     addChallengeEntry({
       author: entry.name,
-      challengeTitle: CHALLENGE_TITLE,
+      challengeTitle: current.title,
       kettlebell: entry.kettlebell,
       rounds: entry.rounds,
+      reps: entry.reps,
       time: entry.time,
       tag: 'Boathouse Crew',
     });
@@ -156,8 +229,8 @@ function DocsCowsContent() {
 
   return (
     <View>
-      <ChallengeHero />
-      <EntryForm onSubmit={addEntry} />
+      <ChallengeHero current={current} />
+      <EntryForm scoringType={current.scoringType} onSubmit={addEntry} />
       <Leaderboard entries={entries} />
     </View>
   );
@@ -213,6 +286,13 @@ const styles = StyleSheet.create({
     fontSize: 40,
     letterSpacing: 1,
   },
+  heroFormat: {
+    color: colors.goldBright,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 1,
+    marginTop: 4,
+  },
   heroSubtext: {
     color: 'rgba(255,255,255,0.85)',
     fontFamily: fonts.body,
@@ -224,6 +304,43 @@ const styles = StyleSheet.create({
     color: colors.goldBright,
     fontFamily: fonts.bodySemiBold,
     textDecorationLine: 'underline',
+  },
+  heroMovements: {
+    marginTop: 12,
+    gap: 6,
+  },
+  heroMoveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  heroMoveDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+  },
+  heroMoveText: {
+    color: 'rgba(255,255,255,0.9)',
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+  },
+  watchChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 14,
+  },
+  watchChipText: {
+    color: colors.goldBright,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 11,
+    letterSpacing: 1,
   },
   heroDivider: {
     height: 1,
