@@ -6,17 +6,10 @@ import {
   ContentWorkout,
   ContentWorkoutStatus,
   ContentWorkoutType,
-  WEEKLY_COW_TARGET,
-  WEEKLY_WOD_TARGET,
-  MonthGroup,
   SCORING_TYPE_LABELS,
-  WeekGroup,
-  countMondaysInMonth,
-  countWeekdaysInMonth,
-  groupWorkoutsByMonth,
   monthLabel,
   useContentLibrary,
-  weekLabel,
+  weekMonthKey,
 } from '../context/ContentLibraryContext';
 import { getWeekStart } from '../data/content';
 import { showAlert } from '../lib/alert';
@@ -34,54 +27,10 @@ type LibraryView =
   | { kind: 'form'; workout: ContentWorkout | null; defaultType?: ContentWorkoutType }
   | { kind: 'bulk' };
 
-function upcomingWeekStart(): number {
-  // "The following week" — the Monday-Sunday week after the one containing
-  // today, which is exactly the week the Sunday-6pm-ET auto-release (once
-  // real) would be publishing.
-  return getWeekStart(new Date()).getTime() + 7 * 24 * 60 * 60 * 1000;
-}
+type LibraryTab = 'wod' | 'cow' | 'schedule';
 
-// Per-tab week completeness — deliberately ignores the OTHER type's count
-// entirely (a WODS-tab week isn't "incomplete" for lacking a Challenge, and
-// vice versa), unlike WeekGroup.isComplete which the RELEASE THIS WEEK
-// panel still uses for its combined 5+1 view.
-function isWeekCompleteForTab(week: Pick<WeekGroup, 'wodCount' | 'cowCount'>, tab: ContentWorkoutType): boolean {
-  return tab === 'wod' ? week.wodCount >= WEEKLY_WOD_TARGET : week.cowCount >= WEEKLY_COW_TARGET;
-}
-
-function weekGapTextForTab(week: Pick<WeekGroup, 'wodCount' | 'cowCount'>, tab: ContentWorkoutType): string | null {
-  if (tab === 'wod') {
-    const missing = WEEKLY_WOD_TARGET - week.wodCount;
-    return missing > 0 ? `Missing ${missing} WOD${missing === 1 ? '' : 's'}` : null;
-  }
-  return week.cowCount < WEEKLY_COW_TARGET ? 'Missing Challenge of the Week' : null;
-}
-
-// Month-header completion text — "18 of 22" for WODS (a literal weekday
-// tally for the calendar month, see countWeekdaysInMonth), "3 of 4" for
-// COWS (how many of the month's weeks — one Monday each — have a
-// Challenge). The two use different denominators on purpose: WODS targets
-// calendar days, COWS targets weeks.
-function monthCompletionLabel(month: MonthGroup, tab: ContentWorkoutType): string {
-  if (tab === 'wod') {
-    const filled = month.weeks.reduce((sum, w) => sum + w.wodCount, 0);
-    const expected = countWeekdaysInMonth(month.monthKey);
-    return `${filled} of ${expected}`;
-  }
-  const filled = month.weeks.filter((w) => w.cowCount >= WEEKLY_COW_TARGET).length;
-  const expected = countMondaysInMonth(month.monthKey);
-  return `${filled} of ${expected}`;
-}
-
-function TypePill({ type }: { type: ContentWorkoutType }) {
-  return (
-    <View style={[styles.typePill, type === 'cow' && styles.typePillCow]}>
-      <Text style={[styles.typePillText, type === 'cow' && styles.typePillTextCow]}>
-        {type === 'wod' ? "DOC'S WOD" : 'CHALLENGE'}
-      </Text>
-    </View>
-  );
-}
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DOW_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 
 function StatusPill({ status }: { status: ContentWorkoutStatus }) {
   return (
@@ -92,61 +41,166 @@ function StatusPill({ status }: { status: ContentWorkoutStatus }) {
 }
 
 function statusPillStyle(status: ContentWorkoutStatus) {
-  if (status === 'released') return styles.statusPillReleased;
+  if (status === 'published') return styles.statusPillPublished;
   if (status === 'scheduled') return styles.statusPillScheduled;
   return styles.statusPillDraft;
 }
 function statusPillTextStyle(status: ContentWorkoutStatus) {
-  if (status === 'released') return styles.statusPillTextReleased;
+  if (status === 'published') return styles.statusPillTextPublished;
   if (status === 'scheduled') return styles.statusPillTextScheduled;
   return undefined;
 }
 
-function formatReleaseAt(ms: number): string {
-  return new Date(ms).toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  }) + ' · ' + new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+// USED = this entry already occupies a real day in the SCHEDULE tab
+// (`scheduled: true`); UNUSED = it's still sitting in the inventory list
+// unplaced, whether freshly added or bulk-imported.
+function UsedBadge({ used }: { used: boolean }) {
+  return (
+    <View style={[styles.usedBadge, used ? styles.usedBadgeUsed : styles.usedBadgeUnused]}>
+      <Text style={[styles.usedBadgeText, used ? styles.usedBadgeTextUsed : styles.usedBadgeTextUnused]}>
+        {used ? 'USED' : 'UNUSED'}
+      </Text>
+    </View>
+  );
 }
 
-// Admin-only workout planning calendar — draft, schedule, and (once a
-// backend exists) publish Doc's WODs and the Challenge of the Week ahead of
-// time. Everything here reads/writes ContentLibraryContext, which is local-
-// only for now (see that file's storage-key comment); nothing in this
-// screen is visible to members regardless of status.
+function isSameCalendarDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+type ScheduleDayRow = {
+  date: Date;
+  slotType: ContentWorkoutType;
+  workout: ContentWorkout | null;
+};
+
+// Mon/Tue/Thu/Fri are Doc's WOD slots, Wed is the Challenge of the Week slot
+// (Part 4's weekly pattern) — Sat/Sun are rest days and never shown. A slot
+// with no matching *scheduled* workout for that exact calendar day renders
+// as "(unassigned)" rather than being skipped, so a week missing its
+// Challenge (every week but the first, right now) is visible as a gap
+// instead of silently disappearing.
+function scheduleRowsForWeek(weekStart: number, scheduledWorkouts: ContentWorkout[]): ScheduleDayRow[] {
+  const monday = new Date(weekStart);
+  const rows: ScheduleDayRow[] = [];
+  for (let offset = 0; offset < 5; offset++) {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + offset);
+    const slotType: ContentWorkoutType = offset === 2 ? 'cow' : 'wod';
+    const workout =
+      scheduledWorkouts.find((w) => w.type === slotType && isSameCalendarDay(new Date(w.releaseAt), date)) ?? null;
+    rows.push({ date, slotType, workout });
+  }
+  return rows;
+}
+
+function scheduleDayLabel(date: Date): string {
+  const dow = DOW_NAMES[date.getDay()];
+  const month = date.toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
+  return `${dow}, ${month} ${date.getDate()}`;
+}
+
+type ScheduleWeekStatus = 'draft' | 'published' | 'mixed';
+
+function weekStatusOf(rows: ScheduleDayRow[]): ScheduleWeekStatus {
+  const statuses = rows.map((r) => r.workout?.status).filter((s): s is ContentWorkoutStatus => !!s);
+  if (statuses.length === 0) return 'draft';
+  const allPublished = statuses.every((s) => s === 'published');
+  const allDraftish = statuses.every((s) => s !== 'published');
+  if (allPublished) return 'published';
+  if (allDraftish) return 'draft';
+  return 'mixed';
+}
+
+function scheduleWeekLabel(weekStart: number): string {
+  const monday = new Date(weekStart);
+  const friday = new Date(weekStart + 4 * DAY_MS);
+  const startStr = monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const endStr =
+    monday.getMonth() === friday.getMonth()
+      ? friday.toLocaleDateString('en-US', { day: 'numeric' })
+      : friday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${startStr}–${endStr}`.toUpperCase();
+}
+
+function formatReleaseAt(ms: number): string {
+  return (
+    new Date(ms).toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    }) +
+    ' · ' +
+    new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  );
+}
+
+// Admin-only workout planning calendar — draft, schedule, and publish Doc's
+// WODs and the Challenge of the Week ahead of time. Everything here
+// reads/writes ContentLibraryContext, which is local-only for now (see that
+// file's storage-key comment); nothing in this screen is visible to members
+// unless its status is PUBLISHED.
 export function ContentLibraryScreen({ visible, onClose }: Props) {
-  const { workouts, addWorkout, updateWorkout, deleteWorkout, importWorkouts, releaseWeek } = useContentLibrary();
+  const { workouts, addWorkout, updateWorkout, deleteWorkout, importWorkouts, publishWeek, unpublishWeek, publishDay, unpublishDay } =
+    useContentLibrary();
   const [view, setView] = useState<LibraryView>({ kind: 'list' });
   // Kept in this same component instance (not reset by switching to the
   // form/bulk-import sub-views and back) so the tab choice persists while
-  // navigating within the library, per spec — it only resets if the whole
-  // screen is closed and reopened.
-  const [activeTab, setActiveTab] = useState<ContentWorkoutType>('wod');
+  // navigating within the library — it only resets if the whole screen is
+  // closed and reopened.
+  const [activeTab, setActiveTab] = useState<LibraryTab>('wod');
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => new Set());
 
-  const wodMonths = useMemo(() => groupWorkoutsByMonth(workouts.filter((w) => w.type === 'wod')), [workouts]);
-  const cowMonths = useMemo(() => groupWorkoutsByMonth(workouts.filter((w) => w.type === 'cow')), [workouts]);
-  const months = activeTab === 'wod' ? wodMonths : cowMonths;
+  // DOC'S WODS / DOC'S COWS: a plain numbered inventory, in the order each
+  // entry was added (import order for the seeded 125, append order for
+  // anything added since) — not by release date, since most of the
+  // inventory hasn't been placed on the calendar at all yet.
+  const wodList = useMemo(
+    () => workouts.filter((w) => w.type === 'wod').sort((a, b) => a.createdAt - b.createdAt),
+    [workouts]
+  );
+  const cowList = useMemo(
+    () => workouts.filter((w) => w.type === 'cow').sort((a, b) => a.createdAt - b.createdAt),
+    [workouts]
+  );
 
-  // First render: open the month closest to today (checked against whichever
-  // tab has any content, so the screen never lands on a wall of collapsed
-  // rows with nothing to look at) so both tabs start already expanded.
+  // SCHEDULE: every week that has at least one *scheduled* workout in it,
+  // grouped by month — each week expands into its 5 weekday slots via
+  // scheduleRowsForWeek, so a week with 4 WODs but no Challenge yet still
+  // shows Wednesday as an explicit gap rather than vanishing.
+  const scheduledWorkouts = useMemo(() => workouts.filter((w) => w.scheduled), [workouts]);
+  const scheduleWeekStarts = useMemo(() => {
+    const set = new Set<number>();
+    for (const w of scheduledWorkouts) set.add(getWeekStart(new Date(w.releaseAt)).getTime());
+    return Array.from(set).sort((a, b) => a - b);
+  }, [scheduledWorkouts]);
+  const scheduleMonths = useMemo(() => {
+    const byMonth = new Map<string, number[]>();
+    for (const weekStart of scheduleWeekStarts) {
+      const key = weekMonthKey(weekStart);
+      const list = byMonth.get(key);
+      if (list) list.push(weekStart);
+      else byMonth.set(key, [weekStart]);
+    }
+    return Array.from(byMonth.entries())
+      .map(([monthKey, weekStarts]) => ({ monthKey, weekStarts }))
+      .sort((a, b) => (a.monthKey > b.monthKey ? 1 : -1));
+  }, [scheduleWeekStarts]);
+
+  // First render: open the SCHEDULE month closest to today, so the tab
+  // never lands on a wall of collapsed rows.
   const [initialized, setInitialized] = useState(false);
-  if (!initialized && (wodMonths.length > 0 || cowMonths.length > 0)) {
-    const todayMonth = new Date();
-    const closestOf = (list: typeof wodMonths) =>
-      list.reduce((best, m) => {
-        const [y, mo] = m.monthKey.split('-').map(Number);
-        const diff = Math.abs(y * 12 + mo - (todayMonth.getFullYear() * 12 + todayMonth.getMonth()));
-        const [by, bmo] = best.monthKey.split('-').map(Number);
-        const bestDiff = Math.abs(by * 12 + bmo - (todayMonth.getFullYear() * 12 + todayMonth.getMonth()));
-        return diff < bestDiff ? m : best;
-      }, list[0]);
-    const toExpand = new Set<string>();
-    if (wodMonths.length > 0) toExpand.add(closestOf(wodMonths).monthKey);
-    if (cowMonths.length > 0) toExpand.add(closestOf(cowMonths).monthKey);
-    setExpandedMonths(toExpand);
+  if (!initialized && scheduleMonths.length > 0) {
+    const today = new Date();
+    const todayScore = today.getFullYear() * 12 + today.getMonth();
+    const closest = scheduleMonths.reduce((best, m) => {
+      const [y, mo] = m.monthKey.split('-').map(Number);
+      const diff = Math.abs(y * 12 + mo - todayScore);
+      const [by, bmo] = best.monthKey.split('-').map(Number);
+      const bestDiff = Math.abs(by * 12 + bmo - todayScore);
+      return diff < bestDiff ? m : best;
+    }, scheduleMonths[0]);
+    setExpandedMonths(new Set([closest.monthKey]));
     setInitialized(true);
   }
 
@@ -196,32 +250,183 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
     );
   }
 
-  const weekStart = upcomingWeekStart();
-  const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
-  const upcoming = workouts
-    .filter((w) => w.releaseAt >= weekStart && w.releaseAt < weekEnd)
-    .sort((a, b) => a.releaseAt - b.releaseAt);
-  const upcomingWodCount = upcoming.filter((w) => w.type === 'wod').length;
-  const upcomingCowCount = upcoming.filter((w) => w.type === 'cow').length;
-  // This week's Sunday at 6:00 PM (the app has no timezone-conversion
-  // machinery anywhere else, so — like every other date in this codebase —
-  // "local time" is treated as ET, which is what the device driving a
-  // Ventnor City, NJ gym will be set to in practice).
-  const autoReleaseSunday = new Date(getWeekStart(new Date()).getTime() + 6 * 24 * 60 * 60 * 1000);
-  autoReleaseSunday.setHours(18, 0, 0, 0);
-  const autoReleaseAt = autoReleaseSunday.getTime();
-
-  const handlePublishWeek = () => {
-    if (upcoming.length === 0) return;
+  const handlePublishWeek = (weekStart: number, rows: ScheduleDayRow[]) => {
+    const count = rows.filter((r) => r.workout).length;
+    if (count === 0) return;
     showAlert(
-      `Publish ${upcoming.length} workout${upcoming.length === 1 ? '' : 's'}?`,
-      `${weekLabel(weekStart)} will be marked RELEASED. This is local-only until the backend is connected — nothing goes live to members yet.`,
+      `Publish ${scheduleWeekLabel(weekStart)}?`,
+      `All ${count} entr${count === 1 ? 'y' : 'ies'} this week will go PUBLISHED. This is local-only until the backend is connected — nothing goes live to members yet.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Publish', onPress: () => releaseWeek(weekStart) },
+        { text: 'Publish', onPress: () => publishWeek(weekStart) },
       ]
     );
   };
+
+  const handleUnpublishWeek = (weekStart: number) => {
+    showAlert('Return this week to DRAFT?', 'Members would stop seeing this week\'s entries.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Return to Draft', onPress: () => unpublishWeek(weekStart) },
+    ]);
+  };
+
+  const renderInventoryList = (list: ContentWorkout[], type: ContentWorkoutType) => (
+    <>
+      <View style={styles.actionRow}>
+        <Pressable
+          style={styles.actionButton}
+          onPress={() => setView({ kind: 'form', workout: null, defaultType: type })}
+          testID="content-new-workout"
+        >
+          <Ionicons name="add-circle-outline" size={16} color={colors.white} />
+          <Text style={styles.actionButtonText}>NEW WORKOUT</Text>
+        </Pressable>
+        <Pressable
+          style={styles.actionButtonOutline}
+          onPress={() => setView({ kind: 'bulk' })}
+          testID="content-bulk-import-open"
+        >
+          <Ionicons name="clipboard-outline" size={16} color={colors.green} />
+          <Text style={styles.actionButtonOutlineText}>BULK PASTE IMPORT</Text>
+        </Pressable>
+      </View>
+
+      {list.length === 0 ? (
+        <Text style={styles.emptyText}>Nothing here yet. Add a workout above, or bulk-paste a batch.</Text>
+      ) : (
+        list.map((w, i) => (
+          <Pressable
+            key={w.id}
+            style={styles.inventoryRow}
+            onPress={() => setView({ kind: 'form', workout: w })}
+            testID={`content-workout-${w.id}`}
+          >
+            <Text style={styles.inventoryIndex}>{i + 1}.</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.workoutName} numberOfLines={1}>
+                {w.name}
+              </Text>
+              <View style={styles.workoutMetaRow}>
+                <Text style={styles.workoutDate}>{formatReleaseAt(w.releaseAt)}</Text>
+                {w.type === 'cow' && w.scoringType && (
+                  <Text style={styles.workoutScoring}>{SCORING_TYPE_LABELS[w.scoringType]}</Text>
+                )}
+              </View>
+            </View>
+            <UsedBadge used={!!w.scheduled} />
+            <StatusPill status={w.status} />
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </Pressable>
+        ))
+      )}
+    </>
+  );
+
+  const renderSchedule = () => (
+    <>
+      {scheduleMonths.length === 0 ? (
+        <Text style={styles.emptyText}>Nothing scheduled yet.</Text>
+      ) : (
+        scheduleMonths.map((month) => {
+          const isOpen = expandedMonths.has(month.monthKey);
+          return (
+            <View key={month.monthKey} style={styles.monthCard}>
+              <Pressable
+                style={styles.monthHeader}
+                onPress={() => toggleMonth(month.monthKey)}
+                testID={`content-month-${month.monthKey}`}
+              >
+                <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={16} color={colors.text} />
+                <Text style={styles.monthTitle}>{monthLabel(month.monthKey)}</Text>
+              </Pressable>
+
+              {isOpen && (
+                <View style={styles.weekList}>
+                  {month.weekStarts.map((weekStart) => {
+                    const rows = scheduleRowsForWeek(weekStart, scheduledWorkouts);
+                    const status = weekStatusOf(rows);
+                    return (
+                      <View key={weekStart} style={styles.weekCard} testID={`content-schedule-week-${weekStart}`}>
+                        <View style={styles.weekHeader}>
+                          <Text style={styles.weekLabel}>{scheduleWeekLabel(weekStart)}</Text>
+                          <View
+                            style={[
+                              styles.weekStatusBadge,
+                              status === 'published' && styles.weekStatusBadgePublished,
+                              status === 'mixed' && styles.weekStatusBadgeMixed,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.weekStatusBadgeText,
+                                status === 'published' && styles.weekStatusBadgeTextPublished,
+                              ]}
+                            >
+                              {status === 'published' ? 'PUBLISHED' : status === 'mixed' ? 'MIXED' : 'DRAFT'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {rows.map((row) => (
+                          <View key={row.date.toISOString()} style={styles.dayRow}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.dayRowText}>
+                                {scheduleDayLabel(row.date)}
+                                {' — '}
+                                {row.slotType === 'cow' && "DOC'S COW — "}
+                                {row.workout ? row.workout.name : '(unassigned)'}
+                              </Text>
+                            </View>
+                            {row.workout && (
+                              <>
+                                <StatusPill status={row.workout.status} />
+                                <Pressable
+                                  style={styles.dayToggleButton}
+                                  onPress={() =>
+                                    row.workout!.status === 'published'
+                                      ? unpublishDay(row.workout!.id)
+                                      : publishDay(row.workout!.id)
+                                  }
+                                  testID={`content-day-toggle-${row.workout.id}`}
+                                >
+                                  <Text style={styles.dayToggleButtonText}>
+                                    {row.workout.status === 'published' ? 'DRAFT' : 'PUBLISH'}
+                                  </Text>
+                                </Pressable>
+                              </>
+                            )}
+                          </View>
+                        ))}
+
+                        <View style={styles.weekButtonRow}>
+                          <Pressable
+                            style={[styles.weekPublishButton, status === 'published' && styles.weekButtonDisabled]}
+                            disabled={status === 'published'}
+                            onPress={() => handlePublishWeek(weekStart, rows)}
+                            testID={`content-publish-week-${weekStart}`}
+                          >
+                            <Text style={styles.weekPublishButtonText}>PUBLISH THIS WEEK</Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.weekUnpublishButton, status === 'draft' && styles.weekButtonDisabled]}
+                            disabled={status === 'draft'}
+                            onPress={() => handleUnpublishWeek(weekStart)}
+                            testID={`content-unpublish-week-${weekStart}`}
+                          >
+                            <Text style={styles.weekUnpublishButtonText}>UNPUBLISH / RETURN TO DRAFT</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          );
+        })
+      )}
+    </>
+  );
 
   return (
     <View style={styles.container}>
@@ -230,63 +435,8 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
         <View style={styles.localBanner} testID="content-local-only-banner">
           <Ionicons name="information-circle-outline" size={16} color={colors.textMuted} />
           <Text style={styles.localBannerText}>
-            Drafts are stored locally on this device until the backend is connected. Nothing here is live to members
-            yet, regardless of status.
-          </Text>
-        </View>
-
-        <View style={styles.actionRow}>
-          <Pressable
-            style={styles.actionButton}
-            onPress={() => setView({ kind: 'form', workout: null, defaultType: activeTab })}
-            testID="content-new-workout"
-          >
-            <Ionicons name="add-circle-outline" size={16} color={colors.white} />
-            <Text style={styles.actionButtonText}>NEW WORKOUT</Text>
-          </Pressable>
-          <Pressable
-            style={styles.actionButtonOutline}
-            onPress={() => setView({ kind: 'bulk' })}
-            testID="content-bulk-import-open"
-          >
-            <Ionicons name="clipboard-outline" size={16} color={colors.green} />
-            <Text style={styles.actionButtonOutlineText}>BULK PASTE IMPORT</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.releaseCard} testID="content-release-this-week">
-          <Text style={styles.releaseHeading}>RELEASE THIS WEEK</Text>
-          <Text style={styles.releaseWeekLabel}>{weekLabel(weekStart)}</Text>
-          <Text style={styles.releaseCounts}>
-            {upcomingWodCount}/{WEEKLY_WOD_TARGET} DOC'S WODS · {upcomingCowCount}/{WEEKLY_COW_TARGET} CHALLENGE OF
-            THE WEEK
-          </Text>
-
-          {upcoming.length === 0 ? (
-            <Text style={styles.releaseEmptyText}>Nothing scheduled for this week yet.</Text>
-          ) : (
-            upcoming.map((w) => (
-              <View key={w.id} style={styles.releaseRow}>
-                <TypePill type={w.type} />
-                <Text style={styles.releaseRowName} numberOfLines={1}>
-                  {w.name}
-                </Text>
-                <StatusPill status={w.status} />
-              </View>
-            ))
-          )}
-
-          <Pressable
-            style={[styles.publishButton, upcoming.length === 0 && styles.publishButtonDisabled]}
-            disabled={upcoming.length === 0}
-            onPress={handlePublishWeek}
-            testID="content-release-week-button"
-          >
-            <Text style={styles.publishButtonText}>REVIEW &amp; PUBLISH THIS WEEK</Text>
-          </Pressable>
-
-          <Text style={styles.autoReleaseText}>
-            Auto-releases every Sunday at 6:00 PM ET for the following week — next: {formatReleaseAt(autoReleaseAt)}.
+            Drafts are stored locally on this device until the backend is connected. Members never see anything
+            that isn't PUBLISHED.
           </Text>
         </View>
 
@@ -305,85 +455,18 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
           >
             <Text style={[styles.tabText, activeTab === 'cow' && styles.tabTextActive]}>DOC'S COWS</Text>
           </Pressable>
+          <Pressable
+            style={[styles.tab, activeTab === 'schedule' && styles.tabActive]}
+            onPress={() => setActiveTab('schedule')}
+            testID="content-tab-schedule"
+          >
+            <Text style={[styles.tabText, activeTab === 'schedule' && styles.tabTextActive]}>SCHEDULE</Text>
+          </Pressable>
         </View>
 
-        {months.length === 0 ? (
-          <Text style={styles.emptyText}>
-            Nothing drafted yet. Add a workout above, or bulk-paste a batch to get started.
-          </Text>
-        ) : (
-          months.map((month) => {
-            const isOpen = expandedMonths.has(month.monthKey);
-            return (
-              <View key={month.monthKey} style={styles.monthCard}>
-                <Pressable
-                  style={styles.monthHeader}
-                  onPress={() => toggleMonth(month.monthKey)}
-                  testID={`content-month-${month.monthKey}`}
-                >
-                  <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={16} color={colors.text} />
-                  <Text style={styles.monthTitle}>{monthLabel(month.monthKey)}</Text>
-                  <Text style={styles.monthMeta}>{monthCompletionLabel(month, activeTab)}</Text>
-                </Pressable>
-
-                {isOpen && (
-                  <View style={styles.weekList}>
-                    {month.weeks.map((week) => {
-                      const isComplete = isWeekCompleteForTab(week, activeTab);
-                      const gapText = weekGapTextForTab(week, activeTab);
-                      return (
-                        <View key={week.weekStart} style={styles.weekCard} testID={`content-week-${week.weekStart}`}>
-                          <View style={styles.weekHeader}>
-                            <Text style={styles.weekLabel}>{weekLabel(week.weekStart)}</Text>
-                            <View style={[styles.weekBadge, isComplete ? styles.weekBadgeComplete : styles.weekBadgeGap]}>
-                              <Text
-                                style={[
-                                  styles.weekBadgeText,
-                                  isComplete ? styles.weekBadgeTextComplete : styles.weekBadgeTextGap,
-                                ]}
-                              >
-                                {isComplete ? 'COMPLETE' : 'GAPS'}
-                              </Text>
-                            </View>
-                          </View>
-                          {gapText && <Text style={styles.weekGapText}>{gapText}</Text>}
-
-                          {week.workouts.length === 0 ? (
-                            <Text style={styles.weekEmptyText}>Nothing scheduled this week.</Text>
-                          ) : (
-                            week.workouts.map((w) => (
-                              <Pressable
-                                key={w.id}
-                                style={styles.workoutRow}
-                                onPress={() => setView({ kind: 'form', workout: w })}
-                                testID={`content-workout-${w.id}`}
-                              >
-                                <View style={{ flex: 1 }}>
-                                  <Text style={styles.workoutName} numberOfLines={1}>
-                                    {w.name}
-                                  </Text>
-                                  <View style={styles.workoutMetaRow}>
-                                    <TypePill type={w.type} />
-                                    <Text style={styles.workoutDate}>{formatReleaseAt(w.releaseAt)}</Text>
-                                    {w.type === 'cow' && w.scoringType && (
-                                      <Text style={styles.workoutScoring}>{SCORING_TYPE_LABELS[w.scoringType]}</Text>
-                                    )}
-                                  </View>
-                                </View>
-                                <StatusPill status={w.status} />
-                                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-                              </Pressable>
-                            ))
-                          )}
-                        </View>
-                      );
-                    })}
-                  </View>
-                )}
-              </View>
-            );
-          })
-        )}
+        {activeTab === 'wod' && renderInventoryList(wodList, 'wod')}
+        {activeTab === 'cow' && renderInventoryList(cowList, 'cow')}
+        {activeTab === 'schedule' && renderSchedule()}
       </ScrollView>
     </View>
   );
@@ -455,83 +538,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 0.5,
   },
-  releaseCard: {
-    backgroundColor: colors.greenDeep,
-    borderRadius: 14,
-    padding: 18,
-    marginBottom: 28,
-  },
-  releaseHeading: {
-    color: colors.goldBright,
-    fontFamily: fonts.labelBold,
-    fontSize: 13,
-    letterSpacing: 1.5,
-  },
-  releaseWeekLabel: {
-    color: colors.white,
-    fontFamily: fonts.headline,
-    fontSize: 26,
-    letterSpacing: 0.5,
-    marginTop: 4,
-  },
-  releaseCounts: {
-    color: 'rgba(255,255,255,0.8)',
-    fontFamily: fonts.labelSemiBold,
-    fontSize: 12,
-    letterSpacing: 0.5,
-    marginTop: 4,
-    marginBottom: 14,
-  },
-  releaseEmptyText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontFamily: fonts.body,
-    fontSize: 13,
-    marginBottom: 14,
-  },
-  releaseRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.15)',
-  },
-  releaseRowName: {
-    flex: 1,
-    color: colors.white,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 13,
-  },
-  publishButton: {
-    backgroundColor: colors.goldBright,
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 14,
-  },
-  publishButtonDisabled: {
-    opacity: 0.4,
-  },
-  publishButtonText: {
-    color: colors.greenDeep,
-    fontFamily: fonts.labelBold,
-    fontSize: 13,
-    letterSpacing: 1,
-  },
-  autoReleaseText: {
-    color: 'rgba(255,255,255,0.65)',
-    fontFamily: fonts.body,
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 10,
-  },
   tabRow: {
     flexDirection: 'row',
     gap: 8,
     backgroundColor: colors.hairline,
     borderRadius: 12,
     padding: 4,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   tab: {
     flex: 1,
@@ -545,7 +558,7 @@ const styles = StyleSheet.create({
   tabText: {
     color: colors.textMuted,
     fontFamily: fonts.labelBold,
-    fontSize: 13,
+    fontSize: 12,
     letterSpacing: 0.5,
   },
   tabTextActive: {
@@ -556,97 +569,19 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 13,
   },
-  weekEmptyText: {
-    color: colors.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 12,
-    fontStyle: 'italic',
-    marginTop: 10,
-  },
-  monthCard: {
-    marginBottom: 12,
-  },
-  monthHeader: {
+  inventoryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-  monthTitle: {
-    color: colors.text,
-    fontFamily: fonts.headline,
-    fontSize: 18,
-    letterSpacing: 0.5,
-  },
-  monthMeta: {
-    marginLeft: 'auto',
-    color: colors.textMuted,
-    fontFamily: fonts.label,
-    fontSize: 11,
-    letterSpacing: 0.3,
-  },
-  weekList: {
-    marginTop: 8,
-    gap: 8,
-  },
-  weekCard: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: 12,
-    padding: 14,
-  },
-  weekHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  weekLabel: {
-    color: colors.text,
-    fontFamily: fonts.bodyBold,
-    fontSize: 14,
-  },
-  weekBadge: {
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  weekBadgeComplete: {
-    backgroundColor: 'rgba(7,102,82,0.12)',
-  },
-  weekBadgeGap: {
-    backgroundColor: 'rgba(229,184,11,0.18)',
-  },
-  weekBadgeText: {
-    fontFamily: fonts.labelBold,
-    fontSize: 10,
-    letterSpacing: 0.5,
-  },
-  weekBadgeTextComplete: {
-    color: colors.green,
-  },
-  weekBadgeTextGap: {
-    color: '#8A6A00',
-  },
-  weekGapText: {
-    color: '#8A6A00',
-    fontFamily: fonts.body,
-    fontSize: 12,
-    marginTop: 4,
-  },
-  workoutRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingTop: 12,
-    marginTop: 12,
+    paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.background,
+    borderTopColor: colors.hairline,
+  },
+  inventoryIndex: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 13,
+    width: 28,
   },
   workoutName: {
     color: colors.text,
@@ -671,24 +606,27 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 0.5,
   },
-  typePill: {
-    borderWidth: 1,
-    borderColor: colors.green,
+  usedBadge: {
     borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
   },
-  typePillCow: {
-    borderColor: colors.gold,
+  usedBadgeUsed: {
+    backgroundColor: 'rgba(7,102,82,0.12)',
   },
-  typePillText: {
-    color: colors.green,
+  usedBadgeUnused: {
+    backgroundColor: colors.hairline,
+  },
+  usedBadgeText: {
     fontFamily: fonts.labelBold,
     fontSize: 9,
     letterSpacing: 0.5,
   },
-  typePillTextCow: {
-    color: '#8A6A00',
+  usedBadgeTextUsed: {
+    color: colors.green,
+  },
+  usedBadgeTextUnused: {
+    color: colors.textMuted,
   },
   statusPill: {
     borderRadius: 6,
@@ -699,14 +637,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.hairline,
   },
   statusPillScheduled: {
-    // Opaque (not a tint) so this reads clearly whether it's sitting on a
-    // white list row or the dark green "release this week" card — a
-    // translucent green tint nearly disappears against that dark green.
+    // Opaque (not a tint) so this reads clearly on either a white list row
+    // or a dark card — a translucent green tint nearly disappears on dark.
     backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.green,
   },
-  statusPillReleased: {
+  statusPillPublished: {
     backgroundColor: colors.green,
   },
   statusPillText: {
@@ -715,10 +652,134 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 0.5,
   },
-  statusPillTextReleased: {
+  statusPillTextPublished: {
     color: colors.white,
   },
   statusPillTextScheduled: {
     color: colors.green,
+  },
+  monthCard: {
+    marginBottom: 12,
+  },
+  monthHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  monthTitle: {
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 18,
+    letterSpacing: 0.5,
+  },
+  weekList: {
+    marginTop: 8,
+    gap: 10,
+  },
+  weekCard: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 12,
+    padding: 14,
+  },
+  weekHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  weekLabel: {
+    color: colors.text,
+    fontFamily: fonts.bodyBold,
+    fontSize: 14,
+  },
+  weekStatusBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: colors.hairline,
+  },
+  weekStatusBadgePublished: {
+    backgroundColor: 'rgba(7,102,82,0.12)',
+  },
+  weekStatusBadgeMixed: {
+    backgroundColor: 'rgba(229,184,11,0.18)',
+  },
+  weekStatusBadgeText: {
+    fontFamily: fonts.labelBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    color: colors.textMuted,
+  },
+  weekStatusBadgeTextPublished: {
+    color: colors.green,
+  },
+  dayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.background,
+  },
+  dayRowText: {
+    color: colors.text,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+  },
+  dayToggleButton: {
+    borderWidth: 1,
+    borderColor: colors.green,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  dayToggleButtonText: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 9,
+    letterSpacing: 0.5,
+  },
+  weekButtonRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  weekPublishButton: {
+    flex: 1,
+    backgroundColor: colors.green,
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  weekPublishButtonText: {
+    color: colors.white,
+    fontFamily: fonts.labelBold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  weekUnpublishButton: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: colors.hairline,
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  weekUnpublishButtonText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelBold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  weekButtonDisabled: {
+    opacity: 0.4,
   },
 });

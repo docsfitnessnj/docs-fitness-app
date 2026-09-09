@@ -29,7 +29,7 @@ export type OnlinePlan = {
 };
 
 export const ONLINE_PLAN_BULLETS = [
-  'All 5 weekly WODs',
+  'All 5 kettlebell workouts a week',
   'The full Deck of WODs (54 workouts)',
   'Weekly Challenge + live leaderboard',
   'Full community access',

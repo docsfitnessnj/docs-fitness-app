@@ -7,7 +7,7 @@ import React, { createContext, useContext, useMemo, useState } from 'react';
 // - online_paid: paying online member, full access
 // - in_person_unlimited: Boathouse Monthly Unlimited — full app included
 // - online_free: no active plan (trial lapsed, or came in through BOOK YOUR
-//   CLASS and hasn't chosen one yet) — 2 of 5 weekly WODs, no COWS, no Deck
+//   CLASS and hasn't chosen one yet) — 2 of 5 kettlebell workouts a week, no COWS, no Deck
 // - ten_pack: Boathouse 10 Class Pack — community + booking, workouts locked
 // - drop_in: Boathouse Drop In — booking only, no community, workouts locked
 // - admin: Doc's own account — full access + community moderation

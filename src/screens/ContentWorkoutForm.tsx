@@ -35,7 +35,7 @@ const TYPE_OPTIONS: { value: ContentWorkoutType; label: string }[] = [
 const STATUS_OPTIONS: { value: ContentWorkoutStatus; label: string }[] = [
   { value: 'draft', label: 'DRAFT' },
   { value: 'scheduled', label: 'SCHEDULED' },
-  { value: 'released', label: 'RELEASED' },
+  { value: 'published', label: 'PUBLISHED' },
 ];
 
 const SCORING_TYPE_OPTIONS: { value: ContentCowScoringType; label: string }[] = (
@@ -96,6 +96,7 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
     setDateError(null);
     onSave({
       name: name.trim(),
+      originalTitle: workout?.originalTitle ?? name.trim(),
       type,
       format: format.trim(),
       formatDescription: formatDescription.trim(),

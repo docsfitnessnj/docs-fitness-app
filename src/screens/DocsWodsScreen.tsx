@@ -74,7 +74,7 @@ export default function DocsWodsScreen() {
         <RestDay />
       ) : !isUnlocked(selectedIndex) ? (
         <>
-          {wodAccessLevel === 'partial' && <UpgradeBanner message="Unlock all 5 weekly WODs" />}
+          {wodAccessLevel === 'partial' && <UpgradeBanner message="Unlock all 5 kettlebell workouts a week" />}
           <LockedDay />
         </>
       ) : (
