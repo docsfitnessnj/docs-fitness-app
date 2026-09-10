@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getWeekStart } from '../data/content';
-import { CONTENT_LIBRARY_SEED } from '../data/contentLibrarySeed';
-import { loadJSON, saveJSON } from '../lib/storage';
+import { CONTENT_LIBRARY_SEED, CONTENT_LIBRARY_SEED_VERSION } from '../data/contentLibrarySeed';
+import { loadSeededArray, resetToSeedArray, saveJSON } from '../lib/storage';
 
 // Deliberately NOT prefixed "docsfitness." (see storage.ts's clearAppStorage,
 // which sweeps every key under that prefix on sign-out). Doc's draft content
@@ -83,12 +83,21 @@ type ContentLibraryContextValue = {
   // Per-day equivalent, acting on one entry directly by id.
   publishDay: (id: string) => void;
   unpublishDay: (id: string) => void;
+  // Discards every local draft/edit and reloads CONTENT_LIBRARY_SEED
+  // exactly as shipped — the admin "RESET TO SEED" control, for a device
+  // whose local drafts have drifted too far to trust (or just to start
+  // clean after testing). Distinct from the automatic merge loadSeededArray
+  // does on load, which only ever *adds* missing seed entries and never
+  // discards anything.
+  resetToSeed: () => void;
 };
 
 const ContentLibraryContext = createContext<ContentLibraryContextValue | undefined>(undefined);
 
 export function ContentLibraryProvider({ children }: { children: React.ReactNode }) {
-  const [workouts, setWorkouts] = useState<ContentWorkout[]>(() => loadJSON(STORAGE_KEY, CONTENT_LIBRARY_SEED));
+  const [workouts, setWorkouts] = useState<ContentWorkout[]>(() =>
+    loadSeededArray(STORAGE_KEY, CONTENT_LIBRARY_SEED, CONTENT_LIBRARY_SEED_VERSION)
+  );
 
   useEffect(() => {
     saveJSON(STORAGE_KEY, workouts);
@@ -137,6 +146,9 @@ export function ContentLibraryProvider({ children }: { children: React.ReactNode
       },
       unpublishDay: (id) => {
         setWorkouts((prev) => prev.map((w) => (w.id === id ? { ...w, status: 'draft', updatedAt: Date.now() } : w)));
+      },
+      resetToSeed: () => {
+        setWorkouts(resetToSeedArray(STORAGE_KEY, CONTENT_LIBRARY_SEED, CONTENT_LIBRARY_SEED_VERSION));
       },
     }),
     [workouts]
