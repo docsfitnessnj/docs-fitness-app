@@ -3,6 +3,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '../components/AppModal';
 import { Avatar } from '../components/Avatar';
+import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { MediaAttachmentPicker } from '../components/MediaAttachmentPicker';
 import { PostAuthorBadges } from '../components/PostAuthorBadges';
 import { PostDetailModal } from '../components/PostDetailModal';
@@ -13,7 +14,7 @@ import { DateStrip } from '../components/DateStrip';
 import { DayPanel } from '../components/DayPanel';
 import { Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
 import { useMembership } from '../context/MembershipContext';
-import { useDisplayName, useProfile } from '../context/ProfileContext';
+import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { useStories } from '../context/StoriesContext';
 import { useTour } from '../context/TourContext';
 import { getUpcomingDays, isDayWodUnlocked } from '../data/content';
@@ -177,7 +178,7 @@ function PostCard({
   onOpenDetail: (post: Post) => void;
 }) {
   const { toggleLike, addReaction, togglePin, deletePost, markRead } = useCommunity();
-  const { isAdmin } = useMembership();
+  const isAdmin = useCanModerate();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
   const isDesktop = useIsDesktop();
@@ -204,8 +205,8 @@ function PostCard({
       showAlert(post.title || post.author, undefined, [
         {
           text: post.pinned ? 'Unpin' : 'Pin',
-          onPress: () => {
-            const ok = togglePin(post.id);
+          onPress: async () => {
+            const ok = await togglePin(post.id);
             if (!ok) showAlert('Pin Limit Reached', 'Unpin another post before pinning a new one (max 3).');
           },
         },
@@ -388,14 +389,18 @@ function CommunityFeed({
   onOpenDetail: (post: Post) => void;
   communityAccess: 'full';
 }) {
-  const { posts } = useCommunity();
+  const { posts, error } = useCommunity();
   const canInteract = communityAccess === 'full';
   return (
     <View>
       <ComposerBar onOpen={onOpenComposer} />
-      {posts.map((post) => (
-        <PostCard key={post.id} post={post} canInteract={canInteract} onEdit={onEditPost} onOpenDetail={onOpenDetail} />
-      ))}
+      {error ? (
+        <BackendErrorNotice message={error} />
+      ) : (
+        posts.map((post) => (
+          <PostCard key={post.id} post={post} canInteract={canInteract} onEdit={onEditPost} onOpenDetail={onOpenDetail} />
+        ))
+      )}
     </View>
   );
 }

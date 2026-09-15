@@ -6,8 +6,7 @@ import { DocsBadge } from './brand/DocsBadge';
 import { MembershipToggle } from './MembershipToggle';
 import { useChallenge } from '../context/ChallengeContext';
 import { useDeckProgress } from '../context/DeckProgressContext';
-import { useMembership } from '../context/MembershipContext';
-import { useDisplayName } from '../context/ProfileContext';
+import { useCanModerate, useDisplayName } from '../context/ProfileContext';
 import { useTour } from '../context/TourContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { openMerchStore, openLocationMaps } from '../lib/links';
@@ -64,7 +63,7 @@ export function SidebarDrawer({
   const { completedCount, totalCount, completedAt: deckCompletedAt } = useDeckProgress();
   const { entries: challengeEntries } = useChallenge();
   const displayName = useDisplayName();
-  const { isAdmin } = useMembership();
+  const isAdmin = useCanModerate();
   const tour = useTour();
 
   const myWorkoutsCount =

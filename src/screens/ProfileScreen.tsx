@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { ModalHeader } from '../components/ModalHeader';
 import { Avatar } from '../components/Avatar';
+import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { ProfileBadgeCase } from '../components/ProfileBadgeCase';
 import { ProfilePhotoCropModal } from '../components/ProfilePhotoCropModal';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
@@ -16,16 +17,7 @@ type Props = {
 };
 
 export function ProfileScreen({ visible, onClose }: Props) {
-  const {
-    photoUri,
-    name,
-    instagramHandle,
-    favoriteQuote,
-    setPhotoUri,
-    setName,
-    setInstagramHandle,
-    setFavoriteQuote,
-  } = useProfile();
+  const { photoUri, name, instagramHandle, favoriteQuote, loading, error, updateProfile } = useProfile();
   const displayName = useDisplayName();
 
   const [draftPhotoUri, setDraftPhotoUri] = useState(photoUri);
@@ -33,6 +25,7 @@ export function ProfileScreen({ visible, onClose }: Props) {
   const [draftHandle, setDraftHandle] = useState(instagramHandle);
   const [draftQuote, setDraftQuote] = useState(favoriteQuote);
   const [cropUri, setCropUri] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Reset the draft to the saved values every time the sheet opens.
   useEffect(() => {
@@ -75,11 +68,19 @@ export function ProfileScreen({ visible, onClose }: Props) {
     setCropUri(null);
   };
 
-  const save = () => {
-    setPhotoUri(draftPhotoUri);
-    setName(draftName);
-    setInstagramHandle(draftHandle);
-    setFavoriteQuote(draftQuote);
+  const save = async () => {
+    setSaving(true);
+    const result = await updateProfile({
+      name: draftName,
+      instagramHandle: draftHandle,
+      favoriteQuote: draftQuote,
+      photoUri: draftPhotoUri,
+    });
+    setSaving(false);
+    if (result.error) {
+      showAlert("Couldn't Save", result.error);
+      return;
+    }
     onClose();
   };
 
@@ -95,6 +96,23 @@ export function ProfileScreen({ visible, onClose }: Props) {
   };
 
   if (!visible) return null;
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <ModalHeader title="PROFILE" onBack={onClose} backTestID="close-profile" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <ModalHeader title="PROFILE" onBack={onClose} backTestID="close-profile" />
+        <BackendErrorNotice message={error} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -148,13 +166,13 @@ export function ProfileScreen({ visible, onClose }: Props) {
             aria-label="Favorite quote"
           />
 
-          <Pressable style={styles.saveButton} onPress={save} testID="save-profile">
-            <Text style={styles.saveButtonText}>SAVE</Text>
+          <Pressable style={[styles.saveButton, saving && styles.saveButtonDisabled]} disabled={saving} onPress={save} testID="save-profile">
+            <Text style={styles.saveButtonText}>{saving ? 'SAVING...' : 'SAVE'}</Text>
           </Pressable>
 
           <ProfileBadgeCase />
 
-        <Text style={styles.footnote}>Saved on this device — it'll be here next time you open the app.</Text>
+        <Text style={styles.footnote}>Saved to your account — it'll be here on any device you sign into.</Text>
       </ScrollView>
 
       <ProfilePhotoCropModal
@@ -253,6 +271,9 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     alignItems: 'center',
     marginTop: 8,
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   saveButtonText: {
     color: colors.white,

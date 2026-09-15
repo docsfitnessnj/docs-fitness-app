@@ -5,16 +5,26 @@ import { colors, fonts } from '../theme';
 
 type Props = {
   onBack: () => void;
-  onSignIn: (email: string) => void;
+  onForgotPassword: () => void;
+  // Returns an error message on failure, or null on success.
+  onSignIn: (email: string, password: string) => Promise<string | null>;
 };
 
-// No real backend yet — this just captures an email and treats them as a
-// returning online member, same as every other tier transition in this app.
-export default function SignInScreen({ onBack, onSignIn }: Props) {
+export default function SignInScreen({ onBack, onForgotPassword, onSignIn }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = email.trim().length > 3 && email.includes('@') && password.trim().length > 0;
+  const canSubmit = email.trim().length > 3 && email.includes('@') && password.trim().length > 0 && !submitting;
+
+  const handleSignIn = async () => {
+    setSubmitting(true);
+    setError(null);
+    const result = await onSignIn(email.trim(), password);
+    setSubmitting(false);
+    if (result) setError(result);
+  };
 
   return (
     <View style={styles.container}>
@@ -58,13 +68,23 @@ export default function SignInScreen({ onBack, onSignIn }: Props) {
             testID="sign-in-password"
           />
 
+          {error && (
+            <Text style={styles.errorText} testID="sign-in-error">
+              {error}
+            </Text>
+          )}
+
           <Pressable
             style={[styles.signInButton, !canSubmit && styles.signInButtonDisabled]}
             disabled={!canSubmit}
-            onPress={() => onSignIn(email.trim())}
+            onPress={handleSignIn}
             testID="sign-in-submit"
           >
-            <Text style={styles.signInButtonText}>SIGN IN</Text>
+            <Text style={styles.signInButtonText}>{submitting ? 'PLEASE WAIT...' : 'SIGN IN'}</Text>
+          </Pressable>
+
+          <Pressable onPress={onForgotPassword} hitSlop={8} style={styles.forgotPasswordLink} testID="sign-in-forgot-password">
+            <Text style={styles.forgotPasswordText}>Forgot password?</Text>
           </Pressable>
         </View>
       </View>
@@ -150,5 +170,22 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelBold,
     fontSize: 15,
     letterSpacing: 1,
+  },
+  errorText: {
+    color: colors.scoreboardRed,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  forgotPasswordLink: {
+    alignItems: 'center',
+    marginTop: 18,
+  },
+  forgotPasswordText: {
+    color: colors.green,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 13,
+    letterSpacing: 0.3,
   },
 });

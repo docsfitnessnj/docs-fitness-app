@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useAuth } from './AuthContext';
 import { ContentCowScoringType, useContentLibrary } from './ContentLibraryContext';
-import { loadJSON, saveJSON } from '../lib/storage';
-
-const STORAGE_KEY = 'docsfitness.challengeEntries.v1';
+import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
 
 // The one built-in Challenge of the Week, shown until Doc has a PUBLISHED
 // Challenge drafted in the admin Content Library — see useCurrentChallenge
@@ -83,39 +82,104 @@ export type ChallengeEntry = {
   createdAt: number;
 };
 
-let idCounter = 0;
-function nextId(): string {
-  idCounter += 1;
-  return `challenge-${idCounter}`;
-}
-
 type ChallengeContextValue = {
+  loading: boolean;
+  error: string | null;
   entries: ChallengeEntry[];
-  addEntry: (
-    entry: Omit<ChallengeEntry, 'id' | 'createdAt'>
-  ) => void;
+  addEntry: (entry: Omit<ChallengeEntry, 'id' | 'createdAt' | 'author'>) => void;
 };
 
 const ChallengeContext = createContext<ChallengeContextValue | undefined>(undefined);
 
-// Weekly Challenge (COWs) submissions — persisted so a member's own entries
-// show up in My Workouts and survive an app restart, same as WODs and deck
-// cards.
+type ChallengeEntryRow = {
+  id: string;
+  challenge_title: string;
+  kettlebell_kg: number;
+  rounds: string;
+  reps: string | null;
+  time_taken: string;
+  tag: ChallengeTag;
+  created_at: string;
+  profiles: { display_name: string } | { display_name: string }[] | null;
+};
+
+function authorNameOf(row: ChallengeEntryRow): string {
+  const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+  return profile?.display_name?.trim() || 'Member';
+}
+
+function rowToEntry(row: ChallengeEntryRow): ChallengeEntry {
+  return {
+    id: row.id,
+    author: authorNameOf(row),
+    challengeTitle: row.challenge_title,
+    kettlebell: String(row.kettlebell_kg),
+    rounds: row.rounds,
+    reps: row.reps ?? undefined,
+    time: row.time_taken,
+    tag: row.tag,
+    createdAt: new Date(row.created_at).getTime(),
+  };
+}
+
+// Weekly Challenge (COWs) submissions — every member's entries, read from
+// the shared `challenge_entries` table, so the leaderboard is the same for
+// everyone (not just whatever this device happened to post).
 export function ChallengeProvider({ children }: { children: React.ReactNode }) {
-  const [entries, setEntries] = useState<ChallengeEntry[]>(() => loadJSON(STORAGE_KEY, []));
+  const { user, authReady } = useAuth();
+  const [entries, setEntries] = useState<ChallengeEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    saveJSON(STORAGE_KEY, entries);
-  }, [entries]);
+    if (!authReady || !user) return;
+    let cancelled = false;
+    setLoading(true);
+    supabase
+      .from('challenge_entries')
+      .select('id, challenge_title, kettlebell_kg, rounds, reps, time_taken, tag, created_at, profiles(display_name)')
+      .order('created_at', { ascending: true })
+      .then(({ data, error: fetchError }) => {
+        if (cancelled) return;
+        if (fetchError) {
+          setError(isBackendUnavailableError(fetchError) ? "Can't load the leaderboard right now." : fetchError.message);
+          setLoading(false);
+          return;
+        }
+        setEntries(((data as unknown as ChallengeEntryRow[]) ?? []).map(rowToEntry));
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, user]);
 
   const value = useMemo<ChallengeContextValue>(
     () => ({
+      loading,
+      error,
       entries,
       addEntry: (entry) => {
-        setEntries((prev) => [...prev, { ...entry, id: nextId(), createdAt: Date.now() }]);
+        if (!user) return;
+        supabase
+          .from('challenge_entries')
+          .insert({
+            user_id: user.id,
+            challenge_title: entry.challengeTitle,
+            kettlebell_kg: Number(entry.kettlebell) || 0,
+            rounds: entry.rounds,
+            reps: entry.reps ?? null,
+            time_taken: entry.time,
+            tag: entry.tag,
+          })
+          .select('id, challenge_title, kettlebell_kg, rounds, reps, time_taken, tag, created_at, profiles(display_name)')
+          .single()
+          .then(({ data }) => {
+            if (data) setEntries((prev) => [...prev, rowToEntry(data as unknown as ChallengeEntryRow)]);
+          });
       },
     }),
-    [entries]
+    [entries, loading, error, user]
   );
 
   return <ChallengeContext.Provider value={value}>{children}</ChallengeContext.Provider>;
