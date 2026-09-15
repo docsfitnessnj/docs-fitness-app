@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
+import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { BadgeIcon } from '../components/icons/BadgeIcon';
 import { BADGE_MAP, BadgeId, MEMBERSHIP_DISPLAY_ORDER, permanentDisplayOrder, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import { openDeckStore } from '../lib/links';
@@ -32,6 +33,15 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
   const earnedSet = new Set(badges.myBadgeIds);
 
   if (!visible) return null;
+
+  if (badges.error) {
+    return (
+      <View style={styles.container}>
+        <ModalHeader title="THE TROPHY CASE" onBack={onClose} backTestID="close-trophy-case" />
+        <BackendErrorNotice message={badges.error} />
+      </View>
+    );
+  }
 
   const permanentIds = permanentDisplayOrder(founding50.enabled || earnedSet.has('founding_50'));
 

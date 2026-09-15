@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useAuth } from './AuthContext';
+import { loadJSON, saveJSON } from '../lib/storage';
 
 // Every state a person (or Doc) can be in. There is no anonymous/guest
 // state — every account, whichever door it came through, has an email —
@@ -112,21 +114,25 @@ type MembershipContextValue = {
   // planRenewsAt/trialEndsAt even once flagged.
   cancellationRequested: boolean;
 
-  startTrial: (email: string) => void;
+  // Sets the simulated tier for a member who just created a real account and
+  // chose the online trial door. Identity itself (the account, the email)
+  // is real now — AuthContext/Supabase own that — this just picks which
+  // simulated plan they start on, same as every other tier transition here.
+  startTrial: () => void;
   becomeMember: () => void;
   // Claims a Founding 50 spot — same full access as becomeMember's
   // online_paid, but at the locked-in rate, tracked as its own tier so a
   // later cancellation can't quietly resubscribe at the founding rate.
   becomeFoundingFifty: () => void;
   selectInPersonPlan: (plan: InPersonPlan) => void;
-  // The About page's BOOK YOUR CLASS door — captures an email without
-  // committing to a paid plan yet, same as a lapsed trial (online_free):
-  // booking access, first-class-free, full (non-anonymous) community.
-  enterFreeTier: (email: string) => void;
-  // A returning member signing back in — full online access, no trial
-  // dates, and (unlike becomeMember) no purchase celebration since nothing
-  // was just bought.
-  signIn: (email: string) => void;
+  // The About page's BOOK YOUR CLASS door — same real-account signup as
+  // startTrial, just landing on the free tier instead: booking access,
+  // first-class-free, full (non-anonymous) community.
+  enterFreeTier: () => void;
+  // A returning member who just signed back into their real account — full
+  // online access, no trial dates, and (unlike becomeMember) no purchase
+  // celebration since nothing was just bought.
+  signIn: () => void;
   setDevTier: (tier: MembershipTier) => void;
   // Dev-preview-only: forces the "first time visitor" Dockside variant —
   // online_free with no trial history — regardless of what was previewed
@@ -148,19 +154,68 @@ const RECURRING_TIERS: MembershipTier[] = ['online_paid', 'founding_50', 'in_per
 
 const MembershipContext = createContext<MembershipContextValue | undefined>(undefined);
 
+const SIMULATED_STORAGE_KEY = 'docsfitness.simulatedMembership.v1';
+
+// Everything below is still exactly the simulated tier/access-matrix system
+// this app has always used — no real billing this round. It's persisted so
+// a signed-in member's simulated plan survives a reload the same way their
+// real Supabase session now does (otherwise a returning member would stay
+// logged in but land back on a reset "trial" tier every time, which is its
+// own version of the "signed in every time" bug this round fixes). Since
+// there's no real membership backend yet, this is one shared simulated
+// state per *device*, not per account — a reasonable stand-in until a real
+// billing/membership round replaces it.
+type SimulatedMembershipState = {
+  tier: MembershipTier;
+  trialEndsAtMs: number | null;
+  trialWarningDismissed: boolean;
+  tenPackClassesRemaining: number | null;
+  firstClassUsed: boolean;
+  newsletterOptIn: boolean;
+  justPurchased: boolean;
+  planStartedAt: number | null;
+  cancellationRequested: boolean;
+  hasEverTrialed: boolean;
+};
+
+const DEFAULT_SIMULATED_STATE: SimulatedMembershipState = {
+  tier: 'trial',
+  trialEndsAtMs: null,
+  trialWarningDismissed: false,
+  tenPackClassesRemaining: null,
+  firstClassUsed: false,
+  newsletterOptIn: true,
+  justPurchased: false,
+  planStartedAt: null,
+  cancellationRequested: false,
+  hasEverTrialed: false,
+};
+
 export function MembershipProvider({ children }: { children: React.ReactNode }) {
-  const [tier, setTier] = useState<MembershipTier>('trial');
-  const [signedUp, setSignedUp] = useState(false);
-  const [email, setEmail] = useState<string | null>(null);
-  const [trialEndsAt, setTrialEndsAt] = useState<Date | null>(null);
-  const [trialWarningDismissed, setTrialWarningDismissed] = useState(false);
-  const [tenPackClassesRemaining, setTenPackClassesRemaining] = useState<number | null>(null);
-  const [firstClassUsed, setFirstClassUsed] = useState(false);
-  const [newsletterOptIn, setNewsletterOptIn] = useState(true);
-  const [justPurchased, setJustPurchased] = useState(false);
-  const [planStartedAt, setPlanStartedAt] = useState<number | null>(null);
-  const [cancellationRequested, setCancellationRequested] = useState(false);
-  const [hasEverTrialed, setHasEverTrialed] = useState(false);
+  const { session, signOut: authSignOut } = useAuth();
+  const signedUp = !!session;
+  const email = session?.user?.email ?? null;
+
+  const [simulated, setSimulated] = useState<SimulatedMembershipState>(() =>
+    loadJSON(SIMULATED_STORAGE_KEY, DEFAULT_SIMULATED_STATE)
+  );
+  const {
+    tier,
+    trialEndsAtMs,
+    trialWarningDismissed,
+    tenPackClassesRemaining,
+    firstClassUsed,
+    newsletterOptIn,
+    justPurchased,
+    planStartedAt,
+    cancellationRequested,
+    hasEverTrialed,
+  } = simulated;
+  const trialEndsAt = trialEndsAtMs ? new Date(trialEndsAtMs) : null;
+
+  useEffect(() => {
+    saveJSON(SIMULATED_STORAGE_KEY, simulated);
+  }, [simulated]);
 
   const daysLeftInTrial = trialEndsAt
     ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
@@ -206,117 +261,78 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       planRenewsAt,
       cancellationRequested,
 
-      startTrial: (enteredEmail: string) => {
+      startTrial: () => {
         const endsAt = new Date();
         endsAt.setDate(endsAt.getDate() + TRIAL_LENGTH_DAYS);
-        setEmail(enteredEmail);
-        setTrialEndsAt(endsAt);
-        setTrialWarningDismissed(false);
-        setTier('trial');
-        setSignedUp(true);
-        setHasEverTrialed(true);
+        setSimulated((prev) => ({ ...prev, tier: 'trial', trialEndsAtMs: endsAt.getTime(), trialWarningDismissed: false, hasEverTrialed: true }));
       },
       becomeMember: () => {
-        setTier('online_paid');
-        setSignedUp(true);
-        setJustPurchased(true);
-        setPlanStartedAt(Date.now());
-        setCancellationRequested(false);
+        setSimulated((prev) => ({ ...prev, tier: 'online_paid', justPurchased: true, planStartedAt: Date.now(), cancellationRequested: false }));
       },
       becomeFoundingFifty: () => {
-        setTier('founding_50');
-        setSignedUp(true);
-        setJustPurchased(true);
-        setPlanStartedAt(Date.now());
-        setCancellationRequested(false);
+        setSimulated((prev) => ({ ...prev, tier: 'founding_50', justPurchased: true, planStartedAt: Date.now(), cancellationRequested: false }));
       },
       selectInPersonPlan: (plan: InPersonPlan) => {
-        setTier(plan === 'monthly_unlimited' ? 'in_person_unlimited' : plan === 'ten_pack' ? 'ten_pack' : 'drop_in');
-        setSignedUp(true);
-        if (plan === 'ten_pack') setTenPackClassesRemaining(TEN_PACK_SIZE);
-        // Drop In is a one-off, not a membership — no celebration for it.
-        if (plan !== 'drop_in') setJustPurchased(true);
-        if (plan === 'monthly_unlimited') setPlanStartedAt(Date.now());
-        setCancellationRequested(false);
+        const nextTier = plan === 'monthly_unlimited' ? 'in_person_unlimited' : plan === 'ten_pack' ? 'ten_pack' : 'drop_in';
+        setSimulated((prev) => ({
+          ...prev,
+          tier: nextTier,
+          tenPackClassesRemaining: plan === 'ten_pack' ? TEN_PACK_SIZE : prev.tenPackClassesRemaining,
+          // Drop In is a one-off, not a membership — no celebration for it.
+          justPurchased: plan !== 'drop_in' ? true : prev.justPurchased,
+          planStartedAt: plan === 'monthly_unlimited' ? Date.now() : prev.planStartedAt,
+          cancellationRequested: false,
+        }));
       },
-      enterFreeTier: (enteredEmail) => {
-        setEmail(enteredEmail);
-        setTier('online_free');
-        setSignedUp(true);
+      enterFreeTier: () => {
+        setSimulated((prev) => ({ ...prev, tier: 'online_free' }));
       },
-      signIn: (enteredEmail) => {
-        setEmail(enteredEmail);
-        setTier('online_paid');
-        setSignedUp(true);
+      signIn: () => {
+        setSimulated((prev) => ({ ...prev, tier: 'online_paid' }));
       },
       setDevTier: (nextTier: MembershipTier) => {
-        setTier(nextTier);
-        setSignedUp(true);
-        if (nextTier === 'trial' && !trialEndsAt) {
-          const endsAt = new Date();
-          endsAt.setDate(endsAt.getDate() + TRIAL_LENGTH_DAYS);
-          setTrialEndsAt(endsAt);
-        }
-        if (nextTier === 'ten_pack') {
+        setSimulated((prev) => ({
+          ...prev,
+          tier: nextTier,
+          trialEndsAtMs: nextTier === 'trial' && !prev.trialEndsAtMs
+            ? (() => {
+                const endsAt = new Date();
+                endsAt.setDate(endsAt.getDate() + TRIAL_LENGTH_DAYS);
+                return endsAt.getTime();
+              })()
+            : prev.trialEndsAtMs,
           // Always a fresh, round demo count — this is the preview path,
           // not a real purchase, so there's no reason to leave it wherever
           // a previous preview session happened to decrement it to.
-          setTenPackClassesRemaining(TEN_PACK_SIZE);
-        }
-        if (RECURRING_TIERS.includes(nextTier) && planStartedAt === null) {
-          setPlanStartedAt(Date.now());
-        }
-        // Previewing one of the named Dockside tiers should reliably show
-        // that tier's own banner variant, not the first-time-visitor one —
-        // only the dedicated previewFirstTimeVisitor() below should ever
-        // show that state.
-        if (nextTier === 'online_free' || nextTier === 'ten_pack' || nextTier === 'drop_in') {
-          setHasEverTrialed(true);
-        }
+          tenPackClassesRemaining: nextTier === 'ten_pack' ? TEN_PACK_SIZE : prev.tenPackClassesRemaining,
+          planStartedAt: RECURRING_TIERS.includes(nextTier) && prev.planStartedAt === null ? Date.now() : prev.planStartedAt,
+          // Previewing one of the named Dockside tiers should reliably show
+          // that tier's own banner variant, not the first-time-visitor one —
+          // only the dedicated previewFirstTimeVisitor() below should ever
+          // show that state.
+          hasEverTrialed:
+            nextTier === 'online_free' || nextTier === 'ten_pack' || nextTier === 'drop_in' ? true : prev.hasEverTrialed,
+        }));
       },
       previewFirstTimeVisitor: () => {
-        setTier('online_free');
-        setSignedUp(true);
-        setHasEverTrialed(false);
+        setSimulated((prev) => ({ ...prev, tier: 'online_free', hasEverTrialed: false }));
       },
-      dismissTrialWarning: () => setTrialWarningDismissed(true),
-      useTenPackClass: () => setTenPackClassesRemaining((prev) => Math.max(0, (prev ?? TEN_PACK_SIZE) - 1)),
+      dismissTrialWarning: () => setSimulated((prev) => ({ ...prev, trialWarningDismissed: true })),
+      useTenPackClass: () =>
+        setSimulated((prev) => ({ ...prev, tenPackClassesRemaining: Math.max(0, (prev.tenPackClassesRemaining ?? TEN_PACK_SIZE) - 1) })),
       refundTenPackClass: () =>
-        setTenPackClassesRemaining((prev) => Math.min(TEN_PACK_SIZE, (prev ?? 0) + 1)),
-      useFirstClass: () => setFirstClassUsed(true),
-      setNewsletterOptIn: (optIn: boolean) => setNewsletterOptIn(optIn),
-      clearJustPurchased: () => setJustPurchased(false),
-      requestCancellation: () => setCancellationRequested(true),
-      keepMembership: () => setCancellationRequested(false),
+        setSimulated((prev) => ({ ...prev, tenPackClassesRemaining: Math.min(TEN_PACK_SIZE, (prev.tenPackClassesRemaining ?? 0) + 1) })),
+      useFirstClass: () => setSimulated((prev) => ({ ...prev, firstClassUsed: true })),
+      setNewsletterOptIn: (optIn: boolean) => setSimulated((prev) => ({ ...prev, newsletterOptIn: optIn })),
+      clearJustPurchased: () => setSimulated((prev) => ({ ...prev, justPurchased: false })),
+      requestCancellation: () => setSimulated((prev) => ({ ...prev, cancellationRequested: true })),
+      keepMembership: () => setSimulated((prev) => ({ ...prev, cancellationRequested: false })),
       signOut: () => {
-        setSignedUp(false);
-        setTier('trial');
-        setEmail(null);
-        setTrialEndsAt(null);
-        setTrialWarningDismissed(false);
-        setTenPackClassesRemaining(null);
-        setFirstClassUsed(false);
-        setJustPurchased(false);
-        setPlanStartedAt(null);
-        setCancellationRequested(false);
-        setHasEverTrialed(false);
+        authSignOut();
+        setSimulated(DEFAULT_SIMULATED_STATE);
       },
     };
-  }, [
-    tier,
-    planStartedAt,
-    cancellationRequested,
-    signedUp,
-    email,
-    trialEndsAt,
-    daysLeftInTrial,
-    trialWarningDismissed,
-    tenPackClassesRemaining,
-    firstClassUsed,
-    newsletterOptIn,
-    justPurchased,
-    hasEverTrialed,
-  ]);
+  }, [tier, planStartedAt, cancellationRequested, signedUp, email, trialEndsAt, daysLeftInTrial, trialWarningDismissed, tenPackClassesRemaining, firstClassUsed, newsletterOptIn, justPurchased, hasEverTrialed, authSignOut]);
 
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>;
 }

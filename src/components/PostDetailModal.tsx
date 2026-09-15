@@ -7,8 +7,7 @@ import { MediaViewer } from './MediaViewer';
 import { ModalHeader } from './ModalHeader';
 import { PostAuthorBadges } from './PostAuthorBadges';
 import { Comment, Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
-import { useMembership } from '../context/MembershipContext';
-import { useDisplayName, useProfile } from '../context/ProfileContext';
+import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -31,7 +30,7 @@ function CategoryTag({ category }: { category: string }) {
 // written, reached by tapping anywhere on a PostCard in the feed.
 export function PostDetailModal({ post, onClose, canInteract }: Props) {
   const { toggleLike, addReaction, addComment, updateComment, deleteComment } = useCommunity();
-  const { isAdmin } = useMembership();
+  const isAdmin = useCanModerate();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
   const [commentText, setCommentText] = useState('');

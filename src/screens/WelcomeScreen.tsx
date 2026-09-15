@@ -14,8 +14,14 @@ import { DocsBadge } from '../components/brand/DocsBadge';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
 import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
 
+// A non-null result means "show this message" — `kind` picks the styling.
+// 'info' covers the one non-error outcome that still needs to be shown here
+// (email confirmation required before a session exists), so it doesn't read
+// like something went wrong.
+export type WelcomeSubmitResult = { message: string; kind: 'error' | 'info' } | null;
+
 type Props = {
-  onContinue: (email: string, newsletterOptIn: boolean) => void;
+  onContinue: (email: string, password: string, newsletterOptIn: boolean) => Promise<WelcomeSubmitResult>;
   // Present whenever this screen is reached from the About page rather than
   // being the app's own entry point.
   onBack?: () => void;
@@ -23,12 +29,23 @@ type Props = {
 
 export default function WelcomeScreen({ onContinue, onBack }: Props) {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [newsletterOptIn, setNewsletterOptIn] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<WelcomeSubmitResult>(null);
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
   const isLargeDesktop = isDesktop && width >= LARGE_DESKTOP_BREAKPOINT;
 
-  const canSubmit = email.trim().length > 3 && email.includes('@');
+  const canSubmit = email.trim().length > 3 && email.includes('@') && password.length >= 6 && !submitting;
+
+  const handleContinue = async () => {
+    setSubmitting(true);
+    setFeedback(null);
+    const result = await onContinue(email.trim(), password, newsletterOptIn);
+    setSubmitting(false);
+    if (result) setFeedback(result);
+  };
 
   return (
     <KeyboardAvoidingView
@@ -72,6 +89,21 @@ export default function WelcomeScreen({ onContinue, onBack }: Props) {
             autoComplete="email"
             nativeID="welcome-email-input"
             aria-label="Email address"
+            testID="welcome-email"
+          />
+
+          <Text nativeID="welcome-password-label" style={styles.label}>PASSWORD</Text>
+          <TextInput
+            style={styles.input}
+            value={password}
+            onChangeText={setPassword}
+            placeholder="At least 6 characters"
+            placeholderTextColor={colors.textMuted}
+            secureTextEntry
+            autoComplete="new-password"
+            nativeID="welcome-password-input"
+            aria-label="Password"
+            testID="welcome-password"
           />
 
           <Pressable
@@ -86,13 +118,22 @@ export default function WelcomeScreen({ onContinue, onBack }: Props) {
             <Text style={styles.checkboxLabel}>Send me The Weekly Kettlebell, Doc's weekly newsletter.</Text>
           </Pressable>
 
+          {feedback && (
+            <Text
+              style={[styles.feedbackText, feedback.kind === 'error' && styles.feedbackTextError]}
+              testID="welcome-feedback"
+            >
+              {feedback.message}
+            </Text>
+          )}
+
           <Pressable
             style={[styles.continueButton, !canSubmit && styles.continueButtonDisabled]}
             disabled={!canSubmit}
-            onPress={() => onContinue(email.trim(), newsletterOptIn)}
+            onPress={handleContinue}
             testID="welcome-continue"
           >
-            <Text style={styles.continueButtonText}>CONTINUE</Text>
+            <Text style={styles.continueButtonText}>{submitting ? 'PLEASE WAIT...' : 'CONTINUE'}</Text>
           </Pressable>
         </View>
 
@@ -240,6 +281,16 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 13,
     lineHeight: 18,
+  },
+  feedbackText: {
+    color: colors.green,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  feedbackTextError: {
+    color: colors.scoreboardRed,
   },
   continueButton: {
     backgroundColor: colors.green,

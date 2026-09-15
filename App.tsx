@@ -24,11 +24,12 @@ import {
   PublicSans_700Bold,
 } from '@expo-google-fonts/public-sans';
 
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { MembershipProvider, useMembership } from './src/context/MembershipContext';
 import { CommunityProvider } from './src/context/CommunityContext';
 import { WorkoutLogProvider } from './src/context/WorkoutLogContext';
 import { CloseFriendsProvider } from './src/context/CloseFriendsContext';
-import { ProfileProvider } from './src/context/ProfileContext';
+import { ProfileProvider, useProfile } from './src/context/ProfileContext';
 import { StoriesProvider } from './src/context/StoriesContext';
 import { DeckProgressProvider } from './src/context/DeckProgressContext';
 import { ChallengeProvider } from './src/context/ChallengeContext';
@@ -52,6 +53,7 @@ import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useMovementVaultModalState } from './src/lib/movementVaultModal';
 import { openMemberships, useMembershipsModalState } from './src/lib/membershipsModal';
 import { useClaimFoundingFifty } from './src/lib/useClaimFoundingFifty';
+import { useLocalImportOnFirstSignIn } from './src/lib/localImport';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
 import { useTabBarHeight } from './src/lib/tabBarHeight';
 import { useWebDocumentScroll } from './src/lib/webDocumentScroll';
@@ -63,6 +65,7 @@ import { colors, fonts, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from './s
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import { AboutScreen } from './src/screens/AboutScreen';
 import SignInScreen from './src/screens/SignInScreen';
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import HowDoYouTrainScreen from './src/screens/HowDoYouTrainScreen';
 import OnlineStartScreen from './src/screens/OnlineStartScreen';
 import PricingScreen from './src/screens/PricingScreen';
@@ -240,7 +243,15 @@ function RootNavigator({ tabBarHidden }: RootNavigatorProps) {
   );
 }
 
-type OnboardingStep = 'about' | 'email' | 'signIn' | 'howDoYouTrain' | 'onlineStart' | 'pricing' | 'inPersonPlans';
+type OnboardingStep =
+  | 'about'
+  | 'email'
+  | 'signIn'
+  | 'forgotPassword'
+  | 'howDoYouTrain'
+  | 'onlineStart'
+  | 'pricing'
+  | 'inPersonPlans';
 
 // The choice a door on the About page already made for the user, carried
 // through the email screen so it can skip "How do you train?" entirely.
@@ -260,9 +271,11 @@ type OnboardingFlowProps = {
 // BOATHOUSE goes straight to plan selection. Every path captures an email
 // on the way through — there's no anonymous/browse-without-an-account exit.
 function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
-  const { startTrial, becomeMember, selectInPersonPlan, enterFreeTier, signIn, setNewsletterOptIn } = useMembership();
+  const { startTrial, becomeMember, selectInPersonPlan, enterFreeTier, signIn: membershipSignIn, setNewsletterOptIn } =
+    useMembership();
+  const { signUp, signInWithPassword, sendPasswordReset } = useAuth();
+  const { setHowTrain } = useProfile();
   const claimFoundingFifty = useClaimFoundingFifty();
-  const [email, setEmail] = useState('');
   const [intent, setIntent] = useState<EntryIntent>(null);
 
   // Each step here swaps in a completely different screen under the same
@@ -287,16 +300,24 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
       return (
         <WelcomeScreen
           onBack={() => setStep('about')}
-          onContinue={(enteredEmail, newsletterOptIn) => {
-            setEmail(enteredEmail);
+          onContinue={async (enteredEmail, password, newsletterOptIn) => {
+            const result = await signUp(enteredEmail, password);
+            if (result.error) return { message: result.error, kind: 'error' };
             setNewsletterOptIn(newsletterOptIn);
+            if (result.needsEmailConfirmation) {
+              return {
+                message: 'Almost there — check your email to confirm your account, then sign in.',
+                kind: 'info',
+              };
+            }
             if (intent === 'onlineTrial') {
-              startTrial(enteredEmail);
+              startTrial();
             } else if (intent === 'bookClass') {
-              enterFreeTier(enteredEmail);
+              enterFreeTier();
             } else {
               setStep('howDoYouTrain');
             }
+            return null;
           }}
         />
       );
@@ -304,22 +325,44 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
       return (
         <SignInScreen
           onBack={() => setStep('about')}
-          onSignIn={(enteredEmail) => signIn(enteredEmail)}
+          onForgotPassword={() => setStep('forgotPassword')}
+          onSignIn={async (enteredEmail, password) => {
+            const result = await signInWithPassword(enteredEmail, password);
+            if (result.error) return result.error;
+            membershipSignIn();
+            return null;
+          }}
+        />
+      );
+    case 'forgotPassword':
+      return (
+        <ForgotPasswordScreen
+          onBack={() => setStep('signIn')}
+          onSendReset={async (emailToReset) => {
+            const result = await sendPasswordReset(emailToReset);
+            return result.error;
+          }}
         />
       );
     case 'howDoYouTrain':
       return (
         <HowDoYouTrainScreen
           onBack={() => setStep('email')}
-          onTrainOnline={() => setStep('onlineStart')}
-          onTrainAtBoathouse={() => setStep('inPersonPlans')}
+          onTrainOnline={() => {
+            setHowTrain('online');
+            setStep('onlineStart');
+          }}
+          onTrainAtBoathouse={() => {
+            setHowTrain('boathouse');
+            setStep('inPersonPlans');
+          }}
         />
       );
     case 'onlineStart':
       return (
         <OnlineStartScreen
           onBack={() => setStep('howDoYouTrain')}
-          onStartTrial={() => startTrial(email)}
+          onStartTrial={() => startTrial()}
           onSkipToPricing={() => setStep('pricing')}
         />
       );
@@ -635,36 +678,67 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <MembershipProvider key={resetKey}>
-        <CommunityProvider>
-          <WorkoutLogProvider>
-            <CloseFriendsProvider>
-              <ProfileProvider>
-                <StoriesProvider>
-                  <DeckProgressProvider>
-                    <ChallengeProvider>
-                      <BadgeProvider>
-                        <FoundingFiftyProvider>
-                          <ClassSignUpProvider>
-                            <ContentLibraryProvider>
-                              <TourProvider>
-                                <View style={styles.webSurround}>
-                                  <ResponsiveShell onLayoutRootView={onLayoutRootView} />
-                                </View>
-                              </TourProvider>
-                            </ContentLibraryProvider>
-                          </ClassSignUpProvider>
-                        </FoundingFiftyProvider>
-                      </BadgeProvider>
-                    </ChallengeProvider>
-                  </DeckProgressProvider>
-                </StoriesProvider>
-              </ProfileProvider>
-            </CloseFriendsProvider>
-          </WorkoutLogProvider>
-        </CommunityProvider>
-      </MembershipProvider>
+      <AuthProvider>
+        <AuthGatedProviders resetKey={resetKey} onLayoutRootView={onLayoutRootView} />
+      </AuthProvider>
     </SafeAreaProvider>
+  );
+}
+
+type AuthGatedProvidersProps = {
+  resetKey: number;
+  onLayoutRootView: () => void;
+};
+
+// Waits for the very first Supabase session check (authReady) before
+// rendering anything at all — same "return null" pattern as the fontsLoaded
+// gate above, and for the same reason: this codebase already learned the
+// hard way (see the "Revert auto sign-in landing on app load" commit) that
+// letting a signed-in flag flip true *after* the signed-out About page has
+// already painted breaks this app's scroll/layout assumptions. Gating the
+// whole subtree here means a returning member with a persisted session
+// renders straight into the signed-in tab layout on the very first frame —
+// About never mounts for them at all — while a first-time visitor still
+// sees About immediately, since authReady resolves before there's anything
+// to check.
+function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersProps) {
+  const { authReady } = useAuth();
+  useLocalImportOnFirstSignIn();
+
+  if (!authReady) {
+    return null;
+  }
+
+  return (
+    <MembershipProvider key={resetKey}>
+      <CommunityProvider>
+        <WorkoutLogProvider>
+          <CloseFriendsProvider>
+            <ProfileProvider>
+              <StoriesProvider>
+                <DeckProgressProvider>
+                  <ChallengeProvider>
+                    <BadgeProvider>
+                      <FoundingFiftyProvider>
+                        <ClassSignUpProvider>
+                          <ContentLibraryProvider>
+                            <TourProvider>
+                              <View style={styles.webSurround}>
+                                <ResponsiveShell onLayoutRootView={onLayoutRootView} />
+                              </View>
+                            </TourProvider>
+                          </ContentLibraryProvider>
+                        </ClassSignUpProvider>
+                      </FoundingFiftyProvider>
+                    </BadgeProvider>
+                  </ChallengeProvider>
+                </DeckProgressProvider>
+              </StoriesProvider>
+            </ProfileProvider>
+          </CloseFriendsProvider>
+        </WorkoutLogProvider>
+      </CommunityProvider>
+    </MembershipProvider>
   );
 }
 

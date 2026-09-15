@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
+import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { MembershipGate } from '../components/MembershipGate';
 import { Avatar } from '../components/Avatar';
 import { TappableMovementText } from '../components/movement/TappableMovementText';
@@ -211,13 +212,12 @@ function Leaderboard({ entries }: { entries: Entry[] }) {
 }
 
 function DocsCowsContent() {
-  const { addEntry: addChallengeEntry } = useChallenge();
+  const { addEntry: addChallengeEntry, error } = useChallenge();
   const current = useCurrentChallenge();
   const entries = useChallengeLeaderboard();
 
   const addEntry = (entry: Omit<Entry, 'rank' | 'tag'>) => {
     addChallengeEntry({
-      author: entry.name,
       challengeTitle: current.title,
       kettlebell: entry.kettlebell,
       rounds: entry.rounds,
@@ -230,8 +230,14 @@ function DocsCowsContent() {
   return (
     <View>
       <ChallengeHero current={current} />
-      <EntryForm scoringType={current.scoringType} onSubmit={addEntry} />
-      <Leaderboard entries={entries} />
+      {error ? (
+        <BackendErrorNotice message={error} />
+      ) : (
+        <>
+          <EntryForm scoringType={current.scoringType} onSubmit={addEntry} />
+          <Leaderboard entries={entries} />
+        </>
+      )}
     </View>
   );
 }

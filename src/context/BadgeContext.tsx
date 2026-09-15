@@ -1,45 +1,56 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { BadgeId, sortBadgeIds } from '../data/badges';
-import { getCurrentWeek, getWeekStart, isThisWeek } from '../data/content';
-import { findRosterMember } from '../data/roster';
-import { loadJSON, saveJSON } from '../lib/storage';
+import { useAuth } from './AuthContext';
 import { useCommunity } from './CommunityContext';
 import { useDeckProgress } from './DeckProgressContext';
 import { useMembership } from './MembershipContext';
-import { useDisplayName } from './ProfileContext';
+import { useDisplayName, useProfile } from './ProfileContext';
 import { useWorkoutLog } from './WorkoutLogContext';
+import { BadgeId, sortBadgeIds } from '../data/badges';
+import { getCurrentWeek, getWeekStart, isThisWeek } from '../data/content';
+import { loadJSON, saveJSON } from '../lib/storage';
+import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
 
-const STORAGE_KEY = 'docsfitness.badges.v1';
 export const HUNDRED_DOWN_TARGET = 100;
 const REGULAR_TARGET = 3;
 
-type PersistedState = {
-  dayOneDougEarnedAt: number | null;
-  hundredDownEarnedAt: number | null;
-  cowKillerPostedAt: number | null;
-  // Manual/one-time grants keyed by member name — THE JOKER (admin-toggled)
-  // and THE FOUNDING 50 (granted once at signup, never revoked in the UI:
-  // it's permanent even after the member later cancels).
-  manualGrants: Record<
-    string,
-    { joker?: boolean; jokerGrantedAt?: number; foundingFifty?: boolean; foundingFiftyGrantedAt?: number }
-  >;
-  lastRecapMonthKey: string | null;
-};
+// THE FOUNDING 50 badge is out of scope for this backend round (it's tied
+// to FoundingFiftyContext's own simulated capacity/pricing system, not
+// mentioned in the Tier 1 badge list) — it stays exactly as it was,
+// persisted locally per device.
+const FOUNDING_FIFTY_STORAGE_KEY = 'docsfitness.foundingFiftyGrants.v1';
+const RECAP_STORAGE_KEY = 'docsfitness.badgeRecap.v1';
 
-const DEFAULT_STATE: PersistedState = {
-  dayOneDougEarnedAt: null,
-  hundredDownEarnedAt: null,
-  cowKillerPostedAt: null,
-  manualGrants: {},
-  lastRecapMonthKey: null,
-};
+type FoundingFiftyGrants = Record<string, { granted: boolean; grantedAt: number }>;
 
-function monthKey(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${d.getMonth() + 1}`;
+const COMPUTED_BADGE_IDS: BadgeId[] = ['on_fire', 'cow_killer', 'the_regular', 'day_one_doug', 'hundred_down'];
+
+// A stable id for "this Monday-anchored week" — weekly badges (ON FIRE, COW
+// KILLER, THE REGULAR) are granted with this as their period_key, so they
+// naturally "reset Mondays" without deleting anything: the app only ever
+// checks for a grant matching *this* period_key, and last week's grant rows
+// just stop matching once Monday rolls over. Permanent badges use '' (see
+// supabase/setup.sql's default).
+function currentWeekPeriodKey(): string {
+  return String(getWeekStart().getTime());
 }
 
+type ProfileRef = { display_name: string } | { display_name: string }[] | null;
+function nameOf(ref: ProfileRef): string {
+  const profile = Array.isArray(ref) ? ref[0] : ref;
+  return profile?.display_name?.trim() || 'Member';
+}
+
+type GrantRow = {
+  user_id: string;
+  badge_id: BadgeId;
+  period_key: string;
+  granted_at: string;
+  profiles: ProfileRef;
+};
+
 type BadgeContextValue = {
+  loading: boolean;
+  error: string | null;
   // The signed-in member's own state.
   myBadgeIds: BadgeId[];
   totalWorkoutsLogged: number;
@@ -59,60 +70,148 @@ type BadgeContextValue = {
   dayOneDougEarnedAt: number | null;
   hundredDownEarnedAt: number | null;
 
-  // Any author's badges (mine live-computed, others from roster demo data
-  // + manual grants) — sorted Joker-first, weeklies, then permanents.
+  // Any author's badges, read from the shared badge_grants table (joker,
+  // the 5 computed badges) plus the local Founding 50 grant — sorted
+  // Joker-first, weeklies, then permanents.
   getBadgesForAuthor: (name: string) => BadgeId[];
-  hasManualJoker: (name: string) => boolean;
   getJokerGrantedAt: (name: string) => number | null;
   getFoundingFiftyGrantedAt: (name: string) => number | null;
 
   recordCowKillerScore: () => void;
-  grantJoker: (name: string) => void;
-  revokeJoker: (name: string) => void;
+  // Admin-only — see supabase/setup.sql's badge_grants insert/delete
+  // policies, which are the real enforcement; these take a real user id
+  // (Member Manager looks members up by their real account, not a name).
+  grantJoker: (userId: string) => void;
+  revokeJoker: (userId: string) => void;
   // One-way — granted automatically the moment a member claims a Founding
   // 50 spot, and never revoked from here even if they later cancel.
   grantFoundingFifty: (name: string) => void;
   // Dev-only: force-generate this month's recap post right now, ignoring
-  // the "only on the 1st, only once" gate — for testing/preview.
+  // the "only on the 1st, only once" gate — for testing/preview. Only
+  // actually posts when the signed-in member is a real admin, since with
+  // real accounts a recap can only honestly be attributed to whoever is
+  // actually signed in.
   previewMonthlyRecap: () => void;
 };
 
 const BadgeContext = createContext<BadgeContextValue | undefined>(undefined);
 
 export function BadgeProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<PersistedState>(() => loadJSON(STORAGE_KEY, DEFAULT_STATE));
+  const { user, authReady } = useAuth();
   const displayName = useDisplayName();
+  const { isAdmin: realAdmin } = useProfile();
   const { completedWorkouts } = useWorkoutLog();
   const { completedCount: deckCompletedCount } = useDeckProgress();
   const { posts, addTextPost } = useCommunity();
   const { fullContentAccess } = useMembership();
 
+  const [grants, setGrants] = useState<GrantRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [foundingFiftyGrants, setFoundingFiftyGrants] = useState<FoundingFiftyGrants>(() =>
+    loadJSON(FOUNDING_FIFTY_STORAGE_KEY, {})
+  );
+  const [lastRecapMonthKey, setLastRecapMonthKey] = useState<string | null>(() => loadJSON(RECAP_STORAGE_KEY, null));
+
+  const refetchGrants = () =>
+    supabase
+      .from('badge_grants')
+      // badge_grants has two foreign keys into profiles (user_id and
+      // granted_by) — "!user_id" tells PostgREST which one this embed
+      // follows, since "profiles(display_name)" alone is ambiguous here.
+      .select('user_id, badge_id, period_key, granted_at, profiles!user_id(display_name)')
+      .then(({ data, error: fetchError }) => {
+        if (fetchError) {
+          setError(isBackendUnavailableError(fetchError) ? "Can't load badges right now." : fetchError.message);
+          setLoading(false);
+          return;
+        }
+        setGrants((data as unknown as GrantRow[]) ?? []);
+        setLoading(false);
+      });
+
   useEffect(() => {
-    saveJSON(STORAGE_KEY, state);
-  }, [state]);
+    if (!authReady || !user) {
+      if (authReady) setLoading(false);
+      return;
+    }
+    setLoading(true);
+    refetchGrants();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, user]);
+
+  useEffect(() => {
+    saveJSON(FOUNDING_FIFTY_STORAGE_KEY, foundingFiftyGrants);
+  }, [foundingFiftyGrants]);
+
+  useEffect(() => {
+    saveJSON(RECAP_STORAGE_KEY, lastRecapMonthKey);
+  }, [lastRecapMonthKey]);
 
   const totalWorkoutsLogged = completedWorkouts.length + deckCompletedCount;
+  const weekPeriodKey = currentWeekPeriodKey();
 
-  // Stamp the first-crossed timestamps once, the first time each threshold
-  // is observed — this is what lets the monthly recap say "earned this
-  // month" without needing a full history of every completion ever.
+  const myGrantedIds = useMemo(
+    () => new Set(grants.filter((g) => g.user_id === user?.id).map((g) => g.badge_id)),
+    [grants, user]
+  );
+
+  // Stamp each permanent computed badge into badge_grants the first time its
+  // threshold is crossed — RLS only lets a member insert these 5 for
+  // themselves (see supabase/setup.sql), so this never needs to touch
+  // anyone else's row.
   useEffect(() => {
-    if (totalWorkoutsLogged >= 1 && state.dayOneDougEarnedAt === null) {
-      setState((prev) => ({ ...prev, dayOneDougEarnedAt: Date.now() }));
+    if (!user) return;
+    const toGrant: { badge_id: BadgeId; period_key: string }[] = [];
+    if (totalWorkoutsLogged >= 1 && !myGrantedIds.has('day_one_doug')) {
+      toGrant.push({ badge_id: 'day_one_doug', period_key: '' });
     }
-    if (totalWorkoutsLogged >= HUNDRED_DOWN_TARGET && state.hundredDownEarnedAt === null) {
-      setState((prev) => ({ ...prev, hundredDownEarnedAt: Date.now() }));
+    if (totalWorkoutsLogged >= HUNDRED_DOWN_TARGET && !myGrantedIds.has('hundred_down')) {
+      toGrant.push({ badge_id: 'hundred_down', period_key: '' });
     }
+
+    const week = getCurrentWeek();
+    const weekdayKeys = week.filter((d) => !d.isRestDay && d.wod).map((d) => d.wod!.key);
+    const onFireCount = weekdayKeys.filter((key) => completedWorkouts.some((w) => w.dayKey === key)).length;
+    const onFireEarnedNow = weekdayKeys.length > 0 && onFireCount >= weekdayKeys.length;
+    const hasOnFireThisWeek = grants.some(
+      (g) => g.user_id === user.id && g.badge_id === 'on_fire' && g.period_key === weekPeriodKey
+    );
+    if (onFireEarnedNow && !hasOnFireThisWeek) {
+      toGrant.push({ badge_id: 'on_fire', period_key: weekPeriodKey });
+    }
+
+    const weekStart = getWeekStart().getTime();
+    const regularCount = posts.filter((p) => p.author === displayName && p.kind === 'wod' && p.createdAt >= weekStart).length;
+    const hasRegularThisWeek = grants.some(
+      (g) => g.user_id === user.id && g.badge_id === 'the_regular' && g.period_key === weekPeriodKey
+    );
+    if (regularCount >= REGULAR_TARGET && !hasRegularThisWeek) {
+      toGrant.push({ badge_id: 'the_regular', period_key: weekPeriodKey });
+    }
+
+    if (toGrant.length === 0) return;
+    supabase
+      .from('badge_grants')
+      .upsert(
+        toGrant.map((g) => ({ user_id: user.id, ...g })),
+        { onConflict: 'user_id,badge_id,period_key' }
+      )
+      .then(() => refetchGrants());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalWorkoutsLogged]);
+  }, [user, totalWorkoutsLogged, completedWorkouts, posts, displayName, weekPeriodKey, grants]);
 
   const value = useMemo<BadgeContextValue>(() => {
-    const dayOneDougEarned = state.dayOneDougEarnedAt !== null;
-    const hundredDownEarned = state.hundredDownEarnedAt !== null;
-    const jokerEarned = !!state.manualGrants[displayName]?.joker;
-    const foundingFiftyEarned = !!state.manualGrants[displayName]?.foundingFifty;
+    const dayOneDougGrant = grants.find((g) => g.user_id === user?.id && g.badge_id === 'day_one_doug');
+    const hundredDownGrant = grants.find((g) => g.user_id === user?.id && g.badge_id === 'hundred_down');
+    const dayOneDougEarned = !!dayOneDougGrant;
+    const hundredDownEarned = !!hundredDownGrant;
+    const jokerEarned = myGrantedIds.has('joker');
+    const foundingFiftyEarned = !!foundingFiftyGrants[displayName]?.granted;
     const crewEarned = fullContentAccess;
-    const cowKillerEarned = state.cowKillerPostedAt !== null && isThisWeek(state.cowKillerPostedAt);
+    const cowKillerEarned = grants.some(
+      (g) => g.user_id === user?.id && g.badge_id === 'cow_killer' && g.period_key === weekPeriodKey
+    );
 
     const week = getCurrentWeek();
     const weekdayKeys = week.filter((d) => !d.isRestDay && d.wod).map((d) => d.wod!.key);
@@ -120,9 +219,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     const onFireProgress = { count: onFireCount, target: weekdayKeys.length, earned: onFireCount >= weekdayKeys.length };
 
     const weekStart = getWeekStart().getTime();
-    const regularCount = posts.filter(
-      (p) => p.author === displayName && p.kind === 'wod' && p.createdAt >= weekStart
-    ).length;
+    const regularCount = posts.filter((p) => p.author === displayName && p.kind === 'wod' && p.createdAt >= weekStart).length;
     const regularProgress = { count: regularCount, target: REGULAR_TARGET, earned: regularCount >= REGULAR_TARGET };
 
     const myBadgeIds: BadgeId[] = [
@@ -138,17 +235,21 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
 
     const getBadgesForAuthor = (name: string): BadgeId[] => {
       if (name === displayName) return sortBadgeIds(myBadgeIds);
-      const member = findRosterMember(name);
-      const demo = member?.demoBadges ?? [];
-      const manualJoker = state.manualGrants[name]?.joker;
-      const ids = new Set<BadgeId>(demo);
-      if (manualJoker === true) ids.add('joker');
-      if (manualJoker === false) ids.delete('joker');
-      if (state.manualGrants[name]?.foundingFifty) ids.add('founding_50');
+      const ids = new Set<BadgeId>();
+      for (const g of grants) {
+        if (nameOf(g.profiles) !== name) continue;
+        if (g.badge_id === 'joker') ids.add('joker');
+        else if (COMPUTED_BADGE_IDS.includes(g.badge_id)) {
+          if (g.period_key === '' || g.period_key === weekPeriodKey) ids.add(g.badge_id);
+        }
+      }
+      if (foundingFiftyGrants[name]?.granted) ids.add('founding_50');
       return sortBadgeIds(Array.from(ids));
     };
 
     return {
+      loading,
+      error,
       myBadgeIds: sortBadgeIds(myBadgeIds),
       totalWorkoutsLogged,
       onFireProgress,
@@ -159,48 +260,58 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       foundingFiftyEarned,
       dayOneDougEarned,
       hundredDownEarned,
-      dayOneDougEarnedAt: state.dayOneDougEarnedAt,
-      hundredDownEarnedAt: state.hundredDownEarnedAt,
+      dayOneDougEarnedAt: dayOneDougGrant ? new Date(dayOneDougGrant.granted_at).getTime() : null,
+      hundredDownEarnedAt: hundredDownGrant ? new Date(hundredDownGrant.granted_at).getTime() : null,
       getBadgesForAuthor,
-      hasManualJoker: (name) => !!state.manualGrants[name]?.joker,
-      getJokerGrantedAt: (name) => state.manualGrants[name]?.jokerGrantedAt ?? null,
-      getFoundingFiftyGrantedAt: (name) => state.manualGrants[name]?.foundingFiftyGrantedAt ?? null,
-      recordCowKillerScore: () => setState((prev) => ({ ...prev, cowKillerPostedAt: Date.now() })),
-      grantJoker: (name) =>
-        setState((prev) => ({
-          ...prev,
-          manualGrants: { ...prev.manualGrants, [name]: { ...prev.manualGrants[name], joker: true, jokerGrantedAt: Date.now() } },
-        })),
-      revokeJoker: (name) =>
-        setState((prev) => ({
-          ...prev,
-          manualGrants: { ...prev.manualGrants, [name]: { ...prev.manualGrants[name], joker: false } },
-        })),
+      getJokerGrantedAt: (name) => {
+        const grant = grants.find((g) => nameOf(g.profiles) === name && g.badge_id === 'joker');
+        return grant ? new Date(grant.granted_at).getTime() : null;
+      },
+      getFoundingFiftyGrantedAt: (name) => foundingFiftyGrants[name]?.grantedAt ?? null,
+      recordCowKillerScore: () => {
+        if (!user) return;
+        supabase
+          .from('badge_grants')
+          .upsert({ user_id: user.id, badge_id: 'cow_killer', period_key: weekPeriodKey }, { onConflict: 'user_id,badge_id,period_key' })
+          .then(() => refetchGrants());
+      },
+      grantJoker: (userId) => {
+        supabase
+          .from('badge_grants')
+          .upsert({ user_id: userId, badge_id: 'joker', period_key: '', granted_by: user?.id ?? null }, { onConflict: 'user_id,badge_id,period_key' })
+          .then(() => refetchGrants());
+      },
+      revokeJoker: (userId) => {
+        supabase
+          .from('badge_grants')
+          .delete()
+          .eq('user_id', userId)
+          .eq('badge_id', 'joker')
+          .then(() => refetchGrants());
+      },
       grantFoundingFifty: (name) =>
-        setState((prev) => ({
-          ...prev,
-          manualGrants: {
-            ...prev.manualGrants,
-            [name]: { ...prev.manualGrants[name], foundingFifty: true, foundingFiftyGrantedAt: Date.now() },
-          },
-        })),
+        setFoundingFiftyGrants((prev) => ({ ...prev, [name]: { granted: true, grantedAt: Date.now() } })),
       previewMonthlyRecap: () => {
+        if (!realAdmin) return;
         addTextPost('Doc', buildRecapTitle(), buildRecapBody({ getBadgesForAuthor, displayName }), 'Announcement');
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, displayName, completedWorkouts, deckCompletedCount, posts, totalWorkoutsLogged, fullContentAccess]);
+  }, [grants, myGrantedIds, foundingFiftyGrants, displayName, completedWorkouts, posts, totalWorkoutsLogged, fullContentAccess, loading, error, user, weekPeriodKey, realAdmin]);
 
-  // Auto-generate the monthly recap on the 1st, once per month.
+  // Auto-generate the monthly recap on the 1st, once per month — only when
+  // the signed-in member is a real admin, since a recap posted under "Doc"
+  // needs to actually be Doc now that authorship is real.
   useEffect(() => {
+    if (!realAdmin) return;
     const now = new Date();
     if (now.getDate() !== 1) return;
-    const key = monthKey(now);
-    if (state.lastRecapMonthKey === key) return;
+    const key = `${now.getFullYear()}-${now.getMonth() + 1}`;
+    if (lastRecapMonthKey === key) return;
     addTextPost('Doc', buildRecapTitle(now), buildRecapBody({ getBadgesForAuthor: value.getBadgesForAuthor, displayName }), 'Announcement');
-    setState((prev) => ({ ...prev, lastRecapMonthKey: key }));
+    setLastRecapMonthKey(key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.lastRecapMonthKey]);
+  }, [lastRecapMonthKey, realAdmin]);
 
   return <BadgeContext.Provider value={value}>{children}</BadgeContext.Provider>;
 }

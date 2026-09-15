@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
+import { useAuth } from '../context/AuthContext';
 import { MembershipTier, planLabel, useMembership } from '../context/MembershipContext';
 import { requestAppReset } from '../lib/appReset';
 import { showAlert } from '../lib/alert';
@@ -64,6 +65,7 @@ function Toggle({ on }: { on: boolean }) {
 export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
   const membership = useMembership();
   const { newsletterOptIn, setNewsletterOptIn } = membership;
+  const { signOut: authSignOut } = useAuth();
   const [prefs, setPrefs] = useState<NotificationPrefs>(() => loadJSON(NOTIFICATIONS_STORAGE_KEY, DEFAULT_NOTIFICATION_PREFS));
   const [cancelStage, setCancelStage] = useState<'none' | 'confirmed'>('none');
 
@@ -80,14 +82,15 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
   const effectiveDate =
     membership.tier === 'trial' ? membership.trialEndsAt : membership.planRenewsAt;
 
-  // Wipes every docsfitness.* localStorage key (membership, profile,
+  // Ends the real Supabase session (so a reload won't sign back in), then
+  // wipes every docsfitness.* localStorage key (simulated membership,
   // badges, workout logs, the tour-completed flag, notification prefs —
-  // everything, not just membership) and remounts the whole provider tree
-  // (App.tsx's resetKey) so every context re-initializes from its own
-  // default state in one move — see clearAppStorage and appReset.ts for
-  // why this is more reliable than calling each context's own reset
+  // everything local, not just membership) and remounts the whole provider
+  // tree (App.tsx's resetKey) so every context re-initializes from its own
+  // default state in one move — see clearAppStorage and appReset.ts for why
+  // that's more reliable than calling each context's own reset
   // individually. Lands back on the pre-signup About page since
-  // MembershipContext's default is signedUp: false.
+  // AuthContext's session is now null (see MembershipContext's signedUp).
   const confirmSignOut = () => {
     showAlert("Sign out of Doc's Fitness?", undefined, [
       { text: 'Cancel', style: 'cancel' },
@@ -95,6 +98,7 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
         text: 'Sign Out',
         style: 'destructive',
         onPress: () => {
+          authSignOut();
           clearAppStorage();
           requestAppReset();
         },

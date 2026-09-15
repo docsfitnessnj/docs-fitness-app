@@ -2,6 +2,7 @@ import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ModalHeader } from '../components/ModalHeader';
+import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { useChallenge } from '../context/ChallengeContext';
 import { useDeckProgress } from '../context/DeckProgressContext';
 import { useDisplayName } from '../context/ProfileContext';
@@ -28,12 +29,22 @@ function formatEntryDate(ts: number): string {
 }
 
 export function MyWorkoutsScreen({ visible, onClose }: Props) {
-  const { completedWorkouts } = useWorkoutLog();
-  const { completedAt: deckCompletedAt } = useDeckProgress();
-  const { entries: challengeEntries } = useChallenge();
+  const { completedWorkouts, error: wodError } = useWorkoutLog();
+  const { completedAt: deckCompletedAt, error: deckError } = useDeckProgress();
+  const { entries: challengeEntries, error: challengeError } = useChallenge();
   const displayName = useDisplayName();
 
   if (!visible) return null;
+
+  const error = wodError || deckError || challengeError;
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <ModalHeader title="MY WORKOUTS" onBack={onClose} backTestID="close-my-workouts" />
+        <BackendErrorNotice message={error} />
+      </View>
+    );
+  }
 
   const wodEntries: Entry[] = completedWorkouts.map((w) => ({
     key: `wod-${w.dayKey}`,

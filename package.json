@@ -9,6 +9,7 @@
     "@expo/vector-icons": "^15.1.1",
     "@react-navigation/bottom-tabs": "^7.18.14",
     "@react-navigation/native": "^7.3.14",
+    "@supabase/supabase-js": "^2.116.0",
     "expo": "~57.0.9",
     "expo-audio": "^57.0.4",
     "expo-font": "^57.0.1",
