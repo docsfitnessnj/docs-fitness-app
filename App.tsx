@@ -55,6 +55,8 @@ import { openMemberships, useMembershipsModalState } from './src/lib/memberships
 import { useClaimFoundingFifty } from './src/lib/useClaimFoundingFifty';
 import { useLocalImportOnFirstSignIn } from './src/lib/localImport';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
+import { useKeyboardVisible } from './src/lib/useKeyboardVisible';
+import { useScrollFocusedInputIntoView } from './src/lib/useScrollFocusedInputIntoView';
 import { useTabBarHeight } from './src/lib/tabBarHeight';
 import { useWebDocumentScroll } from './src/lib/webDocumentScroll';
 import { injectWebFocusStyles } from './src/lib/webFocusReset';
@@ -66,6 +68,7 @@ import WelcomeScreen from './src/screens/WelcomeScreen';
 import { AboutScreen } from './src/screens/AboutScreen';
 import SignInScreen from './src/screens/SignInScreen';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
+import SetNewPasswordScreen from './src/screens/SetNewPasswordScreen';
 import HowDoYouTrainScreen from './src/screens/HowDoYouTrainScreen';
 import OnlineStartScreen from './src/screens/OnlineStartScreen';
 import PricingScreen from './src/screens/PricingScreen';
@@ -277,6 +280,9 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
   const { setHowTrain } = useProfile();
   const claimFoundingFifty = useClaimFoundingFifty();
   const [intent, setIntent] = useState<EntryIntent>(null);
+  // Handoff for WelcomeScreen's "an account already exists — Sign in" link,
+  // so the email typed there doesn't have to be retyped on Sign In.
+  const [signInEmail, setSignInEmail] = useState('');
 
   // Each step here swaps in a completely different screen under the same
   // natural-document-scroll shell (see useWebDocumentScroll) rather than
@@ -300,9 +306,13 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
       return (
         <WelcomeScreen
           onBack={() => setStep('about')}
+          onGoToSignIn={(prefillEmail) => {
+            setSignInEmail(prefillEmail);
+            setStep('signIn');
+          }}
           onContinue={async (enteredEmail, password, newsletterOptIn) => {
             const result = await signUp(enteredEmail, password);
-            if (result.error) return { message: result.error, kind: 'error' };
+            if (result.error) return { message: result.error, kind: 'error', showSignInLink: result.emailAlreadyExists };
             setNewsletterOptIn(newsletterOptIn);
             if (result.needsEmailConfirmation) {
               return {
@@ -326,6 +336,7 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
         <SignInScreen
           onBack={() => setStep('about')}
           onForgotPassword={() => setStep('forgotPassword')}
+          initialEmail={signInEmail}
           onSignIn={async (enteredEmail, password) => {
             const result = await signInWithPassword(enteredEmail, password);
             if (result.error) return result.error;
@@ -420,6 +431,11 @@ type MainAppProps = {
 function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps) {
   const { tier } = useMembership();
   useWeeklyUpgradeNudge(tier === 'online_free');
+  // Hides the bottom tab bar the moment any field is focused and the
+  // keyboard opens, app-wide — previously only the hamburger drawer hid it,
+  // so an open keyboard plus the tab bar could cover most of a form (the
+  // Weekly Challenge score form especially).
+  const keyboardVisible = useKeyboardVisible();
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -469,7 +485,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenSearch={() => setSearchOpen(true)}
         />
-        <RootNavigator tabBarHidden={sidebarOpen} />
+        <RootNavigator tabBarHidden={sidebarOpen || keyboardVisible} />
         <TabBarTourMarker />
       </View>
       <ScreenOverlay visible={searchOpen}>
@@ -702,11 +718,31 @@ type AuthGatedProvidersProps = {
 // sees About immediately, since authReady resolves before there's anything
 // to check.
 function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersProps) {
-  const { authReady } = useAuth();
+  const { authReady, passwordRecovery, updatePassword, clearPasswordRecovery } = useAuth();
   useLocalImportOnFirstSignIn();
+  useScrollFocusedInputIntoView();
 
   if (!authReady) {
     return null;
+  }
+
+  // A member who just clicked the emailed reset link lands here with a
+  // real (recovery) session already active — show the one screen that
+  // matters until they've actually set a new password, instead of letting
+  // them fall through into onboarding or the main app on that session.
+  if (passwordRecovery) {
+    return (
+      <View style={styles.webSurround}>
+        <SetNewPasswordScreen
+          onSave={async (newPassword) => {
+            const result = await updatePassword(newPassword);
+            if (result.error) return result.error;
+            clearPasswordRecovery();
+            return null;
+          }}
+        />
+      </View>
+    );
   }
 
   return (

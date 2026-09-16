@@ -3,11 +3,13 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { AppModal } from './AppModal';
 import { MediaAttachmentPicker } from './MediaAttachmentPicker';
 import { ModalHeader } from './ModalHeader';
+import { TappableMovementText } from './movement/TappableMovementText';
 import { useCommunity } from '../context/CommunityContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { formatResultsLine, useWorkoutLog } from '../context/WorkoutLogContext';
-import { formatShortDate } from '../data/content';
+import { formatShortDate, parseMoveRow } from '../data/content';
 import { showAlert } from '../lib/alert';
+import { openMovementVault } from '../lib/movementVaultModal';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -17,9 +19,12 @@ type Props = {
   workoutTitle: string;
   dateLabel: string;
   date: Date;
+  // The workout's movement list, shown read-only above the entry fields so
+  // the member never has to leave this screen to remember what it was.
+  movements: string[];
 };
 
-export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLabel, date }: Props) {
+export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLabel, date, movements }: Props) {
   const displayName = useDisplayName();
   const { addWodResultPost } = useCommunity();
   const { getLog, updateLog: updateLogEntry, setLogMedia, isCompleted, toggleCompleted } = useWorkoutLog();
@@ -84,6 +89,24 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
           <Text style={styles.workoutTitle}>{workoutTitle}</Text>
           <Text style={styles.dateLabel}>{dateLabel}</Text>
 
+          {movements.length > 0 && (
+            <View style={styles.movementsBlock} testID="log-results-movements">
+              {movements.map((move, index) => {
+                const parsed = parseMoveRow(move);
+                return (
+                  <View key={index} style={styles.movementRow}>
+                    <TappableMovementText
+                      style={styles.movementName}
+                      text={parsed.name}
+                      onOpenMovement={(movementId) => openMovementVault(movementId, 'WORKOUT')}
+                    />
+                    {parsed.reps ? <Text style={styles.movementReps}>{parsed.reps}</Text> : null}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
           <Text nativeID="log-results-title-label" style={styles.label}>POST TITLE</Text>
           <TextInput
             style={styles.input}
@@ -128,9 +151,8 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             style={styles.input}
             value={log.kettlebell}
             onChangeText={(v) => updateLog('kettlebell', v)}
-            placeholder="e.g. 16"
+            placeholder="e.g. 16 or 2x12"
             placeholderTextColor={colors.textMuted}
-            keyboardType="numeric"
             nativeID="log-results-kettlebell-input"
             aria-label="Kettlebell size in kilograms"
           />
@@ -189,6 +211,36 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginTop: 2,
     marginBottom: 20,
+  },
+  movementsBlock: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    marginBottom: 20,
+  },
+  movementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
+  },
+  movementName: {
+    flex: 1,
+    color: colors.text,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+  },
+  movementReps: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    marginLeft: 12,
   },
   logRow: {
     flexDirection: 'row',

@@ -8,12 +8,18 @@ import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
 // below, which is what the Weekly Challenge tab and the sidebar's preview
 // module actually read from. Kept as the fallback rather than deleted so
 // the tab still shows something real on a fresh install / before Doc has
-// used the Content Library at all.
+// used the Content Library at all. Scoring type is 'time' to match its own
+// description ("...for time.") — every Challenge needs exactly one of the
+// two real scoring types, this one included.
 export const CHALLENGE_TITLE = 'SWING CHALLENGE';
 const FALLBACK_DESCRIPTION = 'Rack up as many kettlebell swings as you can, for time. No shortcuts, no excuses.';
 const FALLBACK_DAYS_LEFT = 4;
 
-export type ChallengeTag = 'Boathouse Crew' | 'Virtual';
+// The label next to a member's name on the leaderboard — computed live from
+// their own profile's "how do you train" answer, never stored on the entry
+// itself, so it always reflects where they train *now* (see
+// tagFromHowTrain below).
+export type ChallengeTag = 'Boathouse Crew' | 'Online';
 
 export type LeaderboardEntry = {
   rank: number;
@@ -37,8 +43,9 @@ export type CurrentChallenge = {
   formatDescription: string;
   movements: string[];
   videoUrl: string;
-  // null only for the built-in fallback — every real Content Library COW
-  // entry always has one (enforced when it's saved).
+  // Every real Challenge has exactly one of the two real scoring types —
+  // see ContentCowScoringType. Only null for a legacy/unset Content
+  // Library entry saved before scoring type was required.
   scoringType: ContentCowScoringType | null;
   daysLeft: number;
   // null for the fallback; the live entry's own id otherwise, so callers
@@ -53,22 +60,12 @@ const FALLBACK_CHALLENGE: CurrentChallenge = {
   formatDescription: FALLBACK_DESCRIPTION,
   movements: [],
   videoUrl: '',
-  scoringType: null,
+  scoringType: 'time',
   daysLeft: FALLBACK_DAYS_LEFT,
   sourceId: null,
 };
 
 const CHALLENGE_RUN_LENGTH_DAYS = 7;
-
-// Seed rows standing in for the rest of the gym until there's a real
-// backend — the Weekly Challenge tab appends real submissions after these.
-const DEMO_ENTRIES: LeaderboardEntry[] = [
-  { rank: 1, name: 'J. Marino', kettlebell: '16', rounds: '12', time: '8:42', tag: 'Boathouse Crew' },
-  { rank: 2, name: 'K. Alvarez', kettlebell: '12', rounds: '11', time: '9:05', tag: 'Boathouse Crew' },
-  { rank: 3, name: 'T. Ruiz', kettlebell: '16', rounds: '10', time: '9:18', tag: 'Virtual' },
-  { rank: 4, name: 'S. Boyle', kettlebell: '12', rounds: '10', time: '9:47', tag: 'Boathouse Crew' },
-  { rank: 5, name: 'D. Castillo', kettlebell: '8', rounds: '9', time: '10:02', tag: 'Virtual' },
-];
 
 export type ChallengeEntry = {
   id: string;
@@ -86,10 +83,23 @@ type ChallengeContextValue = {
   loading: boolean;
   error: string | null;
   entries: ChallengeEntry[];
-  addEntry: (entry: Omit<ChallengeEntry, 'id' | 'createdAt' | 'author'>) => void;
+  addEntry: (entry: Omit<ChallengeEntry, 'id' | 'createdAt' | 'author' | 'tag'>) => void;
 };
 
 const ChallengeContext = createContext<ChallengeContextValue | undefined>(undefined);
+
+type ProfileRef = { display_name: string; how_train: string | null } | { display_name: string; how_train: string | null }[] | null;
+
+function profileOf(ref: ProfileRef) {
+  return Array.isArray(ref) ? ref[0] : ref;
+}
+
+// TRAIN AT THE BOATHOUSE -> "Boathouse Crew", TRAIN ONLINE -> "Online" — an
+// account that hasn't answered yet (e.g. it came in through a door that
+// skips the question) defaults to Online, the more common case.
+function tagFromHowTrain(howTrain: string | null | undefined): ChallengeTag {
+  return howTrain === 'boathouse' ? 'Boathouse Crew' : 'Online';
+}
 
 type ChallengeEntryRow = {
   id: string;
@@ -98,29 +108,26 @@ type ChallengeEntryRow = {
   rounds: string;
   reps: string | null;
   time_taken: string;
-  tag: ChallengeTag;
   created_at: string;
-  profiles: { display_name: string } | { display_name: string }[] | null;
+  profiles: ProfileRef;
 };
 
-function authorNameOf(row: ChallengeEntryRow): string {
-  const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
-  return profile?.display_name?.trim() || 'Member';
-}
-
 function rowToEntry(row: ChallengeEntryRow): ChallengeEntry {
+  const profile = profileOf(row.profiles);
   return {
     id: row.id,
-    author: authorNameOf(row),
+    author: profile?.display_name?.trim() || 'Member',
     challengeTitle: row.challenge_title,
     kettlebell: String(row.kettlebell_kg),
     rounds: row.rounds,
     reps: row.reps ?? undefined,
     time: row.time_taken,
-    tag: row.tag,
+    tag: tagFromHowTrain(profile?.how_train),
     createdAt: new Date(row.created_at).getTime(),
   };
 }
+
+const ENTRY_SELECT = 'id, challenge_title, kettlebell_kg, rounds, reps, time_taken, created_at, profiles(display_name, how_train)';
 
 // Weekly Challenge (COWs) submissions — every member's entries, read from
 // the shared `challenge_entries` table, so the leaderboard is the same for
@@ -137,7 +144,7 @@ export function ChallengeProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     supabase
       .from('challenge_entries')
-      .select('id, challenge_title, kettlebell_kg, rounds, reps, time_taken, tag, created_at, profiles(display_name)')
+      .select(ENTRY_SELECT)
       .order('created_at', { ascending: true })
       .then(({ data, error: fetchError }) => {
         if (cancelled) return;
@@ -170,9 +177,8 @@ export function ChallengeProvider({ children }: { children: React.ReactNode }) {
             rounds: entry.rounds,
             reps: entry.reps ?? null,
             time_taken: entry.time,
-            tag: entry.tag,
           })
-          .select('id, challenge_title, kettlebell_kg, rounds, reps, time_taken, tag, created_at, profiles(display_name)')
+          .select(ENTRY_SELECT)
           .single()
           .then(({ data }) => {
             if (data) setEntries((prev) => [...prev, rowToEntry(data as unknown as ChallengeEntryRow)]);
@@ -223,21 +229,52 @@ export function useCurrentChallenge(): CurrentChallenge {
   };
 }
 
-// Demo rows plus this week's real submissions, in posting order — shared by
-// the Weekly Challenge tab (full board) and the sidebar's top-3 preview.
+// "9:42" -> 582. Anything unparseable (including the '—' placeholder) sorts
+// to the very end regardless of ascending/descending, since it's not a real
+// score.
+function parseTimeToSeconds(time: string): number {
+  const trimmed = time.trim();
+  const colonMatch = trimmed.match(/^(\d+):(\d{1,2})$/);
+  if (colonMatch) return Number(colonMatch[1]) * 60 + Number(colonMatch[2]);
+  const asNumber = Number(trimmed);
+  return trimmed !== '' && !Number.isNaN(asNumber) ? asNumber : Number.POSITIVE_INFINITY;
+}
+
+// Rounds and reps combined into one sortable number — 12 rounds + 8 reps
+// beats 12 rounds + 3 reps beats 11 rounds + anything. Unparseable rounds
+// (including the '—' placeholder) sort to the very end.
+function parseRoundsReps(rounds: string, reps: string | undefined): number {
+  const r = Number(rounds.trim());
+  if (Number.isNaN(r)) return Number.NEGATIVE_INFINITY;
+  const p = Number((reps ?? '0').trim());
+  return r * 1000 + (Number.isNaN(p) ? 0 : p);
+}
+
+// This week's real submissions for the current Challenge, sorted the one
+// correct way for its scoring type — fastest time first, or most
+// rounds+reps first — and ranked accordingly. A Challenge only ever shows
+// one of the two displays, never both.
 export function useChallengeLeaderboard(): LeaderboardEntry[] {
   const { entries } = useChallenge();
   const current = useCurrentChallenge();
-  const posted: LeaderboardEntry[] = entries
-    .filter((e) => e.challengeTitle === current.title)
-    .map((e, i) => ({
-      rank: DEMO_ENTRIES.length + i + 1,
-      name: e.author,
-      kettlebell: e.kettlebell,
-      rounds: e.rounds,
-      reps: e.reps,
-      time: e.time,
-      tag: e.tag,
-    }));
-  return [...DEMO_ENTRIES, ...posted];
+  // 'rounds' is a legacy scoring type from before Challenges were narrowed
+  // to exactly two choices (see ContentWorkoutForm) — still handled here as
+  // "more work wins," same as 'rounds_reps', so an already-saved Content
+  // Library entry with the old value keeps sorting correctly.
+  const isTimeScoring = current.scoringType === 'time' || current.scoringType === null;
+
+  const posted = entries.filter((e) => e.challengeTitle === current.title);
+  const sorted = [...posted].sort((a, b) =>
+    isTimeScoring ? parseTimeToSeconds(a.time) - parseTimeToSeconds(b.time) : parseRoundsReps(b.rounds, b.reps) - parseRoundsReps(a.rounds, a.reps)
+  );
+
+  return sorted.map((e, i) => ({
+    rank: i + 1,
+    name: e.author,
+    kettlebell: e.kettlebell,
+    rounds: e.rounds,
+    reps: e.reps,
+    time: e.time,
+    tag: e.tag,
+  }));
 }

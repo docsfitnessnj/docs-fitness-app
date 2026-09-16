@@ -293,7 +293,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
         setFoundingFiftyGrants((prev) => ({ ...prev, [name]: { granted: true, grantedAt: Date.now() } })),
       previewMonthlyRecap: () => {
         if (!realAdmin) return;
-        addTextPost('Doc', buildRecapTitle(), buildRecapBody({ getBadgesForAuthor, displayName }), 'Announcement');
+        addTextPost('Doc', buildRecapTitle(), buildRecapBody({ getBadgesForAuthor, displayName, grants }), 'Announcement');
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -308,7 +308,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     if (now.getDate() !== 1) return;
     const key = `${now.getFullYear()}-${now.getMonth() + 1}`;
     if (lastRecapMonthKey === key) return;
-    addTextPost('Doc', buildRecapTitle(now), buildRecapBody({ getBadgesForAuthor: value.getBadgesForAuthor, displayName }), 'Announcement');
+    addTextPost('Doc', buildRecapTitle(now), buildRecapBody({ getBadgesForAuthor: value.getBadgesForAuthor, displayName, grants }), 'Announcement');
     setLastRecapMonthKey(key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastRecapMonthKey, realAdmin]);
@@ -328,13 +328,16 @@ function buildRecapTitle(d: Date = new Date()): string {
 function buildRecapBody({
   getBadgesForAuthor,
   displayName,
+  grants,
 }: {
   getBadgesForAuthor: (name: string) => BadgeId[];
   displayName: string;
+  grants: GrantRow[];
 }): string {
-  const roster = ['Doc', 'K. Alvarez', 'D. Castillo', 'S. Boyle', 'J. Marino', 'T. Ruiz', displayName].filter(
-    (name, i, arr) => arr.indexOf(name) === i
-  );
+  // Every real member who holds at least one badge, plus whoever's
+  // signed in now (in case they don't hold one yet) — no more standing in
+  // for the rest of the gym with a hardcoded cast of names.
+  const roster = Array.from(new Set([...grants.map((g) => nameOf(g.profiles)), displayName]));
 
   const holdersOf = (id: BadgeId) => roster.filter((name) => getBadgesForAuthor(name).includes(id));
 

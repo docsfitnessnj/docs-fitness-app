@@ -2,7 +2,14 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
 
-export type AuthResult = { error: string | null; needsEmailConfirmation?: boolean };
+export type AuthResult = {
+  error: string | null;
+  needsEmailConfirmation?: boolean;
+  // Set on signUp specifically when the email is already registered — lets
+  // the caller offer a direct "Sign in" link instead of just telling the
+  // member to go find it themselves.
+  emailAlreadyExists?: boolean;
+};
 
 type AuthContextValue = {
   // Undefined until the very first session check finishes — lets the app
@@ -11,10 +18,16 @@ type AuthContextValue = {
   authReady: boolean;
   session: Session | null;
   user: User | null;
+  // True once Supabase reports this session came from a password-recovery
+  // link — the app shows the SET NEW PASSWORD screen instead of the normal
+  // signed-in/onboarding flow while this is true (see App.tsx).
+  passwordRecovery: boolean;
+  clearPasswordRecovery: () => void;
   signUp: (email: string, password: string) => Promise<AuthResult>;
   signInWithPassword: (email: string, password: string) => Promise<AuthResult>;
   signOut: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<AuthResult>;
+  updatePassword: (newPassword: string) => Promise<AuthResult>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -22,7 +35,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 function friendlyAuthError(message: string): string {
   const m = message.toLowerCase();
   if (m.includes('already registered') || m.includes('already exists')) {
-    return 'An account already exists for that email — try signing in instead.';
+    return 'An account already exists for that email.';
   }
   if (m.includes('invalid login credentials')) {
     return "That email and password don't match our records.";
@@ -44,6 +57,7 @@ function friendlyAuthError(message: string): string {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authReady, setAuthReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,9 +76,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthReady(true);
       });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
       setAuthReady(true);
+      // Fires when the member lands back in the app via the emailed reset
+      // link — Supabase has already signed them into a temporary session
+      // for exactly this purpose.
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
     });
 
     return () => {
@@ -78,9 +96,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       authReady,
       session,
       user: session?.user ?? null,
+      passwordRecovery,
+      clearPasswordRecovery: () => setPasswordRecovery(false),
       signUp: async (email, password) => {
         const { data, error } = await supabase.auth.signUp({ email, password });
-        if (error) return { error: friendlyAuthError(error.message) };
+        if (error) {
+          const lower = error.message.toLowerCase();
+          const emailAlreadyExists = lower.includes('already registered') || lower.includes('already exists');
+          return { error: friendlyAuthError(error.message), emailAlreadyExists };
+        }
         // With email confirmation on, Supabase returns a user but no
         // session until the link is clicked — tell the caller so it can
         // show a calm "check your email" message instead of assuming
@@ -102,8 +126,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error) return { error: friendlyAuthError(error.message) };
         return { error: null };
       },
+      updatePassword: async (newPassword) => {
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) return { error: friendlyAuthError(error.message) };
+        return { error: null };
+      },
     }),
-    [authReady, session]
+    [authReady, session, passwordRecovery]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

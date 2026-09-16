@@ -12,25 +12,6 @@ export type FoundingFiftyMember = {
   joinedAt: number;
 };
 
-// A plausible head start for launch weekend — the admin flips the flag on
-// once these are already spoken for elsewhere, not starting from zero.
-// Fabricated, distinct from data/roster.ts's names so the two lists are
-// never mistaken for the same people.
-const SEED_NAMES = [
-  'R. Nakamura', 'C. Delgado', 'B. Whitfield', 'M. Okafor', 'L. Prentice',
-  'A. Sorrentino', 'J. Halvorsen', 'E. Iglesias', 'T. Marsh', 'P. Kowalski',
-  'S. Devereaux', 'N. Abernathy', 'G. Fontaine', 'K. Bramwell', 'D. Osei',
-  'W. Calloway', 'F. Rourke', 'H. Vasquez', 'I. Thackeray',
-];
-
-const SEED_MEMBERS: FoundingFiftyMember[] = SEED_NAMES.map((name, i) => ({
-  name,
-  email: null,
-  // Spread over the weeks leading up to today so "joined" dates look real
-  // rather than all landing on the same instant.
-  joinedAt: Date.now() - (SEED_NAMES.length - i) * 2 * 24 * 60 * 60 * 1000,
-}));
-
 type PersistedState = {
   // Off by default — the whole tier stays invisible until launch weekend.
   enabled: boolean;
@@ -39,8 +20,25 @@ type PersistedState = {
 
 const DEFAULT_STATE: PersistedState = {
   enabled: false,
-  members: SEED_MEMBERS,
+  members: [],
 };
+
+// A one-time cleanup for a device that already persisted the old fabricated
+// launch-weekend roster before this fix — those 19 fake names would
+// otherwise keep counting against the real 50 spots forever, since
+// loadJSON only ever falls back to DEFAULT_STATE when nothing is stored
+// yet. Anyone genuinely named one of these can just claim again.
+const REMOVED_FAKE_NAMES = new Set([
+  'R. Nakamura', 'C. Delgado', 'B. Whitfield', 'M. Okafor', 'L. Prentice',
+  'A. Sorrentino', 'J. Halvorsen', 'E. Iglesias', 'T. Marsh', 'P. Kowalski',
+  'S. Devereaux', 'N. Abernathy', 'G. Fontaine', 'K. Bramwell', 'D. Osei',
+  'W. Calloway', 'F. Rourke', 'H. Vasquez', 'I. Thackeray',
+]);
+
+function stripFakeMembers(state: PersistedState): PersistedState {
+  const filtered = state.members.filter((m) => !REMOVED_FAKE_NAMES.has(m.name));
+  return filtered.length === state.members.length ? state : { ...state, members: filtered };
+}
 
 type FoundingFiftyContextValue = {
   enabled: boolean;
@@ -59,7 +57,7 @@ type FoundingFiftyContextValue = {
 const FoundingFiftyContext = createContext<FoundingFiftyContextValue | undefined>(undefined);
 
 export function FoundingFiftyProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<PersistedState>(() => loadJSON(STORAGE_KEY, DEFAULT_STATE));
+  const [state, setState] = useState<PersistedState>(() => stripFakeMembers(loadJSON(STORAGE_KEY, DEFAULT_STATE)));
 
   useEffect(() => {
     saveJSON(STORAGE_KEY, state);

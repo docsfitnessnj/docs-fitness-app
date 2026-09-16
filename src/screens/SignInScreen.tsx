@@ -1,17 +1,22 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { PasswordInput } from '../components/PasswordInput';
 import { colors, fonts } from '../theme';
 
 type Props = {
   onBack: () => void;
   onForgotPassword: () => void;
+  // Pre-fills the email field — set when arriving here from the Welcome
+  // screen's "an account already exists" Sign in link, so the member
+  // doesn't have to retype it.
+  initialEmail?: string;
   // Returns an error message on failure, or null on success.
   onSignIn: (email: string, password: string) => Promise<string | null>;
 };
 
-export default function SignInScreen({ onBack, onForgotPassword, onSignIn }: Props) {
-  const [email, setEmail] = useState('');
+export default function SignInScreen({ onBack, onForgotPassword, initialEmail, onSignIn }: Props) {
+  const [email, setEmail] = useState(initialEmail ?? '');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,16 +60,14 @@ export default function SignInScreen({ onBack, onForgotPassword, onSignIn }: Pro
           />
 
           <Text nativeID="sign-in-password-label" style={styles.label}>PASSWORD</Text>
-          <TextInput
+          <PasswordInput
             style={styles.input}
             value={password}
             onChangeText={setPassword}
             placeholder="••••••••"
-            placeholderTextColor={colors.textMuted}
-            secureTextEntry
             autoComplete="current-password"
             nativeID="sign-in-password-input"
-            aria-label="Password"
+            ariaLabel="Password"
             testID="sign-in-password"
           />
 

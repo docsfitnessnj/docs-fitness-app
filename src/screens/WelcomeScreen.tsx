@@ -12,22 +12,27 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
+import { PasswordInput } from '../components/PasswordInput';
 import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
 
 // A non-null result means "show this message" — `kind` picks the styling.
 // 'info' covers the one non-error outcome that still needs to be shown here
 // (email confirmation required before a session exists), so it doesn't read
-// like something went wrong.
-export type WelcomeSubmitResult = { message: string; kind: 'error' | 'info' } | null;
+// like something went wrong. `showSignInLink` adds a tappable "Sign in"
+// link right in the message — set when the error is specifically "an
+// account already exists," so there's an actual way to act on it.
+export type WelcomeSubmitResult = { message: string; kind: 'error' | 'info'; showSignInLink?: boolean } | null;
 
 type Props = {
   onContinue: (email: string, password: string, newsletterOptIn: boolean) => Promise<WelcomeSubmitResult>;
+  // Switches the flow to Sign In, keeping this email filled in there.
+  onGoToSignIn: (email: string) => void;
   // Present whenever this screen is reached from the About page rather than
   // being the app's own entry point.
   onBack?: () => void;
 };
 
-export default function WelcomeScreen({ onContinue, onBack }: Props) {
+export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [newsletterOptIn, setNewsletterOptIn] = useState(true);
@@ -93,16 +98,14 @@ export default function WelcomeScreen({ onContinue, onBack }: Props) {
           />
 
           <Text nativeID="welcome-password-label" style={styles.label}>PASSWORD</Text>
-          <TextInput
+          <PasswordInput
             style={styles.input}
             value={password}
             onChangeText={setPassword}
             placeholder="At least 6 characters"
-            placeholderTextColor={colors.textMuted}
-            secureTextEntry
             autoComplete="new-password"
             nativeID="welcome-password-input"
-            aria-label="Password"
+            ariaLabel="Password"
             testID="welcome-password"
           />
 
@@ -124,6 +127,18 @@ export default function WelcomeScreen({ onContinue, onBack }: Props) {
               testID="welcome-feedback"
             >
               {feedback.message}
+              {feedback.showSignInLink && (
+                <>
+                  {' '}
+                  <Text
+                    style={styles.feedbackLink}
+                    onPress={() => onGoToSignIn(email.trim())}
+                    testID="welcome-feedback-sign-in-link"
+                  >
+                    Sign in
+                  </Text>
+                </>
+              )}
             </Text>
           )}
 
@@ -291,6 +306,11 @@ const styles = StyleSheet.create({
   },
   feedbackTextError: {
     color: colors.scoreboardRed,
+  },
+  feedbackLink: {
+    color: colors.green,
+    fontFamily: fonts.bodySemiBold,
+    textDecorationLine: 'underline',
   },
   continueButton: {
     backgroundColor: colors.green,
