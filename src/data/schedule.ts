@@ -14,14 +14,15 @@ export type ScheduleSection = {
   note?: string;
 };
 
-// Real weekly class calendar at the Boathouse.
+// Real weekly class calendar at the Boathouse. Dawn Patrol is the 5:30 AM
+// name only — every 9:30 AM class is Yawn Patrol, never Dawn Patrol.
 const MWF_ROWS: ClassRow[] = [
   { id: 'mwf-530a', time: '5:30 AM', className: 'Dawn Patrol', classType: 'Kettlebell Strength' },
-  { id: 'mwf-930a', time: '9:30 AM', className: 'Dawn Patrol', classType: 'Kettlebell Strength' },
+  { id: 'mwf-930a', time: '9:30 AM', className: 'Yawn Patrol', classType: 'Kettlebell Strength' },
 ];
 
 const TTH_ROWS: ClassRow[] = [
-  { id: 'tth-930a', time: '9:30 AM', className: 'Dawn Patrol', classType: 'Kettlebell Cardio' },
+  { id: 'tth-930a', time: '9:30 AM', className: 'Yawn Patrol', classType: 'Kettlebell Cardio' },
 ];
 
 const SATURDAY_ROWS: ClassRow[] = [

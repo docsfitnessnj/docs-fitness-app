@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { getWeekStart } from '../data/content';
+import { getNextSunday, getWeekStart } from '../data/content';
 import { CONTENT_LIBRARY_SEED, CONTENT_LIBRARY_SEED_VERSION } from '../data/contentLibrarySeed';
-import { loadSeededArray, resetToSeedArray, saveJSON } from '../lib/storage';
+import { loadJSON, loadSeededArray, resetToSeedArray, saveJSON } from '../lib/storage';
 
 // Deliberately NOT prefixed "docsfitness." (see storage.ts's clearAppStorage,
 // which sweeps every key under that prefix on sign-out). Doc's draft content
@@ -10,7 +10,12 @@ import { loadSeededArray, resetToSeedArray, saveJSON } from '../lib/storage';
 // be able to wipe out weeks of drafted workouts.
 const STORAGE_KEY = 'contentLibraryDrafts.v1';
 
-export type ContentWorkoutType = 'wod' | 'cow';
+// 'steady_state' is STEADY STATE SATURDAY (the Zone 2 cardio day) and
+// 'sunday_setup' is SUNDAY SETUP (prep focus + a quote, no workout) — see
+// weekendContent.ts, which is what actually reads these for members. Both
+// live in this same local drafts system as WOD/COW, one entry per calendar
+// Saturday/Sunday, matched by exact release date rather than "most recent."
+export type ContentWorkoutType = 'wod' | 'cow' | 'steady_state' | 'sunday_setup';
 // 'published' is what members can actually see, once a real backend is
 // wired up — "scheduled" is a manual, single-entry-only intermediate state
 // (set from the workout form); the bulk PUBLISH/UNPUBLISH THIS WEEK and
@@ -48,6 +53,10 @@ export type ContentWorkout = {
   videoUrl: string;
   notes: string;
   scoringType?: ContentCowScoringType;
+  // 'sunday_setup' only — a specific pick from SUNDAY_QUOTES for this one
+  // week, overriding the automatic cycle. Undefined means "use whatever
+  // the cycle assigns this Sunday" (the normal case).
+  quoteOverrideIndex?: number;
   // Epoch ms — the moment this workout is meant to go live.
   releaseAt: number;
   status: ContentWorkoutStatus;
@@ -90,18 +99,42 @@ type ContentLibraryContextValue = {
   // does on load, which only ever *adds* missing seed entries and never
   // discards anything.
   resetToSeed: () => void;
+  // The Sunday whose quote counts as #1 in the 12-week cycle — every other
+  // Sunday's default quote is computed relative to this one (see
+  // defaultQuoteIndexForSunday in sundayQuotes.ts). Exposed as a plain
+  // epoch-ms number so the admin screen can display and reset it.
+  quoteCycleAnchor: number;
+  // Doc's RESTART QUOTES FROM THE TOP control — jumps the anchor to the
+  // next upcoming Sunday so the cycle starts over at quote #1 from there.
+  restartQuoteCycle: () => void;
 };
 
 const ContentLibraryContext = createContext<ContentLibraryContextValue | undefined>(undefined);
+
+// Not "docsfitness."-prefixed for the same reason as STORAGE_KEY above —
+// this is Doc's own admin setting, not per-account state a demo sign-out
+// should ever clear.
+const QUOTE_CYCLE_ANCHOR_KEY = 'sundayQuoteCycleAnchor.v1';
 
 export function ContentLibraryProvider({ children }: { children: React.ReactNode }) {
   const [workouts, setWorkouts] = useState<ContentWorkout[]>(() =>
     loadSeededArray(STORAGE_KEY, CONTENT_LIBRARY_SEED, CONTENT_LIBRARY_SEED_VERSION)
   );
+  // Defaults to the first upcoming Sunday as of whenever this device first
+  // loads the app — "starting with the first upcoming Sunday" — then stays
+  // put across reloads once saved, regardless of what day it happens to be
+  // when read back.
+  const [quoteCycleAnchor, setQuoteCycleAnchor] = useState<number>(() =>
+    loadJSON<number | null>(QUOTE_CYCLE_ANCHOR_KEY, null) ?? getNextSunday().getTime()
+  );
 
   useEffect(() => {
     saveJSON(STORAGE_KEY, workouts);
   }, [workouts]);
+
+  useEffect(() => {
+    saveJSON(QUOTE_CYCLE_ANCHOR_KEY, quoteCycleAnchor);
+  }, [quoteCycleAnchor]);
 
   const value = useMemo<ContentLibraryContextValue>(
     () => ({
@@ -150,8 +183,10 @@ export function ContentLibraryProvider({ children }: { children: React.ReactNode
       resetToSeed: () => {
         setWorkouts(resetToSeedArray(STORAGE_KEY, CONTENT_LIBRARY_SEED, CONTENT_LIBRARY_SEED_VERSION));
       },
+      quoteCycleAnchor,
+      restartQuoteCycle: () => setQuoteCycleAnchor(getNextSunday().getTime()),
     }),
-    [workouts]
+    [workouts, quoteCycleAnchor]
   );
 
   return <ContentLibraryContext.Provider value={value}>{children}</ContentLibraryContext.Provider>;

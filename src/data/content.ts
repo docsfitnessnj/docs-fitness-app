@@ -4,7 +4,9 @@ export type DayWod = {
   moves: string[];
 };
 
-// Monday-Friday workouts. Saturday and Sunday are rest days with no entry here.
+// Monday-Friday workouts only — Saturday (Steady State Saturday) and Sunday
+// (Sunday Setup) have their own admin-managed content instead, see
+// weekendContent.ts, and no entry here.
 export const WEEKDAY_WODS: DayWod[] = [
   { key: 'mon', title: 'THE GAUNTLET', moves: ['5 Rounds', '10 Kettlebell Swings', '10 Goblet Squats', '10 Push-Ups', '200m Run'] },
   { key: 'tue', title: 'IRON GRIP', moves: ['4 Rounds', '15 Farmer Carries (50m)', '12 Pull-Ups', '20 Sit-Ups'] },
@@ -15,6 +17,15 @@ export const WEEKDAY_WODS: DayWod[] = [
 
 const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
+// Saturday is STEADY STATE SATURDAY (a Zone 2 cardio day, loggable like a
+// WOD); Sunday is SUNDAY SETUP (prep + a quote, no workout to log). Set
+// alongside `isRestDay` below, which keeps its original meaning — "not one
+// of the 5 weekday WODs" — unchanged, since ON FIRE and the free tier's
+// Mon/Tue unlock both key off that exact meaning. `weekendKind` is the
+// separate, additive flag consumers use to know a weekend day now has its
+// own real content instead of being a true rest day.
+export type WeekendKind = 'saturday' | 'sunday';
+
 export type WeekDay = {
   date: Date;
   label: string;
@@ -22,7 +33,29 @@ export type WeekDay = {
   isToday: boolean;
   isRestDay: boolean;
   wod?: DayWod;
+  weekendKind?: WeekendKind;
 };
+
+// The two weekend days' fixed, never-changing display names — used
+// wherever they're shown as a heading and for the auto-filled post title
+// pattern (e.g. "STEADY STATE SATURDAY · SEP 19, 2026").
+export const STEADY_STATE_SATURDAY_NAME = 'STEADY STATE SATURDAY';
+export const SUNDAY_SETUP_NAME = 'SUNDAY SETUP';
+
+// Stable log/completion key for Steady State Saturday, parallel to the
+// weekday WODs' own 'mon'..'fri' keys — used wherever a Saturday's workout
+// log or completion state needs a dayKey. Sunday has no such key: Sunday
+// Setup has nothing to log or mark complete, only a post to share.
+export const STEADY_STATE_SATURDAY_KEY = 'sat';
+
+// True once a day has *something* to show — a weekday WOD or a weekend
+// day's own content — false only for a genuine empty rest day. Every day
+// of the week now has content, so this is the one place UI should check
+// instead of `isRestDay` when deciding whether to render a lock/complete
+// state or the old plain "Rest day" card.
+export function dayHasContent(day: WeekDay): boolean {
+  return !!day.wod || !!day.weekendKind;
+}
 
 // Free (online, post-trial) accounts get these two weekdays unlocked out of the 5 — checked
 // by the WOD's stable key so it holds regardless of which real week/date is showing.
@@ -30,6 +63,10 @@ export const FREE_UNLOCKED_WOD_KEYS = ['mon', 'tue'];
 
 export type WodAccessLevel = 'full' | 'partial' | 'none';
 
+// Also the correct gate for Steady State Saturday and Sunday Setup: a
+// weekend WeekDay's `wod` is always undefined, so a partial (free) account
+// falls through to `false` here for either one, same as any other locked
+// weekday — free members get exactly their 2 of 5 weekdays, nothing more.
 export function isDayWodUnlocked(day: WeekDay, wodAccessLevel: WodAccessLevel): boolean {
   if (wodAccessLevel === 'full') return true;
   if (wodAccessLevel === 'none') return false;
@@ -47,6 +84,7 @@ function dayInfoForDate(date: Date, today: Date): WeekDay {
     isToday: isSameDay(date, today),
     isRestDay,
     wod: isRestDay ? undefined : WEEKDAY_WODS[mondayIndexed],
+    weekendKind: mondayIndexed === 5 ? 'saturday' : mondayIndexed === 6 ? 'sunday' : undefined,
   };
 }
 
@@ -90,6 +128,18 @@ export function getWeekStart(today: Date = new Date()): Date {
   monday.setHours(0, 0, 0, 0);
   monday.setDate(monday.getDate() + mondayOffset);
   return monday;
+}
+
+// The next Sunday at/after `from`, at local midnight — "upcoming" is
+// inclusive of today, so calling this on a Sunday returns that same day.
+// Used both to seed the Sunday quote cycle's starting point and to jump it
+// back to the top when Doc restarts it.
+export function getNextSunday(from: Date = new Date()): Date {
+  const d = new Date(from);
+  d.setHours(0, 0, 0, 0);
+  const jsDay = d.getDay(); // 0 = Sunday
+  if (jsDay !== 0) d.setDate(d.getDate() + (7 - jsDay));
+  return d;
 }
 
 export function isThisWeek(timestamp: number, today: Date = new Date()): boolean {

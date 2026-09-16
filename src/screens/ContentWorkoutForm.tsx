@@ -9,7 +9,10 @@ import {
   ContentWorkoutStatus,
   ContentWorkoutType,
   SCORING_TYPE_LABELS,
+  useContentLibrary,
 } from '../context/ContentLibraryContext';
+import { SUNDAY_SETUP_NAME } from '../data/content';
+import { defaultQuoteIndexForSunday, SUNDAY_QUOTES } from '../data/sundayQuotes';
 import { parseReleaseAt } from '../lib/contentLibraryParser';
 import { findMovementInText } from '../lib/movementMatcher';
 import { showAlert } from '../lib/alert';
@@ -29,7 +32,9 @@ type Props = {
 
 const TYPE_OPTIONS: { value: ContentWorkoutType; label: string }[] = [
   { value: 'wod', label: "DOC'S WOD" },
-  { value: 'cow', label: 'CHALLENGE OF THE WEEK' },
+  { value: 'cow', label: 'CHALLENGE' },
+  { value: 'steady_state', label: 'SATURDAY' },
+  { value: 'sunday_setup', label: 'SUNDAY' },
 ];
 
 const STATUS_OPTIONS: { value: ContentWorkoutStatus; label: string }[] = [
@@ -68,29 +73,73 @@ function defaultReleaseAt(): number {
   return d.getTime();
 }
 
+// Same one-week-out default as everything else, but nudged forward to the
+// next matching weekday for the two date-locked weekend types, so a fresh
+// STEADY STATE SATURDAY or SUNDAY SETUP form doesn't start on the wrong
+// day of the week.
+function defaultReleaseAtForType(type: ContentWorkoutType): number {
+  const base = defaultReleaseAt();
+  const targetDow = type === 'steady_state' ? 6 : type === 'sunday_setup' ? 0 : null;
+  if (targetDow === null) return base;
+  const d = new Date(base);
+  d.setDate(d.getDate() + ((targetDow - d.getDay() + 7) % 7));
+  return d.getTime();
+}
+
+function weekdayNameFor(type: ContentWorkoutType): string | null {
+  if (type === 'steady_state') return 'Saturday';
+  if (type === 'sunday_setup') return 'Sunday';
+  return null;
+}
+
 // Create/edit form for a single content-library entry. Kept as one flat
 // form (no wizard steps) since every field is short and Doc is filling
 // these in from notes she already has, not discovering the shape as she
 // goes.
 export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onBack }: Props) {
+  const { quoteCycleAnchor } = useContentLibrary();
+  const initialType = workout?.type ?? defaultType ?? 'wod';
   const [name, setName] = useState(workout?.name ?? '');
-  const [type, setType] = useState<ContentWorkoutType>(workout?.type ?? defaultType ?? 'wod');
+  const [type, setType] = useState<ContentWorkoutType>(initialType);
   const [format, setFormat] = useState(workout?.format ?? '');
   const [formatDescription, setFormatDescription] = useState(workout?.formatDescription ?? '');
   const [movementsText, setMovementsText] = useState(workout?.movements.join('\n') ?? '');
   const [videoUrl, setVideoUrl] = useState(workout?.videoUrl ?? '');
   const [notes, setNotes] = useState(workout?.notes ?? '');
-  const [dateStr, setDateStr] = useState(dateStrOf(workout?.releaseAt ?? defaultReleaseAt()));
-  const [timeStr, setTimeStr] = useState(timeStrOf(workout?.releaseAt ?? defaultReleaseAt()));
+  const [dateStr, setDateStr] = useState(dateStrOf(workout?.releaseAt ?? defaultReleaseAtForType(initialType)));
+  const [timeStr, setTimeStr] = useState(timeStrOf(workout?.releaseAt ?? defaultReleaseAtForType(initialType)));
   const [status, setStatus] = useState<ContentWorkoutStatus>(workout?.status ?? 'draft');
   const [scoringType, setScoringType] = useState<ContentCowScoringType | null>(workout?.scoringType ?? null);
+  const [quoteOverrideIndex, setQuoteOverrideIndex] = useState<number | null>(workout?.quoteOverrideIndex ?? null);
   const [dateError, setDateError] = useState<string | null>(null);
 
   const movementLines = movementsText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  const isSaturday = type === 'steady_state';
+  const isSunday = type === 'sunday_setup';
+  const isWeekendType = isSaturday || isSunday;
 
   // A Challenge needs a scoring type before it can go anywhere — the
   // leaderboard can't render without knowing which column(s) to show.
-  const canSave = name.trim().length > 0 && movementLines.length > 0 && (type !== 'cow' || scoringType !== null);
+  // Steady State Saturday needs a title and description (movements/video
+  // are optional); Sunday Setup only needs a real week picked — the prep
+  // focus text itself is optional, since Doc may want to save just a quote
+  // override for a week before she's written the prep note.
+  const canSave =
+    isSaturday
+      ? name.trim().length > 0 && formatDescription.trim().length > 0
+      : isSunday
+        ? true
+        : name.trim().length > 0 && movementLines.length > 0 && (type !== 'cow' || scoringType !== null);
+
+  // Parsed the same way handleSave parses the real release date, so the
+  // preview here never disagrees with what actually gets saved — a plain
+  // `new Date(dateStr)` would parse a date-only string as UTC midnight and
+  // could land on the wrong local calendar day.
+  const previewReleaseAt = parseReleaseAt(`${dateStr.trim()} ${timeStr.trim() || '00:00'}`);
+  const upcomingSundayDefaultIndex = defaultQuoteIndexForSunday(
+    previewReleaseAt !== null ? new Date(previewReleaseAt) : new Date(),
+    new Date(quoteCycleAnchor)
+  );
 
   const handleSave = () => {
     const releaseAt = parseReleaseAt(`${dateStr.trim()} ${timeStr.trim()}`);
@@ -98,17 +147,26 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
       setDateError('Enter the date as YYYY-MM-DD and time as HH:MM (24h).');
       return;
     }
+    const weekdayName = weekdayNameFor(type);
+    if (weekdayName) {
+      const targetDow = type === 'steady_state' ? 6 : 0;
+      if (new Date(releaseAt).getDay() !== targetDow) {
+        setDateError(`This is a ${weekdayName} entry — enter a date that actually falls on a ${weekdayName}.`);
+        return;
+      }
+    }
     setDateError(null);
     onSave({
-      name: name.trim(),
-      originalTitle: workout?.originalTitle ?? name.trim(),
+      name: isSunday ? SUNDAY_SETUP_NAME : name.trim(),
+      originalTitle: workout?.originalTitle ?? (isSunday ? SUNDAY_SETUP_NAME : name.trim()),
       type,
-      format: format.trim(),
+      format: isWeekendType ? '' : format.trim(),
       formatDescription: formatDescription.trim(),
-      movements: movementLines,
-      videoUrl: videoUrl.trim(),
+      movements: isSunday ? [] : movementLines,
+      videoUrl: isSunday ? '' : videoUrl.trim(),
       notes: notes.trim(),
       scoringType: type === 'cow' ? scoringType ?? undefined : undefined,
+      quoteOverrideIndex: isSunday ? quoteOverrideIndex ?? undefined : undefined,
       releaseAt,
       status,
     });
@@ -130,16 +188,20 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
         backTestID="content-form-back"
       />
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <Text style={styles.label}>WORKOUT NAME</Text>
-        <TextInput
-          style={styles.input}
-          value={name}
-          onChangeText={setName}
-          placeholder="e.g. THE GAUNTLET"
-          placeholderTextColor={colors.textMuted}
-          aria-label="Workout name"
-          testID="content-form-name"
-        />
+        {!isSunday && (
+          <>
+            <Text style={styles.label}>{isSaturday ? 'SESSION TITLE' : 'WORKOUT NAME'}</Text>
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder={isSaturday ? 'e.g. LONG ROW HOME' : 'e.g. THE GAUNTLET'}
+              placeholderTextColor={colors.textMuted}
+              aria-label="Workout name"
+              testID="content-form-name"
+            />
+          </>
+        )}
 
         <Text style={styles.label}>TYPE</Text>
         <View style={styles.segmentRow}>
@@ -178,72 +240,122 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
           </>
         )}
 
-        <Text style={styles.label}>FORMAT</Text>
-        <TextInput
-          style={styles.input}
-          value={format}
-          onChangeText={setFormat}
-          placeholder="e.g. 30min AMRAP, 5 Rounds, EMOM 12"
-          placeholderTextColor={colors.textMuted}
-          aria-label="Format"
-          testID="content-form-format"
-        />
+        {!isWeekendType && (
+          <>
+            <Text style={styles.label}>FORMAT</Text>
+            <TextInput
+              style={styles.input}
+              value={format}
+              onChangeText={setFormat}
+              placeholder="e.g. 30min AMRAP, 5 Rounds, EMOM 12"
+              placeholderTextColor={colors.textMuted}
+              aria-label="Format"
+              testID="content-form-format"
+            />
+          </>
+        )}
 
-        <Text style={styles.label}>FORMAT DESCRIPTION</Text>
+        <Text style={styles.label}>{isSaturday ? 'DESCRIPTION' : isSunday ? 'PREP FOCUS' : 'FORMAT DESCRIPTION'}</Text>
         <TextInput
           style={[styles.input, styles.multilineInput]}
           value={formatDescription}
           onChangeText={setFormatDescription}
-          placeholder="How the format is run — rounds, rest, scoring."
+          placeholder={
+            isSaturday
+              ? 'What this week’s Zone 2 session is — distance, time, effort.'
+              : isSunday
+                ? 'A short prep note for the week ahead.'
+                : 'How the format is run — rounds, rest, scoring.'
+          }
           placeholderTextColor={colors.textMuted}
           multiline
           aria-label="Format description"
           testID="content-form-format-description"
         />
 
-        <Text style={styles.label}>MOVEMENTS (ONE PER LINE)</Text>
-        <TextInput
-          style={[styles.input, styles.multilineInput]}
-          value={movementsText}
-          onChangeText={setMovementsText}
-          placeholder={'Kettlebell Swings\nGoblet Squats\nPush-Ups'}
-          placeholderTextColor={colors.textMuted}
-          multiline
-          aria-label="Movements, one per line"
-          testID="content-form-movements"
-        />
-        {movementLines.length > 0 && (
-          <View style={styles.movementCheckList}>
-            {movementLines.map((line, i) => {
-              const matched = findMovementInText(line);
-              return (
-                <View key={i} style={styles.movementCheckRow}>
-                  <Ionicons
-                    name={matched ? 'checkmark-circle' : 'alert-circle-outline'}
-                    size={14}
-                    color={matched ? colors.green : colors.textMuted}
-                  />
-                  <Text style={styles.movementCheckText} numberOfLines={1}>
-                    {matched ? `${line} — matches "${matched.name}"` : `${line} — no Movement Vault match`}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
+        {!isSunday && (
+          <>
+            <Text style={styles.label}>{isSaturday ? 'MOVEMENTS (ONE PER LINE, OPTIONAL)' : 'MOVEMENTS (ONE PER LINE)'}</Text>
+            <TextInput
+              style={[styles.input, styles.multilineInput]}
+              value={movementsText}
+              onChangeText={setMovementsText}
+              placeholder={'Kettlebell Swings\nGoblet Squats\nPush-Ups'}
+              placeholderTextColor={colors.textMuted}
+              multiline
+              aria-label="Movements, one per line"
+              testID="content-form-movements"
+            />
+            {movementLines.length > 0 && (
+              <View style={styles.movementCheckList}>
+                {movementLines.map((line, i) => {
+                  const matched = findMovementInText(line);
+                  return (
+                    <View key={i} style={styles.movementCheckRow}>
+                      <Ionicons
+                        name={matched ? 'checkmark-circle' : 'alert-circle-outline'}
+                        size={14}
+                        color={matched ? colors.green : colors.textMuted}
+                      />
+                      <Text style={styles.movementCheckText} numberOfLines={1}>
+                        {matched ? `${line} — matches "${matched.name}"` : `${line} — no Movement Vault match`}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            <Text style={styles.label}>{isSaturday ? 'YOUTUBE VIDEO URL (OPTIONAL)' : 'YOUTUBE BREAKDOWN VIDEO URL'}</Text>
+            <TextInput
+              style={styles.input}
+              value={videoUrl}
+              onChangeText={setVideoUrl}
+              placeholder="https://youtube.com/watch?v=..."
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              aria-label="YouTube breakdown video URL"
+              testID="content-form-video-url"
+            />
+          </>
         )}
 
-        <Text style={styles.label}>YOUTUBE BREAKDOWN VIDEO URL</Text>
-        <TextInput
-          style={styles.input}
-          value={videoUrl}
-          onChangeText={setVideoUrl}
-          placeholder="https://youtube.com/watch?v=..."
-          placeholderTextColor={colors.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          aria-label="YouTube breakdown video URL"
-          testID="content-form-video-url"
-        />
+        {isSunday && (
+          <>
+            <Text style={styles.label}>QUOTE FOR THIS WEEK</Text>
+            <Pressable
+              style={[styles.quoteDefaultRow, quoteOverrideIndex === null && styles.quoteRowActive]}
+              onPress={() => setQuoteOverrideIndex(null)}
+              testID="content-form-quote-default"
+            >
+              <Text style={[styles.quoteDefaultRowText, quoteOverrideIndex === null && styles.quoteRowTextActive]}>
+                USE THIS WEEK'S DEFAULT — #{upcomingSundayDefaultIndex + 1}: "{SUNDAY_QUOTES[upcomingSundayDefaultIndex].text}"
+              </Text>
+            </Pressable>
+            <View style={styles.quoteList}>
+              {SUNDAY_QUOTES.map((q, i) => (
+                <Pressable
+                  key={i}
+                  style={[styles.quoteRow, quoteOverrideIndex === i && styles.quoteRowActive]}
+                  onPress={() => setQuoteOverrideIndex(i)}
+                  testID={`content-form-quote-${i}`}
+                >
+                  <Text style={[styles.quoteRowNumber, quoteOverrideIndex === i && styles.quoteRowTextActive]}>{i + 1}.</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.quoteRowText, quoteOverrideIndex === i && styles.quoteRowTextActive]}>"{q.text}"</Text>
+                    <Text style={[styles.quoteRowAttribution, quoteOverrideIndex === i && styles.quoteRowTextActive]}>
+                      {q.attribution}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.hint}>
+              Overriding here only changes this one week's quote — the cycle keeps its place for every other week.
+            </Text>
+          </>
+        )}
 
         <Text style={styles.label}>NOTES</Text>
         <TextInput
@@ -257,7 +369,9 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
           testID="content-form-notes"
         />
 
-        <Text style={styles.label}>RELEASE DATE &amp; TIME</Text>
+        <Text style={styles.label}>
+          {isSaturday ? 'WEEK (THIS SATURDAY’S DATE)' : isSunday ? 'WEEK (THIS SUNDAY’S DATE)' : 'RELEASE DATE & TIME'}
+        </Text>
         <View style={styles.dateRow}>
           <View style={styles.dateField}>
             <TextInput
@@ -414,6 +528,59 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   segmentTextActive: {
+    color: colors.white,
+  },
+  quoteDefaultRow: {
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: colors.card,
+    marginBottom: 10,
+  },
+  quoteDefaultRowText: {
+    color: colors.text,
+    fontFamily: fonts.labelBold,
+    fontSize: 11,
+    letterSpacing: 0.3,
+    lineHeight: 15,
+  },
+  quoteList: {
+    gap: 8,
+  },
+  quoteRow: {
+    flexDirection: 'row',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: colors.card,
+  },
+  quoteRowActive: {
+    backgroundColor: colors.green,
+    borderColor: colors.green,
+  },
+  quoteRowNumber: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelBold,
+    fontSize: 12,
+    width: 20,
+  },
+  quoteRowText: {
+    color: colors.text,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  quoteRowAttribution: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 10,
+    letterSpacing: 0.3,
+    marginTop: 3,
+  },
+  quoteRowTextActive: {
     color: colors.white,
   },
   saveButton: {

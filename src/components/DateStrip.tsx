@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { WeekDay } from '../data/content';
+import { dayHasContent, WeekDay } from '../data/content';
 import { useTour } from '../context/TourContext';
 import { colors, fonts } from '../theme';
 
@@ -24,8 +24,9 @@ export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isComplet
   const { registerTarget } = useTour();
   const cells = week.map((day, index) => {
     const selected = index === selectedIndex;
-    const locked = !day.isRestDay && !isUnlocked(index);
-    const completed = !day.isRestDay && isCompleted(index);
+    const hasContent = dayHasContent(day);
+    const locked = hasContent && !isUnlocked(index);
+    const completed = hasContent && isCompleted(index);
 
     return (
       <Pressable
@@ -37,13 +38,13 @@ export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isComplet
           scrollable && styles.cellFixedWidth,
           day.isToday && !selected && styles.cellToday,
           selected && styles.cellSelected,
-          day.isRestDay && styles.cellRest,
+          !hasContent && styles.cellRest,
         ]}
       >
-        <Text style={[styles.dayLabel, selected && styles.textSelected, day.isRestDay && !selected && styles.textDim]}>
+        <Text style={[styles.dayLabel, selected && styles.textSelected, !hasContent && !selected && styles.textDim]}>
           {day.label}
         </Text>
-        <Text style={[styles.dateNumber, selected && styles.textSelected, day.isRestDay && !selected && styles.textDim]}>
+        <Text style={[styles.dateNumber, selected && styles.textSelected, !hasContent && !selected && styles.textDim]}>
           {day.dateNumber}
         </Text>
         {locked ? (
@@ -51,8 +52,8 @@ export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isComplet
         ) : completed ? (
           <Ionicons name="checkmark" size={13} color={selected ? colors.white : colors.gold} />
         ) : (
-          <Text style={[styles.fractionLabel, selected && styles.textSelected, day.isRestDay && !selected && styles.textDim]}>
-            {day.isRestDay ? 'REST' : `${weekdayNumber(day)}/5`}
+          <Text style={[styles.fractionLabel, selected && styles.textSelected, !hasContent && !selected && styles.textDim]}>
+            {!hasContent ? 'REST' : day.weekendKind ? '' : `${weekdayNumber(day)}/5`}
           </Text>
         )}
       </Pressable>

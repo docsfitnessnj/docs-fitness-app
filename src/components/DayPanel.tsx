@@ -1,17 +1,28 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { CreatePostModal } from './CreatePostModal';
 import { LogResultsModal } from './LogResultsModal';
 import { ScheduleStrip } from './ScheduleStrip';
 import { TappableMovementText } from './movement/TappableMovementText';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
-import { formatDateKey, formatFullDate, parseMoveRow, WeekDay } from '../data/content';
+import {
+  formatDateKey,
+  formatFullDate,
+  formatShortDate,
+  parseMoveRow,
+  STEADY_STATE_SATURDAY_KEY,
+  STEADY_STATE_SATURDAY_NAME,
+  SUNDAY_SETUP_NAME,
+  WeekDay,
+} from '../data/content';
 import { LOCATION_NAME, rowsForDate } from '../data/schedule';
 import { openLocationMaps } from '../lib/links';
 import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useIsDesktop } from '../lib/responsive';
 import { useClassBooking } from '../lib/useClassBooking';
+import { useSteadyStateSaturday, useSundaySetup } from '../lib/weekendContent';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -28,18 +39,31 @@ export function DayPanel({ day, wodUnlocked }: Props) {
   const isDesktop = useIsDesktop();
   const [logOpen, setLogOpen] = useState(false);
   const [wodExpanded, setWodExpanded] = useState(false);
+  const [setupComposerOpen, setSetupComposerOpen] = useState(false);
+
+  // Always called (never conditionally) even though only one of these ever
+  // applies to a given day — day.weekendKind picks which result actually
+  // gets used below.
+  const saturdayContent = useSteadyStateSaturday(day.date);
+  const sundaySetup = useSundaySetup(day.date);
 
   const wod = day.wod;
-  const dayKey = wod?.key ?? `rest-${day.label}`;
-  const isComplete = wod ? isCompleted(dayKey) : false;
+  const isSaturday = day.weekendKind === 'saturday';
+  const isSunday = day.weekendKind === 'sunday';
+  const dayKey = wod?.key ?? (isSaturday ? STEADY_STATE_SATURDAY_KEY : `rest-${day.label}`);
+  const isComplete = wod ? isCompleted(dayKey) : isSaturday ? isCompleted(STEADY_STATE_SATURDAY_KEY) : false;
   const dateKey = formatDateKey(day.date);
   const dateLabel = formatFullDate(day.date);
   const weekdayName = day.date.toLocaleDateString('en-US', { weekday: 'long' });
   const scheduleRows = rowsForDate(day.date);
+  const barLabel = isSaturday ? STEADY_STATE_SATURDAY_NAME : isSunday ? SUNDAY_SETUP_NAME : "DOC'S WORKOUT OF THE DAY";
 
   const toggleComplete = () => {
-    if (!wod) return;
-    toggleCompleted(dayKey, wod.title, dateLabel, day.date.getTime());
+    if (wod) {
+      toggleCompleted(dayKey, wod.title, dateLabel, day.date.getTime());
+    } else if (isSaturday) {
+      toggleCompleted(dayKey, STEADY_STATE_SATURDAY_NAME, dateLabel, day.date.getTime());
+    }
   };
 
   const handleSignUp = (row: (typeof scheduleRows)[number]) => signUpForClass(row, dateKey, weekdayName);
@@ -101,7 +125,7 @@ export function DayPanel({ day, wodUnlocked }: Props) {
         onPress={() => setWodExpanded((v) => !v)}
         testID="wod-bar-toggle"
       >
-        <Text style={[styles.wodBarLabel, isDesktop && styles.wodBarLabelDesktop]}>DOC'S WORKOUT OF THE DAY</Text>
+        <Text style={[styles.wodBarLabel, isDesktop && styles.wodBarLabelDesktop]}>{barLabel}</Text>
         <View style={styles.wodBarRight}>
           {isComplete && (
             <Ionicons
@@ -117,51 +141,122 @@ export function DayPanel({ day, wodUnlocked }: Props) {
       </Pressable>
 
       {wodExpanded &&
-        (wod && wodUnlocked ? (
-          <View style={styles.card}>
-            <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>{wod.title}</Text>
-            {wod.moves.map((move, index) => {
-              const parsed = parseMoveRow(move);
-              return (
-                <View key={index} style={styles.moveRow}>
-                  <TappableMovementText
-                    style={styles.moveName}
-                    text={parsed.name}
-                    onOpenMovement={(movementId) => openMovementVault(movementId, 'WORKOUT')}
-                  />
-                  {parsed.reps ? <Text style={styles.moveReps}>{parsed.reps}</Text> : null}
+        (wod || isSaturday || isSunday ? (
+          wodUnlocked ? (
+            wod ? (
+              <View style={styles.card}>
+                <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>{wod.title}</Text>
+                {wod.moves.map((move, index) => {
+                  const parsed = parseMoveRow(move);
+                  return (
+                    <View key={index} style={styles.moveRow}>
+                      <TappableMovementText
+                        style={styles.moveName}
+                        text={parsed.name}
+                        onOpenMovement={(movementId) => openMovementVault(movementId, 'WORKOUT')}
+                      />
+                      {parsed.reps ? <Text style={styles.moveReps}>{parsed.reps}</Text> : null}
+                    </View>
+                  );
+                })}
+
+                <View style={styles.watchChip}>
+                  <Ionicons name="play-circle-outline" size={16} color={colors.green} />
+                  <Text style={styles.watchChipText}>WATCH BREAKDOWN</Text>
                 </View>
-              );
-            })}
 
-            <View style={styles.watchChip}>
-              <Ionicons name="play-circle-outline" size={16} color={colors.green} />
-              <Text style={styles.watchChipText}>WATCH BREAKDOWN</Text>
-            </View>
-
-            <View style={styles.buttonRow}>
-              <Pressable
-                style={[styles.completeButton, isComplete && styles.completeButtonDone]}
-                onPress={toggleComplete}
-                testID="day-panel-complete"
-              >
-                <Text style={[styles.completeButtonText, isComplete && styles.completeButtonTextDone]}>
-                  {isComplete ? 'COMPLETED ✓' : 'MARK COMPLETE'}
-                </Text>
-              </Pressable>
-              <Pressable style={styles.logButton} onPress={() => setLogOpen(true)} testID="day-panel-log">
-                <Text style={styles.logButtonText}>LOG RESULTS</Text>
-              </Pressable>
-            </View>
-          </View>
-        ) : wod && !wodUnlocked ? (
-          <Pressable style={styles.lockedCard} onPress={() => openMemberships('unlock')} testID="day-panel-locked-unlock">
-            <Ionicons name="lock-closed" size={24} color={colors.textMuted} />
-            <View style={styles.lockedLinkRow}>
-              <Text style={styles.lockedLinkText}>Join to unlock this workout</Text>
-              <Ionicons name="chevron-forward" size={14} color={colors.green} />
-            </View>
-          </Pressable>
+                <View style={styles.buttonRow}>
+                  <Pressable
+                    style={[styles.completeButton, isComplete && styles.completeButtonDone]}
+                    onPress={toggleComplete}
+                    testID="day-panel-complete"
+                  >
+                    <Text style={[styles.completeButtonText, isComplete && styles.completeButtonTextDone]}>
+                      {isComplete ? 'COMPLETED ✓' : 'MARK COMPLETE'}
+                    </Text>
+                  </Pressable>
+                  <Pressable style={styles.logButton} onPress={() => setLogOpen(true)} testID="day-panel-log">
+                    <Text style={styles.logButtonText}>LOG RESULTS</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : isSaturday ? (
+              <View style={styles.card}>
+                <Text style={styles.weekendFixedLabel}>{STEADY_STATE_SATURDAY_NAME}</Text>
+                {saturdayContent ? (
+                  <>
+                    <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>
+                      {saturdayContent.title}
+                    </Text>
+                    <Text style={styles.weekendDescription}>{saturdayContent.description}</Text>
+                    {saturdayContent.movements.map((move, index) => {
+                      const parsed = parseMoveRow(move);
+                      return (
+                        <View key={index} style={styles.moveRow}>
+                          <TappableMovementText
+                            style={styles.moveName}
+                            text={parsed.name}
+                            onOpenMovement={(movementId) => openMovementVault(movementId, 'WORKOUT')}
+                          />
+                          {parsed.reps ? <Text style={styles.moveReps}>{parsed.reps}</Text> : null}
+                        </View>
+                      );
+                    })}
+                    {!!saturdayContent.videoUrl && (
+                      <View style={styles.watchChip}>
+                        <Ionicons name="play-circle-outline" size={16} color={colors.green} />
+                        <Text style={styles.watchChipText}>WATCH BREAKDOWN</Text>
+                      </View>
+                    )}
+                    <View style={styles.buttonRow}>
+                      <Pressable
+                        style={[styles.completeButton, isComplete && styles.completeButtonDone]}
+                        onPress={toggleComplete}
+                        testID="day-panel-complete"
+                      >
+                        <Text style={[styles.completeButtonText, isComplete && styles.completeButtonTextDone]}>
+                          {isComplete ? 'COMPLETED ✓' : 'MARK COMPLETE'}
+                        </Text>
+                      </Pressable>
+                      <Pressable style={styles.logButton} onPress={() => setLogOpen(true)} testID="day-panel-log">
+                        <Text style={styles.logButtonText}>LOG RESULTS</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : (
+                  <Text style={styles.comingSoonText}>Coming this week.</Text>
+                )}
+              </View>
+            ) : (
+              <View style={styles.card}>
+                <Text style={styles.weekendFixedLabel}>{SUNDAY_SETUP_NAME}</Text>
+                {sundaySetup.prepFocus ? (
+                  <Text style={styles.weekendDescription}>{sundaySetup.prepFocus}</Text>
+                ) : (
+                  <Text style={styles.comingSoonText}>Coming this week.</Text>
+                )}
+                <View style={styles.quoteBlock}>
+                  <Text style={styles.quoteText}>"{sundaySetup.quote.text}"</Text>
+                  <Text style={styles.quoteAttribution}>— {sundaySetup.quote.attribution}</Text>
+                </View>
+                <Pressable
+                  style={styles.postSetupButton}
+                  onPress={() => setSetupComposerOpen(true)}
+                  testID="day-panel-post-setup"
+                >
+                  <Text style={styles.postSetupButtonText}>POST YOUR SETUP</Text>
+                </Pressable>
+              </View>
+            )
+          ) : (
+            <Pressable style={styles.lockedCard} onPress={() => openMemberships('unlock')} testID="day-panel-locked-unlock">
+              <Ionicons name="lock-closed" size={24} color={colors.textMuted} />
+              <View style={styles.lockedLinkRow}>
+                <Text style={styles.lockedLinkText}>Join to unlock this workout</Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.green} />
+              </View>
+            </Pressable>
+          )
         ) : (
           <View style={styles.lockedCard}>
             <Ionicons name="moon-outline" size={24} color={colors.textMuted} />
@@ -169,15 +264,25 @@ export function DayPanel({ day, wodUnlocked }: Props) {
           </View>
         ))}
 
-      {wod && (
+      {(wod || (isSaturday && saturdayContent)) && (
         <LogResultsModal
           visible={logOpen}
           onClose={() => setLogOpen(false)}
           dayKey={dayKey}
-          workoutTitle={wod.title}
+          workoutTitle={wod ? wod.title : STEADY_STATE_SATURDAY_NAME}
           dateLabel={dateLabel}
           date={day.date}
-          movements={wod.moves}
+          movements={wod ? wod.moves : saturdayContent!.movements}
+        />
+      )}
+
+      {isSunday && (
+        <CreatePostModal
+          visible={setupComposerOpen}
+          onClose={() => setSetupComposerOpen(false)}
+          editingPost={null}
+          initialTitle={`${SUNDAY_SETUP_NAME} · ${formatShortDate(day.date)}`}
+          category="Setup"
         />
       )}
     </View>
@@ -245,6 +350,60 @@ const styles = StyleSheet.create({
   },
   cardHeadingDesktop: {
     fontSize: 26,
+  },
+  weekendFixedLabel: {
+    color: colors.green,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  weekendDescription: {
+    color: colors.text,
+    fontFamily: fonts.body,
+    fontSize: 15,
+    lineHeight: 21,
+    marginBottom: 14,
+  },
+  comingSoonText: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 15,
+  },
+  quoteBlock: {
+    backgroundColor: colors.background,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.gold,
+    borderRadius: 8,
+    padding: 14,
+    marginTop: 14,
+    marginBottom: 16,
+  },
+  quoteText: {
+    color: colors.text,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 15,
+    lineHeight: 21,
+    fontStyle: 'italic',
+  },
+  quoteAttribution: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 0.3,
+    marginTop: 8,
+  },
+  postSetupButton: {
+    backgroundColor: colors.green,
+    borderRadius: 10,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  postSetupButtonText: {
+    color: colors.white,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 1,
   },
   moveRow: {
     flexDirection: 'row',
