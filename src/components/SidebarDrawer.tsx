@@ -6,7 +6,7 @@ import { DocsBadge } from './brand/DocsBadge';
 import { MembershipToggle } from './MembershipToggle';
 import { useChallenge } from '../context/ChallengeContext';
 import { useDeckProgress } from '../context/DeckProgressContext';
-import { useCanModerate, useDisplayName } from '../context/ProfileContext';
+import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { useTour } from '../context/TourContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import { openMerchStore, openLocationMaps } from '../lib/links';
@@ -64,6 +64,10 @@ export function SidebarDrawer({
   const { entries: challengeEntries } = useChallenge();
   const displayName = useDisplayName();
   const isAdmin = useCanModerate();
+  // Real admin only (not the dev-preview OR) — a regular member must never
+  // even see the tier-preview toggle or the tour-reset dev control, let
+  // alone flip them.
+  const { isAdmin: realAdmin } = useProfile();
   const tour = useTour();
 
   const myWorkoutsCount =
@@ -198,13 +202,17 @@ export function SidebarDrawer({
         </ScrollView>
 
         <View style={styles.footer}>
-          <View style={styles.previewRow}>
-            <MembershipToggle />
-          </View>
+          {realAdmin && (
+            <>
+              <View style={styles.previewRow}>
+                <MembershipToggle />
+              </View>
 
-          <Pressable onPress={resetTour} hitSlop={8} style={styles.devResetRow} testID="dev-reset-tour">
-            <Text style={styles.devResetText}>RESET SPOTLIGHT TOUR (DEV)</Text>
-          </Pressable>
+              <Pressable onPress={resetTour} hitSlop={8} style={styles.devResetRow} testID="dev-reset-tour">
+                <Text style={styles.devResetText}>RESET SPOTLIGHT TOUR (DEV)</Text>
+              </Pressable>
+            </>
+          )}
 
           <Pressable style={styles.locationRow} onPress={openLocationMaps} testID="sidebar-location">
             <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.85)" />

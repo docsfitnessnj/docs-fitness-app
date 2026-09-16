@@ -311,7 +311,12 @@ create table if not exists public.challenge_entries (
   rounds text not null default '',
   reps text,
   time_taken text not null default '',
-  tag text not null default 'Virtual' check (tag in ('Boathouse Crew', 'Virtual')),
+  -- Vestigial: the app computes the Boathouse Crew / Online label live from
+  -- each member's own profile (see ChallengeContext.tsx) rather than
+  -- reading this column, but it's kept (with a harmless default) rather
+  -- than dropped, since removing a column is a bigger, less reversible
+  -- change than just not using one.
+  tag text not null default 'Online' check (tag in ('Boathouse Crew', 'Online')),
   created_at timestamptz not null default now()
 );
 

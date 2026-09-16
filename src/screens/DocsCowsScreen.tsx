@@ -162,9 +162,8 @@ function EntryForm({
         style={styles.input}
         value={kettlebell}
         onChangeText={setKettlebell}
-        placeholder="e.g. 16"
+        placeholder="e.g. 16 or 2x12"
         placeholderTextColor={colors.textMuted}
-        keyboardType="numeric"
         nativeID="cowkiller-kettlebell-input"
         aria-label="Kettlebell size in kilograms"
       />
@@ -176,13 +175,12 @@ function EntryForm({
   );
 }
 
-function LeaderboardRow({ entry }: { entry: Entry }) {
+// A Challenge's leaderboard shows exactly one of these two displays, driven
+// by its own scoring type — never a per-row guess, so it can never mix
+// time-scored and rounds-scored rows even by accident.
+function LeaderboardRow({ entry, isTimeScoring }: { entry: Entry; isTimeScoring: boolean }) {
   const isFirst = entry.rank === 1;
-  // Demo rows always carry a real time; a real rounds/rounds+reps-scored
-  // submission leaves time as the '—' placeholder (see EntryForm), so the
-  // big score column falls back to whichever field actually has the score.
-  const primaryScore =
-    entry.time !== '—' ? entry.time : `${entry.rounds}${entry.reps ? ` +${entry.reps}` : ''}`;
+  const primaryScore = isTimeScoring ? entry.time : `${entry.rounds}${entry.reps ? ` +${entry.reps}` : ''}`;
   return (
     <View style={styles.row}>
       <Text style={[styles.rank, isFirst && styles.rankFirst]}>{entry.rank}</Text>
@@ -190,7 +188,9 @@ function LeaderboardRow({ entry }: { entry: Entry }) {
       <View style={styles.rowMain}>
         <Text style={styles.name}>{entry.name}</Text>
         <Text style={styles.rowMeta}>
-          {entry.rounds} rounds{entry.reps ? ` + ${entry.reps} reps` : ''} · {entry.kettlebell} KG KB · {entry.tag}
+          {isTimeScoring
+            ? `${entry.kettlebell} KG KB · ${entry.tag}`
+            : `${entry.rounds} rounds${entry.reps ? ` + ${entry.reps} reps` : ''} · ${entry.kettlebell} KG KB · ${entry.tag}`}
         </Text>
       </View>
       <Text style={styles.score}>{primaryScore}</Text>
@@ -198,14 +198,16 @@ function LeaderboardRow({ entry }: { entry: Entry }) {
   );
 }
 
-function Leaderboard({ entries }: { entries: Entry[] }) {
+function Leaderboard({ entries, isTimeScoring }: { entries: Entry[]; isTimeScoring: boolean }) {
   return (
     <View>
       <Text style={styles.subtitle}>LIVE LEADERBOARD — THIS WEEK</Text>
       <View style={styles.list}>
-        {entries.map((entry) => (
-          <LeaderboardRow key={`${entry.rank}-${entry.name}`} entry={entry} />
-        ))}
+        {entries.length === 0 ? (
+          <Text style={styles.emptyText}>No scores posted yet this week — be the first.</Text>
+        ) : (
+          entries.map((entry) => <LeaderboardRow key={`${entry.rank}-${entry.name}`} entry={entry} isTimeScoring={isTimeScoring} />)
+        )}
       </View>
     </View>
   );
@@ -223,7 +225,6 @@ function DocsCowsContent() {
       rounds: entry.rounds,
       reps: entry.reps,
       time: entry.time,
-      tag: 'Boathouse Crew',
     });
   };
 
@@ -235,7 +236,7 @@ function DocsCowsContent() {
       ) : (
         <>
           <EntryForm scoringType={current.scoringType} onSubmit={addEntry} />
-          <Leaderboard entries={entries} />
+          <Leaderboard entries={entries} isTimeScoring={current.scoringType === 'time' || current.scoringType === null} />
         </>
       )}
     </View>
@@ -433,6 +434,14 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     borderRadius: 14,
     overflow: 'hidden',
+  },
+  emptyText: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    textAlign: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
   },
   row: {
     flexDirection: 'row',

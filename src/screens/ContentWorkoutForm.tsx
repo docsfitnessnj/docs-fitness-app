@@ -38,8 +38,13 @@ const STATUS_OPTIONS: { value: ContentWorkoutStatus; label: string }[] = [
   { value: 'published', label: 'PUBLISHED' },
 ];
 
+// Exactly two real scoring types — FOR TIME or ROUNDS + REPS — so a
+// Challenge's leaderboard never has to guess which display to show (see
+// ChallengeContext's useChallengeLeaderboard). Plain "rounds" (no reps) is
+// a legacy value some already-saved Challenges may still carry; it's still
+// handled everywhere it's read, just no longer offered as a new choice.
 const SCORING_TYPE_OPTIONS: { value: ContentCowScoringType; label: string }[] = (
-  ['time', 'rounds', 'rounds_reps'] as ContentCowScoringType[]
+  ['time', 'rounds_reps'] as ContentCowScoringType[]
 ).map((value) => ({ value, label: SCORING_TYPE_LABELS[value] }));
 
 function pad2(n: number): string {
