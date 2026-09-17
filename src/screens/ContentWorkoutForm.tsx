@@ -240,6 +240,31 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
           </>
         )}
 
+        {!isSunday && (
+          <View style={styles.videoCard} testID="content-form-video-card">
+            <View style={styles.videoCardHeader}>
+              <Ionicons name="videocam" size={16} color={colors.gold} />
+              <Text style={styles.videoCardLabel}>VIDEO URL (OPTIONAL)</Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              value={videoUrl}
+              onChangeText={setVideoUrl}
+              placeholder="https://youtube.com/watch?v=..."
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              aria-label="Breakdown video URL"
+              testID="content-form-video-url"
+            />
+            <Text style={styles.videoCardHint}>
+              {videoUrl.trim()
+                ? 'Members will see a WATCH VIDEO BREAKDOWN button on this workout.'
+                : "Leave blank for no video — members won't see a video button at all. Paste a YouTube link to turn one on."}
+            </Text>
+          </View>
+        )}
+
         {!isWeekendType && (
           <>
             <Text style={styles.label}>FORMAT</Text>
@@ -305,19 +330,6 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
                 })}
               </View>
             )}
-
-            <Text style={styles.label}>{isSaturday ? 'YOUTUBE VIDEO URL (OPTIONAL)' : 'YOUTUBE BREAKDOWN VIDEO URL'}</Text>
-            <TextInput
-              style={styles.input}
-              value={videoUrl}
-              onChangeText={setVideoUrl}
-              placeholder="https://youtube.com/watch?v=..."
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              aria-label="YouTube breakdown video URL"
-              testID="content-form-video-url"
-            />
           </>
         )}
 
@@ -529,6 +541,33 @@ const styles = StyleSheet.create({
   },
   segmentTextActive: {
     color: colors.white,
+  },
+  videoCard: {
+    backgroundColor: colors.card,
+    borderWidth: 2,
+    borderColor: colors.gold,
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 18,
+  },
+  videoCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  videoCardLabel: {
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 1,
+  },
+  videoCardHint: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 8,
   },
   quoteDefaultRow: {
     borderWidth: 1,

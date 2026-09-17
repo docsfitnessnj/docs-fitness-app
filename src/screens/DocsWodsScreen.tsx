@@ -20,7 +20,7 @@ import {
 } from '../data/content';
 import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
-import { useSteadyStateSaturday, useSundaySetup } from '../lib/weekendContent';
+import { useSteadyStateSaturday, useSundaySetup, useWeekdayWod } from '../lib/weekendContent';
 import { colors, fonts } from '../theme';
 
 function LockedDay() {
@@ -58,7 +58,7 @@ export default function DocsWodsScreen() {
   const isUnlocked = (index: number) => isDayWodUnlocked(week[index], wodAccessLevel);
 
   const selectedDay = week[selectedIndex];
-  const wod = selectedDay.wod;
+  const wod = useWeekdayWod(selectedDay);
   const isSaturday = selectedDay.weekendKind === 'saturday';
   const isSunday = selectedDay.weekendKind === 'sunday';
   const saturdayContent = useSteadyStateSaturday(selectedDay.date);

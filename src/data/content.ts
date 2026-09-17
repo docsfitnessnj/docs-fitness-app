@@ -93,6 +93,19 @@ function dayInfoForDate(date: Date, today: Date): WeekDay {
   };
 }
 
+// This week and next week, Monday-Sunday, 14 days back to back — the full
+// schedule's calendar grid. `isToday` on every entry is still computed
+// against the real `now`, not whichever week it falls in, so next week's
+// days are never mismarked.
+export function getTwoWeekCalendar(now: Date = new Date()): WeekDay[] {
+  const weekStart = getWeekStart(now);
+  return Array.from({ length: 14 }, (_, i) => {
+    const date = new Date(weekStart);
+    date.setDate(date.getDate() + i);
+    return dayInfoForDate(date, now);
+  });
+}
+
 // Returns the Monday-Sunday week containing `today`, with each weekday's real WOD attached.
 export function getCurrentWeek(today: Date = new Date()): WeekDay[] {
   const dayOfWeek = today.getDay(); // 0 = Sunday

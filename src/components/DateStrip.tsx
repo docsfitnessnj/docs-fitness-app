@@ -1,9 +1,14 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { dayHasContent, WeekDay } from '../data/content';
 import { useTour } from '../context/TourContext';
 import { colors, fonts } from '../theme';
+
+// cellFixedWidth (54) + its marginHorizontal (2 each side) — the scrollable
+// strip's per-cell footprint, used to scroll a non-adjacent selection (e.g.
+// a Full Schedule calendar tap) into view instead of leaving it off-screen.
+const SCROLLABLE_ITEM_WIDTH = 58;
 
 type Props = {
   week: WeekDay[];
@@ -22,6 +27,18 @@ type Props = {
 
 export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isCompleted, scrollable = false, leading }: Props) {
   const { registerTarget } = useTour();
+  const scrollRef = useRef<ScrollView>(null);
+
+  // A selection can land outside the visible window (e.g. tapping a day two
+  // weeks out on the Full Schedule calendar) — bring it on-screen with a
+  // couple of prior days still visible for context, same as scrolling there
+  // by hand would leave it.
+  useEffect(() => {
+    if (!scrollable) return;
+    const targetOffset = Math.max(0, (selectedIndex - 2) * SCROLLABLE_ITEM_WIDTH);
+    scrollRef.current?.scrollTo({ x: targetOffset, animated: true });
+  }, [scrollable, selectedIndex]);
+
   const cells = week.map((day, index) => {
     const selected = index === selectedIndex;
     const hasContent = dayHasContent(day);
@@ -70,6 +87,7 @@ export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isComplet
           </>
         )}
         <ScrollView
+          ref={scrollRef}
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.scrollRow}
