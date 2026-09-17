@@ -11,7 +11,8 @@ import {
   useContentLibrary,
   weekMonthKey,
 } from '../context/ContentLibraryContext';
-import { getWeekStart } from '../data/content';
+import { getNextSunday, getWeekStart } from '../data/content';
+import { defaultQuoteIndexForSunday, SUNDAY_QUOTES } from '../data/sundayQuotes';
 import { showAlert } from '../lib/alert';
 import { ContentBulkImportScreen } from './ContentBulkImportScreen';
 import { ContentWorkoutForm } from './ContentWorkoutForm';
@@ -27,7 +28,8 @@ type LibraryView =
   | { kind: 'form'; workout: ContentWorkout | null; defaultType?: ContentWorkoutType }
   | { kind: 'bulk' };
 
-type LibraryTab = 'wod' | 'cow' | 'schedule';
+type LibraryTab = 'wod' | 'cow' | 'weekend' | 'schedule';
+type WeekendSubTab = 'saturday' | 'sunday';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DOW_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
@@ -152,6 +154,8 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
     publishDay,
     unpublishDay,
     resetToSeed,
+    quoteCycleAnchor,
+    restartQuoteCycle,
   } = useContentLibrary();
   const [view, setView] = useState<LibraryView>({ kind: 'list' });
   // Kept in this same component instance (not reset by switching to the
@@ -159,6 +163,7 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
   // navigating within the library — it only resets if the whole screen is
   // closed and reopened.
   const [activeTab, setActiveTab] = useState<LibraryTab>('wod');
+  const [weekendSubTab, setWeekendSubTab] = useState<WeekendSubTab>('saturday');
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => new Set());
 
   // DOC'S WODS / DOC'S COWS: a plain numbered inventory, in the order each
@@ -173,6 +178,19 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
     () => workouts.filter((w) => w.type === 'cow').sort((a, b) => a.createdAt - b.createdAt),
     [workouts]
   );
+  const steadyStateList = useMemo(
+    () => workouts.filter((w) => w.type === 'steady_state').sort((a, b) => a.releaseAt - b.releaseAt),
+    [workouts]
+  );
+  const sundaySetupList = useMemo(
+    () => workouts.filter((w) => w.type === 'sunday_setup').sort((a, b) => a.releaseAt - b.releaseAt),
+    [workouts]
+  );
+
+  const upcomingSunday = useMemo(() => getNextSunday(), []);
+  const upcomingSundayEntry = sundaySetupList.find((w) => isSameCalendarDay(new Date(w.releaseAt), upcomingSunday) && w.status === 'published');
+  const upcomingSundayQuoteIndex =
+    upcomingSundayEntry?.quoteOverrideIndex ?? defaultQuoteIndexForSunday(upcomingSunday, new Date(quoteCycleAnchor));
 
   // SCHEDULE: every week that has at least one *scheduled* workout in it,
   // grouped by month — each week expands into its 5 weekday slots via
@@ -343,6 +361,72 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
     </>
   );
 
+  const handleRestartQuoteCycle = () => {
+    showAlert(
+      'Restart quotes from the top?',
+      `The upcoming Sunday (${scheduleDayLabel(upcomingSunday)}) will use quote #1, and every Sunday after it will count forward from there. This doesn't change any week's quote you've already overridden by hand.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Restart', onPress: restartQuoteCycle },
+      ]
+    );
+  };
+
+  const renderWeekend = () => (
+    <>
+      <View style={styles.weekendSubTabRow}>
+        <Pressable
+          style={[styles.weekendSubTab, weekendSubTab === 'saturday' && styles.weekendSubTabActive]}
+          onPress={() => setWeekendSubTab('saturday')}
+          testID="content-weekend-sub-saturday"
+        >
+          <Text style={[styles.weekendSubTabText, weekendSubTab === 'saturday' && styles.weekendSubTabTextActive]}>
+            STEADY STATE SATURDAY
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.weekendSubTab, weekendSubTab === 'sunday' && styles.weekendSubTabActive]}
+          onPress={() => setWeekendSubTab('sunday')}
+          testID="content-weekend-sub-sunday"
+        >
+          <Text style={[styles.weekendSubTabText, weekendSubTab === 'sunday' && styles.weekendSubTabTextActive]}>
+            SUNDAY SETUP
+          </Text>
+        </Pressable>
+      </View>
+
+      {weekendSubTab === 'sunday' && (
+        <View style={styles.quoteLibraryCard} testID="content-quote-library">
+          <Text style={styles.quoteLibraryTitle}>SUNDAY QUOTE LIBRARY</Text>
+          <Text style={styles.quoteLibraryUpcoming}>
+            Upcoming Sunday ({scheduleDayLabel(upcomingSunday)}) uses quote #{upcomingSundayQuoteIndex + 1}
+            {upcomingSundayEntry?.quoteOverrideIndex != null ? ' — overridden for this week' : ' — from the cycle'}.
+          </Text>
+          {SUNDAY_QUOTES.map((q, i) => (
+            <View
+              key={i}
+              style={[styles.quoteLibraryRow, i === upcomingSundayQuoteIndex && styles.quoteLibraryRowUpcoming]}
+            >
+              <Text style={styles.quoteLibraryNumber}>{i + 1}.</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.quoteLibraryText}>"{q.text}"</Text>
+                <Text style={styles.quoteLibraryAttribution}>{q.attribution}</Text>
+              </View>
+            </View>
+          ))}
+          <Pressable style={styles.restartButton} onPress={handleRestartQuoteCycle} testID="content-restart-quotes">
+            <Ionicons name="refresh-outline" size={14} color={colors.white} />
+            <Text style={styles.restartButtonText}>RESTART QUOTES FROM THE TOP</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {weekendSubTab === 'saturday'
+        ? renderInventoryList(steadyStateList, 'steady_state')
+        : renderInventoryList(sundaySetupList, 'sunday_setup')}
+    </>
+  );
+
   const renderSchedule = () => (
     <>
       {scheduleMonths.length === 0 ? (
@@ -482,6 +566,13 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
             <Text style={[styles.tabText, activeTab === 'cow' && styles.tabTextActive]}>DOC'S COWS</Text>
           </Pressable>
           <Pressable
+            style={[styles.tab, activeTab === 'weekend' && styles.tabActive]}
+            onPress={() => setActiveTab('weekend')}
+            testID="content-tab-weekend"
+          >
+            <Text style={[styles.tabText, activeTab === 'weekend' && styles.tabTextActive]}>WEEKEND</Text>
+          </Pressable>
+          <Pressable
             style={[styles.tab, activeTab === 'schedule' && styles.tabActive]}
             onPress={() => setActiveTab('schedule')}
             testID="content-tab-schedule"
@@ -492,6 +583,7 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
 
         {activeTab === 'wod' && renderInventoryList(wodList, 'wod')}
         {activeTab === 'cow' && renderInventoryList(cowList, 'cow')}
+        {activeTab === 'weekend' && renderWeekend()}
         {activeTab === 'schedule' && renderSchedule()}
       </ScrollView>
     </View>
@@ -821,5 +913,103 @@ const styles = StyleSheet.create({
   },
   weekButtonDisabled: {
     opacity: 0.4,
+  },
+  weekendSubTabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  weekendSubTab: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: colors.card,
+  },
+  weekendSubTabActive: {
+    backgroundColor: colors.green,
+    borderColor: colors.green,
+  },
+  weekendSubTabText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  weekendSubTabTextActive: {
+    color: colors.white,
+  },
+  quoteLibraryCard: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+  },
+  quoteLibraryTitle: {
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 16,
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  quoteLibraryUpcoming: {
+    color: colors.green,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 11,
+    letterSpacing: 0.3,
+    lineHeight: 15,
+    marginBottom: 12,
+  },
+  quoteLibraryRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.background,
+  },
+  quoteLibraryRowUpcoming: {
+    backgroundColor: 'rgba(229,184,11,0.12)',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+  },
+  quoteLibraryNumber: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelBold,
+    fontSize: 12,
+    width: 20,
+  },
+  quoteLibraryText: {
+    color: colors.text,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  quoteLibraryAttribution: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 10,
+    letterSpacing: 0.3,
+    marginTop: 3,
+  },
+  restartButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.green,
+    borderRadius: 10,
+    paddingVertical: 12,
+    marginTop: 14,
+  },
+  restartButtonText: {
+    color: colors.white,
+    fontFamily: fonts.labelBold,
+    fontSize: 11,
+    letterSpacing: 0.5,
   },
 });
