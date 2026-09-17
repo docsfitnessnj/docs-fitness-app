@@ -1,17 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { CreatePostModal } from '../components/CreatePostModal';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { DateStrip } from '../components/DateStrip';
 import { LogResultsModal } from '../components/LogResultsModal';
 import { UpgradeBanner } from '../components/UpgradeBanner';
+import { WatchVideoBreakdownButton } from '../components/WatchVideoBreakdownButton';
 import { TappableMovementText } from '../components/movement/TappableMovementText';
 import { useMembership } from '../context/MembershipContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import {
   formatFullDate,
-  formatShortDate,
   getCurrentWeek,
   isDayWodUnlocked,
   parseMoveRow,
@@ -49,7 +48,6 @@ export default function DocsWodsScreen() {
   const { wodAccessLevel } = useMembership();
   const { isCompleted, toggleCompleted } = useWorkoutLog();
   const [logOpen, setLogOpen] = useState(false);
-  const [setupComposerOpen, setSetupComposerOpen] = useState(false);
 
   const week = useMemo(() => getCurrentWeek(), []);
   const todayIndex = week.findIndex((d) => d.isToday);
@@ -104,6 +102,8 @@ export default function DocsWodsScreen() {
             <Text style={styles.cardLabel}>{formatFullDate(selectedDay.date).toUpperCase()}</Text>
             <Text style={styles.cardHeadline}>{wod.title}</Text>
 
+            <WatchVideoBreakdownButton videoUrl={wod.videoUrl} />
+
             <View style={styles.divider} />
 
             {wod.moves.map((move, index) => {
@@ -119,11 +119,6 @@ export default function DocsWodsScreen() {
                 </View>
               );
             })}
-
-            <View style={styles.watchChip}>
-              <Ionicons name="play-circle-outline" size={16} color={colors.green} />
-              <Text style={styles.watchChipText}>WATCH BREAKDOWN</Text>
-            </View>
 
             <View style={styles.buttonRow}>
               <Pressable
@@ -157,6 +152,7 @@ export default function DocsWodsScreen() {
             {saturdayContent ? (
               <>
                 <Text style={styles.cardHeadline}>{saturdayContent.title}</Text>
+                <WatchVideoBreakdownButton videoUrl={saturdayContent.videoUrl} />
                 <View style={styles.divider} />
                 <Text style={styles.weekendDescription}>{saturdayContent.description}</Text>
                 {saturdayContent.movements.map((move, index) => {
@@ -172,12 +168,6 @@ export default function DocsWodsScreen() {
                     </View>
                   );
                 })}
-                {!!saturdayContent.videoUrl && (
-                  <View style={styles.watchChip}>
-                    <Ionicons name="play-circle-outline" size={16} color={colors.green} />
-                    <Text style={styles.watchChipText}>WATCH BREAKDOWN</Text>
-                  </View>
-                )}
                 <View style={styles.buttonRow}>
                   <Pressable
                     style={[styles.completeButton, isComplete && styles.completeButtonDone]}
@@ -215,13 +205,6 @@ export default function DocsWodsScreen() {
               <Text style={styles.quoteText}>"{sundaySetup.quote.text}"</Text>
               <Text style={styles.quoteAttribution}>— {sundaySetup.quote.attribution}</Text>
             </View>
-            <Pressable
-              style={styles.postSetupButton}
-              onPress={() => setSetupComposerOpen(true)}
-              testID="wods-post-setup"
-            >
-              <Text style={styles.postSetupButtonText}>POST YOUR SETUP</Text>
-            </Pressable>
           </View>
         </View>
       )}
@@ -235,16 +218,6 @@ export default function DocsWodsScreen() {
           dateLabel={formatFullDate(selectedDay.date)}
           date={selectedDay.date}
           movements={wod ? wod.moves : saturdayContent!.movements}
-        />
-      )}
-
-      {isSunday && (
-        <CreatePostModal
-          visible={setupComposerOpen}
-          onClose={() => setSetupComposerOpen(false)}
-          editingPost={null}
-          initialTitle={`${SUNDAY_SETUP_NAME} · ${formatShortDate(selectedDay.date)}`}
-          category="Setup"
         />
       )}
     </ScreenContainer>
@@ -287,23 +260,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     marginBottom: 24,
-  },
-  watchChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 6,
-    backgroundColor: colors.background,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginTop: 14,
-  },
-  watchChipText: {
-    color: colors.green,
-    fontFamily: fonts.labelSemiBold,
-    fontSize: 11,
-    letterSpacing: 1,
   },
   cardBody: {
     padding: 20,
@@ -360,18 +316,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 0.3,
     marginTop: 8,
-  },
-  postSetupButton: {
-    backgroundColor: colors.green,
-    borderRadius: 10,
-    paddingVertical: 15,
-    alignItems: 'center',
-  },
-  postSetupButtonText: {
-    color: colors.white,
-    fontFamily: fonts.labelBold,
-    fontSize: 13,
-    letterSpacing: 1,
   },
   wodRow: {
     flexDirection: 'row',

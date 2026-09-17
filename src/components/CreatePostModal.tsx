@@ -16,20 +16,12 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   editingPost: Post | null;
-  // Pre-fills the title for a brand-new post (e.g. "SUNDAY SETUP · SEP 20,
-  // 2026") while leaving it fully editable — ignored once `editingPost` is
-  // set, since editing always shows that post's own title.
-  initialTitle?: string;
-  // Tag stored on a fresh post (e.g. "Setup") — ignored when editing, since
-  // an edit never changes a post's category.
-  category?: string;
 };
 
-// Shared "new post" / "edit post" composer — used by the Community tab's
-// LOG IT. POST IT. bar and by SUNDAY SETUP's POST YOUR SETUP button, both
-// of which just want a title + body box that writes through to the same
+// Shared "new post" / "edit post" composer for the Community tab's
+// LOG IT. POST IT. bar — a title + body box that writes through to the
 // community_posts table via addTextPost/updateTextPost.
-export function CreatePostModal({ visible, onClose, editingPost, initialTitle, category }: Props) {
+export function CreatePostModal({ visible, onClose, editingPost }: Props) {
   const { addTextPost, updateTextPost } = useCommunity();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
@@ -40,13 +32,13 @@ export function CreatePostModal({ visible, onClose, editingPost, initialTitle, c
 
   React.useEffect(() => {
     if (visible) {
-      setTitle(editingPost?.title ?? initialTitle ?? '');
+      setTitle(editingPost?.title ?? '');
       setBody(editingPost?.text ?? '');
       setMedia(editingPost?.media ?? null);
       setBodyHeight(MIN_BODY_HEIGHT);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, editingPost, initialTitle]);
+  }, [visible, editingPost]);
 
   const reset = () => {
     setTitle('');
@@ -67,7 +59,7 @@ export function CreatePostModal({ visible, onClose, editingPost, initialTitle, c
     if (editingPost) {
       updateTextPost(editingPost.id, title, body.trim(), media);
     } else {
-      addTextPost(displayName, title, body.trim(), category, media);
+      addTextPost(displayName, title, body.trim(), undefined, media);
     }
     reset();
     onClose();

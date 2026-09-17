@@ -9,6 +9,11 @@ export type DeckCardData = {
   movements: string[];
   joker?: 'black' | 'red';
   note?: string;
+  // No breakdown video exists yet for any of these cards — left unset
+  // rather than invented, so the WATCH VIDEO BREAKDOWN button (see
+  // WatchVideoBreakdownButton) correctly shows nothing until a real video
+  // URL is actually added here.
+  videoUrl?: string;
 };
 
 const SPADES: DeckCardData[] = [

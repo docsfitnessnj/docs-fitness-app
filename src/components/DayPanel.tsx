@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { CreatePostModal } from './CreatePostModal';
 import { LogResultsModal } from './LogResultsModal';
 import { ScheduleStrip } from './ScheduleStrip';
+import { WatchVideoBreakdownButton } from './WatchVideoBreakdownButton';
 import { TappableMovementText } from './movement/TappableMovementText';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import {
   formatDateKey,
   formatFullDate,
-  formatShortDate,
   parseMoveRow,
   STEADY_STATE_SATURDAY_KEY,
   STEADY_STATE_SATURDAY_NAME,
@@ -39,7 +38,6 @@ export function DayPanel({ day, wodUnlocked }: Props) {
   const isDesktop = useIsDesktop();
   const [logOpen, setLogOpen] = useState(false);
   const [wodExpanded, setWodExpanded] = useState(false);
-  const [setupComposerOpen, setSetupComposerOpen] = useState(false);
 
   // Always called (never conditionally) even though only one of these ever
   // applies to a given day — day.weekendKind picks which result actually
@@ -146,6 +144,7 @@ export function DayPanel({ day, wodUnlocked }: Props) {
             wod ? (
               <View style={styles.card}>
                 <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>{wod.title}</Text>
+                <WatchVideoBreakdownButton videoUrl={wod.videoUrl} />
                 {wod.moves.map((move, index) => {
                   const parsed = parseMoveRow(move);
                   return (
@@ -159,11 +158,6 @@ export function DayPanel({ day, wodUnlocked }: Props) {
                     </View>
                   );
                 })}
-
-                <View style={styles.watchChip}>
-                  <Ionicons name="play-circle-outline" size={16} color={colors.green} />
-                  <Text style={styles.watchChipText}>WATCH BREAKDOWN</Text>
-                </View>
 
                 <View style={styles.buttonRow}>
                   <Pressable
@@ -188,6 +182,7 @@ export function DayPanel({ day, wodUnlocked }: Props) {
                     <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>
                       {saturdayContent.title}
                     </Text>
+                    <WatchVideoBreakdownButton videoUrl={saturdayContent.videoUrl} />
                     <Text style={styles.weekendDescription}>{saturdayContent.description}</Text>
                     {saturdayContent.movements.map((move, index) => {
                       const parsed = parseMoveRow(move);
@@ -202,12 +197,6 @@ export function DayPanel({ day, wodUnlocked }: Props) {
                         </View>
                       );
                     })}
-                    {!!saturdayContent.videoUrl && (
-                      <View style={styles.watchChip}>
-                        <Ionicons name="play-circle-outline" size={16} color={colors.green} />
-                        <Text style={styles.watchChipText}>WATCH BREAKDOWN</Text>
-                      </View>
-                    )}
                     <View style={styles.buttonRow}>
                       <Pressable
                         style={[styles.completeButton, isComplete && styles.completeButtonDone]}
@@ -239,13 +228,6 @@ export function DayPanel({ day, wodUnlocked }: Props) {
                   <Text style={styles.quoteText}>"{sundaySetup.quote.text}"</Text>
                   <Text style={styles.quoteAttribution}>— {sundaySetup.quote.attribution}</Text>
                 </View>
-                <Pressable
-                  style={styles.postSetupButton}
-                  onPress={() => setSetupComposerOpen(true)}
-                  testID="day-panel-post-setup"
-                >
-                  <Text style={styles.postSetupButtonText}>POST YOUR SETUP</Text>
-                </Pressable>
               </View>
             )
           ) : (
@@ -273,16 +255,6 @@ export function DayPanel({ day, wodUnlocked }: Props) {
           dateLabel={dateLabel}
           date={day.date}
           movements={wod ? wod.moves : saturdayContent!.movements}
-        />
-      )}
-
-      {isSunday && (
-        <CreatePostModal
-          visible={setupComposerOpen}
-          onClose={() => setSetupComposerOpen(false)}
-          editingPost={null}
-          initialTitle={`${SUNDAY_SETUP_NAME} · ${formatShortDate(day.date)}`}
-          category="Setup"
         />
       )}
     </View>
@@ -393,18 +365,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     marginTop: 8,
   },
-  postSetupButton: {
-    backgroundColor: colors.green,
-    borderRadius: 10,
-    paddingVertical: 15,
-    alignItems: 'center',
-  },
-  postSetupButtonText: {
-    color: colors.white,
-    fontFamily: fonts.labelBold,
-    fontSize: 13,
-    letterSpacing: 1,
-  },
   moveRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -425,23 +385,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.5,
     marginLeft: 12,
-  },
-  watchChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 6,
-    backgroundColor: colors.background,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginTop: 14,
-  },
-  watchChipText: {
-    color: colors.green,
-    fontFamily: fonts.labelSemiBold,
-    fontSize: 11,
-    letterSpacing: 1,
   },
   buttonRow: {
     flexDirection: 'row',

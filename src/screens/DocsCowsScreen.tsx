@@ -5,6 +5,7 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { MembershipGate } from '../components/MembershipGate';
 import { Avatar } from '../components/Avatar';
+import { WatchVideoBreakdownButton } from '../components/WatchVideoBreakdownButton';
 import { TappableMovementText } from '../components/movement/TappableMovementText';
 import { useBadges } from '../context/BadgeContext';
 import { ContentCowScoringType } from '../context/ContentLibraryContext';
@@ -30,6 +31,7 @@ function ChallengeHero({ current }: { current: CurrentChallenge }) {
         <Text style={styles.badgeText}>THIS WEEK'S CHALLENGE OF THE WEEK</Text>
       </View>
       <Text style={styles.heroTitle}>{current.title}</Text>
+      <WatchVideoBreakdownButton videoUrl={current.videoUrl} />
       {!!current.format && <Text style={styles.heroFormat}>{current.format.toUpperCase()}</Text>}
       {!!current.formatDescription && (
         <TappableMovementText
@@ -52,12 +54,6 @@ function ChallengeHero({ current }: { current: CurrentChallenge }) {
               />
             </View>
           ))}
-        </View>
-      )}
-      {!!current.videoUrl && (
-        <View style={styles.watchChip}>
-          <Ionicons name="play-circle-outline" size={16} color={colors.goldBright} />
-          <Text style={styles.watchChipText}>WATCH BREAKDOWN</Text>
         </View>
       )}
       <View style={styles.heroDivider} />
@@ -331,23 +327,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.9)',
     fontFamily: fonts.bodyMedium,
     fontSize: 14,
-  },
-  watchChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginTop: 14,
-  },
-  watchChipText: {
-    color: colors.goldBright,
-    fontFamily: fonts.labelSemiBold,
-    fontSize: 11,
-    letterSpacing: 1,
   },
   heroDivider: {
     height: 1,
