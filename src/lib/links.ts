@@ -70,3 +70,12 @@ export function openLocationMaps() {
     showAlert(LOCATION.name, "Couldn't open Maps. Search for the Boathouse in Ventnor City, NJ.");
   });
 }
+
+// Opens a workout's breakdown video (a YouTube URL stored on the content
+// itself) in the browser/YouTube app — see WatchVideoBreakdownButton, the
+// one button that ever calls this.
+export function openVideoBreakdown(videoUrl: string) {
+  Linking.openURL(videoUrl).catch(() => {
+    showAlert('Video Breakdown', "Couldn't open the video right now.");
+  });
+}

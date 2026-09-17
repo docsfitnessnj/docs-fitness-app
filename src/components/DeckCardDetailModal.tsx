@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
+import { WatchVideoBreakdownButton } from './WatchVideoBreakdownButton';
 import { TappableMovementText } from './movement/TappableMovementText';
 import { DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
 import { openMovementVault } from '../lib/movementVaultModal';
@@ -33,6 +34,7 @@ export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplet
 
           <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
             <Text style={styles.title}>{card.title}</Text>
+            <WatchVideoBreakdownButton videoUrl={card.videoUrl} />
             {card.format ? <Text style={styles.format}>{card.format}</Text> : null}
 
             <View style={styles.divider} />
@@ -71,13 +73,6 @@ export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplet
                 {isComplete ? 'COMPLETED' : 'MARK COMPLETE'}
               </Text>
             </Pressable>
-
-            <View style={styles.videoPlaceholder}>
-              <View style={styles.playCircle}>
-                <Ionicons name="play" size={20} color={colors.white} />
-              </View>
-              <Text style={styles.videoLabel}>WATCH DEMO</Text>
-            </View>
 
             <Text style={[styles.corner, styles.cornerBottomRight, { color: suitColor }]}>{label}</Text>
           </ScrollView>
@@ -197,29 +192,5 @@ const styles = StyleSheet.create({
   },
   completeButtonTextDone: {
     color: colors.white,
-  },
-  videoPlaceholder: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: 12,
-    paddingVertical: 20,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  playCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.green,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  videoLabel: {
-    color: colors.textMuted,
-    fontFamily: fonts.labelSemiBold,
-    fontSize: 12,
-    letterSpacing: 1,
   },
 });

@@ -2,6 +2,11 @@ export type DayWod = {
   key: string;
   title: string;
   moves: string[];
+  // No breakdown video exists yet for any of these five — left unset
+  // rather than invented, so the WATCH VIDEO BREAKDOWN button (see
+  // WatchVideoBreakdownButton) correctly shows nothing until a real video
+  // URL is actually added here.
+  videoUrl?: string;
 };
 
 // Monday-Friday workouts only — Saturday (Steady State Saturday) and Sunday
