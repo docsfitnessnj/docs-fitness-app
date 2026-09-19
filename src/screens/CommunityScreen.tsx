@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { Avatar } from '../components/Avatar';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { CreatePostModal } from '../components/CreatePostModal';
@@ -16,7 +17,7 @@ import { useMembership } from '../context/MembershipContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { useStories } from '../context/StoriesContext';
 import { useTour } from '../context/TourContext';
-import { getUpcomingDays, isDayWodUnlocked } from '../data/content';
+import { getUpcomingDays, isDayWodUnlocked, isSameDay } from '../data/content';
 import { showAlert } from '../lib/alert';
 import { openMemberships } from '../lib/membershipsModal';
 import { useIsDesktop } from '../lib/responsive';
@@ -321,6 +322,23 @@ export default function CommunityScreen() {
   const days = useMemo(() => getUpcomingDays(BOOKING_DAYS_AHEAD), []);
   const todayIndex = days.findIndex((d) => d.isToday);
   const [selectedIndex, setSelectedIndex] = useState(Math.max(todayIndex, 0));
+
+  // Lets the calendar-style Full Schedule view "tap a day, land here on that
+  // day" the same way tapping this screen's own date strip does — it hands
+  // off a target date as a nav param, which this consumes once and clears,
+  // rather than a shared selectedIndex, since that state is local to this
+  // screen and the schedule view lives outside this navigator entirely.
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const jumpToDate: number | undefined = route.params?.jumpToDate;
+  useEffect(() => {
+    if (jumpToDate == null) return;
+    const target = new Date(jumpToDate);
+    const index = days.findIndex((d) => isSameDay(d.date, target));
+    if (index >= 0) setSelectedIndex(index);
+    navigation.setParams({ jumpToDate: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpToDate]);
 
   const isUnlocked = (index: number) => isDayWodUnlocked(days[index], wodAccessLevel);
 

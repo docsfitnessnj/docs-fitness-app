@@ -21,7 +21,7 @@ import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useIsDesktop } from '../lib/responsive';
 import { useClassBooking } from '../lib/useClassBooking';
-import { useSteadyStateSaturday, useSundaySetup } from '../lib/weekendContent';
+import { useSteadyStateSaturday, useSundaySetup, useWeekdayWod } from '../lib/weekendContent';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -45,7 +45,7 @@ export function DayPanel({ day, wodUnlocked }: Props) {
   const saturdayContent = useSteadyStateSaturday(day.date);
   const sundaySetup = useSundaySetup(day.date);
 
-  const wod = day.wod;
+  const wod = useWeekdayWod(day);
   const isSaturday = day.weekendKind === 'saturday';
   const isSunday = day.weekendKind === 'sunday';
   const dayKey = wod?.key ?? (isSaturday ? STEADY_STATE_SATURDAY_KEY : `rest-${day.label}`);

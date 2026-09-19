@@ -1,4 +1,5 @@
 import { ContentWorkout, ContentWorkoutType, useContentLibrary } from '../context/ContentLibraryContext';
+import { DayWod, WeekDay } from '../data/content';
 import { defaultQuoteIndexForSunday, SUNDAY_QUOTES, SundayQuote } from '../data/sundayQuotes';
 
 export type SteadyStateSaturdayContent = {
@@ -36,6 +37,26 @@ export function useSteadyStateSaturday(date: Date): SteadyStateSaturdayContent |
     description: entry.formatDescription,
     movements: entry.movements,
     videoUrl: entry.videoUrl,
+  };
+}
+
+// A weekday's real WOD, as shown to members — Doc's admin-published entry
+// for this exact calendar date if she's set one (title, movements, and
+// crucially its own videoUrl), otherwise the standing default from
+// WEEKDAY_WODS. This is what actually makes a WOD's own WATCH VIDEO
+// BREAKDOWN button possible: without this override, nothing Doc enters in
+// the Content Library for a "DOC'S WOD" entry ever reaches this screen,
+// since WEEKDAY_WODS has no video field a real video could ever land in.
+export function useWeekdayWod(day: WeekDay): DayWod | undefined {
+  const { workouts } = useContentLibrary();
+  if (!day.wod) return undefined;
+  const override = findPublishedFor(workouts, 'wod', day.date);
+  if (!override) return day.wod;
+  return {
+    key: day.wod.key,
+    title: override.name,
+    moves: override.movements,
+    videoUrl: override.videoUrl || undefined,
   };
 }
 

@@ -161,18 +161,15 @@ const TAB_SUBTITLES: Record<string, string> = TABS.reduce(
 function TabIcon({
   renderIcon,
   color,
-  focused,
   locked,
 }: {
   renderIcon: IconRenderer;
   color: string;
-  focused: boolean;
   locked: boolean;
 }) {
   return (
     <View style={styles.iconWrap}>
       {renderIcon({ color, size: 22 })}
-      {focused && <View style={styles.activeDot} />}
       {locked && (
         <View style={styles.lockBadge}>
           <Ionicons name="lock-closed" size={9} color={colors.white} />
@@ -221,7 +218,7 @@ function RootNavigator({ tabBarHidden }: RootNavigatorProps) {
       screenOptions={{
         headerShown: false,
         tabBarStyle,
-        tabBarActiveTintColor: colors.green,
+        tabBarActiveTintColor: colors.gold,
         tabBarInactiveTintColor: colors.textMuted,
       }}
     >
@@ -234,9 +231,7 @@ function RootNavigator({ tabBarHidden }: RootNavigatorProps) {
             component={component}
             options={{
               title: navLabel,
-              tabBarIcon: ({ focused, color }) => (
-                <TabIcon renderIcon={renderIcon} color={color} focused={focused} locked={locked} />
-              ),
+              tabBarIcon: ({ color }) => <TabIcon renderIcon={renderIcon} color={color} locked={locked} />,
               tabBarLabel: ({ color }) => <TabLabel label={navLabel} color={color} />,
             }}
           />
@@ -838,13 +833,6 @@ const styles = StyleSheet.create({
   },
   iconWrap: {
     alignItems: 'center',
-  },
-  activeDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginTop: 4,
-    backgroundColor: colors.green,
   },
   lockBadge: {
     position: 'absolute',

@@ -5,8 +5,8 @@ import { createNavigationContainerRef } from '@react-navigation/native';
 // useNavigation() directly — this ref lets it jump tabs anyway.
 export const navigationRef = createNavigationContainerRef<any>();
 
-export function navigateToTab(name: string) {
+export function navigateToTab(name: string, params?: object) {
   if (navigationRef.isReady()) {
-    navigationRef.navigate(name as never);
+    (navigationRef.navigate as (name: string, params?: object) => void)(name, params);
   }
 }
