@@ -197,6 +197,9 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
               onChangeText={setName}
               placeholder={isSaturday ? 'e.g. LONG ROW HOME' : 'e.g. THE GAUNTLET'}
               placeholderTextColor={colors.textMuted}
+              autoCapitalize="sentences"
+              autoCorrect
+              spellCheck
               aria-label="Workout name"
               testID="content-form-name"
             />
@@ -254,6 +257,7 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
               placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
+              spellCheck={false}
               aria-label="Breakdown video URL"
               testID="content-form-video-url"
             />
@@ -274,6 +278,9 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
               onChangeText={setFormat}
               placeholder="e.g. 30min AMRAP, 5 Rounds, EMOM 12"
               placeholderTextColor={colors.textMuted}
+              autoCapitalize="sentences"
+              autoCorrect
+              spellCheck
               aria-label="Format"
               testID="content-form-format"
             />
@@ -294,6 +301,9 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
           }
           placeholderTextColor={colors.textMuted}
           multiline
+          autoCapitalize="sentences"
+          autoCorrect
+          spellCheck
           aria-label="Format description"
           testID="content-form-format-description"
         />
@@ -308,6 +318,9 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
               placeholder={'Kettlebell Swings\nGoblet Squats\nPush-Ups'}
               placeholderTextColor={colors.textMuted}
               multiline
+              autoCapitalize="sentences"
+              autoCorrect
+              spellCheck
               aria-label="Movements, one per line"
               testID="content-form-movements"
             />
@@ -377,6 +390,9 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
           placeholder="Anything else for whoever preps this."
           placeholderTextColor={colors.textMuted}
           multiline
+          autoCapitalize="sentences"
+          autoCorrect
+          spellCheck
           aria-label="Notes"
           testID="content-form-notes"
         />
@@ -394,6 +410,7 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
               placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
+              spellCheck={false}
               aria-label="Release date"
               testID="content-form-release-date"
             />
@@ -407,6 +424,7 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
               placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
+              spellCheck={false}
               aria-label="Release time, 24 hour"
               testID="content-form-release-time"
             />

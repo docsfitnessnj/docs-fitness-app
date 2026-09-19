@@ -170,6 +170,15 @@ export function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+// True for any calendar day strictly after today — the "tomorrow onward"
+// window SHOW TOMORROW'S WORKOUT applies to. Today's own workout always
+// shows regardless of that preference, so this deliberately excludes it.
+export function isFutureDay(day: WeekDay, today: Date = new Date()): boolean {
+  const startOfToday = new Date(today);
+  startOfToday.setHours(0, 0, 0, 0);
+  return day.date.getTime() > startOfToday.getTime();
+}
+
 export function formatDateKey(d: Date): string {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }

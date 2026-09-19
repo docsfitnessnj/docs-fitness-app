@@ -12,6 +12,11 @@ type ProfileRow = {
   favoriteQuote: string;
   howTrain: HowTrain | null;
   isAdmin: boolean;
+  // Monthly Unlimited's SHOW TOMORROW'S WORKOUT preference — defaults true
+  // (see supabase's `show_tomorrows_workout boolean not null default true`)
+  // so every existing member keeps seeing tomorrow's workout unless they
+  // deliberately turn it off.
+  showTomorrowsWorkout: boolean;
 };
 
 const DEFAULT_PROFILE: ProfileRow = {
@@ -21,6 +26,7 @@ const DEFAULT_PROFILE: ProfileRow = {
   favoriteQuote: '',
   howTrain: null,
   isAdmin: false,
+  showTomorrowsWorkout: true,
 };
 
 export type UpdateProfileInput = {
@@ -48,8 +54,10 @@ type ProfileContextValue = {
   // side. Distinct from useMembership().isAdmin, which is only the
   // dev/preview tier toggle used for demoing UI states.
   isAdmin: boolean;
+  showTomorrowsWorkout: boolean;
   updateProfile: (input: UpdateProfileInput) => Promise<{ error: string | null }>;
   setHowTrain: (value: HowTrain) => Promise<void>;
+  setShowTomorrowsWorkout: (value: boolean) => Promise<void>;
 };
 
 const ProfileContext = createContext<ProfileContextValue | undefined>(undefined);
@@ -92,7 +100,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
     supabase
       .from('profiles')
-      .select('display_name, instagram_handle, favorite_quote, avatar_url, how_train, is_admin')
+      .select('display_name, instagram_handle, favorite_quote, avatar_url, how_train, is_admin, show_tomorrows_workout')
       .eq('id', user.id)
       .maybeSingle()
       .then(({ data, error: fetchError }) => {
@@ -113,6 +121,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           favoriteQuote: data?.favorite_quote ?? '',
           howTrain: (data?.how_train as HowTrain | null) ?? null,
           isAdmin: data?.is_admin ?? false,
+          showTomorrowsWorkout: data?.show_tomorrows_workout ?? true,
         });
         setLoading(false);
       });
@@ -132,6 +141,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       favoriteQuote: profile.favoriteQuote,
       howTrain: profile.howTrain,
       isAdmin: profile.isAdmin,
+      showTomorrowsWorkout: profile.showTomorrowsWorkout,
       updateProfile: async (input) => {
         if (!user) return { error: 'Not signed in.' };
         try {
@@ -181,6 +191,18 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           // Best-effort — the in-memory value above still lets onboarding
           // continue past the question for this session even if the write
           // didn't land, rather than blocking signup on it.
+        }
+      },
+      setShowTomorrowsWorkout: async (value) => {
+        if (!user) return;
+        setProfile((prev) => ({ ...prev, showTomorrowsWorkout: value }));
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ show_tomorrows_workout: value })
+          .eq('id', user.id);
+        if (updateError) {
+          // Best-effort, same as setHowTrain above — the toggle still
+          // reflects instantly on this device even if the write didn't land.
         }
       },
     }),

@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useProfile } from './ProfileContext';
 import { getNextSunday, getWeekStart } from '../data/content';
 import { CONTENT_LIBRARY_SEED, CONTENT_LIBRARY_SEED_VERSION } from '../data/contentLibrarySeed';
 import { loadJSON, loadSeededArray, resetToSeedArray, saveJSON } from '../lib/storage';
+import { supabase } from '../lib/supabaseClient';
 
 // Deliberately NOT prefixed "docsfitness." (see storage.ts's clearAppStorage,
 // which sweeps every key under that prefix on sign-out). Doc's draft content
@@ -117,6 +119,7 @@ const ContentLibraryContext = createContext<ContentLibraryContextValue | undefin
 const QUOTE_CYCLE_ANCHOR_KEY = 'sundayQuoteCycleAnchor.v1';
 
 export function ContentLibraryProvider({ children }: { children: React.ReactNode }) {
+  const { isAdmin } = useProfile();
   const [workouts, setWorkouts] = useState<ContentWorkout[]>(() =>
     loadSeededArray(STORAGE_KEY, CONTENT_LIBRARY_SEED, CONTENT_LIBRARY_SEED_VERSION)
   );
@@ -131,6 +134,40 @@ export function ContentLibraryProvider({ children }: { children: React.ReactNode
   useEffect(() => {
     saveJSON(STORAGE_KEY, workouts);
   }, [workouts]);
+
+  // Mirrors every published Challenge of the Week's title/scoring/week
+  // window into Supabase's `challenges` table — the local Content Library
+  // (this whole file) is otherwise device-only, so without this the Monday
+  // week-rollover backend job that awards COW CHAMP (see
+  // supabase/migration_003.sql) would have no way to know which challenge
+  // just closed, how it's scored, or which challenge_entries rows belong to
+  // it. Best-effort, same fire-and-forget pattern as every badge_grants
+  // write elsewhere in this app — a member who isn't Doc can't write here
+  // anyway (see the migration's admin-only insert/update policy).
+  useEffect(() => {
+    // Only ever attempted from Doc's own signed-in session — the backend
+    // rejects anyone else's write anyway (see the migration's admin-only
+    // insert/update policy), so this just skips a pointless network call
+    // for every other member's client.
+    if (!isAdmin) return;
+    const publishedCows = workouts.filter((w) => w.type === 'cow' && w.status === 'published' && w.scoringType);
+    if (publishedCows.length === 0) return;
+    const rows = publishedCows.map((w) => {
+      const weekStart = getWeekStart(new Date(w.releaseAt)).getTime();
+      const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
+      return {
+        id: w.id,
+        title: w.name,
+        scoring_type: w.scoringType,
+        week_start: new Date(weekStart).toISOString(),
+        week_end: new Date(weekEnd).toISOString(),
+      };
+    });
+    supabase
+      .from('challenges')
+      .upsert(rows, { onConflict: 'id' })
+      .then(() => {});
+  }, [workouts, isAdmin]);
 
   useEffect(() => {
     saveJSON(QUOTE_CYCLE_ANCHOR_KEY, quoteCycleAnchor);

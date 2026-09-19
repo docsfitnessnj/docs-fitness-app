@@ -56,6 +56,7 @@ export default function ForgotPasswordScreen({ onBack, onSendReset }: Props) {
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="none"
                 autoCorrect={false}
+                spellCheck={false}
                 keyboardType="email-address"
                 autoComplete="email"
                 nativeID="forgot-password-email-input"

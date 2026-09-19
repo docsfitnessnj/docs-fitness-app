@@ -69,6 +69,7 @@ export function ContentBulkImportScreen({ onImport, onBack }: Props) {
           multiline
           autoCapitalize="none"
           autoCorrect={false}
+          spellCheck={false}
           aria-label="Bulk workout paste"
           testID="content-bulk-textarea"
         />

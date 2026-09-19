@@ -218,6 +218,9 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
             onChangeText={setCommentText}
             placeholder={canInteract ? 'Write a comment...' : 'Sign up to comment'}
             placeholderTextColor={colors.textMuted}
+            autoCapitalize="sentences"
+            autoCorrect
+            spellCheck
             onSubmitEditing={submitComment}
             onFocus={() => !canInteract && interactionBlockedNudge()}
             nativeID="post-detail-comment-input-field"

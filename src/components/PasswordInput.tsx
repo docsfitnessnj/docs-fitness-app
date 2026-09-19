@@ -46,6 +46,7 @@ export function PasswordInput({
         autoComplete={autoComplete}
         autoCapitalize="none"
         autoCorrect={false}
+        spellCheck={false}
         nativeID={nativeID}
         aria-label={ariaLabel}
         testID={testID}

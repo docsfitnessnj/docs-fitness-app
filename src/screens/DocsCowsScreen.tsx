@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { MembershipGate } from '../components/MembershipGate';
@@ -116,6 +116,9 @@ function EntryForm({
               onChangeText={setTime}
               placeholder="e.g. 9:42"
               placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               nativeID="cowkiller-time-input"
               aria-label="Time"
             />
@@ -131,6 +134,9 @@ function EntryForm({
               placeholder="e.g. 12"
               placeholderTextColor={colors.textMuted}
               keyboardType="numeric"
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               nativeID="cowkiller-rounds-input"
               aria-label="Rounds"
             />
@@ -146,6 +152,9 @@ function EntryForm({
               placeholder="e.g. 8"
               placeholderTextColor={colors.textMuted}
               keyboardType="numeric"
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               nativeID="cowkiller-reps-input"
               aria-label="Extra reps"
             />
@@ -160,6 +169,9 @@ function EntryForm({
         onChangeText={setKettlebell}
         placeholder="e.g. 16 or 2x12"
         placeholderTextColor={colors.textMuted}
+        autoCapitalize="none"
+        autoCorrect={false}
+        spellCheck={false}
         nativeID="cowkiller-kettlebell-input"
         aria-label="Kettlebell size in kilograms"
       />
@@ -182,7 +194,18 @@ function LeaderboardRow({ entry, isTimeScoring }: { entry: Entry; isTimeScoring:
       <Text style={[styles.rank, isFirst && styles.rankFirst]}>{entry.rank}</Text>
       <Avatar name={entry.name} size={32} />
       <View style={styles.rowMain}>
-        <Text style={styles.name}>{entry.name}</Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.name}>{entry.name}</Text>
+          {isFirst && (
+            <MaterialCommunityIcons
+              name="crown"
+              size={14}
+              color={colors.gold}
+              style={styles.crownIcon}
+              testID="leaderboard-crown"
+            />
+          )}
+        </View>
         <Text style={styles.rowMeta}>
           {isTimeScoring
             ? `${entry.kettlebell} KG KB · ${entry.tag}`
@@ -447,6 +470,13 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.bodySemiBold,
     fontSize: 16,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  crownIcon: {
+    marginLeft: 5,
   },
   rowMeta: {
     color: colors.textMuted,

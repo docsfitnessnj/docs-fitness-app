@@ -90,6 +90,7 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
             placeholderTextColor={colors.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
+            spellCheck={false}
             keyboardType="email-address"
             autoComplete="email"
             nativeID="welcome-email-input"

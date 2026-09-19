@@ -1,5 +1,7 @@
 import { ContentWorkout, ContentWorkoutType, useContentLibrary } from '../context/ContentLibraryContext';
-import { DayWod, WeekDay } from '../data/content';
+import { useMembership } from '../context/MembershipContext';
+import { useProfile } from '../context/ProfileContext';
+import { DayWod, isFutureDay, WeekDay } from '../data/content';
 import { defaultQuoteIndexForSunday, SUNDAY_QUOTES, SundayQuote } from '../data/sundayQuotes';
 
 export type SteadyStateSaturdayContent = {
@@ -58,6 +60,17 @@ export function useWeekdayWod(day: WeekDay): DayWod | undefined {
     moves: override.movements,
     videoUrl: override.videoUrl || undefined,
   };
+}
+
+// Whether Monthly Unlimited's SHOW TOMORROW'S WORKOUT preference is
+// currently hiding this specific day's workout — only ever true for a day
+// after today (today's own workout always shows) and only for a member on
+// the in_person_unlimited tier who has turned the preference off. Every
+// other tier sees no change at all.
+export function useTomorrowsWorkoutHidden(day: WeekDay): boolean {
+  const { tier } = useMembership();
+  const { showTomorrowsWorkout } = useProfile();
+  return tier === 'in_person_unlimited' && !showTomorrowsWorkout && isFutureDay(day);
 }
 
 export function useSundaySetup(date: Date): SundaySetupContent {

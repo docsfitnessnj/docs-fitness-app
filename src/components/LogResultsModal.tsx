@@ -114,6 +114,9 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             onChangeText={setTitle}
             placeholder="Post title"
             placeholderTextColor={colors.textMuted}
+            autoCapitalize="sentences"
+            autoCorrect
+            spellCheck
             nativeID="log-results-title-input"
             aria-label="Post title"
             testID="log-results-title"
@@ -128,6 +131,9 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
                 onChangeText={(v) => updateLog('rounds', v)}
                 placeholder="e.g. 5"
                 placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
                 nativeID="log-results-rounds-input"
                 aria-label="Rounds"
               />
@@ -140,6 +146,9 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
                 onChangeText={(v) => updateLog('time', v)}
                 placeholder="e.g. 9:42"
                 placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
                 nativeID="log-results-time-input"
                 aria-label="Time"
               />
@@ -153,6 +162,9 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             onChangeText={(v) => updateLog('kettlebell', v)}
             placeholder="e.g. 16 or 2x12"
             placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
             nativeID="log-results-kettlebell-input"
             aria-label="Kettlebell size in kilograms"
           />
@@ -165,6 +177,9 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             placeholder="How did it feel?"
             placeholderTextColor={colors.textMuted}
             multiline
+            autoCapitalize="sentences"
+            autoCorrect
+            spellCheck
             nativeID="log-results-notes-input"
             aria-label="Notes"
           />

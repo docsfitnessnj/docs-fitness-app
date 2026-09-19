@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
 import { useAuth } from '../context/AuthContext';
 import { MembershipTier, planLabel, useMembership } from '../context/MembershipContext';
+import { useProfile } from '../context/ProfileContext';
 import { requestAppReset } from '../lib/appReset';
 import { showAlert } from '../lib/alert';
 import { clearAppStorage, loadJSON, saveJSON } from '../lib/storage';
@@ -66,6 +67,7 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
   const membership = useMembership();
   const { newsletterOptIn, setNewsletterOptIn } = membership;
   const { signOut: authSignOut } = useAuth();
+  const { showTomorrowsWorkout, setShowTomorrowsWorkout } = useProfile();
   const [prefs, setPrefs] = useState<NotificationPrefs>(() => loadJSON(NOTIFICATIONS_STORAGE_KEY, DEFAULT_NOTIFICATION_PREFS));
   const [cancelStage, setCancelStage] = useState<'none' | 'confirmed'>('none');
 
@@ -232,6 +234,27 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
             <Toggle on={newsletterOptIn} />
           </Pressable>
         </View>
+
+        {membership.tier === 'in_person_unlimited' && (
+          <>
+            <Text style={[styles.sectionHeading, styles.sectionHeadingSpaced]}>IN PERSON</Text>
+            <View style={styles.rowGroup}>
+              <Pressable
+                style={[styles.row, styles.rowLast]}
+                onPress={() => setShowTomorrowsWorkout(!showTomorrowsWorkout)}
+                testID="show-tomorrows-workout-toggle"
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowLabel}>Show Tomorrow's Workout</Text>
+                  <Text style={styles.rowSubtext}>
+                    See what is coming tomorrow, or keep it a surprise until the day of.
+                  </Text>
+                </View>
+                <Toggle on={showTomorrowsWorkout} />
+              </Pressable>
+            </View>
+          </>
+        )}
 
         <Text style={[styles.sectionHeading, styles.sectionHeadingSpaced]}>ACCOUNT</Text>
         <View style={styles.rowGroup}>

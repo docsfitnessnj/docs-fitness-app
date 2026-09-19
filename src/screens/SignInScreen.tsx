@@ -52,6 +52,7 @@ export default function SignInScreen({ onBack, onForgotPassword, initialEmail, o
             placeholderTextColor={colors.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
+            spellCheck={false}
             keyboardType="email-address"
             autoComplete="email"
             nativeID="sign-in-email-input"

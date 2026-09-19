@@ -136,15 +136,15 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   classDate: {
+    color: colors.text,
+    fontFamily: fonts.bodyBold,
+    fontSize: 15,
+  },
+  className: {
     color: colors.textMuted,
     fontFamily: fonts.labelSemiBold,
     fontSize: 11,
     letterSpacing: 0.8,
-  },
-  className: {
-    color: colors.text,
-    fontFamily: fonts.bodyBold,
-    fontSize: 15,
     marginTop: 2,
   },
   classType: {
