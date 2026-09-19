@@ -91,6 +91,9 @@ export function InviteFriendModal({ visible, onClose }: Props) {
                 onChangeText={setMessage}
                 multiline
                 {...({ rows: 3 } as { rows?: number })}
+                autoCapitalize="sentences"
+                autoCorrect
+                spellCheck
                 placeholder={APP_SHARE_MESSAGE}
                 placeholderTextColor={colors.textMuted}
                 nativeID="invite-message-input"

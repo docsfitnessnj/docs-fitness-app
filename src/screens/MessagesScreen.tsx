@@ -321,6 +321,9 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
                 placeholder="Type a message..."
                 placeholderTextColor={colors.textMuted}
                 multiline
+                autoCapitalize="sentences"
+                autoCorrect
+                spellCheck
                 // `rows` isn't in TextInputProps' cross-platform typing, but
                 // react-native-web supports it directly (it maps straight to
                 // the underlying <textarea rows>) — without it, the browser's

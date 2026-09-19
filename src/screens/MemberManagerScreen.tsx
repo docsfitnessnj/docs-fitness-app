@@ -149,6 +149,9 @@ export function MemberManagerScreen({ visible, onClose }: Props) {
           onChangeText={setQuery}
           placeholder="Search members by name"
           placeholderTextColor={colors.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          spellCheck={false}
           aria-label="Search members"
           testID="member-manager-search"
         />

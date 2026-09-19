@@ -135,6 +135,9 @@ export function ProfileScreen({ visible, onClose }: Props) {
             placeholder={displayName}
             placeholderTextColor={colors.textMuted}
             autoComplete="name"
+            autoCapitalize="words"
+            autoCorrect={false}
+            spellCheck={false}
             nativeID="profile-name-input"
             aria-label="Name"
           />
@@ -149,6 +152,8 @@ export function ProfileScreen({ visible, onClose }: Props) {
               placeholder="yourhandle"
               placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               autoComplete="username"
               nativeID="profile-handle-input"
               aria-label="Instagram handle"
@@ -162,6 +167,9 @@ export function ProfileScreen({ visible, onClose }: Props) {
             onChangeText={setDraftQuote}
             placeholder="One line that keeps you going"
             placeholderTextColor={colors.textMuted}
+            autoCapitalize="sentences"
+            autoCorrect
+            spellCheck
             nativeID="profile-quote-input"
             aria-label="Favorite quote"
           />

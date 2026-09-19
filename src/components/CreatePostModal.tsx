@@ -97,6 +97,9 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
             placeholder="Title"
             placeholderTextColor={colors.textMuted}
             autoFocus
+            autoCapitalize="sentences"
+            autoCorrect
+            spellCheck
             nativeID="compose-post-title-input"
             aria-label="Post title"
           />
@@ -108,6 +111,9 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
             placeholderTextColor={colors.textMuted}
             multiline
             onContentSizeChange={(e) => setBodyHeight(e.nativeEvent.contentSize.height)}
+            autoCapitalize="sentences"
+            autoCorrect
+            spellCheck
             nativeID="compose-post-body-input"
             aria-label="Post body"
           />

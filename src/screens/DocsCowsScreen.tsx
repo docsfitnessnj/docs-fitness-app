@@ -116,6 +116,9 @@ function EntryForm({
               onChangeText={setTime}
               placeholder="e.g. 9:42"
               placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               nativeID="cowkiller-time-input"
               aria-label="Time"
             />
@@ -131,6 +134,9 @@ function EntryForm({
               placeholder="e.g. 12"
               placeholderTextColor={colors.textMuted}
               keyboardType="numeric"
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               nativeID="cowkiller-rounds-input"
               aria-label="Rounds"
             />
@@ -146,6 +152,9 @@ function EntryForm({
               placeholder="e.g. 8"
               placeholderTextColor={colors.textMuted}
               keyboardType="numeric"
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               nativeID="cowkiller-reps-input"
               aria-label="Extra reps"
             />
@@ -160,6 +169,9 @@ function EntryForm({
         onChangeText={setKettlebell}
         placeholder="e.g. 16 or 2x12"
         placeholderTextColor={colors.textMuted}
+        autoCapitalize="none"
+        autoCorrect={false}
+        spellCheck={false}
         nativeID="cowkiller-kettlebell-input"
         aria-label="Kettlebell size in kilograms"
       />

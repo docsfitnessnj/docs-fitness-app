@@ -79,6 +79,9 @@ export function SearchModal({ visible, onClose }: Props) {
           placeholder="Search the app"
           placeholderTextColor={colors.textMuted}
           autoFocus
+          autoCapitalize="none"
+          autoCorrect={false}
+          spellCheck={false}
           nativeID="app-search-input"
           aria-label="Search the app"
         />
