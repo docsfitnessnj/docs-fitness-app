@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { MembershipGate } from '../components/MembershipGate';
@@ -182,7 +182,18 @@ function LeaderboardRow({ entry, isTimeScoring }: { entry: Entry; isTimeScoring:
       <Text style={[styles.rank, isFirst && styles.rankFirst]}>{entry.rank}</Text>
       <Avatar name={entry.name} size={32} />
       <View style={styles.rowMain}>
-        <Text style={styles.name}>{entry.name}</Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.name}>{entry.name}</Text>
+          {isFirst && (
+            <MaterialCommunityIcons
+              name="crown"
+              size={14}
+              color={colors.gold}
+              style={styles.crownIcon}
+              testID="leaderboard-crown"
+            />
+          )}
+        </View>
         <Text style={styles.rowMeta}>
           {isTimeScoring
             ? `${entry.kettlebell} KG KB · ${entry.tag}`
@@ -447,6 +458,13 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.bodySemiBold,
     fontSize: 16,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  crownIcon: {
+    marginLeft: 5,
   },
   rowMeta: {
     color: colors.textMuted,

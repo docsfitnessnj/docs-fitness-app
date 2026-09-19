@@ -69,13 +69,24 @@ type BadgeContextValue = {
   // Trophy Case shows this date once earned, progress toward it otherwise.
   dayOneDougEarnedAt: number | null;
   hundredDownEarnedAt: number | null;
+  // COW CHAMP — permanent and stackable, granted by backend logic at the
+  // Monday week-rollover (see supabase/migration_003.sql), never by this
+  // client. `cowChampCount` is simply how many badge_grants rows exist for
+  // this badge (one per week won) — the Trophy Case and PostAuthorBadges
+  // show it as "x2"/"x3" once it passes 1.
+  cowChampEarned: boolean;
+  cowChampCount: number;
+  cowChampEarnedAt: number | null;
 
   // Any author's badges, read from the shared badge_grants table (joker,
-  // the 5 computed badges) plus the local Founding 50 grant — sorted
-  // Joker-first, weeklies, then permanents.
+  // cow_champ, the 5 computed badges) plus the local Founding 50 grant —
+  // sorted Joker-first, weeklies, then permanents.
   getBadgesForAuthor: (name: string) => BadgeId[];
   getJokerGrantedAt: (name: string) => number | null;
   getFoundingFiftyGrantedAt: (name: string) => number | null;
+  // How many times this author holds COW CHAMP — 0 if never, used to render
+  // the "x2"/"x3" stack count next to the badge wherever it renders.
+  getCowChampCount: (name: string) => number;
 
   recordCowKillerScore: () => void;
   // Admin-only — see supabase/setup.sql's badge_grants insert/delete
@@ -212,6 +223,12 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     const cowKillerEarned = grants.some(
       (g) => g.user_id === user?.id && g.badge_id === 'cow_killer' && g.period_key === weekPeriodKey
     );
+    const myCowChampGrants = grants
+      .filter((g) => g.user_id === user?.id && g.badge_id === 'cow_champ')
+      .sort((a, b) => new Date(a.granted_at).getTime() - new Date(b.granted_at).getTime());
+    const cowChampEarned = myCowChampGrants.length > 0;
+    const cowChampCount = myCowChampGrants.length;
+    const cowChampEarnedAt = cowChampEarned ? new Date(myCowChampGrants[0].granted_at).getTime() : null;
 
     const week = getCurrentWeek();
     const weekdayKeys = week.filter((d) => !d.isRestDay && d.wod).map((d) => d.wod!.key);
@@ -226,6 +243,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       ...(crewEarned ? (['crew'] as BadgeId[]) : []),
       ...(foundingFiftyEarned ? (['founding_50'] as BadgeId[]) : []),
       ...(jokerEarned ? (['joker'] as BadgeId[]) : []),
+      ...(cowChampEarned ? (['cow_champ'] as BadgeId[]) : []),
       ...(onFireProgress.earned ? (['on_fire'] as BadgeId[]) : []),
       ...(cowKillerEarned ? (['cow_killer'] as BadgeId[]) : []),
       ...(regularProgress.earned ? (['the_regular'] as BadgeId[]) : []),
@@ -239,6 +257,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       for (const g of grants) {
         if (nameOf(g.profiles) !== name) continue;
         if (g.badge_id === 'joker') ids.add('joker');
+        else if (g.badge_id === 'cow_champ') ids.add('cow_champ');
         else if (COMPUTED_BADGE_IDS.includes(g.badge_id)) {
           if (g.period_key === '' || g.period_key === weekPeriodKey) ids.add(g.badge_id);
         }
@@ -262,12 +281,19 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       hundredDownEarned,
       dayOneDougEarnedAt: dayOneDougGrant ? new Date(dayOneDougGrant.granted_at).getTime() : null,
       hundredDownEarnedAt: hundredDownGrant ? new Date(hundredDownGrant.granted_at).getTime() : null,
+      cowChampEarned,
+      cowChampCount,
+      cowChampEarnedAt,
       getBadgesForAuthor,
       getJokerGrantedAt: (name) => {
         const grant = grants.find((g) => nameOf(g.profiles) === name && g.badge_id === 'joker');
         return grant ? new Date(grant.granted_at).getTime() : null;
       },
       getFoundingFiftyGrantedAt: (name) => foundingFiftyGrants[name]?.grantedAt ?? null,
+      getCowChampCount: (name) => {
+        if (name === displayName) return cowChampCount;
+        return grants.filter((g) => g.badge_id === 'cow_champ' && nameOf(g.profiles) === name).length;
+      },
       recordCowKillerScore: () => {
         if (!user) return;
         supabase

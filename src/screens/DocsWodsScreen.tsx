@@ -20,7 +20,7 @@ import {
 } from '../data/content';
 import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
-import { useSteadyStateSaturday, useSundaySetup, useWeekdayWod } from '../lib/weekendContent';
+import { useSteadyStateSaturday, useSundaySetup, useTomorrowsWorkoutHidden, useWeekdayWod } from '../lib/weekendContent';
 import { colors, fonts } from '../theme';
 
 function LockedDay() {
@@ -59,6 +59,7 @@ export default function DocsWodsScreen() {
 
   const selectedDay = week[selectedIndex];
   const wod = useWeekdayWod(selectedDay);
+  const revealedTomorrow = useTomorrowsWorkoutHidden(selectedDay);
   const isSaturday = selectedDay.weekendKind === 'saturday';
   const isSunday = selectedDay.weekendKind === 'sunday';
   const saturdayContent = useSteadyStateSaturday(selectedDay.date);
@@ -100,56 +101,70 @@ export default function DocsWodsScreen() {
         <View style={styles.card}>
           <View style={styles.cardBody}>
             <Text style={styles.cardLabel}>{formatFullDate(selectedDay.date).toUpperCase()}</Text>
-            <Text style={styles.cardHeadline}>{wod.title}</Text>
+            {revealedTomorrow ? (
+              <>
+                <View style={styles.divider} />
+                <Text style={styles.comingSoonText}>Revealed tomorrow.</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.cardHeadline}>{wod.title}</Text>
 
-            <WatchVideoBreakdownButton videoUrl={wod.videoUrl} />
+                <WatchVideoBreakdownButton videoUrl={wod.videoUrl} />
 
-            <View style={styles.divider} />
+                <View style={styles.divider} />
 
-            {wod.moves.map((move, index) => {
-              const parsed = parseMoveRow(move);
-              return (
-                <View key={index} style={styles.wodRow}>
-                  <TappableMovementText
-                    style={styles.wodRowText}
-                    text={parsed.name}
-                    onOpenMovement={(movementId) => openMovementVault(movementId, 'WORKOUT')}
-                  />
-                  {parsed.reps ? <Text style={styles.wodRowReps}>{parsed.reps}</Text> : null}
+                {wod.moves.map((move, index) => {
+                  const parsed = parseMoveRow(move);
+                  return (
+                    <View key={index} style={styles.wodRow}>
+                      <TappableMovementText
+                        style={styles.wodRowText}
+                        text={parsed.name}
+                        onOpenMovement={(movementId) => openMovementVault(movementId, 'WORKOUT')}
+                      />
+                      {parsed.reps ? <Text style={styles.wodRowReps}>{parsed.reps}</Text> : null}
+                    </View>
+                  );
+                })}
+
+                <View style={styles.buttonRow}>
+                  <Pressable
+                    style={[styles.completeButton, isComplete && styles.completeButtonDone]}
+                    onPress={toggleComplete}
+                    testID="complete-circle"
+                  >
+                    <Text style={[styles.completeButtonText, isComplete && styles.completeButtonTextDone]}>
+                      {isComplete ? 'COMPLETED ✓' : 'MARK COMPLETE'}
+                    </Text>
+                  </Pressable>
+                  <Pressable style={styles.logButton} onPress={() => setLogOpen(true)}>
+                    <Text style={styles.logButtonText}>LOG RESULTS</Text>
+                  </Pressable>
                 </View>
-              );
-            })}
 
-            <View style={styles.buttonRow}>
-              <Pressable
-                style={[styles.completeButton, isComplete && styles.completeButtonDone]}
-                onPress={toggleComplete}
-                testID="complete-circle"
-              >
-                <Text style={[styles.completeButtonText, isComplete && styles.completeButtonTextDone]}>
-                  {isComplete ? 'COMPLETED ✓' : 'MARK COMPLETE'}
-                </Text>
-              </Pressable>
-              <Pressable style={styles.logButton} onPress={() => setLogOpen(true)}>
-                <Text style={styles.logButtonText}>LOG RESULTS</Text>
-              </Pressable>
-            </View>
-
-            <Pressable
-              style={styles.lookupButton}
-              onPress={() => openMovementVault()}
-              testID="lookup-movement"
-            >
-              <Ionicons name="play-circle-outline" size={16} color={colors.textMuted} />
-              <Text style={styles.lookupButtonText}>LOOK UP A MOVEMENT</Text>
-            </Pressable>
+                <Pressable
+                  style={styles.lookupButton}
+                  onPress={() => openMovementVault()}
+                  testID="lookup-movement"
+                >
+                  <Ionicons name="play-circle-outline" size={16} color={colors.textMuted} />
+                  <Text style={styles.lookupButtonText}>LOOK UP A MOVEMENT</Text>
+                </Pressable>
+              </>
+            )}
           </View>
         </View>
       ) : isSaturday ? (
         <View style={styles.card}>
           <View style={styles.cardBody}>
             <Text style={styles.cardLabel}>{STEADY_STATE_SATURDAY_NAME}</Text>
-            {saturdayContent ? (
+            {revealedTomorrow ? (
+              <>
+                <View style={styles.divider} />
+                <Text style={styles.comingSoonText}>Revealed tomorrow.</Text>
+              </>
+            ) : saturdayContent ? (
               <>
                 <Text style={styles.cardHeadline}>{saturdayContent.title}</Text>
                 <WatchVideoBreakdownButton videoUrl={saturdayContent.videoUrl} />

@@ -21,7 +21,7 @@ import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useIsDesktop } from '../lib/responsive';
 import { useClassBooking } from '../lib/useClassBooking';
-import { useSteadyStateSaturday, useSundaySetup, useWeekdayWod } from '../lib/weekendContent';
+import { useSteadyStateSaturday, useSundaySetup, useTomorrowsWorkoutHidden, useWeekdayWod } from '../lib/weekendContent';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -46,6 +46,7 @@ export function DayPanel({ day, wodUnlocked }: Props) {
   const sundaySetup = useSundaySetup(day.date);
 
   const wod = useWeekdayWod(day);
+  const revealedTomorrow = useTomorrowsWorkoutHidden(day);
   const isSaturday = day.weekendKind === 'saturday';
   const isSunday = day.weekendKind === 'sunday';
   const dayKey = wod?.key ?? (isSaturday ? STEADY_STATE_SATURDAY_KEY : `rest-${day.label}`);
@@ -142,6 +143,14 @@ export function DayPanel({ day, wodUnlocked }: Props) {
         (wod || isSaturday || isSunday ? (
           wodUnlocked ? (
             wod ? (
+              revealedTomorrow ? (
+                <View style={styles.card}>
+                  <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>
+                    {dateLabel.toUpperCase()}
+                  </Text>
+                  <Text style={styles.comingSoonText}>Revealed tomorrow.</Text>
+                </View>
+              ) : (
               <View style={styles.card}>
                 <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>{wod.title}</Text>
                 <WatchVideoBreakdownButton videoUrl={wod.videoUrl} />
@@ -174,10 +183,18 @@ export function DayPanel({ day, wodUnlocked }: Props) {
                   </Pressable>
                 </View>
               </View>
+              )
             ) : isSaturday ? (
               <View style={styles.card}>
                 <Text style={styles.weekendFixedLabel}>{STEADY_STATE_SATURDAY_NAME}</Text>
-                {saturdayContent ? (
+                {revealedTomorrow ? (
+                  <>
+                    <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>
+                      {dateLabel.toUpperCase()}
+                    </Text>
+                    <Text style={styles.comingSoonText}>Revealed tomorrow.</Text>
+                  </>
+                ) : saturdayContent ? (
                   <>
                     <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>
                       {saturdayContent.title}

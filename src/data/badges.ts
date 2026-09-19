@@ -6,6 +6,7 @@ export type BadgeId =
   | 'crew'
   | 'founding_50'
   | 'joker'
+  | 'cow_champ'
   | 'on_fire'
   | 'cow_killer'
   | 'the_regular'
@@ -54,6 +55,14 @@ export const BADGE_DEFS: BadgeDef[] = [
       'You own the real thing. Physical Deck of WODs verified by Doc himself. The only badge money can buy.',
     kind: 'permanent',
     order: 0,
+  },
+  {
+    id: 'cow_champ',
+    name: 'COW CHAMP',
+    description:
+      "Finished rank 1 on the Weekly Challenge leaderboard when the week closed. Permanent, and it stacks every time you take the top spot again.",
+    kind: 'permanent',
+    order: 6,
   },
   {
     id: 'on_fire',
@@ -110,7 +119,7 @@ export const INLINE_BADGE_CAP = 4;
 // 50 first (while it's live/held), then the grouped permanents (Doug,
 // Hundred Down, Joker), then weeklies. Distinct from `order`/sortBadgeIds
 // above, which stays Joker-first for inline feed badges.
-export const PERMANENT_DISPLAY_ORDER: BadgeId[] = ['founding_50', 'day_one_doug', 'hundred_down', 'joker'];
+export const PERMANENT_DISPLAY_ORDER: BadgeId[] = ['founding_50', 'day_one_doug', 'hundred_down', 'joker', 'cow_champ'];
 export const WEEKLY_DISPLAY_ORDER: BadgeId[] = ['on_fire', 'cow_killer', 'the_regular'];
 // THE CREW is the one 'membership'-kind badge — its own section on the
 // Trophy Case, above PERMANENT (see PERMANENT_DISPLAY_ORDER).

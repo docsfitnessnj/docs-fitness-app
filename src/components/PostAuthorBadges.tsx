@@ -17,7 +17,7 @@ const INLINE_SIZE = 18;
 // the badge itself stays fully earned and still shows everywhere else this
 // component is used unfiltered.
 export function PostAuthorBadges({ author, exclude }: { author: string; exclude?: BadgeId[] }) {
-  const { getBadgesForAuthor } = useBadges();
+  const { getBadgesForAuthor, getCowChampCount } = useBadges();
   const ids = exclude ? getBadgesForAuthor(author).filter((id) => !exclude.includes(id)) : getBadgesForAuthor(author);
 
   if (ids.length === 0) return null;
@@ -28,7 +28,13 @@ export function PostAuthorBadges({ author, exclude }: { author: string; exclude?
   return (
     <View style={styles.row}>
       {shown.map((id: BadgeId) => (
-        <BadgeIcon key={id} id={id} earned size={INLINE_SIZE} />
+        <BadgeIcon
+          key={id}
+          id={id}
+          earned
+          size={INLINE_SIZE}
+          count={id === 'cow_champ' ? getCowChampCount(author) : undefined}
+        />
       ))}
       {overflow > 0 && (
         <View style={styles.overflow}>

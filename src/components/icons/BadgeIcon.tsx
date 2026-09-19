@@ -9,6 +9,9 @@ type Props = {
   // Earned badges render gold; unearned render as flat gray silhouettes.
   earned: boolean;
   size?: number;
+  // COW CHAMP only — total wins, for the "x2"/"x3" stack count. One win
+  // shows no count at all, just the badge, same as every other permanent.
+  count?: number;
 };
 
 // Thin tally marks (four uprights + a diagonal strike) drawn from plain
@@ -77,6 +80,8 @@ function BadgeGlyph({ id, color, size }: { id: BadgeId; color: string; size: num
       );
     case 'joker':
       return <MaterialCommunityIcons name="cards-playing-outline" size={size} color={color} />;
+    case 'cow_champ':
+      return <MaterialCommunityIcons name="crown" size={size} color={color} />;
     case 'on_fire':
       return <Ionicons name="flame-outline" size={size} color={color} />;
     case 'cow_killer':
@@ -112,16 +117,29 @@ function BadgeGlyph({ id, color, size }: { id: BadgeId; color: string; size: num
 // A badge glyph inside its circular frame — gold fill/border when earned,
 // gray hairline silhouette when not. Used both inline (small, next to a
 // name) and large (profile grid, Trophy Case, detail modal).
-export function BadgeIcon({ id, earned, size = 36 }: Props) {
+export function BadgeIcon({ id, earned, size = 36, count }: Props) {
+  const showCount = earned && !!count && count > 1;
   return (
-    <View
-      style={[
-        styles.frame,
-        { width: size, height: size, borderRadius: size / 2 },
-        earned ? styles.frameEarned : styles.frameUnearned,
-      ]}
-    >
-      <BadgeGlyph id={id} color={earned ? colors.greenDeep : colors.textMuted} size={size * 0.72} />
+    <View style={{ width: size, height: size }}>
+      <View
+        style={[
+          styles.frame,
+          { width: size, height: size, borderRadius: size / 2 },
+          earned ? styles.frameEarned : styles.frameUnearned,
+        ]}
+      >
+        <BadgeGlyph id={id} color={earned ? colors.greenDeep : colors.textMuted} size={size * 0.72} />
+      </View>
+      {showCount && (
+        <View
+          style={[
+            styles.countPill,
+            { paddingHorizontal: Math.max(3, size * 0.1), paddingVertical: Math.max(1, size * 0.02) },
+          ]}
+        >
+          <Text style={[styles.countPillText, { fontSize: Math.max(8, size * 0.24) }]}>x{count}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -139,5 +157,19 @@ const styles = StyleSheet.create({
   frameUnearned: {
     backgroundColor: colors.background,
     borderColor: colors.hairline,
+  },
+  countPill: {
+    position: 'absolute',
+    right: -4,
+    bottom: -4,
+    backgroundColor: colors.greenDeep,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.gold,
+  },
+  countPillText: {
+    color: colors.gold,
+    fontFamily: fonts.labelBold,
+    letterSpacing: 0.3,
   },
 });

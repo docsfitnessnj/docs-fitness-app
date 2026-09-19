@@ -29,6 +29,10 @@ create table if not exists public.profiles (
   avatar_url text,
   how_train text check (how_train in ('online', 'boathouse')),
   is_admin boolean not null default false,
+  -- Monthly Unlimited's SHOW TOMORROW'S WORKOUT setting (Settings &
+  -- Notifications > IN PERSON). Defaults on so nobody's view changes until
+  -- they deliberately turn it off; every other membership tier ignores it.
+  show_tomorrows_workout boolean not null default true,
   created_at timestamptz not null default now()
 );
 
@@ -348,22 +352,71 @@ create policy "members can delete their own challenge entry"
   using (user_id = auth.uid());
 
 -- ----------------------------------------------------------------------------
+-- CHALLENGES
+-- One row per published Weekly Challenge (Doc's Content Library is
+-- otherwise entirely on-device — see ContentLibraryContext.tsx), mirrored
+-- here purely so the COW CHAMP award job below can determine a closed
+-- challenge's own scoring type and week window without any client needing
+-- to be open. `id` matches the Content Library entry's own id. Doc's admin
+-- app upserts a row here the moment she publishes a Challenge.
+-- ----------------------------------------------------------------------------
+create table if not exists public.challenges (
+  id text primary key,
+  title text not null,
+  scoring_type text not null check (scoring_type in ('time', 'rounds', 'rounds_reps')),
+  week_start timestamptz not null,
+  week_end timestamptz not null,
+  -- Set once the award job below has processed this challenge's close, so a
+  -- later run never re-scores (and re-badges) the same week twice.
+  champion_awarded_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table public.challenges enable row level security;
+
+drop policy if exists "challenges are readable by any signed-in member" on public.challenges;
+create policy "challenges are readable by any signed-in member"
+  on public.challenges for select
+  to authenticated
+  using (true);
+
+drop policy if exists "only admin can add a challenge" on public.challenges;
+create policy "only admin can add a challenge"
+  on public.challenges for insert
+  to authenticated
+  with check (public.is_admin(auth.uid()));
+
+drop policy if exists "only admin can update a challenge" on public.challenges;
+create policy "only admin can update a challenge"
+  on public.challenges for update
+  to authenticated
+  using (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
+
+-- ----------------------------------------------------------------------------
 -- BADGES
 -- One row per badge a member holds. DAY ONE DOUG and HUNDRED DOWN are
 -- permanent (period_key stays ''); ON FIRE, COW KILLER and THE REGULAR are
 -- weekly (period_key is a stable id for that Monday-anchored week, currently
 -- the week's start time in epoch milliseconds) so they naturally "reset"
 -- every Monday without deleting anything — the app just checks for a row
--- matching the *current* week. Everyone can see everyone's badges;
--- members can only grant themselves the 5 badges that are computed from
--- their own activity, and only for themselves. THE JOKER can only be
--- granted (to anyone) or revoked by an admin — see Member Manager.
+-- matching the *current* week. COW CHAMP is permanent but stacks: one row
+-- per week won, period_key set to that week's `challenges.id` so the same
+-- challenge can never award it twice but a member can hold many rows over
+-- time — the count of those rows is the "x2"/"x3" the app shows. Everyone
+-- can see everyone's badges; members can only grant themselves the 5
+-- badges that are computed from their own activity, and only for
+-- themselves. THE JOKER can only be granted (to anyone) or revoked by an
+-- admin — see Member Manager. COW CHAMP is never member-grantable at all —
+-- only the award_cow_champ_for_closed_challenges() job below (running as a
+-- security definer function, same as this file's other automated triggers)
+-- can insert it.
 -- ----------------------------------------------------------------------------
 create table if not exists public.badge_grants (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
   badge_id text not null check (
-    badge_id in ('joker', 'on_fire', 'cow_killer', 'the_regular', 'day_one_doug', 'hundred_down')
+    badge_id in ('joker', 'on_fire', 'cow_killer', 'the_regular', 'day_one_doug', 'hundred_down', 'cow_champ')
   ),
   period_key text not null default '',
   granted_by uuid references public.profiles (id),
@@ -396,6 +449,136 @@ create policy "only admin can revoke a badge"
   on public.badge_grants for delete
   to authenticated
   using (public.is_admin(auth.uid()));
+
+-- ----------------------------------------------------------------------------
+-- COW CHAMP award — runs automatically at the Monday week rollover
+-- Backend logic, not client code: a scheduled job (pg_cron, below) calls
+-- award_cow_champ_for_closed_challenges() on its own, so the badge lands
+-- even if the winner never opens the app that day. It replicates the same
+-- scoring math the live leaderboard uses on the client
+-- (ChallengeContext.tsx's parseTimeToSeconds/parseRoundsReps) so the two
+-- never disagree about who was in first place.
+-- ----------------------------------------------------------------------------
+
+-- Converts one challenge_entries row into a single comparable number, the
+-- same way the app's own live leaderboard does: for 'time' scoring, lower
+-- is better (an unparseable time sorts to +infinity, i.e. last place); for
+-- 'rounds'/'rounds_reps', higher is better (an unparseable rounds value
+-- sorts to -infinity, i.e. last place).
+create or replace function public.cow_champ_sort_value(
+  p_scoring_type text, p_time_taken text, p_rounds text, p_reps text
+) returns numeric
+language plpgsql
+immutable
+as $$
+declare
+  colon_match text[];
+begin
+  if p_scoring_type = 'time' then
+    colon_match := regexp_match(trim(coalesce(p_time_taken, '')), '^(\d+):(\d{1,2})$');
+    if colon_match is not null then
+      return colon_match[1]::numeric * 60 + colon_match[2]::numeric;
+    end if;
+    begin
+      return trim(p_time_taken)::numeric;
+    exception when others then
+      return 'infinity'::numeric;
+    end;
+  else
+    declare
+      rounds_num numeric;
+      reps_num numeric;
+    begin
+      begin
+        rounds_num := trim(p_rounds)::numeric;
+      exception when others then
+        return '-infinity'::numeric;
+      end;
+      begin
+        reps_num := trim(coalesce(p_reps, '0'))::numeric;
+      exception when others then
+        reps_num := 0;
+      end;
+      return rounds_num * 1000 + reps_num;
+    end;
+  end if;
+end;
+$$;
+
+-- For every challenge whose week has closed and hasn't been scored yet:
+-- finds the best sort_value among its entries, grants COW CHAMP (period_key
+-- = that challenge's id, so it can never double-award the same week) to
+-- every entry tied for that value, then marks the challenge processed.
+-- security definer (same as handle_new_user/enforce_post_pin_rules above)
+-- so it can insert into badge_grants regardless of that table's own RLS,
+-- which deliberately gives no one else insert access to 'cow_champ'.
+create or replace function public.award_cow_champ_for_closed_challenges()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  c record;
+  best_value numeric;
+begin
+  for c in
+    select * from public.challenges
+    where week_end <= now() and champion_awarded_at is null
+  loop
+    if c.scoring_type = 'time' then
+      select min(public.cow_champ_sort_value(c.scoring_type, time_taken, rounds, reps))
+        into best_value
+      from public.challenge_entries
+      where challenge_title = c.title
+        and created_at >= c.week_start and created_at < c.week_end;
+    else
+      select max(public.cow_champ_sort_value(c.scoring_type, time_taken, rounds, reps))
+        into best_value
+      from public.challenge_entries
+      where challenge_title = c.title
+        and created_at >= c.week_start and created_at < c.week_end;
+    end if;
+
+    if best_value is not null and best_value not in ('infinity'::numeric, '-infinity'::numeric) then
+      insert into public.badge_grants (user_id, badge_id, period_key)
+      select distinct user_id, 'cow_champ', c.id
+      from public.challenge_entries
+      where challenge_title = c.title
+        and created_at >= c.week_start and created_at < c.week_end
+        and public.cow_champ_sort_value(c.scoring_type, time_taken, rounds, reps) = best_value
+      on conflict (user_id, badge_id, period_key) do nothing;
+    end if;
+
+    update public.challenges set champion_awarded_at = now() where id = c.id;
+  end loop;
+end;
+$$;
+
+-- Schedules the function above to run every Monday just after midnight UTC.
+-- Requires the pg_cron extension — on Supabase this is usually turned on
+-- from the dashboard (Database -> Extensions -> pg_cron) rather than by
+-- SQL alone; if the "create extension" line below errors with a permission
+-- message, enable it there first and then re-run just this block.
+create extension if not exists pg_cron;
+
+do $$
+declare
+  existing_job_id bigint;
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    select jobid into existing_job_id from cron.job where jobname = 'award-cow-champ-weekly';
+    if existing_job_id is not null then
+      perform cron.unschedule(existing_job_id);
+    end if;
+    perform cron.schedule(
+      'award-cow-champ-weekly',
+      '5 0 * * 1',
+      $cron$select public.award_cow_champ_for_closed_challenges();$cron$
+    );
+  end if;
+end;
+$$;
 
 -- ----------------------------------------------------------------------------
 -- STORAGE: avatars bucket

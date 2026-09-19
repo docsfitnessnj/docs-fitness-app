@@ -63,6 +63,11 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
         return badges.hundredDownEarned && badges.hundredDownEarnedAt
           ? `EARNED ${formatEarnedDate(badges.hundredDownEarnedAt)}`
           : `${badges.totalWorkoutsLogged} of ${HUNDRED_DOWN_TARGET} workouts`;
+      case 'cow_champ': {
+        if (!badges.cowChampEarned || !badges.cowChampEarnedAt) return 'NOT YET EARNED';
+        const first = `EARNED ${formatEarnedDate(badges.cowChampEarnedAt)}`;
+        return badges.cowChampCount > 1 ? `${first} — WON ${badges.cowChampCount} TIMES` : first;
+      }
       default:
         return '';
     }
@@ -90,7 +95,7 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
     return (
       <View key={id} style={styles.card} testID={`trophy-case-badge-${id}`}>
         <View style={styles.cardTopRow}>
-          <BadgeIcon id={id} earned={earned} size={60} />
+          <BadgeIcon id={id} earned={earned} size={60} count={id === 'cow_champ' ? badges.cowChampCount : undefined} />
           <View style={styles.cardMain}>
             <Text style={styles.cardName}>{def.name}</Text>
             <Text style={styles.cardDescription}>{def.description}</Text>
