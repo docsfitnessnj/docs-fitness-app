@@ -20,6 +20,7 @@ import { openLocationMaps } from '../lib/links';
 import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useIsDesktop } from '../lib/responsive';
+import { openFullSchedule } from '../lib/scheduleModal';
 import { useClassBooking } from '../lib/useClassBooking';
 import { useSteadyStateSaturday, useSundaySetup, useTomorrowsWorkoutHidden, useWeekdayWod } from '../lib/weekendContent';
 import { colors, fonts } from '../theme';
@@ -27,12 +28,25 @@ import { colors, fonts } from '../theme';
 type Props = {
   day: WeekDay;
   wodUnlocked: boolean;
+  // Online members train on their own schedule, so the in-person class
+  // sign-up card and schedule strip aren't relevant to them up top — this
+  // swaps them for one quiet line pointing at the same booking flow, in
+  // case an online member is ever near Ventnor and wants to drop in.
+  showClassCard: boolean;
 };
+
+function TrainingNearVentnorLine() {
+  return (
+    <Pressable onPress={openFullSchedule} hitSlop={8} style={styles.ventnorLineWrap} testID="ventnor-book-class-line">
+      <Text style={styles.ventnorLineText}>TRAINING NEAR VENTNOR? BOOK A CLASS AT DOC'S</Text>
+    </Pressable>
+  );
+}
 
 // Inline day content shown below the (always-visible) date strip — replaces the old
 // pop-up modal so the strip stays on screen and switching dates feels like one view,
 // not a stack of screens.
-export function DayPanel({ day, wodUnlocked }: Props) {
+export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
   const { isCompleted, toggleCompleted } = useWorkoutLog();
   const { isSignedUp, handleSignUp: signUpForClass, handleCancel: cancelClass } = useClassBooking();
   const isDesktop = useIsDesktop();
@@ -72,7 +86,7 @@ export function DayPanel({ day, wodUnlocked }: Props) {
     <View>
       <Text style={[styles.dateHeading, isDesktop && styles.dateHeadingDesktop]}>{dateLabel.toUpperCase()}</Text>
 
-      {scheduleRows.length > 0 && (
+      {showClassCard && scheduleRows.length > 0 && (
         <View style={styles.card}>
           <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>
             DOC'S FITNESS GROUP TRAINING (IN PERSON)
@@ -115,9 +129,12 @@ export function DayPanel({ day, wodUnlocked }: Props) {
         </View>
       )}
 
-      <ScheduleStrip />
-
-      <View style={styles.sectionDivider} />
+      {showClassCard && (
+        <>
+          <ScheduleStrip />
+          <View style={styles.sectionDivider} />
+        </>
+      )}
 
       <Pressable
         style={styles.wodBar}
@@ -138,6 +155,8 @@ export function DayPanel({ day, wodUnlocked }: Props) {
           <Ionicons name={wodExpanded ? 'chevron-up' : 'chevron-down'} size={22} color={colors.textMuted} />
         </View>
       </Pressable>
+
+      {!showClassCard && <TrainingNearVentnorLine />}
 
       {wodExpanded &&
         (wod || isSaturday || isSunday ? (
@@ -535,5 +554,16 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelBold,
     fontSize: 10,
     letterSpacing: 0.5,
+  },
+  ventnorLineWrap: {
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  ventnorLineText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 11,
+    letterSpacing: 1,
+    textDecorationLine: 'underline',
   },
 });
