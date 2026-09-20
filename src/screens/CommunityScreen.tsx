@@ -304,8 +304,14 @@ export default function CommunityScreen() {
   const { posts } = useCommunity();
   const detailPost = detailPostId ? posts.find((p) => p.id === detailPostId) ?? null : null;
   const { wodAccessLevel, communityAccess } = useMembership();
+  const { howTrain } = useProfile();
   const { activeStories } = useStories();
   const tour = useTour();
+  // Online members train on their own, so the in-person class sign-up card
+  // and schedule strip aren't the front door for them the way they are for
+  // Boathouse locals — everyone else (Boathouse members, guests, and anyone
+  // who hasn't answered yet) keeps today's booking-first layout.
+  const showClassCard = howTrain !== 'online';
 
   // First-open spotlight tour: fires once per install, guarded by the
   // persisted completed flag inside TourContext — this effect just needs to
@@ -363,7 +369,7 @@ export default function CommunityScreen() {
         scrollable
         leading={activeStories.length > 0 ? <StoryRow compact /> : undefined}
       />
-      <DayPanel day={days[selectedIndex]} wodUnlocked={isUnlocked(selectedIndex)} />
+      <DayPanel day={days[selectedIndex]} wodUnlocked={isUnlocked(selectedIndex)} showClassCard={showClassCard} />
 
       {communityAccess === 'none' ? (
         <ClosedCommunityNotice />
