@@ -165,7 +165,6 @@ export function ProfileScreen({ visible, onClose }: Props) {
             style={styles.input}
             value={draftQuote}
             onChangeText={setDraftQuote}
-            placeholder="One line that keeps you going"
             placeholderTextColor={colors.textMuted}
             autoCapitalize="sentences"
             autoCorrect
@@ -245,7 +244,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: colors.text,
     fontFamily: fonts.bodyMedium,
-    fontSize: 15,
+    fontSize: 16,
     marginBottom: 18,
   },
   handleRow: {
@@ -268,7 +267,7 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.text,
     fontFamily: fonts.bodyMedium,
-    fontSize: 15,
+    fontSize: 16,
     paddingVertical: 12,
     paddingLeft: 2,
   },

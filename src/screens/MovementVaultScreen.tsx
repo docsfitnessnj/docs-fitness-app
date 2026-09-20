@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.text,
     fontFamily: fonts.bodyMedium,
-    fontSize: 15,
+    fontSize: 16,
   },
   listContent: {
     paddingHorizontal: 20,

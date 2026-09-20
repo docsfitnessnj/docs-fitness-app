@@ -8,13 +8,18 @@ import { colors, fonts } from '../theme';
 type Props = {
   media: MediaAttachment | null;
   onChange: (media: MediaAttachment | null) => void;
+  // The community composer's Skool-style layout wants a single quiet
+  // toolbar row (small icon + label, no box) instead of the large dashed
+  // "add" button Log Results still uses — same picker and preview either
+  // way, just a slimmer trigger when nothing's attached yet.
+  compact?: boolean;
 };
 
 // Shared "ADD PHOTO / VIDEO" control used on Log Results and the community
 // composer — same picker, same thumbnail-preview-with-remove/replace
 // pattern, so an attachment picked in one place looks and behaves like one
 // picked in the other.
-export function MediaAttachmentPicker({ media, onChange }: Props) {
+export function MediaAttachmentPicker({ media, onChange, compact }: Props) {
   const { pick } = useMediaPicker(onChange);
 
   if (media) {
@@ -45,9 +50,9 @@ export function MediaAttachmentPicker({ media, onChange }: Props) {
   }
 
   return (
-    <Pressable style={styles.addButton} onPress={pick} testID="media-add">
-      <Ionicons name="camera-outline" size={18} color={colors.green} />
-      <Text style={styles.addButtonText}>ADD PHOTO / VIDEO</Text>
+    <Pressable style={compact ? styles.addButtonCompact : styles.addButton} onPress={pick} testID="media-add">
+      <Ionicons name="camera-outline" size={compact ? 20 : 18} color={colors.green} />
+      <Text style={compact ? styles.addButtonTextCompact : styles.addButtonText}>ADD PHOTO / VIDEO</Text>
     </Pressable>
   );
 }
@@ -67,6 +72,19 @@ const styles = StyleSheet.create({
   addButtonText: {
     color: colors.green,
     fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.8,
+  },
+  addButtonCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    paddingVertical: 10,
+  },
+  addButtonTextCompact: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
     fontSize: 13,
     letterSpacing: 0.8,
   },

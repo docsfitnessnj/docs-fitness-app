@@ -182,8 +182,8 @@ const styles = StyleSheet.create({
   messageInput: {
     color: colors.text,
     fontFamily: fonts.bodyMedium,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 16,
+    lineHeight: 22,
     padding: 0,
   },
   shareButton: {

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { useProfile } from './ProfileContext';
 import { getNextSunday, getWeekStart } from '../data/content';
 import { CONTENT_LIBRARY_SEED, CONTENT_LIBRARY_SEED_VERSION } from '../data/contentLibrarySeed';
+import { getChallengeCycle } from '../lib/challengeSchedule';
 import { loadJSON, loadSeededArray, resetToSeedArray, saveJSON } from '../lib/storage';
 import { supabase } from '../lib/supabaseClient';
 
@@ -137,9 +138,9 @@ export function ContentLibraryProvider({ children }: { children: React.ReactNode
 
   // Mirrors every published Challenge of the Week's title/scoring/week
   // window into Supabase's `challenges` table — the local Content Library
-  // (this whole file) is otherwise device-only, so without this the Monday
-  // week-rollover backend job that awards COW CHAMP (see
-  // supabase/migration_003.sql) would have no way to know which challenge
+  // (this whole file) is otherwise device-only, so without this the
+  // Saturday-close backend job that awards COW CHAMP (see
+  // supabase/migration_004.sql) would have no way to know which challenge
   // just closed, how it's scored, or which challenge_entries rows belong to
   // it. Best-effort, same fire-and-forget pattern as every badge_grants
   // write elsewhere in this app — a member who isn't Doc can't write here
@@ -153,14 +154,23 @@ export function ContentLibraryProvider({ children }: { children: React.ReactNode
     const publishedCows = workouts.filter((w) => w.type === 'cow' && w.status === 'published' && w.scoringType);
     if (publishedCows.length === 0) return;
     const rows = publishedCows.map((w) => {
-      const weekStart = getWeekStart(new Date(w.releaseAt)).getTime();
-      const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
+      // Each Challenge is scored against the Sunday-6pm-ET-to-Saturday-
+      // 12pm-ET cycle it was actually released into, not a Monday-anchored
+      // week — see lib/challengeSchedule.ts. A releaseAt that lands inside
+      // an already-CLOSED window (Doc publishing next week's Challenge
+      // during the Saturday-to-Sunday freeze) belongs to the cycle that
+      // hasn't opened yet, not the one that's already closing — otherwise
+      // it would sync with a week_end already in the past and the award
+      // job would immediately (and wrongly) mark it scored with zero
+      // entries, before its real run ever starts.
+      let cycle = getChallengeCycle(new Date(w.releaseAt));
+      if (cycle.isClosed) cycle = getChallengeCycle(cycle.nextCycleStart);
       return {
         id: w.id,
         title: w.name,
         scoring_type: w.scoringType,
-        week_start: new Date(weekStart).toISOString(),
-        week_end: new Date(weekEnd).toISOString(),
+        week_start: cycle.cycleStart.toISOString(),
+        week_end: cycle.closeAt.toISOString(),
       };
     });
     supabase

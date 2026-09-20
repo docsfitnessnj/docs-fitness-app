@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     color: colors.text,
     fontFamily: fonts.bodyMedium,
-    fontSize: 14,
+    fontSize: 16,
   },
   body: {
     paddingHorizontal: 20,

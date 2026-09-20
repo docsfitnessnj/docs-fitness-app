@@ -511,8 +511,8 @@ const styles = StyleSheet.create({
   input: {
     color: colors.text,
     fontFamily: fonts.bodyMedium,
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: 16,
+    lineHeight: 21,
   },
   attachButton: {
     width: 40,

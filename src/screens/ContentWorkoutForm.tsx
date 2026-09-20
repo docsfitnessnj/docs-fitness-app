@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: colors.text,
     fontFamily: fonts.bodyMedium,
-    fontSize: 15,
+    fontSize: 16,
   },
   multilineInput: {
     minHeight: 90,

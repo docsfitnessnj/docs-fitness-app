@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { Avatar } from './Avatar';
 import { MediaAttachmentPicker } from './MediaAttachmentPicker';
@@ -12,6 +13,12 @@ import { colors, fonts } from '../theme';
 // not a giant blank rectangle, that then grows with what's typed.
 const MIN_BODY_HEIGHT = 88;
 
+// react-native-web supports the CSS `outline` properties on TextInput to
+// kill the browser's default blue focus ring, but RN's own TextStyle type
+// doesn't declare them — cast once here rather than fight the excess-
+// property check on every StyleSheet.create object that needs it.
+const NO_OUTLINE = { outlineStyle: 'none' } as object;
+
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -20,7 +27,10 @@ type Props = {
 
 // Shared "new post" / "edit post" composer for the Community tab's
 // LOG IT. POST IT. bar — a title + body box that writes through to the
-// community_posts table via addTextPost/updateTextPost.
+// community_posts table via addTextPost/updateTextPost. Laid out to match
+// the Skool posting experience (X close, filled POST pill, quiet identity
+// line, borderless title/body, thin toolbar) since that's where most of
+// the app's most engaged members are coming from.
 export function CreatePostModal({ visible, onClose, editingPost }: Props) {
   const { addTextPost, updateTextPost } = useCommunity();
   const displayName = useDisplayName();
@@ -69,12 +79,16 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
     <AppModal visible={visible} animationType="slide" onRequestClose={handleClose}>
       <View style={styles.composeContainer}>
         <View style={styles.composeHeader}>
-          <Pressable onPress={handleClose} hitSlop={8}>
-            <Text style={styles.composeCancel}>CANCEL</Text>
+          <Pressable onPress={handleClose} hitSlop={8} testID="compose-close" aria-label="Close">
+            <Ionicons name="close" size={26} color={colors.text} />
           </Pressable>
-          <Text style={styles.composeHeaderTitle}>{editingPost ? 'EDIT POST' : 'NEW POST'}</Text>
-          <Pressable onPress={handleSubmit} hitSlop={8} disabled={!canSubmit}>
-            <Text style={[styles.composePost, !canSubmit && styles.composePostDisabled]}>
+          <Pressable
+            onPress={handleSubmit}
+            disabled={!canSubmit}
+            style={[styles.postPill, canSubmit && styles.postPillActive]}
+            testID="compose-submit"
+          >
+            <Text style={[styles.postPillText, canSubmit && styles.postPillTextActive]}>
               {editingPost ? 'SAVE' : 'POST'}
             </Text>
           </Pressable>
@@ -85,13 +99,17 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
           contentContainerStyle={styles.composeScrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.composeAuthorRow}>
-            <Avatar name={displayName} uri={photoUri} />
-            <Text style={styles.composeAuthorName}>{displayName}</Text>
+          <View style={styles.composeIdentityRow}>
+            <Avatar name={displayName} uri={photoUri} size={26} />
+            <Text style={styles.composeIdentityLine}>
+              <Text style={styles.composeAuthorName}>{displayName}</Text>
+              <Text style={styles.composeIdentityMuted}> posting in </Text>
+              <Text style={styles.composeIdentityBrand}>Doc's Fitness</Text>
+            </Text>
           </View>
 
           <TextInput
-            style={styles.composeTitleInput}
+            style={[styles.composeTitleInput, NO_OUTLINE]}
             value={title}
             onChangeText={setTitle}
             placeholder="Title"
@@ -104,10 +122,10 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
             aria-label="Post title"
           />
           <TextInput
-            style={[styles.composeBodyInput, { height: Math.max(MIN_BODY_HEIGHT, bodyHeight) }]}
+            style={[styles.composeBodyInput, { height: Math.max(MIN_BODY_HEIGHT, bodyHeight) }, NO_OUTLINE]}
             value={body}
             onChangeText={setBody}
-            placeholder="LOG IT. POST IT."
+            placeholder="Write something"
             placeholderTextColor={colors.textMuted}
             multiline
             onContentSizeChange={(e) => setBodyHeight(e.nativeEvent.contentSize.height)}
@@ -118,8 +136,10 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
             aria-label="Post body"
           />
 
-          <View style={styles.composeMediaWrap}>
-            <MediaAttachmentPicker media={media} onChange={setMedia} />
+          <View style={styles.composeDivider} />
+
+          <View style={styles.composeToolbar}>
+            <MediaAttachmentPicker media={media} onChange={setMedia} compact />
           </View>
         </ScrollView>
       </View>
@@ -147,34 +167,44 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  composeHeaderTitle: {
-    color: colors.text,
-    fontFamily: fonts.headline,
-    fontSize: 18,
-    letterSpacing: 1,
+  postPill: {
+    backgroundColor: colors.hairline,
+    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 9,
   },
-  composeCancel: {
+  postPillActive: {
+    backgroundColor: colors.green,
+  },
+  postPillText: {
     color: colors.textMuted,
-    fontFamily: fonts.labelSemiBold,
-    fontSize: 13,
-    letterSpacing: 0.5,
-  },
-  composePost: {
-    color: colors.green,
     fontFamily: fonts.labelBold,
     fontSize: 13,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
-  composePostDisabled: {
-    color: colors.textMuted,
+  postPillTextActive: {
+    color: colors.white,
   },
-  composeAuthorRow: {
+  composeIdentityRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 16,
+    gap: 8,
+    marginBottom: 18,
+  },
+  composeIdentityLine: {
+    flexShrink: 1,
   },
   composeAuthorName: {
+    color: colors.text,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 15,
+  },
+  composeIdentityMuted: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 15,
+  },
+  composeIdentityBrand: {
     color: colors.text,
     fontFamily: fonts.bodySemiBold,
     fontSize: 15,
@@ -182,11 +212,9 @@ const styles = StyleSheet.create({
   composeTitleInput: {
     color: colors.text,
     fontFamily: fonts.bodyBold,
-    fontSize: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.hairline,
-    paddingBottom: 12,
-    marginBottom: 16,
+    fontSize: 24,
+    paddingVertical: 6,
+    marginBottom: 8,
   },
   composeBodyInput: {
     color: colors.text,
@@ -195,8 +223,14 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlignVertical: 'top',
   },
-  composeMediaWrap: {
-    marginTop: 12,
-    marginBottom: 12,
+  composeDivider: {
+    height: 1,
+    backgroundColor: colors.hairline,
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  composeToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });
