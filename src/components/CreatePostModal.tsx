@@ -18,6 +18,11 @@ const MIN_BODY_HEIGHT = 88;
 // doesn't declare them — cast once here rather than fight the excess-
 // property check on every StyleSheet.create object that needs it.
 const NO_OUTLINE = { outlineStyle: 'none' } as object;
+// Same cast trick for the text cursor — react-native-web passes CSS
+// `caretColor` straight through, but it isn't part of RN's TextStyle type.
+// Without this the cursor renders in the browser's default system blue,
+// clashing with the green focus treatment used everywhere else.
+const CURSOR_GREEN = { caretColor: colors.green } as object;
 
 type Props = {
   visible: boolean;
@@ -109,7 +114,7 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
           </View>
 
           <TextInput
-            style={[styles.composeTitleInput, NO_OUTLINE]}
+            style={[styles.composeTitleInput, NO_OUTLINE, CURSOR_GREEN]}
             value={title}
             onChangeText={setTitle}
             placeholder="Title"
@@ -118,11 +123,14 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
             autoCapitalize="sentences"
             autoCorrect
             spellCheck
+            autoComplete="off"
+            textContentType="none"
+            importantForAutofill="no"
             nativeID="compose-post-title-input"
             aria-label="Post title"
           />
           <TextInput
-            style={[styles.composeBodyInput, { height: Math.max(MIN_BODY_HEIGHT, bodyHeight) }, NO_OUTLINE]}
+            style={[styles.composeBodyInput, { height: Math.max(MIN_BODY_HEIGHT, bodyHeight) }, NO_OUTLINE, CURSOR_GREEN]}
             value={body}
             onChangeText={setBody}
             placeholder="Write something"
@@ -132,6 +140,9 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
             autoCapitalize="sentences"
             autoCorrect
             spellCheck
+            autoComplete="off"
+            textContentType="none"
+            importantForAutofill="no"
             nativeID="compose-post-body-input"
             aria-label="Post body"
           />
@@ -151,14 +162,14 @@ const styles = StyleSheet.create({
   composeContainer: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingTop: 60,
+    paddingTop: 16,
   },
   composeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    marginBottom: 20,
+    marginBottom: 10,
   },
   composeScroll: {
     flex: 1,
@@ -189,7 +200,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 18,
+    marginBottom: 12,
   },
   composeIdentityLine: {
     flexShrink: 1,
@@ -212,9 +223,9 @@ const styles = StyleSheet.create({
   composeTitleInput: {
     color: colors.text,
     fontFamily: fonts.bodyBold,
-    fontSize: 24,
-    paddingVertical: 6,
-    marginBottom: 8,
+    fontSize: 20,
+    paddingVertical: 2,
+    marginBottom: 4,
   },
   composeBodyInput: {
     color: colors.text,
