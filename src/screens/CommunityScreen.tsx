@@ -310,7 +310,11 @@ export default function CommunityScreen() {
   // Online members train on their own, so the in-person class sign-up card
   // and schedule strip aren't the front door for them the way they are for
   // Boathouse locals — everyone else (Boathouse members, guests, and anyone
-  // who hasn't answered yet) keeps today's booking-first layout.
+  // who hasn't answered yet) keeps today's booking-first layout. Deliberately
+  // derived from the member's profile alone, not from `days[selectedIndex]`
+  // or any other per-day state — an online member must never see the class
+  // card on ANY date they tap, not just the default/today view, so this must
+  // stay independent of which day is currently selected.
   const showClassCard = howTrain !== 'online';
 
   // First-open spotlight tour: fires once per install, guarded by the
