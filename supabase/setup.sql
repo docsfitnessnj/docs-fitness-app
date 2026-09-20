@@ -451,11 +451,11 @@ create policy "only admin can revoke a badge"
   using (public.is_admin(auth.uid()));
 
 -- ----------------------------------------------------------------------------
--- COW CHAMP award — runs automatically at the Monday week rollover
--- Backend logic, not client code: a scheduled job (pg_cron, below) calls
--- award_cow_champ_for_closed_challenges() on its own, so the badge lands
--- even if the winner never opens the app that day. It replicates the same
--- scoring math the live leaderboard uses on the client
+-- COW CHAMP award — runs automatically when a Challenge closes (Saturday
+-- 12:00pm ET). Backend logic, not client code: a scheduled job (pg_cron,
+-- below) calls award_cow_champ_for_closed_challenges() on its own, so the
+-- badge lands even if the winner never opens the app that day. It
+-- replicates the same scoring math the live leaderboard uses on the client
 -- (ChallengeContext.tsx's parseTimeToSeconds/parseRoundsReps) so the two
 -- never disagree about who was in first place.
 -- ----------------------------------------------------------------------------
@@ -555,11 +555,19 @@ begin
 end;
 $$;
 
--- Schedules the function above to run every Monday just after midnight UTC.
--- Requires the pg_cron extension — on Supabase this is usually turned on
--- from the dashboard (Database -> Extensions -> pg_cron) rather than by
--- SQL alone; if the "create extension" line below errors with a permission
--- message, enable it there first and then re-run just this block.
+-- Schedules the function above to run every 15 minutes, year round.
+-- Challenges now close Saturday 12:00pm ET, which is 4pm or 5pm UTC
+-- depending on the time of year (EDT vs EST) — rather than hardcode a
+-- fixed UTC cron time that would drift an hour off twice a year at each
+-- Daylight Saving change, this runs often enough that the real close
+-- instant recorded in `challenges.week_end` (a timestamptz, already
+-- correct for whichever offset was in effect — see
+-- lib/challengeSchedule.ts on the client, which computes it the same way)
+-- is always caught within 15 minutes, in every season. Requires the
+-- pg_cron extension — on Supabase this is usually turned on from the
+-- dashboard (Database -> Extensions -> pg_cron) rather than by SQL alone;
+-- if the "create extension" line below errors with a permission message,
+-- enable it there first and then re-run just this block.
 create extension if not exists pg_cron;
 
 do $$
@@ -567,13 +575,19 @@ declare
   existing_job_id bigint;
 begin
   if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    -- Drop the old once-a-week Monday job this replaces, if present.
     select jobid into existing_job_id from cron.job where jobname = 'award-cow-champ-weekly';
     if existing_job_id is not null then
       perform cron.unschedule(existing_job_id);
     end if;
+
+    select jobid into existing_job_id from cron.job where jobname = 'award-cow-champ-check';
+    if existing_job_id is not null then
+      perform cron.unschedule(existing_job_id);
+    end if;
     perform cron.schedule(
-      'award-cow-champ-weekly',
-      '5 0 * * 1',
+      'award-cow-champ-check',
+      '*/15 * * * *',
       $cron$select public.award_cow_champ_for_closed_challenges();$cron$
     );
   end if;

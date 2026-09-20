@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     color: colors.text,
     fontFamily: fonts.body,
-    fontSize: 13,
+    fontSize: 16,
     minHeight: 220,
     textAlignVertical: 'top',
   },

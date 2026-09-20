@@ -509,7 +509,7 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.text,
     fontFamily: fonts.body,
-    fontSize: 15,
+    fontSize: 16,
     marginRight: 10,
   },
 });

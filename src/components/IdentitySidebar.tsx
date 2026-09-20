@@ -30,21 +30,27 @@ function ChallengeModule() {
     <Pressable style={styles.card} onPress={() => navigateToTab('DocsCows')} testID="sidebar-challenge-module">
       <View style={styles.cardHeaderRow}>
         <Ionicons name="flame" size={13} color={colors.gold} />
-        <Text style={styles.cardHeading}>THIS WEEK'S CHALLENGE</Text>
+        <Text style={styles.cardHeading}>{current.isClosed ? 'THIS WEEK’S RESULTS' : 'THIS WEEK’S CHALLENGE'}</Text>
       </View>
-      <Text style={styles.challengeTitle}>{current.title}</Text>
-      <View style={styles.leaderboard}>
-        {top3.map((entry) => (
-          <View key={entry.rank} style={styles.leaderRow}>
-            <Text style={styles.leaderRank}>{entry.rank}</Text>
-            <Text style={styles.leaderName} numberOfLines={1}>
-              {entry.name}
-            </Text>
-            <Text style={styles.leaderTime}>{entry.time}</Text>
+      {current.sourceId ? (
+        <>
+          <Text style={styles.challengeTitle}>{current.title}</Text>
+          <View style={styles.leaderboard}>
+            {top3.map((entry) => (
+              <View key={entry.rank} style={styles.leaderRow}>
+                <Text style={styles.leaderRank}>{entry.rank}</Text>
+                <Text style={styles.leaderName} numberOfLines={1}>
+                  {entry.name}
+                </Text>
+                <Text style={styles.leaderTime}>{entry.time}</Text>
+              </View>
+            ))}
           </View>
-        ))}
-      </View>
-      <Text style={styles.cardLink}>SEE FULL LEADERBOARD</Text>
+          <Text style={styles.cardLink}>SEE FULL LEADERBOARD</Text>
+        </>
+      ) : (
+        <Text style={styles.challengeTitle}>Coming this week.</Text>
+      )}
     </Pressable>
   );
 }

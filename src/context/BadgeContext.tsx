@@ -70,8 +70,9 @@ type BadgeContextValue = {
   dayOneDougEarnedAt: number | null;
   hundredDownEarnedAt: number | null;
   // COW CHAMP — permanent and stackable, granted by backend logic at the
-  // Monday week-rollover (see supabase/migration_003.sql), never by this
-  // client. `cowChampCount` is simply how many badge_grants rows exist for
+  // Saturday 12pm ET challenge close (see supabase/migration_004.sql),
+  // never by this client. `cowChampCount` is simply how many badge_grants
+  // rows exist for
   // this badge (one per week won) — the Trophy Case and PostAuthorBadges
   // show it as "x2"/"x3" once it passes 1.
   cowChampEarned: boolean;

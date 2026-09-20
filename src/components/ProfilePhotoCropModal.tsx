@@ -1,10 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, PanResponder, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { AppModal } from './AppModal';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
+
+// react-native-web passes these CSS touch/outline properties straight
+// through, but core RN's style types don't declare them — cast once here
+// rather than fight the excess-property check on every style object that
+// needs one. `touchAction: 'none'` stops the browser's own pan/zoom/scroll
+// gesture handling from ever engaging inside the crop frame, so a pinch or
+// drag is entirely ours to interpret (no competing native scroll/bounce).
+const NO_TOUCH_ACTION = { touchAction: 'none' } as object;
 
 const FRAME_SIZE = 240;
 const ZOOM_MIN = 1;
@@ -57,7 +65,14 @@ export function ProfilePhotoCropModal({ visible, uri, onCancel, onConfirm }: Pro
     startPan: { x: 0, y: 0 },
     startDistance: 0,
     startTouch: { x: 0, y: 0 },
+    // The pinch's own midpoint, in "distance from frame center" units —
+    // captured once when a 2-finger gesture (re)starts, so the zoom can
+    // stay anchored under the fingers instead of the frame's center for
+    // the whole gesture.
+    pinchCenter: { x: 0, y: 0 },
   });
+  const frameRef = useRef<View>(null);
+  const frameOriginRef = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     if (!visible || !uri) return;
@@ -71,15 +86,48 @@ export function ProfilePhotoCropModal({ visible, uri, onCancel, onConfirm }: Pro
     );
   }, [visible, uri]);
 
+  // Measures the frame's on-screen position once the dialog has laid out,
+  // so a pinch's screen-space finger midpoint can be converted into a
+  // position relative to the frame (and from there, relative to the
+  // photo) — the dialog itself never scrolls once open, so one measurement
+  // per open is enough.
+  useEffect(() => {
+    if (!visible) return;
+    const raf = requestAnimationFrame(() => {
+      frameRef.current?.measureInWindow((x, y) => {
+        frameOriginRef.current = { x, y };
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [visible]);
+
+  // Locks the page behind the dialog still while it's open on web — without
+  // this, a two-finger pinch that starts on the crop frame can still bubble
+  // into the browser's own scroll/bounce/zoom handling on the page behind
+  // it, which is exactly the "whole screen shaking" this is fixing.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !visible) return;
+    const body = document.body;
+    const previousOverflow = body.style.overflow;
+    const previousTouchAction = body.style.touchAction;
+    body.style.overflow = 'hidden';
+    body.style.touchAction = 'none';
+    return () => {
+      body.style.overflow = previousOverflow;
+      body.style.touchAction = previousTouchAction;
+    };
+  }, [visible]);
+
   const scaleCover = naturalSize ? Math.max(FRAME_SIZE / naturalSize.width, FRAME_SIZE / naturalSize.height) : 1;
   const dispWidth = naturalSize ? naturalSize.width * scaleCover * zoom : FRAME_SIZE;
   const dispHeight = naturalSize ? naturalSize.height * scaleCover * zoom : FRAME_SIZE;
   const maxOffsetX = Math.max(0, (dispWidth - FRAME_SIZE) / 2);
   const maxOffsetY = Math.max(0, (dispHeight - FRAME_SIZE) / 2);
 
-  // Shared by the zoom buttons and pinch gesture — always re-clamps pan
-  // against the new zoom level's bounds, since zooming out shrinks how far
-  // the photo can be offset before empty space would show.
+  // Used by the ZOOM buttons — always re-clamps pan against the new zoom
+  // level's bounds, since zooming out shrinks how far the photo can be
+  // offset before empty space would show. Pan itself is left where it was
+  // (there's no "point between two fingers" for a button tap to anchor to).
   const applyZoom = (nextZoom: number, basePan: { x: number; y: number }) => {
     const z = clamp(nextZoom, ZOOM_MIN, ZOOM_MAX);
     const dW = naturalSize ? naturalSize.width * scaleCover * z : FRAME_SIZE;
@@ -88,6 +136,41 @@ export function ProfilePhotoCropModal({ visible, uri, onCancel, onConfirm }: Pro
     const maxY = Math.max(0, (dH - FRAME_SIZE) / 2);
     setZoom(z);
     setPan({ x: clamp(basePan.x, -maxX, maxX), y: clamp(basePan.y, -maxY, maxY) });
+  };
+
+  // Used by the pinch gesture — keeps whatever point of the photo was under
+  // the fingers' midpoint at the start of this pinch anchored under that
+  // same screen position as the zoom level changes, standard "pinch zooms
+  // centered between the fingers" behavior, rather than zooming around the
+  // frame's center regardless of where the fingers are.
+  const applyPinchZoom = (
+    nextZoom: number,
+    startZoom: number,
+    startPan: { x: number; y: number },
+    center: { x: number; y: number }
+  ) => {
+    const z = clamp(nextZoom, ZOOM_MIN, ZOOM_MAX);
+    const scaleRatio = z / startZoom;
+    const rawPanX = center.x - (center.x - startPan.x) * scaleRatio;
+    const rawPanY = center.y - (center.y - startPan.y) * scaleRatio;
+    const dW = naturalSize ? naturalSize.width * scaleCover * z : FRAME_SIZE;
+    const dH = naturalSize ? naturalSize.height * scaleCover * z : FRAME_SIZE;
+    const maxX = Math.max(0, (dW - FRAME_SIZE) / 2);
+    const maxY = Math.max(0, (dH - FRAME_SIZE) / 2);
+    setZoom(z);
+    setPan({ x: clamp(rawPanX, -maxX, maxX), y: clamp(rawPanY, -maxY, maxY) });
+  };
+
+  // The two touches' midpoint, converted from screen coordinates into
+  // "distance from the frame's own center" — the same coordinate space
+  // `pan` already lives in.
+  const pinchCenterOf = (touches: { pageX: number; pageY: number }[]) => {
+    const midPageX = (touches[0].pageX + touches[1].pageX) / 2;
+    const midPageY = (touches[0].pageY + touches[1].pageY) / 2;
+    return {
+      x: midPageX - frameOriginRef.current.x - FRAME_SIZE / 2,
+      y: midPageY - frameOriginRef.current.y - FRAME_SIZE / 2,
+    };
   };
 
   const panResponder = useMemo(
@@ -103,6 +186,7 @@ export function ProfilePhotoCropModal({ visible, uri, onCancel, onConfirm }: Pro
           gestureRef.current.startPan = pan;
           if (touches.length === 2) {
             gestureRef.current.startDistance = touchDistance(touches);
+            gestureRef.current.pinchCenter = pinchCenterOf(touches);
           } else if (touches.length === 1) {
             gestureRef.current.startTouch = { x: touches[0].pageX, y: touches[0].pageY };
           }
@@ -116,15 +200,24 @@ export function ProfilePhotoCropModal({ visible, uri, onCancel, onConfirm }: Pro
             gestureRef.current.touchCount = touches.length;
             gestureRef.current.startZoom = zoom;
             gestureRef.current.startPan = pan;
-            if (touches.length === 2) gestureRef.current.startDistance = touchDistance(touches);
-            else if (touches.length === 1) gestureRef.current.startTouch = { x: touches[0].pageX, y: touches[0].pageY };
+            if (touches.length === 2) {
+              gestureRef.current.startDistance = touchDistance(touches);
+              gestureRef.current.pinchCenter = pinchCenterOf(touches);
+            } else if (touches.length === 1) {
+              gestureRef.current.startTouch = { x: touches[0].pageX, y: touches[0].pageY };
+            }
             return;
           }
 
           if (touches.length === 2) {
             const distance = touchDistance(touches);
             const scaleFactor = gestureRef.current.startDistance > 0 ? distance / gestureRef.current.startDistance : 1;
-            applyZoom(gestureRef.current.startZoom * scaleFactor, gestureRef.current.startPan);
+            applyPinchZoom(
+              gestureRef.current.startZoom * scaleFactor,
+              gestureRef.current.startZoom,
+              gestureRef.current.startPan,
+              gestureRef.current.pinchCenter
+            );
           } else if (touches.length === 1) {
             const dx = touches[0].pageX - gestureRef.current.startTouch.x;
             const dy = touches[0].pageY - gestureRef.current.startTouch.y;
@@ -186,12 +279,17 @@ export function ProfilePhotoCropModal({ visible, uri, onCancel, onConfirm }: Pro
 
   return (
     <AppModal visible transparent animationType="fade" onRequestClose={onCancel}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
+      <View style={[styles.backdrop, NO_TOUCH_ACTION]}>
+        <View style={[styles.sheet, NO_TOUCH_ACTION]}>
           <Text style={styles.title}>CROP PHOTO</Text>
           <Text style={styles.subtitle}>Drag and pinch to frame your photo, then save.</Text>
 
-          <View style={styles.frame} testID="crop-frame" {...panResponder.panHandlers}>
+          <View
+            ref={frameRef}
+            style={[styles.frame, NO_TOUCH_ACTION]}
+            testID="crop-frame"
+            {...panResponder.panHandlers}
+          >
             <Image
               source={{ uri }}
               resizeMode="cover"

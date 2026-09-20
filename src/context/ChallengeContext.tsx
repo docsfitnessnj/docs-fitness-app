@@ -1,19 +1,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './AuthContext';
 import { ContentCowScoringType, useContentLibrary } from './ContentLibraryContext';
+import { getChallengeCycle } from '../lib/challengeSchedule';
 import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
-
-// The one built-in Challenge of the Week, shown until Doc has a PUBLISHED
-// Challenge drafted in the admin Content Library — see useCurrentChallenge
-// below, which is what the Weekly Challenge tab and the sidebar's preview
-// module actually read from. Kept as the fallback rather than deleted so
-// the tab still shows something real on a fresh install / before Doc has
-// used the Content Library at all. Scoring type is 'time' to match its own
-// description ("...for time.") — every Challenge needs exactly one of the
-// two real scoring types, this one included.
-export const CHALLENGE_TITLE = 'SWING CHALLENGE';
-const FALLBACK_DESCRIPTION = 'Rack up as many kettlebell swings as you can, for time. No shortcuts, no excuses.';
-const FALLBACK_DAYS_LEFT = 4;
 
 // The label next to a member's name on the leaderboard — computed live from
 // their own profile's "how do you train" answer, never stored on the entry
@@ -34,9 +23,12 @@ export type LeaderboardEntry = {
 };
 
 // What the Weekly Challenge tab (and the sidebar's preview module) actually
-// render — either the built-in fallback above, or whichever Content
-// Library Challenge entry is currently PUBLISHED and already past its
-// release date, so a scheduled-but-not-yet-live entry never jumps the gun.
+// render — whichever Content Library Challenge entry is currently
+// PUBLISHED and already past its release date (a scheduled-but-future
+// entry never jumps the gun), or `sourceId: null` if Doc hasn't published
+// one for the current cycle yet. There is no invented placeholder
+// challenge here — a null sourceId means the screen shows a plain
+// "Coming this week" line, never made-up content.
 export type CurrentChallenge = {
   title: string;
   format: string;
@@ -47,25 +39,26 @@ export type CurrentChallenge = {
   // see ContentCowScoringType. Only null for a legacy/unset Content
   // Library entry saved before scoring type was required.
   scoringType: ContentCowScoringType | null;
-  daysLeft: number;
-  // null for the fallback; the live entry's own id otherwise, so callers
-  // can tell "no real challenge yet" apart from "a real one, coincidentally
-  // named the same as the fallback."
+  // null when no real challenge is live for the current cycle.
   sourceId: string | null;
+  // Saturday 12:00pm ET this cycle's scores lock, and the Sunday 6:00pm ET
+  // after that when the next challenge can go live — see
+  // lib/challengeSchedule.ts. Always present, even with no real challenge,
+  // so the tab can always show correct timing copy.
+  closeAt: number;
+  nextRevealAt: number;
+  isClosed: boolean;
 };
 
-const FALLBACK_CHALLENGE: CurrentChallenge = {
-  title: CHALLENGE_TITLE,
+const EMPTY_CHALLENGE: Omit<CurrentChallenge, 'closeAt' | 'nextRevealAt' | 'isClosed'> = {
+  title: '',
   format: '',
-  formatDescription: FALLBACK_DESCRIPTION,
+  formatDescription: '',
   movements: [],
   videoUrl: '',
-  scoringType: 'time',
-  daysLeft: FALLBACK_DAYS_LEFT,
+  scoringType: null,
   sourceId: null,
 };
-
-const CHALLENGE_RUN_LENGTH_DAYS = 7;
 
 export type ChallengeEntry = {
   id: string;
@@ -200,23 +193,35 @@ export function useChallenge() {
 }
 
 // The Content Library entry actually driving the Weekly Challenge tab right
-// now — the most recently published COW whose release date has already
-// passed (a SCHEDULED-but-future entry never jumps ahead of its own release
-// date), or the built-in fallback if Doc hasn't published one yet. Calls
+// now. The challenge closes to new scores Saturday 12:00pm ET and the next
+// one can only go live Sunday 6:00pm ET (see lib/challengeSchedule.ts) —
+// while the current cycle is CLOSED (that Saturday-to-Sunday window), this
+// stays pinned to whatever was published as of the close instant, so
+// nothing Doc publishes mid-freeze for the *next* cycle can jump the gun
+// early. Once a new cycle opens, it's simply the most recently published
+// COW whose release date has already passed, same as before. Calls
 // useContentLibrary() directly rather than living inside
 // ContentLibraryProvider, since that provider sits *below* ChallengeProvider
 // in App.tsx's tree — this only works called from a component under both,
 // which every real caller (DocsCowsScreen, IdentitySidebar) already is.
 export function useCurrentChallenge(): CurrentChallenge {
   const { workouts } = useContentLibrary();
-  const now = Date.now();
+  const now = new Date();
+  const cycle = getChallengeCycle(now);
+  const asOf = cycle.isClosed ? cycle.closeAt.getTime() : now.getTime();
+
   const live = workouts
-    .filter((w) => w.type === 'cow' && w.status === 'published' && w.releaseAt <= now)
+    .filter((w) => w.type === 'cow' && w.status === 'published' && w.releaseAt <= asOf)
     .sort((a, b) => b.releaseAt - a.releaseAt)[0];
 
-  if (!live) return FALLBACK_CHALLENGE;
+  const cycleFields = {
+    closeAt: cycle.closeAt.getTime(),
+    nextRevealAt: cycle.nextCycleStart.getTime(),
+    isClosed: cycle.isClosed,
+  };
 
-  const daysSinceRelease = Math.floor((now - live.releaseAt) / (24 * 60 * 60 * 1000));
+  if (!live) return { ...EMPTY_CHALLENGE, ...cycleFields };
+
   return {
     title: live.name,
     format: live.format,
@@ -224,8 +229,8 @@ export function useCurrentChallenge(): CurrentChallenge {
     movements: live.movements,
     videoUrl: live.videoUrl,
     scoringType: live.scoringType ?? null,
-    daysLeft: Math.max(0, CHALLENGE_RUN_LENGTH_DAYS - daysSinceRelease),
     sourceId: live.id,
+    ...cycleFields,
   };
 }
 

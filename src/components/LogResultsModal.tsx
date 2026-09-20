@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     color: colors.text,
     fontFamily: fonts.bodyMedium,
-    fontSize: 15,
+    fontSize: 16,
     marginBottom: 14,
   },
   notesInput: {

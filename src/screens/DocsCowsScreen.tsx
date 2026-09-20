@@ -22,6 +22,20 @@ import { colors, fonts } from '../theme';
 
 type Entry = LeaderboardEntry;
 
+function formatEtTime(ms: number): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'long',
+    hour: 'numeric',
+    minute: ms % 60000 === 0 ? undefined : '2-digit',
+  })
+    .format(new Date(ms))
+    .toUpperCase()
+    .replace(',', '')
+    .replace('AM', 'AM ET')
+    .replace('PM', 'PM ET');
+}
+
 function ChallengeHero({ current }: { current: CurrentChallenge }) {
   return (
     <View style={styles.hero}>
@@ -57,8 +71,21 @@ function ChallengeHero({ current }: { current: CurrentChallenge }) {
         </View>
       )}
       <View style={styles.heroDivider} />
-      <Text style={styles.daysLeftLabel}>DAYS LEFT</Text>
-      <Text style={styles.daysLeft}>{current.daysLeft}</Text>
+      {current.isClosed ? (
+        <>
+          <Text style={styles.daysLeftLabel}>CLOSED</Text>
+          <Text style={styles.closedTiming} testID="challenge-closed-timing">
+            NEW CHALLENGE DROPS {formatEtTime(current.nextRevealAt)}
+          </Text>
+        </>
+      ) : (
+        <>
+          <Text style={styles.daysLeftLabel}>CLOSES</Text>
+          <Text style={styles.closedTiming} testID="challenge-open-timing">
+            {formatEtTime(current.closeAt)}
+          </Text>
+        </>
+      )}
     </View>
   );
 }
@@ -217,17 +244,40 @@ function LeaderboardRow({ entry, isTimeScoring }: { entry: Entry; isTimeScoring:
   );
 }
 
-function Leaderboard({ entries, isTimeScoring }: { entries: Entry[]; isTimeScoring: boolean }) {
+function Leaderboard({ entries, isTimeScoring, closed }: { entries: Entry[]; isTimeScoring: boolean; closed: boolean }) {
   return (
     <View>
-      <Text style={styles.subtitle}>LIVE LEADERBOARD — THIS WEEK</Text>
+      <Text style={styles.subtitle}>{closed ? 'FINAL LEADERBOARD' : 'LIVE LEADERBOARD — THIS WEEK'}</Text>
       <View style={styles.list}>
         {entries.length === 0 ? (
-          <Text style={styles.emptyText}>No scores posted yet this week — be the first.</Text>
+          <Text style={styles.emptyText}>{closed ? 'No scores posted this week.' : 'No scores posted yet. Be the first.'}</Text>
         ) : (
           entries.map((entry) => <LeaderboardRow key={`${entry.rank}-${entry.name}`} entry={entry} isTimeScoring={isTimeScoring} />)
         )}
       </View>
+    </View>
+  );
+}
+
+// The quiet closed-week line replacing POST YOUR SCORE once scores lock —
+// same treatment style as every other "nothing here yet" quiet line in the
+// app (see e.g. Steady State Saturday's "Coming this week."), not a
+// disabled-looking form.
+function ClosedNotice() {
+  return (
+    <View style={styles.closedNoticeCard} testID="cow-score-closed">
+      <Text style={styles.closedNoticeText}>THIS WEEK'S COW IS CLOSED</Text>
+    </View>
+  );
+}
+
+// No real Challenge published for the current cycle yet — never invented
+// placeholder content, just a quiet line, same as the rest of the app's
+// "nothing here yet" states.
+function NoChallengeNotice() {
+  return (
+    <View style={styles.noChallengeCard} testID="cow-coming-this-week">
+      <Text style={styles.noChallengeText}>Coming this week.</Text>
     </View>
   );
 }
@@ -247,6 +297,10 @@ function DocsCowsContent() {
     });
   };
 
+  if (!current.sourceId) {
+    return <NoChallengeNotice />;
+  }
+
   return (
     <View>
       <ChallengeHero current={current} />
@@ -254,8 +308,12 @@ function DocsCowsContent() {
         <BackendErrorNotice message={error} />
       ) : (
         <>
-          <EntryForm scoringType={current.scoringType} onSubmit={addEntry} />
-          <Leaderboard entries={entries} isTimeScoring={current.scoringType === 'time' || current.scoringType === null} />
+          {current.isClosed ? <ClosedNotice /> : <EntryForm scoringType={current.scoringType} onSubmit={addEntry} />}
+          <Leaderboard
+            entries={entries}
+            isTimeScoring={current.scoringType === 'time' || current.scoringType === null}
+            closed={current.isClosed}
+          />
         </>
       )}
     </View>
@@ -362,10 +420,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 1,
   },
-  daysLeft: {
+  closedTiming: {
     color: colors.goldBright,
     fontFamily: fonts.headline,
-    fontSize: 32,
+    fontSize: 22,
+    letterSpacing: 0.5,
+    marginTop: 2,
   },
   formCard: {
     backgroundColor: colors.card,
@@ -374,6 +434,30 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 20,
     marginBottom: 20,
+  },
+  closedNoticeCard: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 14,
+    paddingVertical: 24,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  closedNoticeText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 13,
+    letterSpacing: 1,
+  },
+  noChallengeCard: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  noChallengeText: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 15,
   },
   formTitle: {
     color: colors.text,
@@ -405,7 +489,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     color: colors.text,
     fontFamily: fonts.bodyMedium,
-    fontSize: 15,
+    fontSize: 16,
     marginBottom: 14,
   },
   submitButton: {
