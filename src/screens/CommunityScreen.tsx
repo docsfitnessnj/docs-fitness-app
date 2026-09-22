@@ -304,7 +304,7 @@ export default function CommunityScreen() {
   const { posts } = useCommunity();
   const detailPost = detailPostId ? posts.find((p) => p.id === detailPostId) ?? null : null;
   const { wodAccessLevel, communityAccess } = useMembership();
-  const { howTrain } = useProfile();
+  const { howTrain, loading: profileLoading } = useProfile();
   const { activeStories } = useStories();
   const tour = useTour();
   // Online members train on their own, so the in-person class sign-up card
@@ -315,6 +315,14 @@ export default function CommunityScreen() {
   // or any other per-day state — an online member must never see the class
   // card on ANY date they tap, not just the default/today view, so this must
   // stay independent of which day is currently selected.
+  //
+  // While the profile is still loading, `howTrain` reads as null (the same
+  // shape as "no answer on file"), which this same rule maps to the
+  // Boathouse-style layout — exactly wrong for a real online member on
+  // every cold load, for the whole real network round trip to Supabase. A
+  // mocked profile response resolves same-tick, so this window never shows
+  // up in a simulated test; it only exists once a real network delay is in
+  // the picture. See profileLoading below, which is what actually closes it.
   const showClassCard = howTrain !== 'online';
 
   // First-open spotlight tour: fires once per install, guarded by the
@@ -373,7 +381,16 @@ export default function CommunityScreen() {
         scrollable
         leading={activeStories.length > 0 ? <StoryRow compact /> : undefined}
       />
-      <DayPanel day={days[selectedIndex]} wodUnlocked={isUnlocked(selectedIndex)} showClassCard={showClassCard} />
+      {profileLoading ? (
+        // Same quiet treatment as every other "still loading" screen in
+        // this app (Profile, Member Manager): the chrome above stays put,
+        // the content that depends on the not-yet-known answer just isn't
+        // there yet — never a spinner, and never a guess at which layout
+        // to show that might have to be swapped out a moment later.
+        <View testID="community-day-panel-loading" />
+      ) : (
+        <DayPanel day={days[selectedIndex]} wodUnlocked={isUnlocked(selectedIndex)} showClassCard={showClassCard} />
+      )}
 
       {communityAccess === 'none' ? (
         <ClosedCommunityNotice />
