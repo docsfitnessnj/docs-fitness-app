@@ -17,24 +17,11 @@ import {
   useCurrentChallenge,
 } from '../context/ChallengeContext';
 import { useDisplayName } from '../context/ProfileContext';
+import { formatEtTime } from '../lib/challengeSchedule';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { colors, fonts } from '../theme';
 
 type Entry = LeaderboardEntry;
-
-function formatEtTime(ms: number): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    weekday: 'long',
-    hour: 'numeric',
-    minute: ms % 60000 === 0 ? undefined : '2-digit',
-  })
-    .format(new Date(ms))
-    .toUpperCase()
-    .replace(',', '')
-    .replace('AM', 'AM ET')
-    .replace('PM', 'PM ET');
-}
 
 function ChallengeHero({ current }: { current: CurrentChallenge }) {
   return (
@@ -271,13 +258,31 @@ function ClosedNotice() {
   );
 }
 
-// No real Challenge published for the current cycle yet — never invented
-// placeholder content, just a quiet line, same as the rest of the app's
-// "nothing here yet" states.
+// No real Challenge published for the current (OPEN) cycle yet — never
+// invented placeholder content, just a quiet line, same as the rest of the
+// app's "nothing here yet" states. Only valid while the cycle is still
+// open — see the isClosed check where this is used below.
 function NoChallengeNotice() {
   return (
     <View style={styles.noChallengeCard} testID="cow-coming-this-week">
       <Text style={styles.noChallengeText}>Coming this week.</Text>
+    </View>
+  );
+}
+
+// The rare case where the cycle that just closed never had a real Challenge
+// published for it at all — still the celebration window (Saturday noon to
+// Sunday 6pm), so this must read as CLOSED, never as "Coming this week"
+// (that line is reserved for an OPEN cycle awaiting content — showing it
+// here would misreport the week as still running with nothing planned).
+// No title/movements exist to show, so this skips the full green hero card
+// and just states the timing, same quiet-card treatment as every other
+// "nothing here yet" state.
+function ClosedNoChallengeNotice({ current }: { current: CurrentChallenge }) {
+  return (
+    <View style={styles.closedNoticeCard} testID="cow-closed-no-challenge">
+      <Text style={styles.closedNoticeText}>THIS WEEK'S COW IS CLOSED</Text>
+      <Text style={styles.closedNoChallengeTiming}>NEW CHALLENGE DROPS {formatEtTime(current.nextRevealAt)}</Text>
     </View>
   );
 }
@@ -297,18 +302,28 @@ function DocsCowsContent() {
     });
   };
 
-  if (!current.sourceId) {
+  // "Coming this week" only ever describes an OPEN cycle with nothing
+  // published yet — once the cycle is closed (the Saturday-noon-to-Sunday-
+  // 6pm celebration window), the tab must always read as CLOSED, even in
+  // the rare case no real Challenge was ever published for the week that
+  // just closed. Checking isClosed here is exactly what was missing before:
+  // this used to return NoChallengeNotice purely off `!current.sourceId`,
+  // with no regard for whether the cycle was open or closed, so a closed
+  // cycle with an empty sourceId (nothing published for it) rendered as if
+  // the challenge were still upcoming instead of celebrating a finished one.
+  if (!current.sourceId && !current.isClosed) {
     return <NoChallengeNotice />;
   }
 
   return (
     <View>
-      <ChallengeHero current={current} />
+      {current.sourceId ? <ChallengeHero current={current} /> : <ClosedNoChallengeNotice current={current} />}
       {error ? (
         <BackendErrorNotice message={error} />
       ) : (
         <>
-          {current.isClosed ? <ClosedNotice /> : <EntryForm scoringType={current.scoringType} onSubmit={addEntry} />}
+          {current.sourceId &&
+            (current.isClosed ? <ClosedNotice /> : <EntryForm scoringType={current.scoringType} onSubmit={addEntry} />)}
           <Leaderboard
             entries={entries}
             isTimeScoring={current.scoringType === 'time' || current.scoringType === null}
@@ -449,6 +464,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelSemiBold,
     fontSize: 13,
     letterSpacing: 1,
+  },
+  closedNoChallengeTiming: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 12,
+    letterSpacing: 0.5,
+    marginTop: 6,
   },
   noChallengeCard: {
     alignItems: 'center',

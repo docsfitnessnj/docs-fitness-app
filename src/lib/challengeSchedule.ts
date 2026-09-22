@@ -116,3 +116,21 @@ export function getChallengeCycle(now: Date = new Date()): ChallengeCycle {
 
   return { cycleStart, closeAt, nextCycleStart, isClosed: now.getTime() >= closeAt.getTime() };
 }
+
+// e.g. "SATURDAY 12 PM ET" — the shared copy format for any timing line
+// tied to a challenge cycle boundary (closeAt/nextRevealAt), used by both
+// the full Weekly Challenge screen and the sidebar's preview module so the
+// two never drift into different wording for the same instant.
+export function formatEtTime(ms: number): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'long',
+    hour: 'numeric',
+    minute: ms % 60000 === 0 ? undefined : '2-digit',
+  })
+    .format(new Date(ms))
+    .toUpperCase()
+    .replace(',', '')
+    .replace('AM', 'AM ET')
+    .replace('PM', 'PM ET');
+}

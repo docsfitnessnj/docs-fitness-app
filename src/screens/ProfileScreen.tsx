@@ -7,7 +7,7 @@ import { Avatar } from '../components/Avatar';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { ProfileBadgeCase } from '../components/ProfileBadgeCase';
 import { ProfilePhotoCropModal } from '../components/ProfilePhotoCropModal';
-import { useDisplayName, useProfile } from '../context/ProfileContext';
+import { HowTrain, useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -17,13 +17,18 @@ type Props = {
 };
 
 export function ProfileScreen({ visible, onClose }: Props) {
-  const { photoUri, name, instagramHandle, favoriteQuote, loading, error, updateProfile } = useProfile();
+  const { photoUri, name, instagramHandle, favoriteQuote, howTrain, loading, error, updateProfile, setHowTrain } =
+    useProfile();
   const displayName = useDisplayName();
 
   const [draftPhotoUri, setDraftPhotoUri] = useState(photoUri);
   const [draftName, setDraftName] = useState(name);
   const [draftHandle, setDraftHandle] = useState(instagramHandle);
   const [draftQuote, setDraftQuote] = useState(favoriteQuote);
+  // null means "no selection yet" — shown for an account that signed up
+  // before this field existed, or through a path that never set an answer
+  // (see the Part 2 fix for the two About page doors that used to skip it).
+  const [draftHowTrain, setDraftHowTrain] = useState<HowTrain | null>(howTrain);
   const [cropUri, setCropUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -34,12 +39,17 @@ export function ProfileScreen({ visible, onClose }: Props) {
       setDraftName(name);
       setDraftHandle(instagramHandle);
       setDraftQuote(favoriteQuote);
+      setDraftHowTrain(howTrain);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   const isDirty =
-    draftPhotoUri !== photoUri || draftName !== name || draftHandle !== instagramHandle || draftQuote !== favoriteQuote;
+    draftPhotoUri !== photoUri ||
+    draftName !== name ||
+    draftHandle !== instagramHandle ||
+    draftQuote !== favoriteQuote ||
+    draftHowTrain !== howTrain;
 
   const pickPhoto = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -76,11 +86,20 @@ export function ProfileScreen({ visible, onClose }: Props) {
       favoriteQuote: draftQuote,
       photoUri: draftPhotoUri,
     });
-    setSaving(false);
     if (result.error) {
+      setSaving(false);
       showAlert("Couldn't Save", result.error);
       return;
     }
+    // Separate write from updateProfile above — same pattern as the
+    // Show Tomorrow's Workout toggle elsewhere in this context. Everything
+    // driven by this answer (the Community layout, the leaderboard tag)
+    // reads it live off profile context state, so it takes effect the
+    // moment this resolves, no reload needed.
+    if (draftHowTrain && draftHowTrain !== howTrain) {
+      await setHowTrain(draftHowTrain);
+    }
+    setSaving(false);
     onClose();
   };
 
@@ -158,6 +177,28 @@ export function ProfileScreen({ visible, onClose }: Props) {
               nativeID="profile-handle-input"
               aria-label="Instagram handle"
             />
+          </View>
+
+          <Text nativeID="profile-how-train-label" style={styles.label}>HOW DO YOU TRAIN</Text>
+          <View style={styles.segmentRow}>
+            <Pressable
+              style={[styles.segment, draftHowTrain === 'online' && styles.segmentActive]}
+              onPress={() => setDraftHowTrain('online')}
+              testID="profile-how-train-online"
+            >
+              <Text style={[styles.segmentText, draftHowTrain === 'online' && styles.segmentTextActive]}>
+                TRAIN ONLINE
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.segment, draftHowTrain === 'boathouse' && styles.segmentActive]}
+              onPress={() => setDraftHowTrain('boathouse')}
+              testID="profile-how-train-boathouse"
+            >
+              <Text style={[styles.segmentText, draftHowTrain === 'boathouse' && styles.segmentTextActive]}>
+                TRAIN AT THE BOATHOUSE
+              </Text>
+            </Pressable>
           </View>
 
           <Text nativeID="profile-quote-label" style={styles.label}>FAVORITE QUOTE (OPTIONAL)</Text>
@@ -270,6 +311,36 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingVertical: 12,
     paddingLeft: 2,
+  },
+  segmentRow: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 18,
+  },
+  segment: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    backgroundColor: colors.card,
+  },
+  segmentActive: {
+    backgroundColor: colors.green,
+    borderColor: colors.green,
+  },
+  segmentText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelBold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  segmentTextActive: {
+    color: colors.white,
   },
   saveButton: {
     width: '100%',
