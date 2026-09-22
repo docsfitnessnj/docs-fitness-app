@@ -23,7 +23,16 @@ type AuthContextValue = {
   // signed-in/onboarding flow while this is true (see App.tsx).
   passwordRecovery: boolean;
   clearPasswordRecovery: () => void;
-  signUp: (email: string, password: string) => Promise<AuthResult>;
+  // `howTrain` is optional — only the About page's two fast-path signup
+  // doors (TRAIN ONLINE / BOOK YOUR CLASS) know their answer at signup
+  // time, since they skip the "how do you train?" question by design. Not
+  // routed through ProfileContext's own setHowTrain because that reads
+  // `user` from this same context via a separate hook instance — at the
+  // exact moment signUp() resolves inside the same handler, that instance
+  // may not have re-rendered from the auth listener yet, which would make
+  // the write silently no-op. Writing directly here, using the id Supabase
+  // just handed back in this same call, has no such race.
+  signUp: (email: string, password: string, howTrain?: 'online' | 'boathouse') => Promise<AuthResult>;
   signInWithPassword: (email: string, password: string) => Promise<AuthResult>;
   signOut: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<AuthResult>;
@@ -98,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user: session?.user ?? null,
       passwordRecovery,
       clearPasswordRecovery: () => setPasswordRecovery(false),
-      signUp: async (email, password) => {
+      signUp: async (email, password, howTrain) => {
         const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) {
           const lower = error.message.toLowerCase();
@@ -110,6 +119,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // show a calm "check your email" message instead of assuming
         // they're in.
         if (!data.session) return { error: null, needsEmailConfirmation: true };
+        if (howTrain && data.user) {
+          // Best-effort, same fire-and-forget-tolerant pattern as every
+          // other profile write in this app — a failure here just leaves
+          // the answer unset (same as today), not a broken signup.
+          await supabase.from('profiles').update({ how_train: howTrain }).eq('id', data.user.id);
+        }
         return { error: null };
       },
       signInWithPassword: async (email, password) => {

@@ -9,6 +9,7 @@ import { useMembership } from '../context/MembershipContext';
 import { BADGE_MAP, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import { formatDateKey, isSameDay } from '../data/content';
 import { findNextClass } from '../data/schedule';
+import { formatEtTime } from '../lib/challengeSchedule';
 import { openMerchStore, openLocationMaps } from '../lib/links';
 import { useClassBooking } from '../lib/useClassBooking';
 import { navigateToTab } from '../lib/navigationRef';
@@ -48,6 +49,15 @@ function ChallengeModule() {
           </View>
           <Text style={styles.cardLink}>SEE FULL LEADERBOARD</Text>
         </>
+      ) : current.isClosed ? (
+        // Same rule as the full Weekly Challenge screen: "Coming this week"
+        // only ever describes an OPEN cycle awaiting content — a closed
+        // cycle with nothing published for it still reads as closed, not as
+        // if the challenge were still upcoming with the header above
+        // already saying "THIS WEEK'S RESULTS". Same all-caps timing
+        // phrasing as the full screen's closed state, not a sentence, to
+        // match the established brand copy for this exact line.
+        <Text style={styles.challengeTitle}>NEW CHALLENGE DROPS {formatEtTime(current.nextRevealAt)}</Text>
       ) : (
         <Text style={styles.challengeTitle}>Coming this week.</Text>
       )}

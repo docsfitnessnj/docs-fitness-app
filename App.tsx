@@ -306,7 +306,11 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
             setStep('signIn');
           }}
           onContinue={async (enteredEmail, password, newsletterOptIn) => {
-            const result = await signUp(enteredEmail, password);
+            // The two About page doors skip the "how do you train?"
+            // question by design — this is the only place that answer's
+            // ever recorded for them, so it has to happen at signup itself.
+            const howTrainForDoor = intent === 'onlineTrial' ? 'online' : intent === 'bookClass' ? 'boathouse' : undefined;
+            const result = await signUp(enteredEmail, password, howTrainForDoor);
             if (result.error) return { message: result.error, kind: 'error', showSignInLink: result.emailAlreadyExists };
             setNewsletterOptIn(newsletterOptIn);
             if (result.needsEmailConfirmation) {
