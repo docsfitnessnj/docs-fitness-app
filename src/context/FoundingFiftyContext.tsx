@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './AuthContext';
-import { useDisplayName } from './ProfileContext';
 import { etWallTimeToUTC } from '../lib/challengeSchedule';
 import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
 
@@ -38,9 +37,12 @@ type FoundingFiftyContextValue = {
     start: { year: number; month: number; day: number; hour: number; minute: number } | null,
     end: { year: number; month: number; day: number; hour: number; minute: number } | null
   ) => Promise<{ error: string | null }>;
-  // Claims a spot for the signed-in member. False if sold out, already
-  // claimed, or the write failed for any other reason.
-  claim: () => Promise<boolean>;
+  // Re-reads the roster — used right after a real Stripe Checkout at the
+  // founding price is confirmed, so this device's own "X of 50 claimed"
+  // count updates immediately instead of waiting for a future reload. A
+  // spot is only ever actually claimed by the stripe-webhook Edge Function
+  // (or an admin) now — see supabase/migration_007.sql.
+  refetch: () => Promise<void>;
 };
 
 const FoundingFiftyContext = createContext<FoundingFiftyContextValue | undefined>(undefined);
@@ -54,7 +56,6 @@ function nameOf(row: MemberRow): string {
 
 export function FoundingFiftyProvider({ children }: { children: React.ReactNode }) {
   const { user, authReady } = useAuth();
-  const displayName = useDisplayName();
   const [loading, setLoading] = useState(true);
   const [startsAt, setStartsAt] = useState<number | null>(null);
   const [endsAt, setEndsAt] = useState<number | null>(null);
@@ -132,20 +133,10 @@ export function FoundingFiftyProvider({ children }: { children: React.ReactNode 
         setEndsAt(endsAtIso ? new Date(endsAtIso).getTime() : null);
         return { error: null };
       },
-      claim: async () => {
-        if (!user) return false;
-        const { error } = await supabase.from('founding_fifty_members').insert({ id: user.id });
-        if (error) return false;
-        // Optimistic append so the counter and roster update instantly for
-        // this device, then a real refetch to pick up the server-assigned
-        // joined_at and confirm nothing else changed underneath us.
-        setMembers((prev) => [...prev, { name: displayName, joinedAt: Date.now() }]);
-        refetchMembers();
-        return true;
-      },
+      refetch: refetchMembers,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, startsAt, endsAt, members, user, displayName]);
+  }, [loading, startsAt, endsAt, members, user]);
 
   return <FoundingFiftyContext.Provider value={value}>{children}</FoundingFiftyContext.Provider>;
 }

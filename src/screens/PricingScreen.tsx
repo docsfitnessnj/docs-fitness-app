@@ -1,21 +1,44 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
 import { PlanSectionHeader } from '../components/PlanSectionHeader';
 import { WebScrollScreen } from '../components/WebScrollScreen';
 import { FOUNDING_FIFTY_PRICE, useFoundingFifty } from '../context/FoundingFiftyContext';
-import { ONLINE_PLANS, ONLINE_PLAN_BULLETS, ONLINE_SECTION_HEADER } from '../data/plans';
+import { ONLINE_PLANS, ONLINE_PLAN_BULLETS, ONLINE_SECTION_HEADER, OnlinePlan } from '../data/plans';
+import { showAlert } from '../lib/alert';
+import { startOnlineCheckout } from '../lib/stripeCheckout';
 import { colors, fonts } from '../theme';
 
 type Props = {
   onBack: () => void;
-  onSelectPlan: () => void;
-  onSelectFoundingFifty: () => void;
 };
 
-export default function PricingScreen({ onBack, onSelectPlan, onSelectFoundingFifty }: Props) {
+export default function PricingScreen({ onBack }: Props) {
   const founding50 = useFoundingFifty();
+  const [checkoutPendingKey, setCheckoutPendingKey] = useState<string | null>(null);
+
+  // The founding-vs-standard price is decided for real, server-side, inside
+  // create-checkout — this only decides which confirmation copy to show,
+  // matching whatever the card on screen already says.
+  const choosePlan = (plan: OnlinePlan, founding: boolean) => {
+    const title = founding ? 'Start Your Founding 50 Checkout?' : `Start Checkout For ${plan.name}?`;
+    const body = founding
+      ? `You'll go to Stripe to lock in the FOUNDING 50 RATE, $${FOUNDING_FIFTY_PRICE} a month, locked in for as long as your membership stays active — with a 14-day free trial. Card required to start; you won't be charged until the trial ends, and you can cancel anytime.`
+      : `You'll go to Stripe to start ${plan.name} with a 14-day free trial. Card required to start; you won't be charged until the trial ends, and you can cancel anytime.`;
+    showAlert(title, body, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Continue',
+        onPress: async () => {
+          setCheckoutPendingKey(plan.key);
+          const { error } = await startOnlineCheckout(plan.key);
+          setCheckoutPendingKey(null);
+          if (error) showAlert("Couldn't Start Checkout", error);
+        },
+      },
+    ]);
+  };
 
   return (
     <View style={styles.container}>
@@ -73,10 +96,15 @@ export default function PricingScreen({ onBack, onSelectPlan, onSelectFoundingFi
 
                 <Pressable
                   style={styles.selectButton}
-                  onPress={founding ? onSelectFoundingFifty : onSelectPlan}
-                  testID={founding ? 'select-founding-fifty' : undefined}
+                  onPress={() => choosePlan(plan, founding)}
+                  disabled={checkoutPendingKey !== null}
+                  testID={founding ? 'select-founding-fifty' : `select-online-${plan.key}`}
                 >
-                  <Text style={styles.selectButtonText}>{founding ? 'CLAIM YOUR SPOT' : `CHOOSE ${plan.name}`}</Text>
+                  {checkoutPendingKey === plan.key ? (
+                    <ActivityIndicator color={colors.white} />
+                  ) : (
+                    <Text style={styles.selectButtonText}>{founding ? 'CLAIM YOUR SPOT' : `CHOOSE ${plan.name}`}</Text>
+                  )}
                 </Pressable>
               </View>
             </View>

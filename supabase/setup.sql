@@ -644,11 +644,19 @@ create policy "founding fifty roster readable by any signed-in member"
   to authenticated
   using (true);
 
+-- Claiming a spot used to be a plain member-initiated insert (the original
+-- launch-offer round). Once real Stripe billing exists (see the STRIPE
+-- SUBSCRIPTIONS section below), claiming a spot is a side effect of a real,
+-- completed Checkout at the founding price, done by the Stripe webhook
+-- (service role, bypasses RLS) — never something a signed-in member's own
+-- browser session can insert directly anymore. An admin can still add
+-- someone by hand (e.g. comping a spot).
 drop policy if exists "members can claim their own founding fifty spot" on public.founding_fifty_members;
-create policy "members can claim their own founding fifty spot"
+drop policy if exists "an admin can add a founding fifty member" on public.founding_fifty_members;
+create policy "an admin can add a founding fifty member"
   on public.founding_fifty_members for insert
   to authenticated
-  with check (id = auth.uid());
+  with check (public.is_admin(auth.uid()));
 
 -- Hard server-side cap at 50 — the app itself already stops offering the
 -- card once 50 are claimed, but this guarantees it even if two members
@@ -786,6 +794,69 @@ create policy "the sender or admin can delete a message attachment"
     bucket_id = 'message-media'
     and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin(auth.uid()))
   );
+
+-- ----------------------------------------------------------------------------
+-- STRIPE SUBSCRIPTIONS (ONLINE TIERS)
+-- Real billing for the three ONLINE plans (Monthly $57, the Founding 50
+-- rate $37, Annual $513) via Stripe Checkout + a webhook. In-person plans
+-- (Monthly Unlimited, 10 Class Pack, Drop In) are untouched and stay
+-- simulated — this section is online-only.
+--
+-- subscriptions: one row per member, the real truth about their online
+-- billing. Written ONLY by the stripe-webhook Edge Function's service role
+-- key, which bypasses RLS entirely — there is deliberately no write policy
+-- for a signed-in member's own session below, so a member's access can
+-- never change from anything other than a real Stripe event.
+--
+-- stripe_events: a permanent log of every webhook event received, for
+-- Doc's future Command Center and for debugging — admin-readable only,
+-- also service-role-write-only.
+-- ----------------------------------------------------------------------------
+create table if not exists public.subscriptions (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  stripe_customer_id text,
+  stripe_subscription_id text,
+  price_id text,
+  plan text check (plan in ('monthly', 'annual', 'founding')),
+  -- Mirrors Stripe's own subscription.status values verbatim (trialing,
+  -- active, past_due, canceled, incomplete, incomplete_expired, unpaid).
+  status text,
+  current_period_end timestamptz,
+  trial_end timestamptz,
+  cancel_at_period_end boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.subscriptions enable row level security;
+
+drop policy if exists "a member reads their own subscription, admin reads every subscription" on public.subscriptions;
+create policy "a member reads their own subscription, admin reads every subscription"
+  on public.subscriptions for select
+  to authenticated
+  using (user_id = auth.uid() or public.is_admin(auth.uid()));
+
+-- No insert/update/delete policy for `authenticated` at all — only the
+-- Stripe webhook's service role key can ever write here.
+
+create table if not exists public.stripe_events (
+  id text primary key,
+  type text not null,
+  payload jsonb not null,
+  received_at timestamptz not null default now()
+);
+
+alter table public.stripe_events enable row level security;
+
+drop policy if exists "only admin can read the stripe event log" on public.stripe_events;
+create policy "only admin can read the stripe event log"
+  on public.stripe_events for select
+  to authenticated
+  using (public.is_admin(auth.uid()));
+
+-- Same as subscriptions above: no write policy for `authenticated` — only
+-- the webhook's service-role key ever inserts here. The event id itself is
+-- the primary key, so a redelivered event (Stripe retries on timeout) is
+-- safely ignored rather than double-processed.
 
 -- ----------------------------------------------------------------------------
 -- STORAGE: avatars bucket

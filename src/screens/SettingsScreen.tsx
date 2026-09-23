@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
 import { useAuth } from '../context/AuthContext';
 import { MembershipTier, planLabel, useMembership } from '../context/MembershipContext';
 import { useProfile } from '../context/ProfileContext';
 import { requestAppReset } from '../lib/appReset';
 import { showAlert } from '../lib/alert';
+import { openBillingPortal } from '../lib/stripeCheckout';
 import { clearAppStorage, loadJSON, saveJSON } from '../lib/storage';
 import { colors, fonts } from '../theme';
 
@@ -70,6 +71,13 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
   const { showTomorrowsWorkout, setShowTomorrowsWorkout } = useProfile();
   const [prefs, setPrefs] = useState<NotificationPrefs>(() => loadJSON(NOTIFICATIONS_STORAGE_KEY, DEFAULT_NOTIFICATION_PREFS));
   const [cancelStage, setCancelStage] = useState<'none' | 'confirmed'>('none');
+  const [openingPortal, setOpeningPortal] = useState(false);
+  // Online tiers now have a REAL Stripe subscription behind them — cancel
+  // (and card updates) go through the real billing portal, never the old
+  // locally-simulated "schedule a cancellation" flow, which would leave a
+  // member thinking they'd canceled while Stripe kept billing them.
+  // In-person tiers (still fully simulated) keep that original flow as-is.
+  const isOnlineTier = membership.tier === 'trial' || membership.tier === 'online_paid' || membership.tier === 'founding_50';
 
   useEffect(() => {
     saveJSON(NOTIFICATIONS_STORAGE_KEY, prefs);
@@ -108,7 +116,20 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
     ]);
   };
 
+  const openPortal = async () => {
+    setOpeningPortal(true);
+    const { error } = await openBillingPortal();
+    setOpeningPortal(false);
+    if (error) showAlert("Couldn't Open Billing", error);
+  };
+
   const handleCancelRequest = () => {
+    if (isOnlineTier) {
+      // Stripe's own hosted portal already has its own cancel confirmation
+      // — no need for a second one in-app first.
+      openPortal();
+      return;
+    }
     const dateLine = effectiveDate ? `You'll keep access until ${formatDate(effectiveDate)}.` : '';
     showAlert('Are You Sure You Want To Cancel?', dateLine, [
       { text: 'KEEP MY MEMBERSHIP', style: 'cancel' },
@@ -186,8 +207,17 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
                 <Text style={styles.changePlanButtonText}>CHANGE PLAN</Text>
               </Pressable>
               {!membership.cancellationRequested && membership.tier !== 'drop_in' && (
-                <Pressable style={styles.cancelButton} onPress={handleCancelRequest} testID="settings-cancel-membership">
-                  <Text style={styles.cancelButtonText}>CANCEL MEMBERSHIP</Text>
+                <Pressable
+                  style={styles.cancelButton}
+                  onPress={handleCancelRequest}
+                  disabled={openingPortal}
+                  testID="settings-cancel-membership"
+                >
+                  {openingPortal ? (
+                    <ActivityIndicator color={colors.textMuted} />
+                  ) : (
+                    <Text style={styles.cancelButtonText}>{isOnlineTier ? 'MANAGE / CANCEL' : 'CANCEL MEMBERSHIP'}</Text>
+                  )}
                 </Pressable>
               )}
             </View>

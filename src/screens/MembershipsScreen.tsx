@@ -1,10 +1,11 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ModalHeader } from '../components/ModalHeader';
 import { PlanSectionHeader } from '../components/PlanSectionHeader';
 import { FOUNDING_FIFTY_PRICE, useFoundingFifty } from '../context/FoundingFiftyContext';
 import { MembershipTier, useMembership } from '../context/MembershipContext';
+import { useSubscription } from '../context/SubscriptionContext';
 import {
   IN_PERSON_PLANS,
   IN_PERSON_SECTION_HEADER,
@@ -15,7 +16,7 @@ import {
   OnlinePlan,
 } from '../data/plans';
 import { showAlert } from '../lib/alert';
-import { useClaimFoundingFifty } from '../lib/useClaimFoundingFifty';
+import { openBillingPortal, startOnlineCheckout } from '../lib/stripeCheckout';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -64,42 +65,42 @@ function priceDifferenceLine(currentTier: MembershipTier, nextPrice: number): st
 }
 
 export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: Props) {
-  const { tier, daysLeftInTrial, tenPackClassesRemaining, becomeMember, selectInPersonPlan } = useMembership();
+  const { tier, daysLeftInTrial, tenPackClassesRemaining, selectInPersonPlan } = useMembership();
   const founding50 = useFoundingFifty();
-  const claimFoundingFifty = useClaimFoundingFifty();
+  const subscription = useSubscription();
+  const [checkoutPendingKey, setCheckoutPendingKey] = useState<string | null>(null);
 
   if (!visible) return null;
 
   const inPersonPlans = onlyFullAccess ? IN_PERSON_PLANS.filter((p) => p.key === 'monthly_unlimited') : IN_PERSON_PLANS;
 
-  const chooseOnline = (plan: OnlinePlan) => {
-    showAlert(
-      `Confirm Switch To ${plan.name}?`,
-      `${plan.price}${plan.cadence} — this is a preview, no charge yet.${priceDifferenceLine(tier, priceNumber(plan.price))}`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Confirm', onPress: () => becomeMember() },
-      ]
-    );
+  // The founding-vs-standard price is decided for real, server-side, inside
+  // create-checkout — this only decides which confirmation copy to show,
+  // matching whatever the card on screen already says.
+  const chooseOnline = (plan: OnlinePlan, founding: boolean) => {
+    const title = founding ? 'Start Your Founding 50 Checkout?' : `Start Checkout For ${plan.name}?`;
+    const body = founding
+      ? `You'll go to Stripe to lock in the FOUNDING 50 RATE, $${FOUNDING_FIFTY_PRICE} a month, locked in for as long as your membership stays active — with a 14-day free trial. Card required to start; you won't be charged until the trial ends, and you can cancel anytime.`
+      : `You'll go to Stripe to start ${plan.name} with a 14-day free trial. Card required to start; you won't be charged until the trial ends, and you can cancel anytime.`;
+    showAlert(title, body, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Continue',
+        onPress: async () => {
+          setCheckoutPendingKey(plan.key);
+          const { error } = await startOnlineCheckout(plan.key);
+          setCheckoutPendingKey(null);
+          if (error) showAlert("Couldn't Start Checkout", error);
+        },
+      },
+    ]);
   };
 
-  const chooseFoundingFifty = () => {
-    showAlert(
-      'Confirm The Founding 50 Rate?',
-      `FOUNDING 50 RATE. $${FOUNDING_FIFTY_PRICE} a month, locked in for as long as your membership stays active — this is a preview, no charge yet.${priceDifferenceLine(tier, FOUNDING_FIFTY_PRICE)}`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            const claimed = await claimFoundingFifty();
-            if (!claimed) {
-              showAlert('Spot No Longer Available', "The Founding 50 just sold out, or this account has already claimed a spot. Pick another plan below.");
-            }
-          },
-        },
-      ]
-    );
+  const manageMembership = async () => {
+    setCheckoutPendingKey('manage');
+    const { error } = await openBillingPortal();
+    setCheckoutPendingKey(null);
+    if (error) showAlert("Couldn't Open Billing", error);
   };
 
   const chooseInPerson = (plan: InPersonPlanCard) => {
@@ -179,16 +180,40 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
 
                   <Pressable
                     style={styles.selectButton}
-                    onPress={() => (founding ? chooseFoundingFifty() : chooseOnline(plan))}
+                    onPress={() => chooseOnline(plan, founding)}
+                    disabled={checkoutPendingKey !== null}
                     testID={founding ? 'select-founding-fifty' : `select-online-${plan.key}`}
                   >
-                    <Text style={styles.selectButtonText}>{founding ? 'CLAIM YOUR SPOT' : `CHOOSE ${plan.name}`}</Text>
+                    {checkoutPendingKey === plan.key ? (
+                      <ActivityIndicator color={colors.white} />
+                    ) : (
+                      <Text style={styles.selectButtonText}>{founding ? 'CLAIM YOUR SPOT' : `CHOOSE ${plan.name}`}</Text>
+                    )}
                   </Pressable>
                 </View>
               </View>
             );
           })}
         </View>
+
+        {subscription.stripeCustomerId && (
+          <Pressable
+            style={styles.manageMembershipRow}
+            onPress={manageMembership}
+            disabled={checkoutPendingKey !== null}
+            testID="manage-membership-row"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.manageMembershipTitle}>MANAGE MEMBERSHIP</Text>
+              <Text style={styles.manageMembershipSubtext}>Update your card or cancel, on Stripe's secure billing page.</Text>
+            </View>
+            {checkoutPendingKey === 'manage' ? (
+              <ActivityIndicator color={colors.green} />
+            ) : (
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            )}
+          </Pressable>
+        )}
 
         <PlanSectionHeader title={IN_PERSON_SECTION_HEADER.title} subtitle={IN_PERSON_SECTION_HEADER.subtitle} spaced />
         <View style={styles.plans}>
@@ -268,6 +293,30 @@ const styles = StyleSheet.create({
   },
   plans: {
     gap: 16,
+  },
+  manageMembershipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    marginTop: 16,
+    gap: 10,
+  },
+  manageMembershipTitle: {
+    color: colors.text,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 1,
+  },
+  manageMembershipSubtext: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    marginTop: 3,
   },
   planCard: {
     backgroundColor: colors.card,
