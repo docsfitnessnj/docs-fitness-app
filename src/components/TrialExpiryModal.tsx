@@ -1,10 +1,10 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { TRIAL_WARNING_THRESHOLD, useMembership } from '../context/MembershipContext';
-import { ONLINE_PLANS } from '../data/plans';
 import { showAlert } from '../lib/alert';
+import { openBillingPortal } from '../lib/stripeCheckout';
 import { colors, fonts } from '../theme';
 
 const INCLUDED = [
@@ -14,8 +14,15 @@ const INCLUDED = [
   'Full Community access',
 ];
 
+// A real trial (started via Stripe Checkout) already has a card on file and
+// a specific price attached — unlike the old simulated trial, doing nothing
+// does NOT drop a member to the free tier when it ends; their card is
+// charged automatically and the same plan continues. This just reminds them
+// that's coming and offers a way to switch plans or cancel first, via the
+// same Stripe billing portal MANAGE MEMBERSHIP uses everywhere else.
 export function TrialExpiryModal() {
-  const { tier, daysLeftInTrial, trialWarningDismissed, dismissTrialWarning, becomeMember } = useMembership();
+  const { tier, daysLeftInTrial, trialWarningDismissed, dismissTrialWarning } = useMembership();
+  const [opening, setOpening] = useState(false);
 
   const visible =
     tier === 'trial' &&
@@ -23,10 +30,11 @@ export function TrialExpiryModal() {
     daysLeftInTrial <= TRIAL_WARNING_THRESHOLD &&
     !trialWarningDismissed;
 
-  const choosePlan = () => {
-    becomeMember();
-    dismissTrialWarning();
-    showAlert('Payments Coming Soon', 'This is a preview — no charge yet.');
+  const managePlan = async () => {
+    setOpening(true);
+    const { error } = await openBillingPortal();
+    setOpening(false);
+    if (error) showAlert("Couldn't Open Billing", error);
   };
 
   return (
@@ -42,11 +50,12 @@ export function TrialExpiryModal() {
             {daysLeftInTrial === 0
               ? 'Your trial ends today.'
               : `${daysLeftInTrial} day${daysLeftInTrial === 1 ? '' : 's'} left.`}{' '}
-            After it ends you'll drop to 2 workouts a week — no week preview, no Doc's COWS.
+            Your card will be charged automatically and your plan will continue — nothing to do unless you'd like to
+            switch plans or cancel first.
           </Text>
 
           <View style={styles.includedBox}>
-            <Text style={styles.includedTitle}>UPGRADE NOW FOR FULL ACCESS</Text>
+            <Text style={styles.includedTitle}>WHAT'S INCLUDED</Text>
             {INCLUDED.map((item) => (
               <View key={item} style={styles.includedRow}>
                 <Ionicons name="checkmark-circle" size={16} color={colors.green} />
@@ -55,18 +64,12 @@ export function TrialExpiryModal() {
             ))}
           </View>
 
-          <View style={styles.planRow}>
-            {ONLINE_PLANS.map((plan) => (
-              <Pressable key={plan.key} style={styles.planButton} onPress={() => choosePlan()}>
-                <Text style={styles.planButtonText}>
-                  {plan.price} / {plan.cadence.replace('/ ', '').toUpperCase()}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <Pressable style={styles.manageButton} onPress={managePlan} disabled={opening} testID="trial-manage-plan">
+            {opening ? <ActivityIndicator color={colors.white} /> : <Text style={styles.manageButtonText}>MANAGE MY PLAN</Text>}
+          </Pressable>
 
           <Pressable onPress={dismissTrialWarning} hitSlop={8} style={styles.laterLink}>
-            <Text style={styles.laterLinkText}>Maybe later</Text>
+            <Text style={styles.laterLinkText}>Got it</Text>
           </Pressable>
         </View>
       </View>
@@ -136,18 +139,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginLeft: 8,
   },
-  planRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  planButton: {
-    flex: 1,
+  manageButton: {
     backgroundColor: colors.green,
     borderRadius: 8,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  planButtonText: {
+  manageButtonText: {
     color: colors.white,
     fontFamily: fonts.labelBold,
     fontSize: 14,

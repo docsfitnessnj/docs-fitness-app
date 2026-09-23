@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './AuthContext';
+import { useSubscription } from './SubscriptionContext';
 import { loadJSON, saveJSON } from '../lib/storage';
+import { supabase } from '../lib/supabaseClient';
 
 // Every state a person (or Doc) can be in. There is no anonymous/guest
 // state — every account, whichever door it came through, has an email —
@@ -25,9 +27,10 @@ export type MembershipTier =
 
 export type InPersonPlan = 'monthly_unlimited' | 'ten_pack' | 'drop_in';
 
-const TRIAL_LENGTH_DAYS = 14;
 const TRIAL_WARNING_THRESHOLD_DAYS = 3;
 const TEN_PACK_SIZE = 10;
+const RENEWAL_CYCLE_DAYS = 30;
+const IN_PERSON_TIERS: MembershipTier[] = ['ten_pack', 'drop_in', 'in_person_unlimited'];
 
 // Human-readable plan label for the admin roster / booking notifications —
 // keeps that copy in one place instead of re-deriving it at each call site.
@@ -74,11 +77,10 @@ type MembershipContextValue = {
   trialEndsAt: Date | null;
   daysLeftInTrial: number | null;
   trialWarningDismissed: boolean;
-  // True the moment startTrial() is ever called for this account, and never
-  // reset back to false (short of a full signOut) — this is what lets the
-  // status banner tell "never trained here, first class is free" apart from
-  // "was on trial, it lapsed." Distinct from tier === 'trial', which is only
-  // true *during* an active trial.
+  // True the moment this account has ever been on a trial or a paid online
+  // plan — what lets the status banner tell "never trained here, first
+  // class is free" apart from "was on trial, it lapsed." Distinct from
+  // tier === 'trial', which is only true *during* an active trial.
   hasEverTrialed: boolean;
 
   isAdmin: boolean;
@@ -107,32 +109,26 @@ type MembershipContextValue = {
   // 10 Class Pack) — never set by the free trial or Drop In — so the app
   // shell can show the purchase celebration exactly once, then clear it.
   justPurchased: boolean;
-  // Only meaningful for the two recurring-billing tiers (online_paid,
-  // in_person_unlimited) — null for one-off/non-recurring tiers.
+  // Only meaningful for the recurring-billing tiers — null for
+  // one-off/non-recurring tiers. Online tiers show Stripe's real renewal
+  // date; in_person_unlimited (still simulated) shows the simulated one.
   planRenewsAt: Date | null;
-  // Set by requestCancellation, shown in Settings — access continues through
-  // planRenewsAt/trialEndsAt even once flagged.
+  // Online tiers: Stripe's real cancel-at-period-end flag. In-person: set by
+  // requestCancellation, shown in Settings — access continues through
+  // planRenewsAt/trialEndsAt either way.
   cancellationRequested: boolean;
 
-  // Sets the simulated tier for a member who just created a real account and
-  // chose the online trial door. Identity itself (the account, the email)
-  // is real now — AuthContext/Supabase own that — this just picks which
-  // simulated plan they start on, same as every other tier transition here.
-  startTrial: () => void;
-  becomeMember: () => void;
-  // Claims a Founding 50 spot — same full access as becomeMember's
-  // online_paid, but at the locked-in rate, tracked as its own tier so a
-  // later cancellation can't quietly resubscribe at the founding rate.
-  becomeFoundingFifty: () => void;
   selectInPersonPlan: (plan: InPersonPlan) => void;
-  // The About page's BOOK YOUR CLASS door — same real-account signup as
-  // startTrial, just landing on the free tier instead: booking access,
-  // first-class-free, full (non-anonymous) community.
+  // The About page's BOOK YOUR CLASS door — real account signup landing on
+  // the free tier: booking access, first-class-free, full (non-anonymous)
+  // community. TRAIN ONLINE's door goes through real Stripe Checkout
+  // instead (see startOnlineCheckout) — there's no simulated trial door
+  // anymore.
   enterFreeTier: () => void;
-  // A returning member who just signed back into their real account — full
-  // online access, no trial dates, and (unlike becomeMember) no purchase
-  // celebration since nothing was just bought.
-  signIn: () => void;
+  // Called once a real Stripe Checkout redirect-back has been confirmed
+  // (the subscription row shows trialing/active) — fires the purchase
+  // celebration and clears any leftover in-person cancellation flag.
+  notifyOnlineCheckoutSuccess: () => void;
   setDevTier: (tier: MembershipTier) => void;
   // Dev-preview-only: forces the "first time visitor" Dockside variant —
   // online_free with no trial history — regardless of what was previewed
@@ -144,27 +140,25 @@ type MembershipContextValue = {
   useFirstClass: () => void;
   setNewsletterOptIn: (optIn: boolean) => void;
   clearJustPurchased: () => void;
+  // In-person only now (see SettingsScreen) — online cancellation goes
+  // through the real Stripe customer portal instead.
   requestCancellation: () => void;
   keepMembership: () => void;
   signOut: () => void;
 };
 
-const RENEWAL_CYCLE_DAYS = 30;
-const RECURRING_TIERS: MembershipTier[] = ['online_paid', 'founding_50', 'in_person_unlimited'];
-
 const MembershipContext = createContext<MembershipContextValue | undefined>(undefined);
 
 const SIMULATED_STORAGE_KEY = 'docsfitness.simulatedMembership.v1';
 
-// Everything below is still exactly the simulated tier/access-matrix system
-// this app has always used — no real billing this round. It's persisted so
-// a signed-in member's simulated plan survives a reload the same way their
-// real Supabase session now does (otherwise a returning member would stay
-// logged in but land back on a reset "trial" tier every time, which is its
-// own version of the "signed in every time" bug this round fixes). Since
-// there's no real membership backend yet, this is one shared simulated
-// state per *device*, not per account — a reasonable stand-in until a real
-// billing/membership round replaces it.
+// In-person plans (Monthly Unlimited, 10 Class Pack, Drop In) and Doc's own
+// admin/dev-preview tier are still exactly the simulated system this app
+// has always used — this round only wires real billing for the ONLINE
+// tiers. It's persisted so a signed-in member's simulated (in-person/
+// preview) plan survives a reload, same as their real Supabase session.
+// Since there's no real in-person billing backend, this stays one shared
+// simulated state per *device*, not per account, for the in-person branch —
+// unchanged from before this round.
 type SimulatedMembershipState = {
   tier: MembershipTier;
   trialEndsAtMs: number | null;
@@ -192,15 +186,44 @@ const DEFAULT_SIMULATED_STATE: SimulatedMembershipState = {
 };
 
 export function MembershipProvider({ children }: { children: React.ReactNode }) {
-  const { session, signOut: authSignOut } = useAuth();
+  const { session, user, signOut: authSignOut } = useAuth();
   const signedUp = !!session;
   const email = session?.user?.email ?? null;
+  const subscription = useSubscription();
+
+  // A small, deliberately separate read of just the real admin flag — kept
+  // local to this context rather than depending on ProfileContext, since
+  // ProfileContext's own useDisplayName() already depends on
+  // MembershipContext (a provider can't depend on a context nested inside
+  // it). Only used to decide whether to trust the dev-preview simulated
+  // tier for the online branch below; every actual access decision is
+  // still enforced server-side by Row Level Security regardless of what
+  // this flag shows.
+  const [realAdmin, setRealAdmin] = useState(false);
+  useEffect(() => {
+    if (!user) {
+      setRealAdmin(false);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setRealAdmin(data?.is_admin ?? false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const [simulated, setSimulated] = useState<SimulatedMembershipState>(() =>
     loadJSON(SIMULATED_STORAGE_KEY, DEFAULT_SIMULATED_STATE)
   );
   const {
-    tier,
+    tier: simulatedTier,
     trialEndsAtMs,
     trialWarningDismissed,
     tenPackClassesRemaining,
@@ -208,24 +231,75 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     newsletterOptIn,
     justPurchased,
     planStartedAt,
-    cancellationRequested,
-    hasEverTrialed,
+    cancellationRequested: simulatedCancellationRequested,
+    hasEverTrialed: simulatedHasEverTrialed,
   } = simulated;
-  const trialEndsAt = trialEndsAtMs ? new Date(trialEndsAtMs) : null;
 
   useEffect(() => {
     saveJSON(SIMULATED_STORAGE_KEY, simulated);
   }, [simulated]);
 
-  const daysLeftInTrial = trialEndsAt
-    ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-    : null;
-
   const value = useMemo<MembershipContextValue>(() => {
-    const planRenewsAt =
-      RECURRING_TIERS.includes(tier) && planStartedAt
-        ? new Date(planStartedAt + RENEWAL_CYCLE_DAYS * 24 * 60 * 60 * 1000)
+    // Real admin: fully unchanged, exactly today's simulated system — the
+    // dev-preview toggle keeps working for Doc's testing regardless of
+    // what's really in the subscriptions table for her own account.
+    // Non-admin, currently on an in-person plan (still simulated, untouched
+    // by this round): keep that as-is too. Otherwise (a real member's
+    // online branch): the subscriptions table is the only truth.
+    const isAdminPreview = realAdmin;
+    const onInPersonPlan = IN_PERSON_TIERS.includes(simulatedTier);
+
+    let tier: MembershipTier;
+    let hasEverTrialed: boolean;
+    if (isAdminPreview || onInPersonPlan) {
+      tier = simulatedTier;
+      hasEverTrialed = simulatedHasEverTrialed;
+    } else if (subscription.loading) {
+      // Safe default while the real read is in flight — the safe direction
+      // to be wrong in for a moment is "no access yet," not the reverse.
+      tier = 'online_free';
+      hasEverTrialed = simulatedHasEverTrialed;
+    } else if (subscription.status === 'trialing') {
+      tier = 'trial';
+      hasEverTrialed = true;
+    } else if (subscription.status === 'active' && subscription.plan === 'founding') {
+      tier = 'founding_50';
+      hasEverTrialed = true;
+    } else if (subscription.status === 'active') {
+      tier = 'online_paid';
+      hasEverTrialed = true;
+    } else {
+      // past_due / canceled / incomplete / incomplete_expired / unpaid /
+      // no row at all — no real active access.
+      tier = 'online_free';
+      hasEverTrialed = simulatedHasEverTrialed || subscription.status !== null;
+    }
+
+    const trialEndsAt = isAdminPreview
+      ? trialEndsAtMs
+        ? new Date(trialEndsAtMs)
+        : null
+      : tier === 'trial'
+        ? subscription.trialEnd
         : null;
+    const daysLeftInTrial = trialEndsAt
+      ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+      : null;
+
+    const planRenewsAt = isAdminPreview
+      ? ['online_paid', 'founding_50', 'in_person_unlimited'].includes(tier) && planStartedAt
+        ? new Date(planStartedAt + RENEWAL_CYCLE_DAYS * 24 * 60 * 60 * 1000)
+        : null
+      : tier === 'online_paid' || tier === 'founding_50'
+        ? subscription.currentPeriodEnd
+        : tier === 'in_person_unlimited' && planStartedAt
+          ? new Date(planStartedAt + RENEWAL_CYCLE_DAYS * 24 * 60 * 60 * 1000)
+          : null;
+
+    const cancellationRequested =
+      !isAdminPreview && (tier === 'online_paid' || tier === 'founding_50' || tier === 'trial')
+        ? subscription.cancelAtPeriodEnd
+        : simulatedCancellationRequested;
 
     const fullContentAccess =
       tier === 'admin' ||
@@ -261,17 +335,6 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       planRenewsAt,
       cancellationRequested,
 
-      startTrial: () => {
-        const endsAt = new Date();
-        endsAt.setDate(endsAt.getDate() + TRIAL_LENGTH_DAYS);
-        setSimulated((prev) => ({ ...prev, tier: 'trial', trialEndsAtMs: endsAt.getTime(), trialWarningDismissed: false, hasEverTrialed: true }));
-      },
-      becomeMember: () => {
-        setSimulated((prev) => ({ ...prev, tier: 'online_paid', justPurchased: true, planStartedAt: Date.now(), cancellationRequested: false }));
-      },
-      becomeFoundingFifty: () => {
-        setSimulated((prev) => ({ ...prev, tier: 'founding_50', justPurchased: true, planStartedAt: Date.now(), cancellationRequested: false }));
-      },
       selectInPersonPlan: (plan: InPersonPlan) => {
         const nextTier = plan === 'monthly_unlimited' ? 'in_person_unlimited' : plan === 'ten_pack' ? 'ten_pack' : 'drop_in';
         setSimulated((prev) => ({
@@ -287,8 +350,8 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       enterFreeTier: () => {
         setSimulated((prev) => ({ ...prev, tier: 'online_free' }));
       },
-      signIn: () => {
-        setSimulated((prev) => ({ ...prev, tier: 'online_paid' }));
+      notifyOnlineCheckoutSuccess: () => {
+        setSimulated((prev) => ({ ...prev, justPurchased: true, cancellationRequested: false }));
       },
       setDevTier: (nextTier: MembershipTier) => {
         setSimulated((prev) => ({
@@ -297,7 +360,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
           trialEndsAtMs: nextTier === 'trial' && !prev.trialEndsAtMs
             ? (() => {
                 const endsAt = new Date();
-                endsAt.setDate(endsAt.getDate() + TRIAL_LENGTH_DAYS);
+                endsAt.setDate(endsAt.getDate() + 14);
                 return endsAt.getTime();
               })()
             : prev.trialEndsAtMs,
@@ -305,7 +368,10 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
           // not a real purchase, so there's no reason to leave it wherever
           // a previous preview session happened to decrement it to.
           tenPackClassesRemaining: nextTier === 'ten_pack' ? TEN_PACK_SIZE : prev.tenPackClassesRemaining,
-          planStartedAt: RECURRING_TIERS.includes(nextTier) && prev.planStartedAt === null ? Date.now() : prev.planStartedAt,
+          planStartedAt:
+            ['online_paid', 'founding_50', 'in_person_unlimited'].includes(nextTier) && prev.planStartedAt === null
+              ? Date.now()
+              : prev.planStartedAt,
           // Previewing one of the named Dockside tiers should reliably show
           // that tier's own banner variant, not the first-time-visitor one —
           // only the dedicated previewFirstTimeVisitor() below should ever
@@ -332,7 +398,28 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         setSimulated(DEFAULT_SIMULATED_STATE);
       },
     };
-  }, [tier, planStartedAt, cancellationRequested, signedUp, email, trialEndsAt, daysLeftInTrial, trialWarningDismissed, tenPackClassesRemaining, firstClassUsed, newsletterOptIn, justPurchased, hasEverTrialed, authSignOut]);
+  }, [
+    realAdmin,
+    simulatedTier,
+    subscription.loading,
+    subscription.status,
+    subscription.plan,
+    subscription.trialEnd,
+    subscription.currentPeriodEnd,
+    subscription.cancelAtPeriodEnd,
+    planStartedAt,
+    signedUp,
+    email,
+    trialEndsAtMs,
+    trialWarningDismissed,
+    tenPackClassesRemaining,
+    firstClassUsed,
+    newsletterOptIn,
+    justPurchased,
+    simulatedHasEverTrialed,
+    simulatedCancellationRequested,
+    authSignOut,
+  ]);
 
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>;
 }

@@ -1,15 +1,29 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { showAlert } from '../lib/alert';
+import { startOnlineCheckout } from '../lib/stripeCheckout';
 import { colors, fonts } from '../theme';
 
 type Props = {
   onBack: () => void;
-  onStartTrial: () => void;
   onSkipToPricing: () => void;
 };
 
-export default function OnlineStartScreen({ onBack, onStartTrial, onSkipToPricing }: Props) {
+export default function OnlineStartScreen({ onBack, onSkipToPricing }: Props) {
+  const [starting, setStarting] = useState(false);
+
+  // Goes straight to Stripe Checkout for Monthly (Online) — the founding
+  // vs. standard price is decided for real, server-side — with the 14-day
+  // trial attached. "Skip the trial — see pricing" is for a member who'd
+  // rather pick Annual specifically instead of defaulting to Monthly.
+  const startTrial = async () => {
+    setStarting(true);
+    const { error } = await startOnlineCheckout('monthly');
+    setStarting(false);
+    if (error) showAlert("Couldn't Start Checkout", error);
+  };
+
   return (
     <View style={styles.container}>
       <Pressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="online-start-back">
@@ -20,11 +34,16 @@ export default function OnlineStartScreen({ onBack, onStartTrial, onSkipToPricin
       <View style={styles.content}>
         <Text style={styles.title}>2 WEEKS FREE,{'\n'}ON US</Text>
         <Text style={styles.subtext}>
-          Full access to Doc's WODs, COWS, The Deck, and Community. No card required to start.
+          Full access to Doc's WODs, COWS, The Deck, and Community. Card required to start — you won't be charged
+          until your trial ends, and you can cancel anytime.
         </Text>
 
-        <Pressable style={styles.trialButton} onPress={onStartTrial} testID="start-trial">
-          <Text style={styles.trialButtonText}>START MY 2-WEEK FREE TRIAL</Text>
+        <Pressable style={styles.trialButton} onPress={startTrial} disabled={starting} testID="start-trial">
+          {starting ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            <Text style={styles.trialButtonText}>START MY 2-WEEK FREE TRIAL</Text>
+          )}
         </Pressable>
 
         <Pressable onPress={onSkipToPricing} hitSlop={8} style={styles.skipLink} testID="skip-to-pricing">

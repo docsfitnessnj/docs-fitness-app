@@ -26,6 +26,7 @@ import {
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { MembershipProvider, useMembership } from './src/context/MembershipContext';
+import { SubscriptionProvider } from './src/context/SubscriptionContext';
 import { CommunityProvider } from './src/context/CommunityContext';
 import { WorkoutLogProvider } from './src/context/WorkoutLogContext';
 import { CloseFriendsProvider } from './src/context/CloseFriendsContext';
@@ -53,7 +54,8 @@ import { PurchaseCelebrationOverlay } from './src/components/PurchaseCelebration
 import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useMovementVaultModalState } from './src/lib/movementVaultModal';
 import { openMemberships, useMembershipsModalState } from './src/lib/membershipsModal';
-import { useClaimFoundingFifty } from './src/lib/useClaimFoundingFifty';
+import { useCheckoutRedirect } from './src/lib/checkoutRedirect';
+import { startOnlineCheckout } from './src/lib/stripeCheckout';
 import { useLocalImportOnFirstSignIn } from './src/lib/localImport';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
 import { useKeyboardVisible } from './src/lib/useKeyboardVisible';
@@ -271,11 +273,9 @@ type OnboardingFlowProps = {
 // BOATHOUSE goes straight to plan selection. Every path captures an email
 // on the way through — there's no anonymous/browse-without-an-account exit.
 function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
-  const { startTrial, becomeMember, selectInPersonPlan, enterFreeTier, signIn: membershipSignIn, setNewsletterOptIn } =
-    useMembership();
+  const { selectInPersonPlan, enterFreeTier, setNewsletterOptIn } = useMembership();
   const { signUp, signInWithPassword, sendPasswordReset } = useAuth();
   const { setHowTrain } = useProfile();
-  const claimFoundingFifty = useClaimFoundingFifty();
   const [intent, setIntent] = useState<EntryIntent>(null);
   // Handoff for WelcomeScreen's "an account already exists — Sign in" link,
   // so the email typed there doesn't have to be retyped on Sign In.
@@ -322,7 +322,13 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
               };
             }
             if (intent === 'onlineTrial') {
-              startTrial();
+              // This fast door used to just flip a local "trial" flag —
+              // a real trial now needs a real Stripe Checkout session (card
+              // required upfront, 14-day trial attached), same as the
+              // OnlineStartScreen path. A signup failure already returned
+              // above, so a checkout failure here is shown the same way.
+              const checkoutResult = await startOnlineCheckout('monthly');
+              if (checkoutResult.error) return { message: checkoutResult.error, kind: 'error' };
             } else if (intent === 'bookClass') {
               enterFreeTier();
             } else {
@@ -340,9 +346,12 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
           initialEmail={signInEmail}
           onSignIn={async (enteredEmail, password) => {
             const result = await signInWithPassword(enteredEmail, password);
-            if (result.error) return result.error;
-            membershipSignIn();
-            return null;
+            // Access itself needs no explicit step here anymore — a
+            // returning member's real tier (in-person still simulated
+            // per-device, online read live from their Stripe subscription)
+            // is computed automatically by MembershipContext the moment
+            // AuthContext's session updates.
+            return result.error ?? null;
           }}
         />
       );
@@ -371,21 +380,13 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
         />
       );
     case 'onlineStart':
-      return (
-        <OnlineStartScreen
-          onBack={() => setStep('howDoYouTrain')}
-          onStartTrial={() => startTrial()}
-          onSkipToPricing={() => setStep('pricing')}
-        />
-      );
+      // OnlineStartScreen now starts real Stripe Checkout itself (Monthly,
+      // with the 14-day trial attached) — no local tier to set here.
+      return <OnlineStartScreen onBack={() => setStep('howDoYouTrain')} onSkipToPricing={() => setStep('pricing')} />;
     case 'pricing':
-      return (
-        <PricingScreen
-          onBack={() => setStep('onlineStart')}
-          onSelectPlan={() => becomeMember()}
-          onSelectFoundingFifty={() => claimFoundingFifty()}
-        />
-      );
+      // PricingScreen now starts real Checkout itself for whichever card was
+      // tapped — no callback props needed here either.
+      return <PricingScreen onBack={() => setStep('onlineStart')} />;
     case 'inPersonPlans':
       return (
         <InPersonPlansScreen onBack={() => setStep('howDoYouTrain')} onSelectPlan={(plan) => selectInPersonPlan(plan)} />
@@ -456,6 +457,10 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [movementVaultOpen, setMovementVaultOpen, movementVaultInitialId, movementVaultReturnLabel] =
     useMovementVaultModalState();
   const [activeTab, setActiveTab] = useState('Community');
+
+  // Reopens Memberships (and, on a real success, polls for the webhook then
+  // celebrates) after Stripe Checkout / the billing portal redirects back.
+  useCheckoutRedirect(() => setMembershipsOpen(true));
 
   const openMessagesForJokerVerification = () => {
     setTrophyCaseOpen(false);
@@ -752,37 +757,39 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
   }
 
   return (
-    <MembershipProvider key={resetKey}>
-      <CommunityProvider>
-        <WorkoutLogProvider>
-          <CloseFriendsProvider>
-            <ProfileProvider>
-              <StoriesProvider>
-                <DeckProgressProvider>
-                  <ChallengeProvider>
-                    <BadgeProvider>
-                      <FoundingFiftyProvider>
-                        <DocsInboxProvider>
-                          <ClassSignUpProvider>
-                            <ContentLibraryProvider>
-                              <TourProvider>
-                                <View style={styles.webSurround}>
-                                  <ResponsiveShell onLayoutRootView={onLayoutRootView} />
-                                </View>
-                              </TourProvider>
-                            </ContentLibraryProvider>
-                          </ClassSignUpProvider>
-                        </DocsInboxProvider>
-                      </FoundingFiftyProvider>
-                    </BadgeProvider>
-                  </ChallengeProvider>
-                </DeckProgressProvider>
-              </StoriesProvider>
-            </ProfileProvider>
-          </CloseFriendsProvider>
-        </WorkoutLogProvider>
-      </CommunityProvider>
-    </MembershipProvider>
+    <SubscriptionProvider>
+      <MembershipProvider key={resetKey}>
+        <CommunityProvider>
+          <WorkoutLogProvider>
+            <CloseFriendsProvider>
+              <ProfileProvider>
+                <StoriesProvider>
+                  <DeckProgressProvider>
+                    <ChallengeProvider>
+                      <BadgeProvider>
+                        <FoundingFiftyProvider>
+                          <DocsInboxProvider>
+                            <ClassSignUpProvider>
+                              <ContentLibraryProvider>
+                                <TourProvider>
+                                  <View style={styles.webSurround}>
+                                    <ResponsiveShell onLayoutRootView={onLayoutRootView} />
+                                  </View>
+                                </TourProvider>
+                              </ContentLibraryProvider>
+                            </ClassSignUpProvider>
+                          </DocsInboxProvider>
+                        </FoundingFiftyProvider>
+                      </BadgeProvider>
+                    </ChallengeProvider>
+                  </DeckProgressProvider>
+                </StoriesProvider>
+              </ProfileProvider>
+            </CloseFriendsProvider>
+          </WorkoutLogProvider>
+        </CommunityProvider>
+      </MembershipProvider>
+    </SubscriptionProvider>
   );
 }
 
