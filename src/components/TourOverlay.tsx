@@ -115,30 +115,75 @@ export function TourOverlay() {
     // change once mounted does — never gets another chance to measure.
     if (!tour.active || !mounted) return undefined;
     let cancelled = false;
-    const measure = () => {
+    let frameId: number | null = null;
+    let lastMeasured: Rect | null = null;
+    let attempt = 0;
+    // On a true first fire, stop 1's target (the compact story ring, right
+    // next to the Community tab's own first-ever mount) can still be mid
+    // layout — fonts swapping in, images decoding — when this effect's
+    // very first frame runs, so that first measurement can land on a box
+    // that hasn't settled into its final position yet (see the PR this
+    // landed in). Tapping NEXT then BACK "fixes" it only because the page
+    // has had many more frames to settle by then, not because the anchor
+    // math itself was ever wrong. Rather than guess a fixed delay long
+    // enough to cover fonts/images/layout, this re-measures every frame
+    // and only trusts the result once two consecutive frames agree — that
+    // works regardless of *why* a given frame was still unsettled, and
+    // costs the already-correct stops (2-4) at most one extra frame.
+    const MAX_ATTEMPTS = 20; // ~1/3 of a second at 60fps — generous, never hangs the tour if a target legitimately never stops moving.
+
+    const measureOnce = (onDone: (next: Rect | null) => void) => {
       const node = tour.getTargetNode(stop.key);
       const root: MeasurableNode | null = rootRef.current;
-      if (node && root && typeof node.measureInWindow === 'function' && typeof root.measureInWindow === 'function') {
-        // Both measurements are window-relative, but the spotlight/card are
-        // positioned absolute *within this overlay's own root* — which on
-        // desktop's centered, narrower main column doesn't start at the
-        // window's left edge. Measuring the root too and subtracting its
-        // offset converts the target into root-relative coordinates, so the
-        // ring lands on the real element instead of drifting by however far
-        // the root itself is inset from the window (a no-op on phone, where
-        // the root already fills the window).
-        root.measureInWindow((rx, ry) => {
-          if (cancelled) return;
-          node.measureInWindow((x, y, width, height) => {
-            if (!cancelled) setRect({ x: x - rx, y: y - ry, width, height });
-          });
-        });
+      if (!node || !root || typeof node.measureInWindow !== 'function' || typeof root.measureInWindow !== 'function') {
+        onDone(null);
+        return;
       }
+      // Both measurements are window-relative, but the spotlight/card are
+      // positioned absolute *within this overlay's own root* — which on
+      // desktop's centered, narrower main column doesn't start at the
+      // window's left edge. Measuring the root too and subtracting its
+      // offset converts the target into root-relative coordinates, so the
+      // ring lands on the real element instead of drifting by however far
+      // the root itself is inset from the window (a no-op on phone, where
+      // the root already fills the window).
+      root.measureInWindow((rx, ry) => {
+        if (cancelled) return;
+        node.measureInWindow((x, y, width, height) => {
+          if (cancelled) return;
+          onDone({ x: x - rx, y: y - ry, width, height });
+        });
+      });
     };
-    const id = requestAnimationFrame(measure);
+
+    const sameRect = (a: Rect | null, b: Rect | null) =>
+      !!a && !!b && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+
+    const tick = () => {
+      if (cancelled) return;
+      measureOnce((next) => {
+        if (cancelled) return;
+        attempt += 1;
+        const settled = next && next.width > 0 && next.height > 0 && sameRect(next, lastMeasured);
+        if (settled) {
+          setRect(next);
+          return;
+        }
+        lastMeasured = next;
+        if (attempt >= MAX_ATTEMPTS) {
+          // Never got two frames in a row to agree (rare) — still show the
+          // last real reading instead of leaving the ring undrawn forever.
+          if (next) setRect(next);
+          return;
+        }
+        frameId = requestAnimationFrame(tick);
+      });
+    };
+
+    frameId = requestAnimationFrame(tick);
     return () => {
       cancelled = true;
-      cancelAnimationFrame(id);
+      if (frameId !== null) cancelAnimationFrame(frameId);
     };
   }, [tour.active, mounted, tour.stepIndex, stop.key, winWidth, winHeight]);
 
