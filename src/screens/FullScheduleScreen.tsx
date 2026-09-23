@@ -2,9 +2,11 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ModalHeader } from '../components/ModalHeader';
-import { dayHasContent, getTwoWeekCalendar, WeekDay } from '../data/content';
-import { LOCATION_CITY, LOCATION_NAME, rowsForDate } from '../data/schedule';
+import { useProfile } from '../context/ProfileContext';
+import { dayHasContent, formatDateKey, getTwoWeekCalendar, WeekDay } from '../data/content';
+import { ClassRow, LOCATION_CITY, LOCATION_NAME, rowsForDate } from '../data/schedule';
 import { openLocationMaps } from '../lib/links';
+import { useClassBooking } from '../lib/useClassBooking';
 import { navigateToTab } from '../lib/navigationRef';
 import { colors, fonts } from '../theme';
 
@@ -22,7 +24,17 @@ function isPast(day: WeekDay): boolean {
   return day.date.getTime() < new Date(new Date().setHours(0, 0, 0, 0)).getTime();
 }
 
-function DayCell({ day, onOpenDay }: { day: WeekDay; onOpenDay: (day: WeekDay) => void }) {
+type DayCellProps = {
+  day: WeekDay;
+  onOpenDay: (day: WeekDay) => void;
+  // Online members get a real signup popup right on this grid instead of
+  // just a class name — everyone else's tap behavior (the whole cell hands
+  // off to the Community day view) is untouched. See onBookClass below.
+  isOnlineMember: boolean;
+  onBookClass: (row: ClassRow, day: WeekDay) => void;
+};
+
+function DayCell({ day, onOpenDay, isOnlineMember, onBookClass }: DayCellProps) {
   const rows = rowsForDate(day.date);
   const hasWorkout = dayHasContent(day);
   const past = isPast(day);
@@ -41,11 +53,31 @@ function DayCell({ day, onOpenDay }: { day: WeekDay; onOpenDay: (day: WeekDay) =
       </View>
 
       <View style={styles.cellBody}>
-        {rows.map((row) => (
-          <Text key={row.id} style={[styles.classChip, past && styles.pastText]} numberOfLines={1}>
-            {row.className} {row.time}
-          </Text>
-        ))}
+        {rows.map((row) =>
+          isOnlineMember && !past ? (
+            <Pressable
+              key={row.id}
+              onPress={(e) => {
+                // Books right here instead of falling through to the outer
+                // cell's onPress, which would just hand off to the
+                // Community day view — a dead end for online members,
+                // since that view never lists classes for them.
+                e.stopPropagation();
+                onBookClass(row, day);
+              }}
+              hitSlop={3}
+              testID={`calendar-class-${row.id}-${day.date.toISOString().slice(0, 10)}`}
+            >
+              <Text style={styles.classChip} numberOfLines={1}>
+                {row.className} {row.time}
+              </Text>
+            </Pressable>
+          ) : (
+            <Text key={row.id} style={[styles.classChip, past && styles.pastText]} numberOfLines={1}>
+              {row.className} {row.time}
+            </Text>
+          )
+        )}
       </View>
 
       {hasWorkout && <View style={[styles.workoutDot, past && styles.workoutDotPast]} />}
@@ -58,7 +90,16 @@ function DayCell({ day, onOpenDay }: { day: WeekDay; onOpenDay: (day: WeekDay) =
 // later) hands off to the Community tab's own date strip and day view,
 // exactly as tapping that strip directly does — this screen never shows
 // its own copy of a day's classes/workout, just the two-week overview.
+// The one exception: an online member tapping a specific class books it
+// right here (see DayCell/onBookClass) instead of handing off, since
+// Community's day view never lists classes for online members (that's
+// the quiet TRAINING NEAR VENTNOR line's whole reason for existing) — this
+// screen was previously the dead end.
 export function FullScheduleScreen({ visible, onClose }: Props) {
+  const { howTrain } = useProfile();
+  const { handleSignUp } = useClassBooking();
+  const isOnlineMember = howTrain === 'online';
+
   if (!visible) return null;
 
   const days = getTwoWeekCalendar();
@@ -68,6 +109,12 @@ export function FullScheduleScreen({ visible, onClose }: Props) {
   const openDay = (day: WeekDay) => {
     onClose();
     navigateToTab('Community', { jumpToDate: day.date.getTime() });
+  };
+
+  const bookClass = (row: ClassRow, day: WeekDay) => {
+    const dateKey = formatDateKey(day.date);
+    const weekdayName = day.date.toLocaleDateString('en-US', { weekday: 'long' });
+    handleSignUp(row, dateKey, weekdayName);
   };
 
   return (
@@ -85,12 +132,24 @@ export function FullScheduleScreen({ visible, onClose }: Props) {
 
         <View style={styles.weekRow}>
           {thisWeek.map((day) => (
-            <DayCell key={day.date.toISOString()} day={day} onOpenDay={openDay} />
+            <DayCell
+              key={day.date.toISOString()}
+              day={day}
+              onOpenDay={openDay}
+              isOnlineMember={isOnlineMember}
+              onBookClass={bookClass}
+            />
           ))}
         </View>
         <View style={styles.weekRow}>
           {nextWeek.map((day) => (
-            <DayCell key={day.date.toISOString()} day={day} onOpenDay={openDay} />
+            <DayCell
+              key={day.date.toISOString()}
+              day={day}
+              onOpenDay={openDay}
+              isOnlineMember={isOnlineMember}
+              onBookClass={bookClass}
+            />
           ))}
         </View>
 
