@@ -35,6 +35,7 @@ import { DeckProgressProvider } from './src/context/DeckProgressContext';
 import { ChallengeProvider } from './src/context/ChallengeContext';
 import { BadgeProvider } from './src/context/BadgeContext';
 import { FoundingFiftyProvider } from './src/context/FoundingFiftyContext';
+import { DocsInboxProvider } from './src/context/DocsInboxContext';
 import { ClassSignUpProvider } from './src/context/ClassSignUpContext';
 import { ContentLibraryProvider } from './src/context/ContentLibraryContext';
 import { TourProvider, useTour } from './src/context/TourContext';
@@ -90,6 +91,7 @@ import { TrophyCaseScreen } from './src/screens/TrophyCaseScreen';
 import { MovementVaultScreen } from './src/screens/MovementVaultScreen';
 import { MemberManagerScreen } from './src/screens/MemberManagerScreen';
 import { ContentLibraryScreen } from './src/screens/ContentLibraryScreen';
+import { DocsInboxScreen } from './src/screens/DocsInboxScreen';
 
 const PHONE_FRAME_MAX_WIDTH = 480;
 const MAIN_COLUMN_DESKTOP_WIDTH = 840;
@@ -448,6 +450,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   const [memberManagerOpen, setMemberManagerOpen] = useState(false);
   const [foundingFiftyAdminOpen, setFoundingFiftyAdminOpen] = useState(false);
   const [contentLibraryOpen, setContentLibraryOpen] = useState(false);
+  const [docsInboxOpen, setDocsInboxOpen] = useState(false);
   const [messagesDraft, setMessagesDraft] = useState<string | undefined>(undefined);
   const [scheduleOpen, setScheduleOpen] = useScheduleModalState();
   const [movementVaultOpen, setMovementVaultOpen, movementVaultInitialId, movementVaultReturnLabel] =
@@ -505,6 +508,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenMemberManager={() => setMemberManagerOpen(true)}
           onOpenFoundingFiftyAdmin={() => setFoundingFiftyAdminOpen(true)}
           onOpenContentLibrary={() => setContentLibraryOpen(true)}
+          onOpenDocsInbox={() => setDocsInboxOpen(true)}
           onOpenInvite={() => setInviteOpen(true)}
         />
       </ScreenOverlay>
@@ -568,6 +572,9 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
       </ScreenOverlay>
       <ScreenOverlay visible={contentLibraryOpen} fullBleed={sidebarOpen}>
         <ContentLibraryScreen visible={contentLibraryOpen} onClose={() => setContentLibraryOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={docsInboxOpen} fullBleed={sidebarOpen}>
+        <DocsInboxScreen visible={docsInboxOpen} onClose={() => setDocsInboxOpen(false)} />
       </ScreenOverlay>
       <ScreenOverlay visible={scheduleOpen} fullBleed={sidebarOpen}>
         <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
@@ -755,15 +762,17 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
                   <ChallengeProvider>
                     <BadgeProvider>
                       <FoundingFiftyProvider>
-                        <ClassSignUpProvider>
-                          <ContentLibraryProvider>
-                            <TourProvider>
-                              <View style={styles.webSurround}>
-                                <ResponsiveShell onLayoutRootView={onLayoutRootView} />
-                              </View>
-                            </TourProvider>
-                          </ContentLibraryProvider>
-                        </ClassSignUpProvider>
+                        <DocsInboxProvider>
+                          <ClassSignUpProvider>
+                            <ContentLibraryProvider>
+                              <TourProvider>
+                                <View style={styles.webSurround}>
+                                  <ResponsiveShell onLayoutRootView={onLayoutRootView} />
+                                </View>
+                              </TourProvider>
+                            </ContentLibraryProvider>
+                          </ClassSignUpProvider>
+                        </DocsInboxProvider>
                       </FoundingFiftyProvider>
                     </BadgeProvider>
                   </ChallengeProvider>
