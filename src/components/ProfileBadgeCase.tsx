@@ -15,7 +15,7 @@ export function ProfileBadgeCase() {
   const founding50 = useFoundingFifty();
   const [selected, setSelected] = useState<BadgeId | null>(null);
   const earnedSet = new Set(myBadgeIds);
-  const permanentIds = permanentDisplayOrder(founding50.enabled || earnedSet.has('founding_50'));
+  const permanentIds = permanentDisplayOrder(founding50.isLive || earnedSet.has('founding_50'));
 
   return (
     <View style={styles.wrap}>

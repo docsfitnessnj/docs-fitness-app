@@ -1,89 +1,151 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { loadJSON, saveJSON } from '../lib/storage';
-
-const STORAGE_KEY = 'docsfitness.foundingFifty.v1';
+import { useAuth } from './AuthContext';
+import { useDisplayName } from './ProfileContext';
+import { etWallTimeToUTC } from '../lib/challengeSchedule';
+import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
 
 export const FOUNDING_FIFTY_CAPACITY = 50;
 export const FOUNDING_FIFTY_PRICE = 37;
 
 export type FoundingFiftyMember = {
   name: string;
-  email: string | null;
   joinedAt: number;
 };
 
-type PersistedState = {
-  // Off by default — the whole tier stays invisible until launch weekend.
-  enabled: boolean;
-  members: FoundingFiftyMember[];
-};
-
-const DEFAULT_STATE: PersistedState = {
-  enabled: false,
-  members: [],
-};
-
-// A one-time cleanup for a device that already persisted the old fabricated
-// launch-weekend roster before this fix — those 19 fake names would
-// otherwise keep counting against the real 50 spots forever, since
-// loadJSON only ever falls back to DEFAULT_STATE when nothing is stored
-// yet. Anyone genuinely named one of these can just claim again.
-const REMOVED_FAKE_NAMES = new Set([
-  'R. Nakamura', 'C. Delgado', 'B. Whitfield', 'M. Okafor', 'L. Prentice',
-  'A. Sorrentino', 'J. Halvorsen', 'E. Iglesias', 'T. Marsh', 'P. Kowalski',
-  'S. Devereaux', 'N. Abernathy', 'G. Fontaine', 'K. Bramwell', 'D. Osei',
-  'W. Calloway', 'F. Rourke', 'H. Vasquez', 'I. Thackeray',
-]);
-
-function stripFakeMembers(state: PersistedState): PersistedState {
-  const filtered = state.members.filter((m) => !REMOVED_FAKE_NAMES.has(m.name));
-  return filtered.length === state.members.length ? state : { ...state, members: filtered };
-}
-
 type FoundingFiftyContextValue = {
-  enabled: boolean;
+  // True until the launch window and the real claimed count have both been
+  // fetched at least once — callers use this to avoid ever flashing the
+  // wrong card (standard vs founding) before the real answer is in.
+  loading: boolean;
+  // Both null until Doc has set a window from the admin area.
+  startsAt: number | null;
+  endsAt: number | null;
   members: FoundingFiftyMember[];
   capacity: number;
   claimedCount: number;
   spotsRemaining: number;
   soldOut: boolean;
-  isMember: (name: string) => boolean;
-  setEnabled: (enabled: boolean) => void;
-  // Claims one of the 50 spots for `name` — returns false (no-op) if sold
-  // out or if that name has already claimed one.
-  claim: (name: string, email: string | null) => boolean;
+  // The single source of truth every screen uses to decide whether to show
+  // founding pricing at all: only true between startsAt/endsAt (both set)
+  // and only while spots remain.
+  isLive: boolean;
+  // Admin-only write — takes plain Eastern-time wall-clock parts (as typed
+  // into the FOUNDING 50 LAUNCH fields) and converts them to real UTC
+  // instants before saving, the same way Weekly Challenge timing does, so
+  // the window is correct for every member regardless of their own device's
+  // timezone. Pass nulls to clear the window entirely.
+  setWindow: (
+    start: { year: number; month: number; day: number; hour: number; minute: number } | null,
+    end: { year: number; month: number; day: number; hour: number; minute: number } | null
+  ) => Promise<{ error: string | null }>;
+  // Claims a spot for the signed-in member. False if sold out, already
+  // claimed, or the write failed for any other reason.
+  claim: () => Promise<boolean>;
 };
 
 const FoundingFiftyContext = createContext<FoundingFiftyContextValue | undefined>(undefined);
 
+type MemberRow = { id: string; joined_at: string; profiles: { display_name: string } | { display_name: string }[] | null };
+
+function nameOf(row: MemberRow): string {
+  const p = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+  return p?.display_name?.trim() || 'Member';
+}
+
 export function FoundingFiftyProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<PersistedState>(() => stripFakeMembers(loadJSON(STORAGE_KEY, DEFAULT_STATE)));
+  const { user, authReady } = useAuth();
+  const displayName = useDisplayName();
+  const [loading, setLoading] = useState(true);
+  const [startsAt, setStartsAt] = useState<number | null>(null);
+  const [endsAt, setEndsAt] = useState<number | null>(null);
+  const [members, setMembers] = useState<FoundingFiftyMember[]>([]);
+
+  const refetchMembers = async () => {
+    const { data } = await supabase
+      .from('founding_fifty_members')
+      .select('id, joined_at, profiles(display_name)')
+      .order('joined_at', { ascending: true });
+    setMembers(((data as unknown as MemberRow[]) ?? []).map((row) => ({ name: nameOf(row), joinedAt: new Date(row.joined_at).getTime() })));
+  };
 
   useEffect(() => {
-    saveJSON(STORAGE_KEY, state);
-  }, [state]);
+    if (!authReady || !user) return;
+    let cancelled = false;
+    setLoading(true);
+
+    Promise.all([
+      supabase.from('founding_fifty_settings').select('starts_at, ends_at').eq('id', 1).maybeSingle(),
+      supabase.from('founding_fifty_members').select('id, joined_at, profiles(display_name)').order('joined_at', { ascending: true }),
+    ]).then(([settingsRes, membersRes]) => {
+      if (cancelled) return;
+      if (!settingsRes.error && settingsRes.data) {
+        setStartsAt(settingsRes.data.starts_at ? new Date(settingsRes.data.starts_at).getTime() : null);
+        setEndsAt(settingsRes.data.ends_at ? new Date(settingsRes.data.ends_at).getTime() : null);
+      }
+      if (!membersRes.error) {
+        setMembers(((membersRes.data as unknown as MemberRow[]) ?? []).map((row) => ({ name: nameOf(row), joinedAt: new Date(row.joined_at).getTime() })));
+      }
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, user]);
 
   const value = useMemo<FoundingFiftyContextValue>(() => {
-    const claimedCount = state.members.length;
+    const claimedCount = members.length;
     const spotsRemaining = Math.max(0, FOUNDING_FIFTY_CAPACITY - claimedCount);
+    const soldOut = spotsRemaining <= 0;
+    const now = Date.now();
+    const windowOpen = startsAt !== null && endsAt !== null && now >= startsAt && now < endsAt;
+    // Defaults to false while still loading — the safe direction to be
+    // wrong in for a moment is "don't offer a discount that isn't
+    // confirmed yet," not the reverse.
+    const isLive = !loading && windowOpen && !soldOut;
 
     return {
-      enabled: state.enabled,
-      members: state.members,
+      loading,
+      startsAt,
+      endsAt,
+      members,
       capacity: FOUNDING_FIFTY_CAPACITY,
       claimedCount,
       spotsRemaining,
-      soldOut: spotsRemaining <= 0,
-      isMember: (name) => state.members.some((m) => m.name === name),
-      setEnabled: (enabled) => setState((prev) => ({ ...prev, enabled })),
-      claim: (name, email) => {
-        if (spotsRemaining <= 0) return false;
-        if (state.members.some((m) => m.name === name)) return false;
-        setState((prev) => ({ ...prev, members: [...prev.members, { name, email, joinedAt: Date.now() }] }));
+      soldOut,
+      isLive,
+      setWindow: async (start, end) => {
+        const startsAtIso = start ? etWallTimeToUTC(start.year, start.month, start.day, start.hour, start.minute).toISOString() : null;
+        const endsAtIso = end ? etWallTimeToUTC(end.year, end.month, end.day, end.hour, end.minute).toISOString() : null;
+        const { error } = await supabase
+          .from('founding_fifty_settings')
+          .update({ starts_at: startsAtIso, ends_at: endsAtIso })
+          .eq('id', 1);
+        if (error) {
+          return {
+            error: isBackendUnavailableError(error)
+              ? "Can't save the launch window right now — the backend isn't reachable."
+              : error.message,
+          };
+        }
+        setStartsAt(startsAtIso ? new Date(startsAtIso).getTime() : null);
+        setEndsAt(endsAtIso ? new Date(endsAtIso).getTime() : null);
+        return { error: null };
+      },
+      claim: async () => {
+        if (!user) return false;
+        const { error } = await supabase.from('founding_fifty_members').insert({ id: user.id });
+        if (error) return false;
+        // Optimistic append so the counter and roster update instantly for
+        // this device, then a real refetch to pick up the server-assigned
+        // joined_at and confirm nothing else changed underneath us.
+        setMembers((prev) => [...prev, { name: displayName, joinedAt: Date.now() }]);
+        refetchMembers();
         return true;
       },
     };
-  }, [state]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, startsAt, endsAt, members, user, displayName]);
 
   return <FoundingFiftyContext.Provider value={value}>{children}</FoundingFiftyContext.Provider>;
 }

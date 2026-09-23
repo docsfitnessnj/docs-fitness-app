@@ -104,7 +104,7 @@ export function MemberManagerScreen({ visible, onClose }: Props) {
 
           <Text style={[styles.planLabel, styles.badgesLabel]}>BADGES</Text>
           <View style={styles.badgeGrid}>
-            {visibleBadgeDefs(founding50.enabled || badges.getBadgesForAuthor(selected.displayName).includes('founding_50')).map(
+            {visibleBadgeDefs(founding50.isLive || badges.getBadgesForAuthor(selected.displayName).includes('founding_50')).map(
               (def) => {
                 const earned = badges.getBadgesForAuthor(selected.displayName).includes(def.id);
                 return (
@@ -168,7 +168,7 @@ export function MemberManagerScreen({ visible, onClose }: Props) {
                   <Text style={styles.memberName}>{m.displayName}</Text>
                   <Text style={styles.memberMeta}>JOINED {formatJoinDate(m.createdAt)}</Text>
                   <View style={styles.miniBadgeRow}>
-                    {visibleBadgeDefs(founding50.enabled || earnedIds.has('founding_50')).map((def) => (
+                    {visibleBadgeDefs(founding50.isLive || earnedIds.has('founding_50')).map((def) => (
                       <BadgeIcon key={def.id} id={def.id} earned={earnedIds.has(def.id)} size={18} />
                     ))}
                   </View>

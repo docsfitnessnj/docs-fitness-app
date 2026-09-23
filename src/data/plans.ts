@@ -43,9 +43,9 @@ export const ONLINE_PLANS: OnlinePlan[] = [
   {
     key: 'annual',
     name: 'ANNUAL (ONLINE)',
-    price: '$497',
+    price: '$513',
     cadence: '/ year',
-    banner: { title: '3 MONTHS FREE', subtitle: 'Save over $180 a year.' },
+    banner: { title: '3 MONTHS FREE', subtitle: 'Pay for 9 months. Get 12.' },
   },
 ];
 
@@ -72,8 +72,10 @@ export type InPersonPlanCard = {
   bulletsHeading?: string;
 };
 
-const IN_PERSON_EXCLUSION_NOTE =
-  "Does not include full app features — Doc's WODs, The Deck of WODs, and The Challenge of the Week. Unlock everything with an online membership, or go Monthly Unlimited in person and get the full app included.";
+// The short, quiet clarifying line for the two in-person tiers that don't
+// include full app access — makes the contrast with Monthly Unlimited
+// (which does) obvious at a glance without repeating the whole bullet list.
+const IN_PERSON_EXCLUSION_NOTE = 'Class booking + community access. Workouts not included.';
 
 export const IN_PERSON_PLANS: InPersonPlanCard[] = [
   {
@@ -89,7 +91,7 @@ export const IN_PERSON_PLANS: InPersonPlanCard[] = [
     key: 'ten_pack',
     name: '10 CLASS PACK (IN-PERSON)',
     price: '$200',
-    cadence: '',
+    cadence: ' · expires 1 year from purchase',
     bulletsHeading: 'WHAT YOU GET',
     bullets: ["Book Doc's Fitness for in person classes", 'Full community access', 'The Movement Vault'],
     clarifyingNote: IN_PERSON_EXCLUSION_NOTE,

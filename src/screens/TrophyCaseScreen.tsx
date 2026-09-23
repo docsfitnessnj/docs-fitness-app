@@ -43,7 +43,7 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
     );
   }
 
-  const permanentIds = permanentDisplayOrder(founding50.enabled || earnedSet.has('founding_50'));
+  const permanentIds = permanentDisplayOrder(founding50.isLive || earnedSet.has('founding_50'));
 
   const permanentStatus = (id: BadgeId): string => {
     switch (id) {
