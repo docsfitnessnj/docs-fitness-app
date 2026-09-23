@@ -4,8 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { DocsBadge } from './brand/DocsBadge';
 import { MembershipToggle } from './MembershipToggle';
+import { UnreadDot } from './UnreadDot';
 import { useChallenge } from '../context/ChallengeContext';
 import { useDeckProgress } from '../context/DeckProgressContext';
+import { useDocsInbox } from '../context/DocsInboxContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { useTour } from '../context/TourContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
@@ -28,6 +30,7 @@ type Props = {
   onOpenMemberManager: () => void;
   onOpenFoundingFiftyAdmin: () => void;
   onOpenContentLibrary: () => void;
+  onOpenDocsInbox: () => void;
   onOpenInvite: () => void;
 };
 
@@ -36,6 +39,7 @@ type Row = {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   meta?: string;
+  unread?: boolean;
   onPress: () => void;
 };
 
@@ -56,6 +60,7 @@ export function SidebarDrawer({
   onOpenMemberManager,
   onOpenFoundingFiftyAdmin,
   onOpenContentLibrary,
+  onOpenDocsInbox,
   onOpenInvite,
 }: Props) {
   const navigation = useNavigation<any>();
@@ -64,6 +69,8 @@ export function SidebarDrawer({
   const { entries: challengeEntries } = useChallenge();
   const displayName = useDisplayName();
   const isAdmin = useCanModerate();
+  const inbox = useDocsInbox();
+  const docsInboxUnread = inbox.threads.some((t) => t.unread);
   // Real admin only (not the dev-preview OR) — a regular member must never
   // even see the tier-preview toggle or the tour-reset dev control, let
   // alone flip them.
@@ -135,6 +142,7 @@ export function SidebarDrawer({
       key: 'message',
       label: 'MESSAGE DOC',
       icon: 'chatbubble-ellipses-outline',
+      unread: inbox.myThreadUnread,
       onPress: () => openNested(onOpenMessages),
     },
     {
@@ -169,6 +177,13 @@ export function SidebarDrawer({
             label: 'CONTENT LIBRARY',
             icon: 'file-tray-full-outline' as const,
             onPress: () => openNested(onOpenContentLibrary),
+          },
+          {
+            key: 'docs-inbox',
+            label: "DOC'S INBOX",
+            icon: 'mail-outline' as const,
+            unread: docsInboxUnread,
+            onPress: () => openNested(onOpenDocsInbox),
           },
         ]
       : []),
@@ -238,6 +253,7 @@ function MenuRow({ row }: { row: Row }) {
         <Ionicons name={row.icon} size={20} color={colors.white} />
       </View>
       <Text style={styles.rowLabel}>{row.label}</Text>
+      {row.unread ? <UnreadDot style={styles.rowUnreadDot} /> : null}
       {row.meta ? <Text style={styles.rowMeta}>{row.meta}</Text> : null}
       <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
     </Pressable>
@@ -301,6 +317,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelSemiBold,
     fontSize: 13,
     letterSpacing: 0.5,
+    marginRight: 8,
+  },
+  rowUnreadDot: {
     marginRight: 8,
   },
   footer: {

@@ -671,6 +671,123 @@ create trigger founding_fifty_capacity_check
   for each row execute function public.enforce_founding_fifty_capacity();
 
 -- ----------------------------------------------------------------------------
+-- MESSAGE DOC — one real, private inbox thread per member
+-- Scope is strictly member <-> Doc, never member <-> member. One thread per
+-- member (keyed by their own id, doc_threads.member_id), holding both sides'
+-- "last read" timestamps so the gold unread dot (member's MESSAGE DOC row,
+-- and Doc's inbox list) is real, shared, per-account state instead of a
+-- device-local guess. doc_messages holds the actual back-and-forth; a
+-- member can only read/write their own thread, admin can read/write every
+-- thread — exactly the same shape as every other admin-vs-member table in
+-- this file.
+-- ----------------------------------------------------------------------------
+create table if not exists public.doc_threads (
+  member_id uuid primary key references public.profiles (id) on delete cascade,
+  member_last_read_at timestamptz not null default now(),
+  admin_last_read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table public.doc_threads enable row level security;
+
+drop policy if exists "a member reads their own thread, admin reads every thread" on public.doc_threads;
+create policy "a member reads their own thread, admin reads every thread"
+  on public.doc_threads for select
+  to authenticated
+  using (member_id = auth.uid() or public.is_admin(auth.uid()));
+
+drop policy if exists "a member's thread is created by themselves or by admin" on public.doc_threads;
+create policy "a member's thread is created by themselves or by admin"
+  on public.doc_threads for insert
+  to authenticated
+  with check (member_id = auth.uid() or public.is_admin(auth.uid()));
+
+drop policy if exists "a member marks their own thread read, admin marks any thread read" on public.doc_threads;
+create policy "a member marks their own thread read, admin marks any thread read"
+  on public.doc_threads for update
+  to authenticated
+  using (member_id = auth.uid() or public.is_admin(auth.uid()))
+  with check (member_id = auth.uid() or public.is_admin(auth.uid()));
+
+create table if not exists public.doc_messages (
+  id uuid primary key default gen_random_uuid(),
+  -- Whose thread this belongs to — the member's own messages AND Doc's
+  -- replies to them both carry this same member_id, so the whole
+  -- conversation is one simple "where member_id = X" query either side.
+  member_id uuid not null references public.profiles (id) on delete cascade,
+  -- Who actually wrote this particular message — the member themselves, or
+  -- whichever admin account replied as Doc.
+  sender_id uuid not null references public.profiles (id) on delete cascade,
+  body text not null default '',
+  media_url text,
+  media_type text check (media_type in ('image', 'video')),
+  voice_url text,
+  voice_duration_ms integer,
+  created_at timestamptz not null default now()
+);
+
+alter table public.doc_messages enable row level security;
+
+drop policy if exists "a member reads their own thread's messages, admin reads every thread's messages" on public.doc_messages;
+create policy "a member reads their own thread's messages, admin reads every thread's messages"
+  on public.doc_messages for select
+  to authenticated
+  using (member_id = auth.uid() or public.is_admin(auth.uid()));
+
+-- A member can only ever post into their own thread, and only as
+-- themselves — never as "Doc". An admin can post as themselves into any
+-- member's thread (that's Doc replying).
+drop policy if exists "members write into their own thread as themselves, admin replies into any thread" on public.doc_messages;
+create policy "members write into their own thread as themselves, admin replies into any thread"
+  on public.doc_messages for insert
+  to authenticated
+  with check (sender_id = auth.uid() and (member_id = auth.uid() or public.is_admin(auth.uid())));
+
+drop policy if exists "the sender or admin can unsend a message" on public.doc_messages;
+create policy "the sender or admin can unsend a message"
+  on public.doc_messages for delete
+  to authenticated
+  using (sender_id = auth.uid() or public.is_admin(auth.uid()));
+
+-- ----------------------------------------------------------------------------
+-- STORAGE: message-media bucket
+-- Photo/video attachments and voice notes sent through MESSAGE DOC, so a
+-- photo a member sends is actually visible to Doc from her own device (not
+-- just a local file URI that never leaves the sender's phone). Same public-
+-- read-but-owner-write shape as the avatars bucket, except "owner" here
+-- means the member who owns that thread's folder OR an admin replying into
+-- it — files live at "<member id>/<filename>", same folder-ownership check
+-- as avatars.
+-- ----------------------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('message-media', 'message-media', true)
+on conflict (id) do nothing;
+
+drop policy if exists "message attachments are publicly viewable" on storage.objects;
+create policy "message attachments are publicly viewable"
+  on storage.objects for select
+  to public
+  using (bucket_id = 'message-media');
+
+drop policy if exists "a member uploads into their own thread, admin uploads into any thread" on storage.objects;
+create policy "a member uploads into their own thread, admin uploads into any thread"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'message-media'
+    and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin(auth.uid()))
+  );
+
+drop policy if exists "the sender or admin can delete a message attachment" on storage.objects;
+create policy "the sender or admin can delete a message attachment"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'message-media'
+    and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin(auth.uid()))
+  );
+
+-- ----------------------------------------------------------------------------
 -- STORAGE: avatars bucket
 -- Judgment call: the bucket is public for *viewing* (a plain image URL, the
 -- same approach essentially every app takes for profile photos, and it
