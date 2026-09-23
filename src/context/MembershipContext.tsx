@@ -346,6 +346,15 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
           planStartedAt: plan === 'monthly_unlimited' ? Date.now() : prev.planStartedAt,
           cancellationRequested: false,
         }));
+        // Still simulated (no real in-person billing) — but mirrored to the
+        // member's own profile row so it's visible beyond just this device,
+        // for Member Manager's plan grouping. Best-effort: this selection
+        // already lives in local storage as the real source of truth for
+        // this device's own access, so a failed mirror write here doesn't
+        // block anything the member can do.
+        if (user) {
+          supabase.from('profiles').update({ in_person_plan: plan }).eq('id', user.id).then(() => {});
+        }
       },
       enterFreeTier: () => {
         setSimulated((prev) => ({ ...prev, tier: 'online_free' }));

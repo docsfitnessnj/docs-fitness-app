@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
+import { SaveConfirmation } from '../components/SaveConfirmation';
 import { FOUNDING_FIFTY_PRICE, useFoundingFifty } from '../context/FoundingFiftyContext';
 import { getEasternParts } from '../lib/challengeSchedule';
 import { showAlert } from '../lib/alert';
+import { useSaveConfirmation } from '../lib/useSaveConfirmation';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -72,6 +74,7 @@ export function FoundingFiftyAdminScreen({ visible, onClose }: Props) {
   const [endDate, setEndDate] = useState('');
   const [endTime, setEndTime] = useState('');
   const [saving, setSaving] = useState(false);
+  const saveConfirm = useSaveConfirmation();
 
   // Reset the draft fields to the saved window every time the screen opens.
   useEffect(() => {
@@ -103,9 +106,15 @@ export function FoundingFiftyAdminScreen({ visible, onClose }: Props) {
     const clearing = !startDate.trim() && !startTime.trim() && !endDate.trim() && !endTime.trim();
     if (clearing) {
       setSaving(true);
+      saveConfirm.start();
       const result = await founding50.setWindow(null, null);
       setSaving(false);
-      if (result.error) showAlert("Couldn't Save", result.error);
+      if (result.error) {
+        saveConfirm.fail(result.error);
+        showAlert("Couldn't Save", result.error);
+        return;
+      }
+      saveConfirm.succeed();
       return;
     }
 
@@ -117,9 +126,15 @@ export function FoundingFiftyAdminScreen({ visible, onClose }: Props) {
     }
 
     setSaving(true);
+    saveConfirm.start();
     const result = await founding50.setWindow(start, end);
     setSaving(false);
-    if (result.error) showAlert("Couldn't Save", result.error);
+    if (result.error) {
+      saveConfirm.fail(result.error);
+      showAlert("Couldn't Save", result.error);
+      return;
+    }
+    saveConfirm.succeed();
   };
 
   return (
@@ -199,6 +214,9 @@ export function FoundingFiftyAdminScreen({ visible, onClose }: Props) {
         >
           <Text style={styles.saveButtonText}>{saving ? 'SAVING…' : 'SAVE LAUNCH WINDOW'}</Text>
         </Pressable>
+        <View style={styles.saveConfirmWrap}>
+          <SaveConfirmation state={saveConfirm.state} errorMessage={saveConfirm.errorMessage} />
+        </View>
 
         <View style={styles.statRow}>
           <View style={styles.statCard} testID="founding-fifty-claimed-count">
@@ -320,10 +338,14 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     alignItems: 'center',
     marginTop: 4,
-    marginBottom: 24,
   },
   saveButtonDisabled: {
     opacity: 0.6,
+  },
+  saveConfirmWrap: {
+    minHeight: 20,
+    marginTop: 10,
+    marginBottom: 20,
   },
   saveButtonText: {
     color: colors.white,

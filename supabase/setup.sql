@@ -28,6 +28,11 @@ create table if not exists public.profiles (
   favorite_quote text not null default '',
   avatar_url text,
   how_train text check (how_train in ('online', 'boathouse')),
+  -- In-person plans (Monthly Unlimited, 10 Class Pack, Drop In) are still
+  -- simulated — no real in-person billing yet — but the selection is stored
+  -- here (not just the selecting device's local storage) so Member Manager
+  -- can see it too. See admin_list_members() below.
+  in_person_plan text check (in_person_plan in ('monthly_unlimited', 'ten_pack', 'drop_in')),
   is_admin boolean not null default false,
   -- Monthly Unlimited's SHOW TOMORROW'S WORKOUT setting (Settings &
   -- Notifications > IN PERSON). Defaults on so nobody's view changes until
@@ -857,6 +862,60 @@ create policy "only admin can read the stripe event log"
 -- the webhook's service-role key ever inserts here. The event id itself is
 -- the primary key, so a redelivered event (Stripe retries on timeout) is
 -- safely ignored rather than double-processed.
+
+-- admin_list_members(): the one call Member Manager needs for its full
+-- roster in a single round trip — profile fields, the member's real email
+-- (profiles never stores email; only auth.users does, which an ordinary
+-- signed-in client can't query directly), their Founding 50 membership, and
+-- their real online subscription row, all joined together. Security
+-- definer so it can read auth.users, but it enforces its own admin check
+-- inside rather than relying on RLS, and returns zero rows for anyone who
+-- isn't an admin — never an error a non-admin caller could use to probe for
+-- admin-only data.
+create or replace function public.admin_list_members()
+returns table (
+  id uuid,
+  display_name text,
+  email text,
+  how_train text,
+  in_person_plan text,
+  is_admin boolean,
+  created_at timestamptz,
+  founding_member boolean,
+  sub_status text,
+  sub_plan text,
+  sub_current_period_end timestamptz,
+  sub_trial_end timestamptz,
+  sub_cancel_at_period_end boolean
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    p.id,
+    p.display_name,
+    u.email,
+    p.how_train,
+    p.in_person_plan,
+    p.is_admin,
+    p.created_at,
+    (f.id is not null) as founding_member,
+    s.status,
+    s.plan,
+    s.current_period_end,
+    s.trial_end,
+    s.cancel_at_period_end
+  from public.profiles p
+  join auth.users u on u.id = p.id
+  left join public.founding_fifty_members f on f.id = p.id
+  left join public.subscriptions s on s.user_id = p.id
+  where public.is_admin(auth.uid())
+  order by p.created_at asc;
+$$;
+
+grant execute on function public.admin_list_members() to authenticated;
 
 -- ----------------------------------------------------------------------------
 -- STORAGE: avatars bucket
