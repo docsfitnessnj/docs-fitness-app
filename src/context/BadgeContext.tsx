@@ -13,10 +13,10 @@ import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
 export const HUNDRED_DOWN_TARGET = 100;
 const REGULAR_TARGET = 3;
 
-// THE FOUNDING 50 badge is out of scope for this backend round (it's tied
-// to FoundingFiftyContext's own simulated capacity/pricing system, not
-// mentioned in the Tier 1 badge list) — it stays exactly as it was,
-// persisted locally per device.
+// THE FOUNDING 50 badge grant itself is out of scope here (it's not in the
+// Tier 1 badge list) — it stays exactly as it was, persisted locally per
+// device, even though FoundingFiftyContext's own capacity/roster (who's
+// actually claimed one of the 50 spots) is now real, shared database data.
 const FOUNDING_FIFTY_STORAGE_KEY = 'docsfitness.foundingFiftyGrants.v1';
 const RECAP_STORAGE_KEY = 'docsfitness.badgeRecap.v1';
 

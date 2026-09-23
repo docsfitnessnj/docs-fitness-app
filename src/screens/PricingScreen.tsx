@@ -2,10 +2,9 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
-import { FoundingFiftyCard } from '../components/FoundingFiftyCard';
 import { PlanSectionHeader } from '../components/PlanSectionHeader';
 import { WebScrollScreen } from '../components/WebScrollScreen';
-import { useFoundingFifty } from '../context/FoundingFiftyContext';
+import { FOUNDING_FIFTY_PRICE, useFoundingFifty } from '../context/FoundingFiftyContext';
 import { ONLINE_PLANS, ONLINE_PLAN_BULLETS, ONLINE_SECTION_HEADER } from '../data/plans';
 import { colors, fonts } from '../theme';
 
@@ -17,7 +16,6 @@ type Props = {
 
 export default function PricingScreen({ onBack, onSelectPlan, onSelectFoundingFifty }: Props) {
   const founding50 = useFoundingFifty();
-  const showFoundingFifty = founding50.enabled && !founding50.soldOut;
 
   return (
     <View style={styles.container}>
@@ -29,45 +27,61 @@ export default function PricingScreen({ onBack, onSelectPlan, onSelectFoundingFi
       <PlanSectionHeader title={ONLINE_SECTION_HEADER.title} subtitle={ONLINE_SECTION_HEADER.subtitle} />
 
       <WebScrollScreen style={styles.scroll} contentContainerStyle={styles.plans} showsVerticalScrollIndicator={false}>
-        {showFoundingFifty && (
-          <FoundingFiftyCard
-            spotsRemaining={founding50.spotsRemaining}
-            capacity={founding50.capacity}
-            onPress={onSelectFoundingFifty}
-          />
-        )}
-        {ONLINE_PLANS.map((plan) => (
-          <View key={plan.key} style={styles.planCard}>
-            <View style={styles.planHeader}>
-              <Text style={styles.planName}>{plan.name}</Text>
-            </View>
-            <View style={styles.planBody}>
-              <Text style={styles.planPrice}>
-                {plan.price}
-                <Text style={styles.planCadence}>{plan.cadence}</Text>
-              </Text>
-
-              {plan.banner && (
-                <View style={styles.banner}>
-                  <Text style={styles.bannerTitle}>{plan.banner.title}</Text>
-                  <Text style={styles.bannerSubtitle}>{plan.banner.subtitle}</Text>
+        {ONLINE_PLANS.map((plan) => {
+          // Only the Monthly plan ever carries the Founding 50 offer — while
+          // it's live, this same card leads with the founding rate instead
+          // of a separate card above it, exactly as the annual plan already
+          // leads with its own "3 MONTHS FREE" banner.
+          const founding = plan.key === 'monthly' && founding50.isLive;
+          const displayBanner = founding
+            ? { title: 'FOUNDING 50 RATE', subtitle: `$${FOUNDING_FIFTY_PRICE} a month, locked in for as long as your membership stays active.` }
+            : plan.banner;
+          return (
+            <View key={plan.key} style={styles.planCard}>
+              <View style={styles.planHeader}>
+                <Text style={styles.planName}>{plan.name}</Text>
+              </View>
+              <View style={styles.planBody}>
+                <View style={styles.priceRow}>
+                  <Text style={styles.planPrice}>
+                    {founding ? `$${FOUNDING_FIFTY_PRICE}` : plan.price}
+                    <Text style={styles.planCadence}>{plan.cadence}</Text>
+                  </Text>
+                  {founding && <Text style={styles.struckPrice}>{plan.price}</Text>}
                 </View>
-              )}
 
-              <Text style={styles.whatYouGet}>WHAT YOU GET</Text>
-              {ONLINE_PLAN_BULLETS.map((bullet) => (
-                <View key={bullet} style={styles.bulletRow}>
-                  <Ionicons name="checkmark" size={14} color={colors.green} />
-                  <Text style={styles.bulletText}>{bullet}</Text>
-                </View>
-              ))}
+                {founding && (
+                  <Text style={styles.foundingCounter} testID="founding-fifty-counter">
+                    {founding50.claimedCount} of {founding50.capacity} spots claimed
+                  </Text>
+                )}
 
-              <Pressable style={styles.selectButton} onPress={onSelectPlan}>
-                <Text style={styles.selectButtonText}>CHOOSE {plan.name}</Text>
-              </Pressable>
+                {displayBanner && (
+                  <View style={styles.banner}>
+                    <Text style={styles.bannerTitle}>{displayBanner.title}</Text>
+                    <Text style={styles.bannerSubtitle}>{displayBanner.subtitle}</Text>
+                  </View>
+                )}
+
+                <Text style={styles.whatYouGet}>WHAT YOU GET</Text>
+                {ONLINE_PLAN_BULLETS.map((bullet) => (
+                  <View key={bullet} style={styles.bulletRow}>
+                    <Ionicons name="checkmark" size={14} color={colors.green} />
+                    <Text style={styles.bulletText}>{bullet}</Text>
+                  </View>
+                ))}
+
+                <Pressable
+                  style={styles.selectButton}
+                  onPress={founding ? onSelectFoundingFifty : onSelectPlan}
+                  testID={founding ? 'select-founding-fifty' : undefined}
+                >
+                  <Text style={styles.selectButtonText}>{founding ? 'CLAIM YOUR SPOT' : `CHOOSE ${plan.name}`}</Text>
+                </Pressable>
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
 
         <View style={styles.footer}>
           <DocsHorizontalLockup width={130} />
@@ -130,6 +144,11 @@ const styles = StyleSheet.create({
   planBody: {
     padding: 20,
   },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+  },
   planPrice: {
     color: colors.text,
     fontFamily: fonts.headline,
@@ -140,6 +159,19 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 16,
     color: colors.textMuted,
+  },
+  struckPrice: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 20,
+    textDecorationLine: 'line-through',
+  },
+  foundingCounter: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    marginTop: 8,
   },
   banner: {
     backgroundColor: colors.gold,
