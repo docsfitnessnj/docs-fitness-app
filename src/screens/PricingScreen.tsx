@@ -5,7 +5,7 @@ import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
 import { PlanSectionHeader } from '../components/PlanSectionHeader';
 import { WebScrollScreen } from '../components/WebScrollScreen';
 import { FOUNDING_FIFTY_PRICE, useFoundingFifty } from '../context/FoundingFiftyContext';
-import { ONLINE_PLANS, ONLINE_PLAN_BULLETS, ONLINE_SECTION_HEADER, OnlinePlan } from '../data/plans';
+import { FOUNDING_FIFTY_BANNER, ONLINE_PLANS, ONLINE_PLAN_BULLETS, ONLINE_SECTION_HEADER, OnlinePlan } from '../data/plans';
 import { showAlert } from '../lib/alert';
 import { startOnlineCheckout } from '../lib/stripeCheckout';
 import { colors, fonts } from '../theme';
@@ -56,9 +56,7 @@ export default function PricingScreen({ onBack }: Props) {
           // of a separate card above it, exactly as the annual plan already
           // leads with its own "3 MONTHS FREE" banner.
           const founding = plan.key === 'monthly' && founding50.isLive;
-          const displayBanner = founding
-            ? { title: 'FOUNDING 50 RATE', subtitle: `$${FOUNDING_FIFTY_PRICE} a month, locked in for as long as your membership stays active.` }
-            : plan.banner;
+          const displayBanner = founding ? FOUNDING_FIFTY_BANNER : plan.banner;
           return (
             <View key={plan.key} style={styles.planCard}>
               <View style={styles.planHeader}>
