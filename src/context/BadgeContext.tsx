@@ -93,8 +93,8 @@ type BadgeContextValue = {
   // Admin-only — see supabase/setup.sql's badge_grants insert/delete
   // policies, which are the real enforcement; these take a real user id
   // (Member Manager looks members up by their real account, not a name).
-  grantJoker: (userId: string) => void;
-  revokeJoker: (userId: string) => void;
+  grantJoker: (userId: string) => Promise<{ error: string | null }>;
+  revokeJoker: (userId: string) => Promise<{ error: string | null }>;
   // One-way — granted automatically the moment a member claims a Founding
   // 50 spot, and never revoked from here even if they later cancel.
   grantFoundingFifty: (name: string) => void;
@@ -302,19 +302,23 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
           .upsert({ user_id: user.id, badge_id: 'cow_killer', period_key: weekPeriodKey }, { onConflict: 'user_id,badge_id,period_key' })
           .then(() => refetchGrants());
       },
-      grantJoker: (userId) => {
-        supabase
+      grantJoker: async (userId) => {
+        const { error } = await supabase
           .from('badge_grants')
-          .upsert({ user_id: userId, badge_id: 'joker', period_key: '', granted_by: user?.id ?? null }, { onConflict: 'user_id,badge_id,period_key' })
-          .then(() => refetchGrants());
+          .upsert({ user_id: userId, badge_id: 'joker', period_key: '', granted_by: user?.id ?? null }, { onConflict: 'user_id,badge_id,period_key' });
+        if (error) {
+          return { error: isBackendUnavailableError(error) ? "Can't save this right now — the backend isn't reachable." : error.message };
+        }
+        await refetchGrants();
+        return { error: null };
       },
-      revokeJoker: (userId) => {
-        supabase
-          .from('badge_grants')
-          .delete()
-          .eq('user_id', userId)
-          .eq('badge_id', 'joker')
-          .then(() => refetchGrants());
+      revokeJoker: async (userId) => {
+        const { error } = await supabase.from('badge_grants').delete().eq('user_id', userId).eq('badge_id', 'joker');
+        if (error) {
+          return { error: isBackendUnavailableError(error) ? "Can't save this right now — the backend isn't reachable." : error.message };
+        }
+        await refetchGrants();
+        return { error: null };
       },
       grantFoundingFifty: (name) =>
         setFoundingFiftyGrants((prev) => ({ ...prev, [name]: { granted: true, grantedAt: Date.now() } })),
