@@ -683,6 +683,33 @@ create trigger founding_fifty_capacity_check
   before insert on public.founding_fifty_members
   for each row execute function public.enforce_founding_fifty_capacity();
 
+-- founding_fifty_public_status(): the launch window and claimed COUNT are
+-- public marketing facts — the About page (the one screen a logged-out
+-- stranger sees) needs them to show the founding offer during launch
+-- weekend, but a signed-out client can't read either table above at all
+-- (both are `to authenticated` only). This narrow function returns just
+-- starts_at/ends_at/claimed_count — never the founding_fifty_members roster
+-- itself, so no member's name, id, or join date is ever exposed to an
+-- anonymous visitor.
+create or replace function public.founding_fifty_public_status()
+returns table (
+  starts_at timestamptz,
+  ends_at timestamptz,
+  claimed_count integer
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    (select s.starts_at from public.founding_fifty_settings s where s.id = 1),
+    (select s.ends_at from public.founding_fifty_settings s where s.id = 1),
+    (select count(*)::integer from public.founding_fifty_members);
+$$;
+
+grant execute on function public.founding_fifty_public_status() to anon, authenticated;
+
 -- ----------------------------------------------------------------------------
 -- MESSAGE DOC — one real, private inbox thread per member
 -- Scope is strictly member <-> Doc, never member <-> member. One thread per

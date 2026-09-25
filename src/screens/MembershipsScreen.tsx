@@ -7,6 +7,7 @@ import { FOUNDING_FIFTY_PRICE, useFoundingFifty } from '../context/FoundingFifty
 import { MembershipTier, useMembership } from '../context/MembershipContext';
 import { useSubscription } from '../context/SubscriptionContext';
 import {
+  FOUNDING_FIFTY_BANNER,
   IN_PERSON_PLANS,
   IN_PERSON_SECTION_HEADER,
   InPersonPlanCard,
@@ -140,9 +141,7 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
             // instead of a separate card above it, exactly as the annual
             // plan already leads with its own "3 MONTHS FREE" banner.
             const founding = plan.key === 'monthly' && founding50.isLive;
-            const displayBanner = founding
-              ? { title: 'FOUNDING 50 RATE', subtitle: `$${FOUNDING_FIFTY_PRICE} a month, locked in for as long as your membership stays active.` }
-              : plan.banner;
+            const displayBanner = founding ? FOUNDING_FIFTY_BANNER : plan.banner;
             return (
               <View key={plan.key} style={styles.planCard}>
                 <View style={styles.planHeader}>

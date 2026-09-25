@@ -1,4 +1,14 @@
+import { FOUNDING_FIFTY_PRICE } from '../context/FoundingFiftyContext';
 import { InPersonPlan } from '../context/MembershipContext';
+
+// The one Founding 50 banner copy, shared by every surface that shows it
+// (Memberships screen's Monthly card, the About page's TRAIN ONLINE door)
+// so they can never drift out of sync with each other. Final, word-for-word
+// copy — never say "lifetime" or "forever" here.
+export const FOUNDING_FIFTY_BANNER = {
+  title: 'FOUNDING 50 RATE',
+  subtitle: `$${FOUNDING_FIFTY_PRICE} a month, locked in for as long as your membership stays active.`,
+};
 
 // Single source of truth for plan pricing/copy — pricing has changed several
 // rounds running, and duplicating it across the onboarding screens and the

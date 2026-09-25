@@ -5,8 +5,13 @@ import { DocsBadge } from '../components/brand/DocsBadge';
 import { InviteFriendModal } from '../components/InviteFriendModal';
 import { ModalHeader } from '../components/ModalHeader';
 import { WebScrollScreen } from '../components/WebScrollScreen';
+import { FOUNDING_FIFTY_PRICE } from '../context/FoundingFiftyContext';
+import { FOUNDING_FIFTY_BANNER, ONLINE_PLANS } from '../data/plans';
 import { openLocationMaps } from '../lib/links';
+import { useFoundingFiftyPublicStatus } from '../lib/useFoundingFiftyPublicStatus';
 import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
+
+const STANDARD_ONLINE_PRICE = ONLINE_PLANS.find((p) => p.key === 'monthly')!.price;
 
 const CREW_PHOTO = require('../../assets/brand/crew-photo.jpg');
 // The photo's real pixel dimensions (1179x740). react-native-web's Image
@@ -79,6 +84,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
   const isLargeDesktop = isDesktop && width >= LARGE_DESKTOP_BREAKPOINT;
   const [photoWidth, setPhotoWidth] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const founding50 = useFoundingFiftyPublicStatus();
 
   // 'onboarding' relies on WebScrollScreen's natural-document-scroll trick
   // (see that component and useWebDocumentScroll for why) — it only works
@@ -149,6 +155,24 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
                 </View>
                 <View style={styles.doorBody}>
                   <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>TRAIN ONLINE</Text>
+                  {founding50.isLive && (
+                    <>
+                      <View style={styles.doorPriceRow}>
+                        <Text style={styles.doorFoundingPrice}>
+                          ${FOUNDING_FIFTY_PRICE}
+                          <Text style={styles.doorFoundingCadence}> / month</Text>
+                        </Text>
+                        <Text style={styles.doorStruckPrice}>{STANDARD_ONLINE_PRICE}</Text>
+                      </View>
+                      <Text style={styles.doorFoundingCounter} testID="about-founding-fifty-counter">
+                        {founding50.claimedCount} of {founding50.capacity} spots claimed
+                      </Text>
+                      <View style={styles.doorFoundingBanner}>
+                        <Text style={styles.doorFoundingBannerTitle}>{FOUNDING_FIFTY_BANNER.title}</Text>
+                        <Text style={styles.doorFoundingBannerSubtitle}>{FOUNDING_FIFTY_BANNER.subtitle}</Text>
+                      </View>
+                    </>
+                  )}
                   <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
                     Everything in the app, from anywhere. Your first two weeks are on us.
                   </Text>
@@ -513,6 +537,58 @@ const styles = StyleSheet.create({
   },
   doorBody: {
     padding: 20,
+  },
+  doorPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+    marginBottom: 6,
+  },
+  doorFoundingPrice: {
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 32,
+    letterSpacing: 1,
+  },
+  doorFoundingCadence: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+    color: colors.textMuted,
+  },
+  // Deliberately smaller/quieter than doorFoundingPrice so the real ($37)
+  // price wins the eye — same struck-price treatment as the Memberships
+  // screen's founding card, so both surfaces match.
+  doorStruckPrice: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 16,
+    textDecorationLine: 'line-through',
+  },
+  doorFoundingCounter: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 12,
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  doorFoundingBanner: {
+    backgroundColor: colors.gold,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  doorFoundingBannerTitle: {
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
+    fontSize: 14,
+    letterSpacing: 1,
+  },
+  doorFoundingBannerSubtitle: {
+    color: colors.greenDeep,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    marginTop: 2,
   },
   doorTitle: {
     color: colors.text,
