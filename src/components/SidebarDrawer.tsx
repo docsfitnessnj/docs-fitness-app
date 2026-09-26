@@ -112,6 +112,20 @@ export function SidebarDrawer({
       meta: String(myWorkoutsCount),
       onPress: () => openNested(onOpenMyWorkouts),
     },
+    // Admin's own messaging surface is DOC'S INBOX, not MESSAGE DOC (which
+    // is just the member-side "message Doc" thread — pointless for Doc
+    // himself). Sits right below MY WORKOUTS, near the top, admin-only.
+    ...(isAdmin
+      ? [
+          {
+            key: 'docs-inbox',
+            label: "DOC'S INBOX",
+            icon: 'mail-outline' as const,
+            unread: docsInboxUnread,
+            onPress: () => openNested(onOpenDocsInbox),
+          },
+        ]
+      : []),
     { key: 'friends', label: 'CLOSE FRIENDS', icon: 'star-outline', onPress: () => openNested(onOpenCloseFriends) },
     {
       key: 'invite',
@@ -138,13 +152,20 @@ export function SidebarDrawer({
       onPress: () => openNested(openFullSchedule),
     },
     { key: 'merch', label: 'MERCH STORE', icon: 'bag-handle-outline', onPress: () => go(openMerchStore) },
-    {
-      key: 'message',
-      label: 'MESSAGE DOC',
-      icon: 'chatbubble-ellipses-outline',
-      unread: inbox.myThreadUnread,
-      onPress: () => openNested(onOpenMessages),
-    },
+    // MESSAGE DOC is a member messaging Doc — meaningless for Doc's own
+    // account, which uses DOC'S INBOX above instead. Every non-admin
+    // account keeps this exactly where and what it's always been.
+    ...(isAdmin
+      ? []
+      : [
+          {
+            key: 'message',
+            label: 'MESSAGE DOC',
+            icon: 'chatbubble-ellipses-outline' as const,
+            unread: inbox.myThreadUnread,
+            onPress: () => openNested(onOpenMessages),
+          },
+        ]),
     {
       key: 'deck',
       label: 'DECK OF WODS',
@@ -177,13 +198,6 @@ export function SidebarDrawer({
             label: 'CONTENT LIBRARY',
             icon: 'file-tray-full-outline' as const,
             onPress: () => openNested(onOpenContentLibrary),
-          },
-          {
-            key: 'docs-inbox',
-            label: "DOC'S INBOX",
-            icon: 'mail-outline' as const,
-            unread: docsInboxUnread,
-            onPress: () => openNested(onOpenDocsInbox),
           },
         ]
       : []),

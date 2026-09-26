@@ -92,7 +92,13 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
             autoCorrect={false}
             spellCheck={false}
             keyboardType="email-address"
-            autoComplete="email"
+            // Off, not "email", on this screen only. iOS Safari's password
+            // overlay heuristic pairs "a username/email-like field" sitting
+            // directly above a password field into a detected signup form —
+            // that pairing, not just the password field's own attributes, is
+            // part of what arms the overlay. Sign in keeps autoComplete
+            // "email" since that screen should still offer saved logins.
+            autoComplete="off"
             nativeID="welcome-email-input"
             aria-label="Email address"
             testID="welcome-email"
@@ -104,18 +110,31 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
             value={password}
             onChangeText={setPassword}
             placeholder="At least 6 characters"
-            // "new-password" is what was making iOS treat this as a brand
-            // new account's password field and immediately push its Save
-            // Password / Suggest Strong Password overlay on tap, blocking
-            // the keyboard. "off" reads as a plain password entry instead —
-            // still real, still masked, eye toggle unaffected — just
-            // without the aggressive push. Scoped to this screen only; sign
-            // in and reset-password keep their normal credential-manager
-            // treatment.
-            autoComplete="off"
-            nativeID="welcome-password-input"
+            // Three things stacked on this field, in the order Doc asked
+            // them tried:
+            // 1. autoComplete — "off" (the previous attempt) does nothing on
+            //    iOS: WebKit has ignored autocomplete="off" on password
+            //    inputs since iOS 11, always applying its own heuristic
+            //    instead. "current-password" is what's actually respected in
+            //    practice — it tells WebKit "treat this as a login field,"
+            //    which routes it to the quiet saved-credential check instead
+            //    of the aggressive Suggest-Strong-Password overlay, since a
+            //    brand-new email has no saved credential to surface.
+            // 2. The DOM id below no longer contains "password" — WebKit's
+            //    heuristic also sniffs id/name text for signup-field
+            //    patterns, on top of the autoComplete value.
+            // 3. See PasswordInput's suppressStrongPasswordPrompt: the field
+            //    stays readOnly (no keyboard, so WebKit never arms the
+            //    overlay for that focus) until the member's first tap, then
+            //    unlocks and refocuses.
+            // Still a true secure field throughout: masked, eye toggle
+            // works, value submits normally. Sign in and reset-password are
+            // untouched and keep full credential-manager behavior.
+            autoComplete="current-password"
+            nativeID="welcome-secure-field"
             ariaLabel="Password"
             testID="welcome-password"
+            suppressStrongPasswordPrompt
           />
 
           <Pressable
