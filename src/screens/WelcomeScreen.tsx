@@ -104,7 +104,15 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
             value={password}
             onChangeText={setPassword}
             placeholder="At least 6 characters"
-            autoComplete="new-password"
+            // "new-password" is what was making iOS treat this as a brand
+            // new account's password field and immediately push its Save
+            // Password / Suggest Strong Password overlay on tap, blocking
+            // the keyboard. "off" reads as a plain password entry instead —
+            // still real, still masked, eye toggle unaffected — just
+            // without the aggressive push. Scoped to this screen only; sign
+            // in and reset-password keep their normal credential-manager
+            // treatment.
+            autoComplete="off"
             nativeID="welcome-password-input"
             ariaLabel="Password"
             testID="welcome-password"

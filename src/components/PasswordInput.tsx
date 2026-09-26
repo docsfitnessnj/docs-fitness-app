@@ -44,6 +44,14 @@ export function PasswordInput({
         placeholderTextColor={colors.textMuted}
         secureTextEntry={!visible}
         autoComplete={autoComplete}
+        // Same "don't overclaim what this field is" move as the composer
+        // round's text fields (autoComplete="off" + importantForAutofill
+        // "no") — here scoped to whichever caller explicitly asks for it by
+        // passing autoComplete="off", since the sign-in and reset-password
+        // screens still want their normal credential-manager treatment.
+        // Still a real, masked password field either way — this only
+        // affects how eagerly the OS offers to manage it.
+        importantForAutofill={autoComplete === 'off' ? 'no' : 'auto'}
         autoCapitalize="none"
         autoCorrect={false}
         spellCheck={false}

@@ -5,7 +5,7 @@ import { useFoundingFifty } from '../context/FoundingFiftyContext';
 import { useMembership } from '../context/MembershipContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { useSubscription } from '../context/SubscriptionContext';
-import { clearCheckoutRedirectPending, markCheckoutRedirectPending } from './checkoutRedirectGate';
+import { clearCheckoutRedirectPending, markCheckoutConfirming } from './checkoutRedirectGate';
 
 const POLL_INTERVAL_MS = 1500;
 const MAX_POLL_ATTEMPTS = 8;
@@ -39,11 +39,13 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
     window.history.replaceState({}, '', window.location.pathname + window.location.hash);
     onOpenMemberships();
     if (checkout === 'success') {
-      // Already set (module import saw this exact URL before any component
-      // rendered — see checkoutRedirectGate.ts) — marking again here is
-      // just belt-and-suspenders. Stays set until the purchase celebration
-      // is dismissed via GET STARTED, or until the poll below gives up.
-      markCheckoutRedirectPending();
+      // Already set to 'confirming' (module import saw this exact URL
+      // before any component rendered — see checkoutRedirectGate.ts) —
+      // marking again here is just belt-and-suspenders. Drives the
+      // branded "CONFIRMING YOUR MEMBERSHIP" loading takeover in
+      // AuthGatedProviders until the purchase celebration is dismissed via
+      // GET STARTED, or until the poll below gives up.
+      markCheckoutConfirming();
       setAwaitingConfirmation(true);
     } else {
       // Cancelled, or returning from the billing portal — no purchase

@@ -51,11 +51,16 @@ import { InviteFriendModal } from './src/components/InviteFriendModal';
 import { IdentitySidebar } from './src/components/IdentitySidebar';
 import { TourOverlay } from './src/components/TourOverlay';
 import { PurchaseCelebrationOverlay } from './src/components/PurchaseCelebrationOverlay';
+import { CheckoutRedirectLoadingScreen } from './src/components/CheckoutRedirectLoadingScreen';
 import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useMovementVaultModalState } from './src/lib/movementVaultModal';
 import { openMemberships, useMembershipsModalState } from './src/lib/membershipsModal';
 import { useCheckoutRedirect } from './src/lib/checkoutRedirect';
-import { clearCheckoutRedirectPending, markCheckoutRedirectPending } from './src/lib/checkoutRedirectGate';
+import {
+  clearCheckoutRedirectPending,
+  markCheckoutRedirecting,
+  useCheckoutGatePhase,
+} from './src/lib/checkoutRedirectGate';
 import { startOnlineCheckout } from './src/lib/stripeCheckout';
 import { useLocalImportOnFirstSignIn } from './src/lib/localImport';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
@@ -322,7 +327,7 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
             // a frame during exactly that gap, right before the checkout
             // redirect fires. Cleared on every branch below that does NOT
             // end in a real checkout redirect.
-            if (intent === 'onlineTrial') markCheckoutRedirectPending();
+            if (intent === 'onlineTrial') markCheckoutRedirecting();
             const result = await signUp(enteredEmail, password, howTrainForDoor);
             if (result.error) {
               if (intent === 'onlineTrial') clearCheckoutRedirectPending();
@@ -451,7 +456,15 @@ type MainAppProps = {
 
 function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps) {
   const { tier } = useMembership();
-  useWeeklyUpgradeNudge(tier === 'online_free');
+  const checkoutGatePhase = useCheckoutGatePhase();
+  // A brand-new online signup reads as 'online_free' for the brief window
+  // before the real subscription confirms — exactly the window a checkout
+  // redirect (or, on return, the confirmation poll) can be in progress. This
+  // is what was popping the "Unlock Everything" nudge alert on top of the
+  // calm loading takeover: a real alert, not a screen, so the opaque overlay
+  // in ResponsiveShell alone can't be trusted to cover it everywhere a modal
+  // might portal to. Simplest fix is not letting it fire in the first place.
+  useWeeklyUpgradeNudge(tier === 'online_free' && !checkoutGatePhase);
   // Hides the bottom tab bar the moment any field is focused and the
   // keyboard opens, app-wide — previously only the hamburger drawer hid it,
   // so an open keyboard plus the tab bar could cover most of a form (the
@@ -623,16 +636,25 @@ type ResponsiveShellProps = {
 };
 
 function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
-  const { signedUp } = useMembership();
+  const { signedUp, justPurchased } = useMembership();
   const { width } = useWindowDimensions();
   const [messagesOpen, setMessagesOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('about');
+  // Reactive read of the same gate the tour uses (see checkoutRedirectGate.ts).
+  const checkoutGatePhase = useCheckoutGatePhase();
+  // The loading takeover covers the whole "on the way to Stripe" span, and
+  // the "back from Stripe, polling for the webhook" span — but the instant
+  // the poll confirms (justPurchased flips true), the purchase celebration
+  // (confetti + welcome modal) takes over instead. The tour stays blocked
+  // by checkoutGatePhase itself all the way through GET STARTED — that's a
+  // separate concern from what this loading screen shows.
+  const showCheckoutGateLoading = checkoutGatePhase === 'redirecting' || (checkoutGatePhase === 'confirming' && !justPurchased);
 
   useWebDocumentScroll(signedUp);
 
   const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
   const isLargeDesktop = isDesktop && width >= LARGE_DESKTOP_BREAKPOINT;
-  const showSidebar = isDesktop && signedUp;
+  const showSidebar = isDesktop && signedUp && !showCheckoutGateLoading;
   // The About page is a landing page and reads full-bleed on desktop; every
   // other onboarding step (email capture, plan pickers) stays in the narrow
   // phone-frame column like the rest of the pre-signup flow.
@@ -666,6 +688,24 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
             />
           ) : (
             <OnboardingFlow step={onboardingStep} setStep={setOnboardingStep} />
+          )}
+          {/* An opaque overlay, not a replacement — MainApp needs to stay
+              mounted underneath so useCheckoutRedirect (inside it) keeps
+              polling for the webhook confirmation throughout the
+              'confirming' phase. Same "always mounted, renders null/hidden
+              when inactive" shape as PurchaseCelebrationOverlay/TourOverlay
+              below. Because it's fully opaque and the highest thing on
+              screen, nothing under it is ever visible — satisfying "not a
+              single frame" without needing MainApp to unmount. Hides itself
+              the instant justPurchased flips true so the celebration takes
+              over immediately — the tour stays blocked by checkoutGatePhase
+              itself regardless, all the way through GET STARTED. */}
+          {showCheckoutGateLoading && (
+            <View style={styles.checkoutGateOverlay}>
+              <CheckoutRedirectLoadingScreen
+                message={checkoutGatePhase === 'confirming' ? 'CONFIRMING YOUR MEMBERSHIP' : 'TAKING YOU TO CHECKOUT'}
+              />
+            </View>
           )}
           <AlertHost />
           <StatusBar style="dark" />
@@ -844,6 +884,17 @@ const styles = StyleSheet.create({
   // layout, which stays on its own fixed-height internal scroller.
   mainColumnUnclipped: {
     overflow: 'visible',
+  },
+  // Highest thing on screen, deliberately above even the tour (9999) and
+  // the purchase celebration (10000) — belt-and-suspenders, since both are
+  // already independently gated not to render during this span.
+  checkoutGateOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10001,
   },
   sidebarColumn: {
     paddingTop: 60,
