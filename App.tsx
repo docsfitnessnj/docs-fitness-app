@@ -322,11 +322,14 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
               };
             }
             if (intent === 'onlineTrial') {
-              // This fast door used to just flip a local "trial" flag —
-              // a real trial now needs a real Stripe Checkout session (card
-              // required upfront, 14-day trial attached), same as the
-              // OnlineStartScreen path. A signup failure already returned
-              // above, so a checkout failure here is shown the same way.
+              // This fast door used to just flip a local "trial" flag — real
+              // access now needs a real Stripe Checkout session, same as the
+              // OnlineStartScreen path. Whether a 14-day trial gets attached
+              // is decided server-side in create-checkout (standard/annual:
+              // yes; the live Founding 50 rate: no, it charges immediately —
+              // see that function for why). A signup failure already
+              // returned above, so a checkout failure here is shown the same
+              // way.
               const checkoutResult = await startOnlineCheckout('monthly');
               if (checkoutResult.error) return { message: checkoutResult.error, kind: 'error' };
             } else if (intent === 'bookClass') {
@@ -380,8 +383,9 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
         />
       );
     case 'onlineStart':
-      // OnlineStartScreen now starts real Stripe Checkout itself (Monthly,
-      // with the 14-day trial attached) — no local tier to set here.
+      // OnlineStartScreen now starts real Stripe Checkout itself (Monthly;
+      // trial or not, and founding or standard, decided server-side) — no
+      // local tier to set here.
       return <OnlineStartScreen onBack={() => setStep('howDoYouTrain')} onSkipToPricing={() => setStep('pricing')} />;
     case 'pricing':
       // PricingScreen now starts real Checkout itself for whichever card was

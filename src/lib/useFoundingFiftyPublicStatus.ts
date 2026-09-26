@@ -14,6 +14,9 @@ type FoundingFiftyPublicStatus = {
   claimedCount: number;
   spotsRemaining: number;
   capacity: number;
+  // Null until loaded — used to derive the live "OFFER ENDS <DAY>" deadline
+  // line, never a hardcoded day.
+  endsAt: number | null;
 };
 
 const LOADING_STATE: FoundingFiftyPublicStatus = {
@@ -22,6 +25,7 @@ const LOADING_STATE: FoundingFiftyPublicStatus = {
   claimedCount: 0,
   spotsRemaining: FOUNDING_FIFTY_CAPACITY,
   capacity: FOUNDING_FIFTY_CAPACITY,
+  endsAt: null,
 };
 
 // The About page's own read of the Founding 50 launch window — deliberately
@@ -60,6 +64,7 @@ export function useFoundingFiftyPublicStatus(): FoundingFiftyPublicStatus {
           claimedCount,
           spotsRemaining,
           capacity: FOUNDING_FIFTY_CAPACITY,
+          endsAt: endsAtMs,
         });
       });
     return () => {

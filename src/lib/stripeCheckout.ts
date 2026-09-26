@@ -43,10 +43,11 @@ async function messageFromInvokeError(error: unknown, fallback: string): Promise
   return fallback;
 }
 
-// Starts a real Stripe Checkout session (14-day trial, card required
-// upfront) for Monthly or Annual (Online) and navigates there. The server
-// decides — never the client — whether this checkout actually uses the
-// Founding 50 rate.
+// Starts a real Stripe Checkout session for Monthly or Annual (Online) and
+// navigates there. The server decides — never the client — whether this
+// checkout actually uses the Founding 50 rate, and whether a 14-day trial
+// gets attached (standard/annual: yes; the live Founding 50 rate: no, it
+// charges immediately — see create-checkout).
 export async function startOnlineCheckout(plan: OnlineCheckoutPlan): Promise<{ error: string | null }> {
   try {
     const { data, error } = await supabase.functions.invoke('create-checkout', {

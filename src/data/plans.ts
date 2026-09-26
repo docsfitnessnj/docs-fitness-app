@@ -1,3 +1,4 @@
+import { getEasternParts } from '../lib/challengeSchedule';
 import { FOUNDING_FIFTY_PRICE } from '../context/FoundingFiftyContext';
 import { InPersonPlan } from '../context/MembershipContext';
 
@@ -9,6 +10,37 @@ export const FOUNDING_FIFTY_BANNER = {
   title: 'FOUNDING 50 RATE',
   subtitle: `$${FOUNDING_FIFTY_PRICE} a month, locked in for as long as your membership stays active.`,
 };
+
+// Business decision: the Founding 50 rate has no trial — it charges
+// immediately and the rate is locked in for as long as the membership stays
+// active. Every surface on the founding path uses this exact sentence in
+// place of any "first two weeks are free" / "you won't be charged until"
+// trial language. Final, word-for-word — never say "lifetime" or "forever".
+export const FOUNDING_NO_TRIAL_SENTENCE = `$${FOUNDING_FIFTY_PRICE} today. Your rate is locked in for as long as your membership stays active.`;
+
+// One value line under the founding banner, phrasing pulled straight from
+// ONLINE_PLAN_BULLETS below rather than inventing new claims.
+export const FOUNDING_VALUE_LINE =
+  'All 5 kettlebell workouts a week, the full Deck of WODs, Weekly Challenge + live leaderboard, full community access, and message Doc directly.';
+
+const WEEKDAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+
+// "X SPOTS LEFT" counts DOWN (not up) — the loudest supporting element on
+// the founding door while the window is live. "ONLY" prefixes it once 10 or
+// fewer spots remain, for real urgency without inventing a fake one.
+export function foundingSpotsLeftLabel(spotsRemaining: number): string {
+  return spotsRemaining <= 10 ? `ONLY ${spotsRemaining} SPOTS LEFT` : `${spotsRemaining} SPOTS LEFT`;
+}
+
+// "OFFER ENDS <DAY> 11:59 PM ET" — the day is always read live from the
+// real launch-window end datetime (in Eastern time, matching how Doc sets
+// the window from the admin screen), never hardcoded. Null while no window
+// end is set.
+export function foundingDeadlineLabel(endsAtMs: number | null): string | null {
+  if (endsAtMs === null) return null;
+  const weekday = getEasternParts(new Date(endsAtMs)).weekday;
+  return `OFFER ENDS ${WEEKDAY_NAMES[weekday]} 11:59 PM ET`;
+}
 
 // Single source of truth for plan pricing/copy — pricing has changed several
 // rounds running, and duplicating it across the onboarding screens and the
