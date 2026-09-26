@@ -6,7 +6,7 @@ import { InviteFriendModal } from '../components/InviteFriendModal';
 import { ModalHeader } from '../components/ModalHeader';
 import { WebScrollScreen } from '../components/WebScrollScreen';
 import { FOUNDING_FIFTY_PRICE } from '../context/FoundingFiftyContext';
-import { FOUNDING_FIFTY_BANNER, ONLINE_PLANS } from '../data/plans';
+import { FOUNDING_FIFTY_BANNER, FOUNDING_VALUE_LINE, ONLINE_PLANS, foundingDeadlineLabel, foundingSpotsLeftLabel } from '../data/plans';
 import { openLocationMaps } from '../lib/links';
 import { useFoundingFiftyPublicStatus } from '../lib/useFoundingFiftyPublicStatus';
 import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
@@ -151,7 +151,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
             <View style={isDesktop && styles.doorsRowDesktop}>
               <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
                 <View style={styles.doorBanner}>
-                  <Text style={styles.doorBannerText}>2 WEEKS FREE</Text>
+                  <Text style={styles.doorBannerText}>{founding50.isLive ? 'FOUNDING 50 RATE' : '2 WEEKS FREE'}</Text>
                 </View>
                 <View style={styles.doorBody}>
                   <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>TRAIN ONLINE</Text>
@@ -164,20 +164,28 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
                         </Text>
                         <Text style={styles.doorStruckPrice}>{STANDARD_ONLINE_PRICE}</Text>
                       </View>
-                      <Text style={styles.doorFoundingCounter} testID="about-founding-fifty-counter">
-                        {founding50.claimedCount} of {founding50.capacity} spots claimed
+                      <Text style={styles.doorSpotsLeftLine} testID="about-founding-spots-left">
+                        {foundingSpotsLeftLabel(founding50.spotsRemaining)}
                       </Text>
+                      {foundingDeadlineLabel(founding50.endsAt) && (
+                        <Text style={styles.doorDeadlineLine} testID="about-founding-deadline">
+                          {foundingDeadlineLabel(founding50.endsAt)}
+                        </Text>
+                      )}
                       <View style={styles.doorFoundingBanner}>
                         <Text style={styles.doorFoundingBannerTitle}>{FOUNDING_FIFTY_BANNER.title}</Text>
                         <Text style={styles.doorFoundingBannerSubtitle}>{FOUNDING_FIFTY_BANNER.subtitle}</Text>
                       </View>
+                      <Text style={styles.doorFoundingValueLine}>{FOUNDING_VALUE_LINE}</Text>
                     </>
                   )}
                   <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
-                    Everything in the app, from anywhere. Your first two weeks are on us.
+                    {founding50.isLive
+                      ? 'Everything in the app, from anywhere.'
+                      : "Everything in the app, from anywhere. Your first two weeks are on us."}
                   </Text>
                   <Pressable style={styles.doorButton} onPress={onStartFree} testID="about-start-free">
-                    <Text style={styles.doorButtonText}>START FREE</Text>
+                    <Text style={styles.doorButtonText}>{founding50.isLive ? 'CLAIM YOUR SPOT' : 'START FREE'}</Text>
                   </Pressable>
                 </View>
               </View>
@@ -542,7 +550,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 10,
-    marginBottom: 6,
+    marginBottom: 12,
   },
   doorFoundingPrice: {
     color: colors.text,
@@ -564,12 +572,28 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textDecorationLine: 'line-through',
   },
-  doorFoundingCounter: {
-    color: colors.green,
+  // The loudest supporting element on the founding door: gold, Barlow
+  // Condensed caps, counting spots DOWN (never claimed-up).
+  doorSpotsLeftLine: {
+    color: colors.gold,
+    fontFamily: fonts.labelBold,
+    fontSize: 15,
+    letterSpacing: 1,
+  },
+  doorDeadlineLine: {
+    color: colors.gold,
     fontFamily: fonts.labelBold,
     fontSize: 12,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
+    marginTop: 3,
     marginBottom: 12,
+  },
+  doorFoundingValueLine: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 14,
   },
   doorFoundingBanner: {
     backgroundColor: colors.gold,

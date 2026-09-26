@@ -15,6 +15,11 @@ function json(body: unknown, status = 200) {
 // claimed, this account hasn't already claimed one) and silently falls back
 // to the standard $57 price the moment any of that isn't true, exactly as
 // the round's brief requires. Never trust what the client showed on screen.
+//
+// Business decision: the Founding 50 rate has no trial — it charges $37
+// immediately at checkout, rate locked in for as long as the membership
+// stays active. Standard monthly and annual keep their 14-day trial
+// unchanged, live window or not.
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -86,7 +91,9 @@ Deno.serve(async (req) => {
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
       subscription_data: {
-        trial_period_days: 14,
+        // No trial on the Founding 50 rate — $37 charges immediately.
+        // Standard monthly and annual keep the 14-day trial.
+        ...(planLabel === 'founding' ? {} : { trial_period_days: 14 }),
         metadata: { supabase_user_id: user.id, plan: planLabel },
       },
       client_reference_id: user.id,

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFoundingFifty } from '../context/FoundingFiftyContext';
+import { FOUNDING_NO_TRIAL_SENTENCE } from '../data/plans';
 import { showAlert } from '../lib/alert';
 import { startOnlineCheckout } from '../lib/stripeCheckout';
 import { colors, fonts } from '../theme';
@@ -12,12 +14,14 @@ type Props = {
 
 export default function OnlineStartScreen({ onBack, onSkipToPricing }: Props) {
   const [starting, setStarting] = useState(false);
+  const founding50 = useFoundingFifty();
+  const founding = founding50.isLive;
 
   // Goes straight to Stripe Checkout for Monthly (Online) — the founding
-  // vs. standard price is decided for real, server-side — with the 14-day
-  // trial attached. "Skip the trial — see pricing" is for a member who'd
-  // rather pick Annual specifically instead of defaulting to Monthly.
-  const startTrial = async () => {
+  // vs. standard price (and whether a trial is attached at all) is decided
+  // for real, server-side. "See other plans" is for a member who'd rather
+  // pick Annual specifically instead of defaulting to Monthly.
+  const startCheckout = async () => {
     setStarting(true);
     const { error } = await startOnlineCheckout('monthly');
     setStarting(false);
@@ -32,22 +36,33 @@ export default function OnlineStartScreen({ onBack, onSkipToPricing }: Props) {
       </Pressable>
 
       <View style={styles.content}>
-        <Text style={styles.title}>2 WEEKS FREE,{'\n'}ON US</Text>
-        <Text style={styles.subtext}>
-          Full access to Doc's WODs, COWS, The Deck, and Community. Card required to start — you won't be charged
-          until your trial ends, and you can cancel anytime.
-        </Text>
+        {founding ? (
+          <>
+            <Text style={styles.title}>FOUNDING 50{'\n'}RATE</Text>
+            <Text style={styles.subtext}>
+              Full access to Doc's WODs, COWS, The Deck, and Community. {FOUNDING_NO_TRIAL_SENTENCE}
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.title}>2 WEEKS FREE,{'\n'}ON US</Text>
+            <Text style={styles.subtext}>
+              Full access to Doc's WODs, COWS, The Deck, and Community. Card required to start — you won't be
+              charged until your trial ends, and you can cancel anytime.
+            </Text>
+          </>
+        )}
 
-        <Pressable style={styles.trialButton} onPress={startTrial} disabled={starting} testID="start-trial">
+        <Pressable style={styles.trialButton} onPress={startCheckout} disabled={starting} testID="start-trial">
           {starting ? (
             <ActivityIndicator color={colors.white} />
           ) : (
-            <Text style={styles.trialButtonText}>START MY 2-WEEK FREE TRIAL</Text>
+            <Text style={styles.trialButtonText}>{founding ? 'CLAIM YOUR SPOT' : 'START MY 2-WEEK FREE TRIAL'}</Text>
           )}
         </Pressable>
 
         <Pressable onPress={onSkipToPricing} hitSlop={8} style={styles.skipLink} testID="skip-to-pricing">
-          <Text style={styles.skipLinkText}>Skip the trial — see pricing</Text>
+          <Text style={styles.skipLinkText}>{founding ? 'See other plans' : 'Skip the trial — see pricing'}</Text>
         </Pressable>
       </View>
     </View>

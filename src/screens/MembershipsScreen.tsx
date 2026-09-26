@@ -8,6 +8,8 @@ import { MembershipTier, useMembership } from '../context/MembershipContext';
 import { useSubscription } from '../context/SubscriptionContext';
 import {
   FOUNDING_FIFTY_BANNER,
+  FOUNDING_NO_TRIAL_SENTENCE,
+  FOUNDING_VALUE_LINE,
   IN_PERSON_PLANS,
   IN_PERSON_SECTION_HEADER,
   InPersonPlanCard,
@@ -15,6 +17,8 @@ import {
   ONLINE_PLAN_BULLETS,
   ONLINE_SECTION_HEADER,
   OnlinePlan,
+  foundingDeadlineLabel,
+  foundingSpotsLeftLabel,
 } from '../data/plans';
 import { showAlert } from '../lib/alert';
 import { openBillingPortal, startOnlineCheckout } from '../lib/stripeCheckout';
@@ -81,7 +85,7 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
   const chooseOnline = (plan: OnlinePlan, founding: boolean) => {
     const title = founding ? 'Start Your Founding 50 Checkout?' : `Start Checkout For ${plan.name}?`;
     const body = founding
-      ? `You'll go to Stripe to lock in the FOUNDING 50 RATE, $${FOUNDING_FIFTY_PRICE} a month, locked in for as long as your membership stays active — with a 14-day free trial. Card required to start; you won't be charged until the trial ends, and you can cancel anytime.`
+      ? `You'll go to Stripe to lock in the FOUNDING 50 RATE. ${FOUNDING_NO_TRIAL_SENTENCE} You can cancel anytime.`
       : `You'll go to Stripe to start ${plan.name} with a 14-day free trial. Card required to start; you won't be charged until the trial ends, and you can cancel anytime.`;
     showAlert(title, body, [
       { text: 'Cancel', style: 'cancel' },
@@ -157,9 +161,16 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
                   </View>
 
                   {founding && (
-                    <Text style={styles.foundingCounter} testID="founding-fifty-counter">
-                      {founding50.claimedCount} of {founding50.capacity} spots claimed
-                    </Text>
+                    <>
+                      <Text style={styles.foundingSpotsLeft} testID="founding-fifty-spots-left">
+                        {foundingSpotsLeftLabel(founding50.spotsRemaining)}
+                      </Text>
+                      {foundingDeadlineLabel(founding50.endsAt) && (
+                        <Text style={styles.foundingDeadline} testID="founding-fifty-deadline">
+                          {foundingDeadlineLabel(founding50.endsAt)}
+                        </Text>
+                      )}
+                    </>
                   )}
 
                   {displayBanner && (
@@ -168,6 +179,8 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
                       <Text style={styles.bannerSubtitle}>{displayBanner.subtitle}</Text>
                     </View>
                   )}
+
+                  {founding && <Text style={styles.foundingValueLine}>{FOUNDING_VALUE_LINE}</Text>}
 
                   <Text style={styles.whatYouGet}>WHAT YOU GET</Text>
                   {ONLINE_PLAN_BULLETS.map((bullet) => (
@@ -375,12 +388,28 @@ const styles = StyleSheet.create({
     fontSize: 18,
     textDecorationLine: 'line-through',
   },
-  foundingCounter: {
-    color: colors.green,
+  // The loudest supporting element on the founding card: gold, Barlow
+  // Condensed caps, counting spots DOWN (never claimed-up).
+  foundingSpotsLeft: {
+    color: colors.gold,
     fontFamily: fonts.labelBold,
-    fontSize: 13,
+    fontSize: 15,
     letterSpacing: 0.5,
     marginTop: 8,
+  },
+  foundingDeadline: {
+    color: colors.gold,
+    fontFamily: fonts.labelBold,
+    fontSize: 12,
+    letterSpacing: 0.5,
+    marginTop: 3,
+  },
+  foundingValueLine: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 12,
   },
   classesLeft: {
     color: colors.green,
