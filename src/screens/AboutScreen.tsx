@@ -172,18 +172,15 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
                           {foundingDeadlineLabel(founding50.endsAt)}
                         </Text>
                       )}
-                      <View style={styles.doorFoundingBanner}>
-                        <Text style={styles.doorFoundingBannerTitle}>{FOUNDING_FIFTY_BANNER.title}</Text>
-                        <Text style={styles.doorFoundingBannerSubtitle}>{FOUNDING_FIFTY_BANNER.subtitle}</Text>
-                      </View>
+                      <Text style={styles.doorFoundingRateSentence}>{FOUNDING_FIFTY_BANNER.subtitle}</Text>
                       <Text style={styles.doorFoundingValueLine}>{FOUNDING_VALUE_LINE}</Text>
                     </>
                   )}
-                  <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
-                    {founding50.isLive
-                      ? 'Everything in the app, from anywhere.'
-                      : "Everything in the app, from anywhere. Your first two weeks are on us."}
-                  </Text>
+                  {!founding50.isLive && (
+                    <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
+                      Everything in the app, from anywhere. Your first two weeks are on us.
+                    </Text>
+                  )}
                   <Pressable style={styles.doorButton} onPress={onStartFree} testID="about-start-free">
                     <Text style={styles.doorButtonText}>{founding50.isLive ? 'CLAIM YOUR SPOT' : 'START FREE'}</Text>
                   </Pressable>
@@ -588,31 +585,22 @@ const styles = StyleSheet.create({
     marginTop: 3,
     marginBottom: 12,
   },
+  // Plain sentence, not a boxed banner — the gold top strip already says
+  // FOUNDING 50 RATE once; repeating it in a second gold box read as
+  // stutter, so this is just the rate sentence on its own line.
+  doorFoundingRateSentence: {
+    color: colors.text,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
   doorFoundingValueLine: {
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 12,
     lineHeight: 17,
     marginBottom: 14,
-  },
-  doorFoundingBanner: {
-    backgroundColor: colors.gold,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 14,
-  },
-  doorFoundingBannerTitle: {
-    color: colors.greenDeep,
-    fontFamily: fonts.labelBold,
-    fontSize: 14,
-    letterSpacing: 1,
-  },
-  doorFoundingBannerSubtitle: {
-    color: colors.greenDeep,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 12,
-    marginTop: 2,
   },
   doorTitle: {
     color: colors.text,

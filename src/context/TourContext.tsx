@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
+import { isCheckoutRedirectPending } from '../lib/checkoutRedirectGate';
 import { loadJSON, saveJSON } from '../lib/storage';
 
 const STORAGE_KEY = 'docsFitness.tourCompleted';
@@ -44,8 +45,20 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     () => ({
       active,
       stepIndex,
+      // The tour's ONE entry point — every call site (CommunityScreen's own
+      // mount, and the purchase celebration's GET STARTED) funnels through
+      // this same gate, so there is exactly one place that decides whether
+      // the tour is allowed to become visible at all. Nothing else may ever
+      // set `active` true. The gate is a plain synchronous check — never
+      // "start now, hide a moment later" — so a blocked call never renders
+      // so much as a single frame, and never touches `completed`: only
+      // finishing or skipping the tour ever burns the once-ever flag, so a
+      // suppressed start here always leaves a real chance for the tour to
+      // run later (the next time something calls start() with the gate
+      // open), not a silently-consumed one.
       start: () => {
         if (completed) return;
+        if (isCheckoutRedirectPending()) return;
         setStepIndex(0);
         setActive(true);
       },

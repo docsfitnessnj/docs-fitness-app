@@ -18,10 +18,11 @@ export const FOUNDING_FIFTY_BANNER = {
 // trial language. Final, word-for-word — never say "lifetime" or "forever".
 export const FOUNDING_NO_TRIAL_SENTENCE = `$${FOUNDING_FIFTY_PRICE} today. Your rate is locked in for as long as your membership stays active.`;
 
-// One value line under the founding banner, phrasing pulled straight from
-// ONLINE_PLAN_BULLETS below rather than inventing new claims.
+// One value line under the founding rate sentence. Final, word-for-word —
+// every founding surface (About door, Memberships, Pricing) shows exactly
+// this sentence, never a paraphrase.
 export const FOUNDING_VALUE_LINE =
-  'All 5 kettlebell workouts a week, the full Deck of WODs, Weekly Challenge + live leaderboard, full community access, and message Doc directly.';
+  'All 5 weekly workouts, the full Deck of WODs, the Weekly Challenge and live leaderboard, the community, and a direct line to Doc.';
 
 const WEEKDAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 

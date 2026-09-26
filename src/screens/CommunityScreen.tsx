@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
 import { Avatar } from '../components/Avatar';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { CreatePostModal } from '../components/CreatePostModal';
@@ -325,17 +325,24 @@ export default function CommunityScreen() {
   // the picture. See profileLoading below, which is what actually closes it.
   const showClassCard = howTrain !== 'online';
 
-  // First-open spotlight tour: fires once per install, guarded by the
-  // persisted completed flag inside TourContext — this effect just needs to
-  // ask exactly once per mount, not once per render.
+  // First-open spotlight tour: fires once per install. tour.start() is the
+  // tour's single gated entry point (see TourContext) — it already refuses
+  // to activate while a checkout redirect/return is pending or the persisted
+  // completed flag is set, so this call site only needs to add the one
+  // condition that's specific to it: don't even attempt it while this
+  // screen isn't actually the focused tab (Community is always the initial
+  // tab, so this is normally already true the instant this effect runs, but
+  // asking explicitly keeps the "user is on the Community tab" rule from
+  // rule 1 real rather than assumed).
+  const isFocused = useIsFocused();
   const tourStarted = useRef(false);
   useEffect(() => {
-    if (!tourStarted.current) {
+    if (!tourStarted.current && isFocused) {
       tourStarted.current = true;
       tour.start();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isFocused]);
 
   const days = useMemo(() => getUpcomingDays(BOOKING_DAYS_AHEAD), []);
   const todayIndex = days.findIndex((d) => d.isToday);

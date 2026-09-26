@@ -66,7 +66,6 @@ export default function PricingScreen({ onBack }: Props) {
           // of a separate card above it, exactly as the annual plan already
           // leads with its own "3 MONTHS FREE" banner.
           const founding = plan.key === 'monthly' && founding50.isLive;
-          const displayBanner = founding ? FOUNDING_FIFTY_BANNER : plan.banner;
           return (
             <View key={plan.key} style={styles.planCard}>
               <View style={styles.planHeader}>
@@ -94,11 +93,18 @@ export default function PricingScreen({ onBack }: Props) {
                   </>
                 )}
 
-                {displayBanner && (
-                  <View style={styles.banner}>
-                    <Text style={styles.bannerTitle}>{displayBanner.title}</Text>
-                    <Text style={styles.bannerSubtitle}>{displayBanner.subtitle}</Text>
-                  </View>
+                {founding ? (
+                  <>
+                    <Text style={styles.foundingRateLabel}>{FOUNDING_FIFTY_BANNER.title}</Text>
+                    <Text style={styles.foundingRateSentence}>{FOUNDING_FIFTY_BANNER.subtitle}</Text>
+                  </>
+                ) : (
+                  plan.banner && (
+                    <View style={styles.banner}>
+                      <Text style={styles.bannerTitle}>{plan.banner.title}</Text>
+                      <Text style={styles.bannerSubtitle}>{plan.banner.subtitle}</Text>
+                    </View>
+                  )
                 )}
 
                 {founding && <Text style={styles.foundingValueLine}>{FOUNDING_VALUE_LINE}</Text>}
@@ -224,6 +230,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 0.5,
     marginTop: 3,
+  },
+  foundingRateLabel: {
+    color: colors.text,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 1,
+    marginTop: 12,
+  },
+  foundingRateSentence: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
   },
   foundingValueLine: {
     color: colors.textMuted,
