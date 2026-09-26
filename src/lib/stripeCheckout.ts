@@ -1,5 +1,5 @@
 import { Linking, Platform } from 'react-native';
-import { clearCheckoutRedirectPending, markCheckoutRedirectPending } from './checkoutRedirectGate';
+import { clearCheckoutRedirectPending, markCheckoutRedirecting } from './checkoutRedirectGate';
 import { supabase } from './supabaseClient';
 
 export type OnlineCheckoutPlan = 'monthly' | 'annual';
@@ -50,13 +50,15 @@ async function messageFromInvokeError(error: unknown, fallback: string): Promise
 // gets attached (standard/annual: yes; the live Founding 50 rate: no, it
 // charges immediately — see create-checkout).
 export async function startOnlineCheckout(plan: OnlineCheckoutPlan): Promise<{ error: string | null }> {
-  // Marked BEFORE the network call, not after — the spotlight tour must
-  // never be visible while a redirect to Stripe is about to happen or is in
-  // flight. Cleared below on every path that does NOT end in a real
-  // redirect; left set on success since the page is about to navigate away
-  // entirely (the flag is cleared later, when the purchase celebration is
-  // dismissed after the member returns).
-  markCheckoutRedirectPending();
+  // Marked BEFORE the network call, not after — from this instant until
+  // Stripe's page actually loads, the app shows only the branded "TAKING
+  // YOU TO CHECKOUT" loading screen (see AuthGatedProviders) — no member
+  // screen, no paywall, not for a single frame — and the spotlight tour
+  // must never be visible either. Cleared below on every path that does
+  // NOT end in a real redirect; left set on success since the page is
+  // about to navigate away entirely (cleared later, when the purchase
+  // celebration is dismissed after the member returns).
+  markCheckoutRedirecting();
   try {
     const { data, error } = await supabase.functions.invoke('create-checkout', {
       body: { plan, origin: currentOrigin() },
@@ -81,11 +83,12 @@ export async function startOnlineCheckout(plan: OnlineCheckoutPlan): Promise<{ e
 // Opens Stripe's hosted billing portal for the signed-in member's own
 // subscription (update card, cancel) — the MANAGE MEMBERSHIP row.
 export async function openBillingPortal(): Promise<{ error: string | null }> {
-  // Same defense-in-depth as startOnlineCheckout above, even though a
+  // Same "about to redirect to Stripe" loading takeover as startOnlineCheckout
+  // above — the billing portal is a real Stripe redirect too, so it gets the
+  // same calm loading screen instead of a member-screen flash, even though a
   // member reaching the billing portal has necessarily already resolved the
-  // tour (it's existing-subscriber-only) — uniform coverage across every
-  // "about to redirect away" call site is one less thing to reason about.
-  markCheckoutRedirectPending();
+  // tour (it's existing-subscriber-only).
+  markCheckoutRedirecting();
   try {
     const { data, error } = await supabase.functions.invoke('customer-portal', {
       body: { origin: currentOrigin() },
