@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ConfettiBurst } from './ConfettiBurst';
 import { useMembership } from '../context/MembershipContext';
 import { useTour } from '../context/TourContext';
+import { clearCheckoutRedirectPending } from '../lib/checkoutRedirectGate';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -26,6 +27,13 @@ export function PurchaseCelebrationOverlay({ onGetStarted }: Props) {
 
   const handleGetStarted = () => {
     clearJustPurchased();
+    // The one correct moment to lift the tour's checkout-redirect gate: the
+    // celebration is being dismissed right now, by the member's own tap —
+    // never earlier. tour.start() is the tour's single gated entry point;
+    // clearing here (a plain synchronous module variable, not React state)
+    // means the very next line already sees the gate open, no stale-closure
+    // risk the way a React state update would have.
+    clearCheckoutRedirectPending();
     onGetStarted?.();
     tour.start();
   };

@@ -118,19 +118,52 @@ export function TourOverlay() {
     let frameId: number | null = null;
     let lastMeasured: Rect | null = null;
     let attempt = 0;
-    // On a true first fire, stop 1's target (the compact story ring, right
-    // next to the Community tab's own first-ever mount) can still be mid
-    // layout — fonts swapping in, images decoding — when this effect's
-    // very first frame runs, so that first measurement can land on a box
-    // that hasn't settled into its final position yet (see the PR this
-    // landed in). Tapping NEXT then BACK "fixes" it only because the page
-    // has had many more frames to settle by then, not because the anchor
-    // math itself was ever wrong. Rather than guess a fixed delay long
-    // enough to cover fonts/images/layout, this re-measures every frame
-    // and only trusts the result once two consecutive frames agree — that
-    // works regardless of *why* a given frame was still unsettled, and
-    // costs the already-correct stops (2-4) at most one extra frame.
-    const MAX_ATTEMPTS = 20; // ~1/3 of a second at 60fps — generous, never hangs the tour if a target legitimately never stops moving.
+    // Generous — the fonts.ready wait below already absorbs most of the
+    // real settling time, so this budget only needs to cover ordinary
+    // layout/paint jitter plus story-ring's extra sanity-check retries.
+    const MAX_ATTEMPTS = 40;
+
+    const measureNode = (node: MeasurableNode, rx: number, ry: number, onDone: (rect: Rect) => void) => {
+      node.measureInWindow((x, y, width, height) => {
+        if (cancelled) return;
+        onDone({ x: x - rx, y: y - ry, width, height });
+      });
+    };
+
+    // Stop 1's target (the compact story ring) has a documented history of
+    // resolving to the wrong place specifically on the real production
+    // build — verified wrong, not just measured early, per the bug report
+    // this landed in. Rather than trust any single measurement, cross-check
+    // it against the date strip's own rect (stop 2's target): the ring is
+    // rendered directly inside that same row, so its vertical center must
+    // fall within the row's vertical span. A measurement that fails this
+    // check is logged and treated as not-yet-settled instead of accepted.
+    const passesStoryRingSanityCheck = (candidate: Rect, rx: number, ry: number, onResult: (ok: boolean) => void) => {
+      if (stop.key !== 'story-ring') {
+        onResult(true);
+        return;
+      }
+      const dateStripNode = tour.getTargetNode('date-strip');
+      if (!dateStripNode || typeof dateStripNode.measureInWindow !== 'function') {
+        // Nothing to cross-check against yet (date-strip hasn't registered
+        // either) — don't block on a check that can't run.
+        onResult(true);
+        return;
+      }
+      measureNode(dateStripNode, rx, ry, (dateStripRect) => {
+        if (cancelled) return;
+        const ringCenterY = candidate.y + candidate.height / 2;
+        const ok = ringCenterY >= dateStripRect.y - 4 && ringCenterY <= dateStripRect.y + dateStripRect.height + 4;
+        if (!ok) {
+          // eslint-disable-next-line no-console
+          console.warn('[tour] story-ring measurement rejected — outside the date strip row', {
+            ring: candidate,
+            dateStrip: dateStripRect,
+          });
+        }
+        onResult(ok);
+      });
+    };
 
     const measureOnce = (onDone: (next: Rect | null) => void) => {
       const node = tour.getTargetNode(stop.key);
@@ -149,9 +182,12 @@ export function TourOverlay() {
       // the root already fills the window).
       root.measureInWindow((rx, ry) => {
         if (cancelled) return;
-        node.measureInWindow((x, y, width, height) => {
+        measureNode(node, rx, ry, (rect) => {
           if (cancelled) return;
-          onDone({ x: x - rx, y: y - ry, width, height });
+          passesStoryRingSanityCheck(rect, rx, ry, (ok) => {
+            if (cancelled) return;
+            onDone(ok ? rect : null);
+          });
         });
       });
     };
@@ -166,6 +202,10 @@ export function TourOverlay() {
         attempt += 1;
         const settled = next && next.width > 0 && next.height > 0 && sameRect(next, lastMeasured);
         if (settled) {
+          if (stop.key === 'story-ring') {
+            // eslint-disable-next-line no-console
+            console.info('[tour] story-ring settled at', next);
+          }
           setRect(next);
           return;
         }
@@ -180,7 +220,32 @@ export function TourOverlay() {
       });
     };
 
-    frameId = requestAnimationFrame(tick);
+    // On a true first fire, stop 1's row can still be mid web-font swap
+    // (Barlow Condensed/Public Sans loading in) when this effect's very
+    // first frame would otherwise run — a fallback-font render can settle
+    // into a stable-but-shorter row height that two-consecutive-frame
+    // agreement alone can't tell apart from the real, final layout, then
+    // jump taller once the real font swaps in (see the bug report this
+    // rebuild landed in — the previous fix only handled "still moving," not
+    // "moved again after a font swap"). Waiting for the browser's own
+    // document.fonts.ready before measuring at all — capped so a font load
+    // failure can never hang the tour — targets that root cause directly
+    // instead of polling harder for it.
+    let startedMeasuring = false;
+    const beginMeasuring = () => {
+      if (cancelled || startedMeasuring) return;
+      startedMeasuring = true;
+      frameId = requestAnimationFrame(tick);
+    };
+    if (typeof document !== 'undefined' && 'fonts' in document) {
+      Promise.race([
+        (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready,
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]).then(beginMeasuring, beginMeasuring);
+    } else {
+      beginMeasuring();
+    }
+
     return () => {
       cancelled = true;
       if (frameId !== null) cancelAnimationFrame(frameId);

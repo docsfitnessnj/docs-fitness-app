@@ -5,6 +5,7 @@ import { useFoundingFifty } from '../context/FoundingFiftyContext';
 import { useMembership } from '../context/MembershipContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { useSubscription } from '../context/SubscriptionContext';
+import { clearCheckoutRedirectPending, markCheckoutRedirectPending } from './checkoutRedirectGate';
 
 const POLL_INTERVAL_MS = 1500;
 const MAX_POLL_ATTEMPTS = 8;
@@ -38,7 +39,17 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
     window.history.replaceState({}, '', window.location.pathname + window.location.hash);
     onOpenMemberships();
     if (checkout === 'success') {
+      // Already set (module import saw this exact URL before any component
+      // rendered — see checkoutRedirectGate.ts) — marking again here is
+      // just belt-and-suspenders. Stays set until the purchase celebration
+      // is dismissed via GET STARTED, or until the poll below gives up.
+      markCheckoutRedirectPending();
       setAwaitingConfirmation(true);
+    } else {
+      // Cancelled, or returning from the billing portal — no purchase
+      // happened and no celebration is coming, so nothing should keep the
+      // tour blocked.
+      clearCheckoutRedirectPending();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -57,6 +68,9 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
         // own database sync hasn't caught up yet — leave the member on the
         // Memberships screen with no celebration rather than a scary error;
         // their real status shows correctly the next time this data loads.
+        // No celebration is coming this session, so the tour is no longer
+        // blocked on it.
+        clearCheckoutRedirectPending();
         setAwaitingConfirmation(false);
         return;
       }
@@ -67,6 +81,11 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
   }, [awaitingConfirmation]);
 
   // Reacts the moment the real subscription state actually confirms.
+  // Deliberately does NOT clear the checkout-redirect-pending flag here —
+  // the purchase celebration (confetti + welcome modal) is about to render
+  // via justPurchased below, and the tour must stay blocked through that
+  // whole span. PurchaseCelebrationOverlay clears the flag itself, right
+  // before its own explicit tour.start() call once GET STARTED is tapped.
   useEffect(() => {
     if (!awaitingConfirmation || subscription.loading) return;
     const confirmed = subscription.status === 'trialing' || subscription.status === 'active';

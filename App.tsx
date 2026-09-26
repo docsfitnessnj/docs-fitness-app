@@ -55,6 +55,7 @@ import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useMovementVaultModalState } from './src/lib/movementVaultModal';
 import { openMemberships, useMembershipsModalState } from './src/lib/membershipsModal';
 import { useCheckoutRedirect } from './src/lib/checkoutRedirect';
+import { clearCheckoutRedirectPending, markCheckoutRedirectPending } from './src/lib/checkoutRedirectGate';
 import { startOnlineCheckout } from './src/lib/stripeCheckout';
 import { useLocalImportOnFirstSignIn } from './src/lib/localImport';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
@@ -312,10 +313,24 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
             // question by design — this is the only place that answer's
             // ever recorded for them, so it has to happen at signup itself.
             const howTrainForDoor = intent === 'onlineTrial' ? 'online' : intent === 'bookClass' ? 'boathouse' : undefined;
+            // Marked BEFORE signUp(), not after it resolves — signUp()
+            // flipping the session live re-renders straight into MainApp,
+            // which mounts CommunityScreen (and its own tour.start() call)
+            // synchronously, before this async function ever reaches the
+            // startOnlineCheckout() call below that would otherwise mark
+            // this. Without marking it here first, the tour could render for
+            // a frame during exactly that gap, right before the checkout
+            // redirect fires. Cleared on every branch below that does NOT
+            // end in a real checkout redirect.
+            if (intent === 'onlineTrial') markCheckoutRedirectPending();
             const result = await signUp(enteredEmail, password, howTrainForDoor);
-            if (result.error) return { message: result.error, kind: 'error', showSignInLink: result.emailAlreadyExists };
+            if (result.error) {
+              if (intent === 'onlineTrial') clearCheckoutRedirectPending();
+              return { message: result.error, kind: 'error', showSignInLink: result.emailAlreadyExists };
+            }
             setNewsletterOptIn(newsletterOptIn);
             if (result.needsEmailConfirmation) {
+              if (intent === 'onlineTrial') clearCheckoutRedirectPending();
               return {
                 message: 'Almost there — check your email to confirm your account, then sign in.',
                 kind: 'info',
