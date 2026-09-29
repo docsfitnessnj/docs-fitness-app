@@ -6,9 +6,10 @@ import { MembershipGate } from '../components/MembershipGate';
 import { DeckCardDetailModal } from '../components/DeckCardDetailModal';
 import { DeckUpsellModal } from '../components/DeckUpsellModal';
 import { CardBack } from '../components/CardBack';
+import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { useDeckProgress } from '../context/DeckProgressContext';
 import { DECK_CARDS, DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
-import { openDeckStore } from '../lib/links';
+import { DECK_STORE_URL } from '../lib/links';
 import { colors, fonts } from '../theme';
 
 type Mode = 'shuffle' | 'browse';
@@ -101,9 +102,9 @@ function ShuffleArea({ onDeal }: { onDeal: (card: DeckCardData) => void }) {
         <Text style={styles.shuffleButtonText}>{shuffling ? 'SHUFFLING…' : 'SHUFFLE THE DECK'}</Text>
       </Pressable>
 
-      <Pressable style={styles.physicalDeckButton} onPress={openDeckStore} testID="get-physical-deck-button">
+      <ExternalLinkPressable href={DECK_STORE_URL} style={styles.physicalDeckButton} testID="get-physical-deck-button">
         <Text style={styles.physicalDeckButtonText}>GET THE PHYSICAL DECK</Text>
-      </Pressable>
+      </ExternalLinkPressable>
     </View>
   );
 }

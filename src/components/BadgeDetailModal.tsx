@@ -2,8 +2,9 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AppModal } from './AppModal';
 import { BadgeIcon } from './icons/BadgeIcon';
+import { ExternalLinkPressable } from './ExternalLinkPressable';
 import { BadgeId, BADGE_MAP } from '../data/badges';
-import { openDeckStore } from '../lib/links';
+import { DECK_STORE_URL } from '../lib/links';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -44,9 +45,9 @@ export function BadgeDetailModal({ badgeId, earned, onClose, onVerifyJoker }: Pr
                   <Text style={styles.verifyButtonText}>VERIFY OWNERSHIP</Text>
                 </Pressable>
               )}
-              <Pressable style={styles.getDeckButton} onPress={openDeckStore} testID="get-the-deck-button">
+              <ExternalLinkPressable href={DECK_STORE_URL} style={styles.getDeckButton} testID="get-the-deck-button">
                 <Text style={styles.getDeckButtonText}>GET THE DECK</Text>
-              </Pressable>
+              </ExternalLinkPressable>
             </View>
           )}
         </View>

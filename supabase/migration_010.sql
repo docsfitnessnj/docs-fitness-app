@@ -1,0 +1,33 @@
+-- Doc's Fitness — migration 010
+-- ============================================================================
+-- Moves the spotlight tour's once-ever flag off device/browser storage and
+-- onto the member's own account, so it survives signing out and back in on
+-- any device. Run this AFTER supabase/setup.sql. Safe to run once, and safe
+-- to re-run.
+--
+-- Root cause of two live bugs this round: the tour's "have I seen this
+-- already" flag lived only in this browser's localStorage
+-- (docsFitness.tourCompleted). A member who signs out and back in — or
+-- signs in on a different device — has no localStorage history there, so
+-- the tour fired again from scratch. It also fired while the rest of the
+-- signed-in app was still mid-load (see the app-code fix alongside this
+-- migration: MainApp no longer renders until subscription + profile state
+-- has actually loaded), which is what put its 4 stops on the wrong
+-- elements — that part needed no schema change, just not starting the tour
+-- before the real layout was up.
+--
+-- Fix: one nullable timestamp column, set the moment the tour is completed
+-- or explicitly skipped (both read as "done" — matching the single boolean
+-- `completed` the app already tracked, just moved server-side and kept as a
+-- timestamp instead of a bare boolean since it's free and occasionally
+-- useful to know when). No RLS changes needed — the existing "members can
+-- update their own profile" policy already covers writing this column.
+--
+-- Backfill deliberately skipped, per this round's own instructions: every
+-- existing account reads NULL (not yet completed) until they either finish
+-- or skip the tour once more, at which point they're correctly flagged
+-- going forward. No harm in a returning member seeing it one more time.
+-- ============================================================================
+
+alter table public.profiles
+  add column if not exists tour_completed_at timestamptz;

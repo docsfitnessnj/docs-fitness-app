@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
+import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { InviteFriendModal } from '../components/InviteFriendModal';
 import { ModalHeader } from '../components/ModalHeader';
 import { WebScrollScreen } from '../components/WebScrollScreen';
 import { FOUNDING_FIFTY_PRICE } from '../context/FoundingFiftyContext';
 import { FOUNDING_FIFTY_BANNER, FOUNDING_VALUE_LINE, ONLINE_PLANS, foundingDeadlineLabel, foundingSpotsLeftLabel } from '../data/plans';
-import { openLocationMaps } from '../lib/links';
+import { LOCATION_MAPS_URL } from '../lib/links';
 import { useFoundingFiftyPublicStatus } from '../lib/useFoundingFiftyPublicStatus';
 import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
 
@@ -252,9 +253,9 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
         </View>
 
         <View style={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}>
-          <Pressable
+          <ExternalLinkPressable
+            href={LOCATION_MAPS_URL}
             style={[styles.locationCard, isDesktop && styles.locationCardDesktop]}
-            onPress={openLocationMaps}
             testID="about-location-card"
           >
             <Ionicons name="location-outline" size={20} color={colors.gold} />
@@ -263,7 +264,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
               <Text style={styles.locationText}>Ventnor City, NJ. Group training six days a week.</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
-          </Pressable>
+          </ExternalLinkPressable>
 
           <Pressable
             style={[styles.inviteButton, isDesktop && styles.inviteButtonDesktop]}

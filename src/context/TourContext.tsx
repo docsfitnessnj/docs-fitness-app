@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
 import { isCheckoutRedirectPending } from '../lib/checkoutRedirectGate';
-import { loadJSON, saveJSON } from '../lib/storage';
-
-const STORAGE_KEY = 'docsFitness.tourCompleted';
+import { useProfile } from './ProfileContext';
 
 // The 4 spotlight stops, in order. Components register themselves under
 // these keys via `registerTarget` so the overlay can measure them by
@@ -29,7 +27,16 @@ type TourContextValue = {
 const TourContext = createContext<TourContextValue | undefined>(undefined);
 
 export function TourProvider({ children }: { children: React.ReactNode }) {
-  const [completed, setCompleted] = useState(() => loadJSON(STORAGE_KEY, false));
+  // The once-ever flag lives on the member's own account (profiles.
+  // tour_completed_at — see migration_010), not device/browser storage, so
+  // it survives signing out and back in on any device. TourProvider is
+  // nested inside ProfileProvider in App.tsx specifically so it can read
+  // this. By the time anything can call start() (see the app-code fix
+  // alongside this — MainApp doesn't render at all until ProfileContext's
+  // own fetch has resolved), `tourCompletedAt` already reflects the real,
+  // loaded value, never a stale default.
+  const { tourCompletedAt, markTourCompleted } = useProfile();
+  const completed = tourCompletedAt !== null;
   const [active, setActive] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const targets = useRef<Partial<Record<TourTargetKey, MeasurableNode | null>>>({});
@@ -37,8 +44,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
   const finish = () => {
     setActive(false);
-    setCompleted(true);
-    saveJSON(STORAGE_KEY, true);
+    markTourCompleted(true);
   };
 
   const value = useMemo<TourContextValue>(
@@ -83,18 +89,17 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       },
       getTargetNode: (key) => targets.current[key] ?? null,
       // Clears the persisted flag and immediately restarts the tour in one
-      // shot — calling setCompleted(false) then a separate start() would
-      // have start() read the still-stale `completed` closure from this
-      // same render, since React batches the state update.
+      // shot — admin dev-preview only (see SidebarDrawer's "RESET SPOTLIGHT
+      // TOUR (DEV)" control). Writes false to the DB, same as `completed`
+      // itself now does everywhere else.
       resetForTesting: () => {
-        setCompleted(false);
-        saveJSON(STORAGE_KEY, false);
+        markTourCompleted(false);
         setStepIndex(0);
         setActive(true);
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [active, stepIndex, completed]
+    [active, stepIndex, completed, markTourCompleted]
   );
 
   return <TourContext.Provider value={value}>{children}</TourContext.Provider>;

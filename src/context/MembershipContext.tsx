@@ -72,6 +72,14 @@ type WodAccessLevel = 'full' | 'partial' | 'none';
 type MembershipContextValue = {
   tier: MembershipTier;
   signedUp: boolean;
+  // True until both real-account reads this context depends on have
+  // resolved at least once: the subscription row (online tier/status) and
+  // the real admin flag fetched below. `tier` and `isAdmin` both already
+  // fall back to safe-but-possibly-wrong defaults while this is true (see
+  // the branches below) — callers that render anything plan-dependent
+  // should wait for this to clear rather than trust those defaults. See
+  // ResponsiveShell in App.tsx, which is where that's actually enforced.
+  stateLoading: boolean;
   email: string | null;
   displayName: string;
   trialEndsAt: Date | null;
@@ -200,19 +208,24 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   // still enforced server-side by Row Level Security regardless of what
   // this flag shows.
   const [realAdmin, setRealAdmin] = useState(false);
+  const [realAdminLoading, setRealAdminLoading] = useState(true);
   useEffect(() => {
     if (!user) {
       setRealAdmin(false);
+      setRealAdminLoading(false);
       return;
     }
     let cancelled = false;
+    setRealAdminLoading(true);
     supabase
       .from('profiles')
       .select('is_admin')
       .eq('id', user.id)
       .maybeSingle()
       .then(({ data }) => {
-        if (!cancelled) setRealAdmin(data?.is_admin ?? false);
+        if (cancelled) return;
+        setRealAdmin(data?.is_admin ?? false);
+        setRealAdminLoading(false);
       });
     return () => {
       cancelled = true;
@@ -313,6 +326,14 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     return {
       tier,
       signedUp,
+      // Same "safe direction to be wrong in" convention as subscription's
+      // own `loading` — while true, `tier` may still be the 'online_free'
+      // fallback and `isAdmin` may still be false regardless of the real
+      // account. isAdminPreview/onInPersonPlan (admin dev-preview, in-person
+      // tiers) don't depend on either read, but this doesn't special-case
+      // them — one simple rule for every account is safer than a second one
+      // to keep in sync.
+      stateLoading: subscription.loading || realAdminLoading,
       email,
       displayName: deriveDisplayName(email),
       trialEndsAt,
@@ -409,6 +430,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     };
   }, [
     realAdmin,
+    realAdminLoading,
     simulatedTier,
     subscription.loading,
     subscription.status,
