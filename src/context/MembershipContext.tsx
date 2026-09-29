@@ -80,6 +80,15 @@ type MembershipContextValue = {
   // should wait for this to clear rather than trust those defaults. See
   // ResponsiveShell in App.tsx, which is where that's actually enforced.
   stateLoading: boolean;
+  // Non-null when the subscription fetch OR the admin-flag fetch failed —
+  // set alongside stateLoading clearing, never silently swallowed. See
+  // ResponsiveShell: this must be checked BEFORE stateLoading, since a
+  // failed fetch also makes loading go false.
+  stateError: string | null;
+  // Re-runs whichever of subscription/admin-flag actually failed. Also
+  // triggers subscription's own refetch even if only the admin flag error'd
+  // — harmless (idempotent read), and simpler than tracking which one(s).
+  retryState: () => void;
   email: string | null;
   displayName: string;
   trialEndsAt: Date | null;
@@ -209,28 +218,44 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   // this flag shows.
   const [realAdmin, setRealAdmin] = useState(false);
   const [realAdminLoading, setRealAdminLoading] = useState(true);
+  // Non-null only when the fetch itself failed — previously this discarded
+  // `error` entirely (`.then(({ data }) => ...)`), so a real failure against
+  // production Supabase read as "loaded, not admin" instead of "failed to
+  // load," silently defaulting to false rather than surfacing anything.
+  const [realAdminError, setRealAdminError] = useState<string | null>(null);
+  const [realAdminRetryTick, setRealAdminRetryTick] = useState(0);
   useEffect(() => {
     if (!user) {
       setRealAdmin(false);
+      setRealAdminError(null);
       setRealAdminLoading(false);
       return;
     }
     let cancelled = false;
     setRealAdminLoading(true);
+    console.log('[memberState:adminFlag] fetch start', { userId: user.id });
     supabase
       .from('profiles')
       .select('is_admin')
       .eq('id', user.id)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data, error: fetchError }) => {
         if (cancelled) return;
+        if (fetchError) {
+          console.error('[memberState:adminFlag] fetch error', fetchError);
+          setRealAdminError(fetchError.message);
+          setRealAdminLoading(false);
+          return;
+        }
+        console.log('[memberState:adminFlag] fetch success', { isAdmin: data?.is_admin ?? false });
+        setRealAdminError(null);
         setRealAdmin(data?.is_admin ?? false);
         setRealAdminLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, realAdminRetryTick]);
 
   const [simulated, setSimulated] = useState<SimulatedMembershipState>(() =>
     loadJSON(SIMULATED_STORAGE_KEY, DEFAULT_SIMULATED_STATE)
@@ -323,6 +348,20 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     const wodAccessLevel: WodAccessLevel = fullContentAccess ? 'full' : tier === 'online_free' ? 'partial' : 'none';
     const communityAccess: 'full' | 'none' = tier === 'drop_in' ? 'none' : 'full';
 
+    const computedStateLoading = subscription.loading || realAdminLoading;
+    const computedStateError = subscription.error ?? realAdminError ?? null;
+    if (signedUp) {
+      console.log('[memberState:membership] tier computed', {
+        tier,
+        stateLoading: computedStateLoading,
+        stateError: computedStateError,
+        subscriptionLoading: subscription.loading,
+        subscriptionError: subscription.error,
+        realAdminLoading,
+        realAdminError,
+      });
+    }
+
     return {
       tier,
       signedUp,
@@ -333,7 +372,12 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       // tiers) don't depend on either read, but this doesn't special-case
       // them — one simple rule for every account is safer than a second one
       // to keep in sync.
-      stateLoading: subscription.loading || realAdminLoading,
+      stateLoading: computedStateLoading,
+      stateError: computedStateError,
+      retryState: () => {
+        subscription.retry();
+        setRealAdminRetryTick((t) => t + 1);
+      },
       email,
       displayName: deriveDisplayName(email),
       trialEndsAt,
@@ -431,13 +475,16 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   }, [
     realAdmin,
     realAdminLoading,
+    realAdminError,
     simulatedTier,
     subscription.loading,
+    subscription.error,
     subscription.status,
     subscription.plan,
     subscription.trialEnd,
     subscription.currentPeriodEnd,
     subscription.cancelAtPeriodEnd,
+    subscription.retry,
     planStartedAt,
     signedUp,
     email,
