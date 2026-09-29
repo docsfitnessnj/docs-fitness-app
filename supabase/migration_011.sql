@@ -1,0 +1,27 @@
+-- Doc's Fitness — migration 011
+-- ============================================================================
+-- Forces PostgREST (the service that serves the REST API the app's anon key
+-- talks to) to reload its schema cache. Run this AFTER migration_010.sql.
+-- Safe to run any time, safe to re-run — it's a no-op notification, not a
+-- schema change.
+--
+-- Suspected root cause of this round's escalation: migration_010 added
+-- profiles.tour_completed_at successfully (confirmed in the database), but
+-- PostgREST caches the table schema it serves and does not always notice a
+-- new column the instant `alter table` runs, especially when the migration
+-- was run directly in the SQL editor rather than through a path that
+-- triggers Supabase's own schema-reload hook. Until PostgREST reloads, a
+-- SELECT that names the new column (exactly what ProfileContext's fetch
+-- does — see supabase/setup.sql's `profiles are readable by any signed-in
+-- member` policy, which was never the problem; RLS is table/row-level, not
+-- per-column) returns an error that LOOKS like a genuine "column does not
+-- exist" failure, even though `\d profiles` in the database itself shows
+-- the column is really there.
+--
+-- The app-code half of this round's fix (see ProfileContext.tsx,
+-- SubscriptionContext.tsx, MembershipContext.tsx, App.tsx) makes that error
+-- impossible to swallow going forward regardless of cause — this migration
+-- targets the specific cause itself, so the fetch hopefully just succeeds.
+-- ============================================================================
+
+notify pgrst, 'reload schema';

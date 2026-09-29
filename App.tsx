@@ -52,6 +52,7 @@ import { IdentitySidebar } from './src/components/IdentitySidebar';
 import { TourOverlay } from './src/components/TourOverlay';
 import { PurchaseCelebrationOverlay } from './src/components/PurchaseCelebrationOverlay';
 import { CheckoutRedirectLoadingScreen } from './src/components/CheckoutRedirectLoadingScreen';
+import { MemberStateErrorScreen } from './src/components/MemberStateErrorScreen';
 import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useMovementVaultModalState } from './src/lib/movementVaultModal';
 import { openMemberships, useMembershipsModalState } from './src/lib/membershipsModal';
@@ -636,8 +637,8 @@ type ResponsiveShellProps = {
 };
 
 function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
-  const { signedUp, justPurchased, stateLoading } = useMembership();
-  const { loading: profileLoading } = useProfile();
+  const { signedUp, justPurchased, stateLoading, stateError, retryState } = useMembership();
+  const { loading: profileLoading, error: profileError, retry: retryProfile } = useProfile();
   const { width } = useWindowDimensions();
   const [messagesOpen, setMessagesOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('about');
@@ -662,12 +663,36 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
   // all until this clears, so nothing plan-dependent ever has a chance to
   // render off a stale default.
   const memberStateLoading = signedUp && (stateLoading || profileLoading);
+  // FAIL CLOSED: a fetch erroring also makes its own `loading` flag go
+  // false — an error and a real success are NOT distinguishable by
+  // `memberStateLoading` alone. This must be checked first, and its own
+  // branch in the render below must win over memberStateLoading, or a
+  // failed profile/subscription/admin read against real Supabase (RLS,
+  // network, a PostgREST schema cache that hasn't picked up a migration's
+  // new column yet — see migration_010/011) reads as "done loading" and
+  // silently falls through to MainApp on default/stale data — which is
+  // exactly how the previous round's mocked-database verification missed
+  // this: a mock never errors unless told to.
+  const memberStateError = signedUp && (stateError || profileError) ? (stateError ?? profileError ?? null) : null;
+
+  useEffect(() => {
+    if (!signedUp) return;
+    console.log('[memberState:gate] decision', {
+      signedUp,
+      stateLoading,
+      profileLoading,
+      memberStateLoading,
+      stateError,
+      profileError,
+      memberStateError,
+    });
+  }, [signedUp, stateLoading, profileLoading, memberStateLoading, stateError, profileError, memberStateError]);
 
   useWebDocumentScroll(signedUp);
 
   const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
   const isLargeDesktop = isDesktop && width >= LARGE_DESKTOP_BREAKPOINT;
-  const showSidebar = isDesktop && signedUp && !showCheckoutGateLoading && !memberStateLoading;
+  const showSidebar = isDesktop && signedUp && !showCheckoutGateLoading && !memberStateLoading && !memberStateError;
   // The About page is a landing page and reads full-bleed on desktop; every
   // other onboarding step (email capture, plan pickers) stays in the narrow
   // phone-frame column like the rest of the pre-signup flow.
@@ -694,7 +719,15 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
       >
         <ModalRootProvider>
           {signedUp ? (
-            memberStateLoading ? (
+            memberStateError ? (
+              <MemberStateErrorScreen
+                onRetry={() => {
+                  console.log('[memberState:gate] retry pressed', { memberStateError });
+                  retryState();
+                  retryProfile();
+                }}
+              />
+            ) : memberStateLoading ? (
               <CheckoutRedirectLoadingScreen message="LOADING YOUR ACCOUNT" />
             ) : (
               <MainApp

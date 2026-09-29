@@ -63,8 +63,15 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       // run later (the next time something calls start() with the gate
       // open), not a silently-consumed one.
       start: () => {
+        const checkoutPending = isCheckoutRedirectPending();
+        console.log('[memberState:tour] start() called', {
+          tourCompletedAt: tourCompletedAt ? tourCompletedAt.toISOString() : null,
+          completed,
+          checkoutPending,
+          decision: completed ? 'BLOCKED (already completed/skipped)' : checkoutPending ? 'BLOCKED (checkout pending)' : 'ALLOWED',
+        });
         if (completed) return;
-        if (isCheckoutRedirectPending()) return;
+        if (checkoutPending) return;
         setStepIndex(0);
         setActive(true);
       },

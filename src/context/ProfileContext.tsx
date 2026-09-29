@@ -71,6 +71,9 @@ type ProfileContextValue = {
   // "RESET SPOTLIGHT TOUR" control. Optimistic locally, best-effort against
   // the backend, same pattern as setHowTrain/setShowTomorrowsWorkout above.
   markTourCompleted: (completed: boolean) => Promise<void>;
+  // Re-runs the initial fetch from scratch — `loading` flips back to true.
+  // Wired to the fail-closed retry screen in ResponsiveShell.
+  retry: () => void;
 };
 
 const ProfileContext = createContext<ProfileContextValue | undefined>(undefined);
@@ -97,6 +100,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<ProfileRow>(DEFAULT_PROFILE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
     if (!authReady) return;
@@ -111,6 +115,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setError(null);
 
+    console.log('[memberState:profile] fetch start', { userId: user.id });
     supabase
       .from('profiles')
       .select(
@@ -121,6 +126,15 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       .then(({ data, error: fetchError }) => {
         if (cancelled) return;
         if (fetchError) {
+          // Was previously silent past this point except for the Profile
+          // screen's own error banner — nothing gated on it. This is
+          // specifically the error the previous round's fix could hit
+          // without anyone knowing: a stale PostgREST schema cache not yet
+          // aware of the tour_completed_at column added by migration_010
+          // returns exactly this shape of error (400, "column ... does not
+          // exist") for what looks, from Supabase's own dashboard, like a
+          // successfully-run migration.
+          console.error('[memberState:profile] fetch error', fetchError);
           setError(
             isBackendUnavailableError(fetchError)
               ? "Can't load your profile right now — the backend isn't reachable."
@@ -129,6 +143,10 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           setLoading(false);
           return;
         }
+        console.log('[memberState:profile] fetch success', {
+          isAdmin: data?.is_admin ?? false,
+          tourCompletedAt: data?.tour_completed_at ?? null,
+        });
         setProfile({
           photoUri: data?.avatar_url ?? null,
           name: data?.display_name ?? '',
@@ -145,7 +163,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [authReady, user]);
+  }, [authReady, user, retryTick]);
 
   const value = useMemo<ProfileContextValue>(
     () => ({
@@ -226,6 +244,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         if (!user) return;
         const tourCompletedAt = completed ? new Date() : null;
         setProfile((prev) => ({ ...prev, tourCompletedAt }));
+        console.log('[memberState:profile] markTourCompleted write start', { completed });
         const { error: updateError } = await supabase
           .from('profiles')
           .update({ tour_completed_at: tourCompletedAt ? tourCompletedAt.toISOString() : null })
@@ -234,9 +253,14 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           // Best-effort, same as setHowTrain/setShowTomorrowsWorkout above —
           // the flag still reflects instantly on this device even if the
           // write didn't land; worst case the tour can fire once more on
-          // another device or a later session.
+          // another device or a later session. Still logged, though — this
+          // exact write is what migration_010 depends on actually working.
+          console.error('[memberState:profile] markTourCompleted write error', updateError);
+        } else {
+          console.log('[memberState:profile] markTourCompleted write success');
         }
       },
+      retry: () => setRetryTick((t) => t + 1),
     }),
     [loading, error, profile, user]
   );
