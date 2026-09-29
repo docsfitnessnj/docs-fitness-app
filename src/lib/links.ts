@@ -1,4 +1,4 @@
-import { Linking, Platform, Share } from 'react-native';
+import { Platform, Share } from 'react-native';
 import { showAlert } from './alert';
 import { LOCATION } from '../theme';
 
@@ -45,54 +45,18 @@ export async function copyInviteLink(): Promise<boolean> {
   return false;
 }
 
+// Every outbound URL in the app — the merch store, the deck store, Google
+// Maps — never the Stripe checkout/billing-portal redirect, which is a
+// same-tab part of the payment flow and goes through stripeCheckout.ts's
+// openHostedUrl instead. Every button that opens one of these renders
+// through ExternalLinkPressable (a real <a target="_blank"> on web, not a
+// window.open() called from onPress — see that component for why the
+// distinction matters on a real iPhone), so this file only needs to export
+// the plain URLs, not an open-it function per link.
 export const MERCH_STORE_URL =
   'https://docs-fitness-merch.myshopify.com/collections/doc-s-fitness-merch?utm_source=docs_app&utm_medium=app&utm_campaign=merch';
 export const DECK_STORE_URL =
   'https://docs-fitness-merch.myshopify.com/products/doc-s-deck-of-wods?utm_source=docs_app&utm_medium=app&utm_campaign=deck';
 
-// Every one of these leaves the app for an outside site (the merch store,
-// the deck store, Google Maps, a YouTube breakdown) — never the Stripe
-// checkout/billing-portal redirect, which is a same-tab part of the payment
-// flow and goes through stripeCheckout.ts's openHostedUrl instead. On web,
-// this opens a real new tab via window.open (not react-native-web's
-// Linking.openURL, whose "defaults to a new tab" behavior isn't part of its
-// typed API and isn't something to depend on) — 'noopener' keeps that new
-// tab from getting a handle back to this window, and this tab is left
-// exactly where it was. window.open() legitimately returns null with
-// 'noopener' set even when the tab opened fine (that's the point of
-// noopener — no handle back), so its return value can't be used to detect
-// failure the way openURL's rejected promise can on native; a blocked
-// popup already shows the browser's own UI for that, nothing further to do
-// here. On native, Linking.openURL leaves the app for the external
-// app/browser, which is the native equivalent.
-function openExternal(url: string, fallbackTitle: string, fallbackMessage: string) {
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    window.open(url, '_blank', 'noopener');
-    return;
-  }
-  Linking.openURL(url).catch(() => {
-    showAlert(fallbackTitle, fallbackMessage);
-  });
-}
-
-export function openMerchStore() {
-  openExternal(MERCH_STORE_URL, "Doc's Merch Store", 'The store is coming soon.');
-}
-
-export function openDeckStore() {
-  openExternal(DECK_STORE_URL, 'Deck of WODs Store', 'The store is coming soon.');
-}
-
 const MAPS_QUERY = encodeURIComponent(`${LOCATION.name}, ${LOCATION.city}`);
 export const LOCATION_MAPS_URL = `https://www.google.com/maps/dir/?api=1&destination=${MAPS_QUERY}`;
-
-export function openLocationMaps() {
-  openExternal(LOCATION_MAPS_URL, LOCATION.name, "Couldn't open Maps. Search for the Boathouse in Ventnor City, NJ.");
-}
-
-// Opens a workout's breakdown video (a YouTube URL stored on the content
-// itself) in the browser/YouTube app — see WatchVideoBreakdownButton, the
-// one button that ever calls this.
-export function openVideoBreakdown(videoUrl: string) {
-  openExternal(videoUrl, 'Video Breakdown', "Couldn't open the video right now.");
-}

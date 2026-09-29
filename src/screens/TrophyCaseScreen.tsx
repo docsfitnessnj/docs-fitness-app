@@ -3,8 +3,9 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { BadgeIcon } from '../components/icons/BadgeIcon';
+import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { BADGE_MAP, BadgeId, MEMBERSHIP_DISPLAY_ORDER, permanentDisplayOrder, WEEKLY_DISPLAY_ORDER } from '../data/badges';
-import { openDeckStore } from '../lib/links';
+import { DECK_STORE_URL } from '../lib/links';
 import { HUNDRED_DOWN_TARGET, useBadges } from '../context/BadgeContext';
 import { useFoundingFifty } from '../context/FoundingFiftyContext';
 import { useMembership } from '../context/MembershipContext';
@@ -108,9 +109,9 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
             <Pressable style={styles.verifyButton} onPress={onVerifyJoker} testID="verify-ownership-button">
               <Text style={styles.verifyButtonText}>VERIFY OWNERSHIP</Text>
             </Pressable>
-            <Pressable style={styles.getDeckButton} onPress={openDeckStore} testID="get-the-deck-button">
+            <ExternalLinkPressable href={DECK_STORE_URL} style={styles.getDeckButton} testID="get-the-deck-button">
               <Text style={styles.getDeckButtonText}>GET THE DECK</Text>
-            </Pressable>
+            </ExternalLinkPressable>
           </View>
         )}
       </View>

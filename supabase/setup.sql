@@ -38,6 +38,11 @@ create table if not exists public.profiles (
   -- Notifications > IN PERSON). Defaults on so nobody's view changes until
   -- they deliberately turn it off; every other membership tier ignores it.
   show_tomorrows_workout boolean not null default true,
+  -- The spotlight tour's once-ever flag, moved here (from browser
+  -- localStorage) by migration_010 — set the moment the tour is completed
+  -- or explicitly skipped, so it never fires again for this account on any
+  -- device it signs into. NULL means "never completed or skipped."
+  tour_completed_at timestamptz,
   created_at timestamptz not null default now()
 );
 

@@ -636,7 +636,8 @@ type ResponsiveShellProps = {
 };
 
 function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
-  const { signedUp, justPurchased } = useMembership();
+  const { signedUp, justPurchased, stateLoading } = useMembership();
+  const { loading: profileLoading } = useProfile();
   const { width } = useWindowDimensions();
   const [messagesOpen, setMessagesOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('about');
@@ -649,12 +650,24 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
   // by checkoutGatePhase itself all the way through GET STARTED — that's a
   // separate concern from what this loading screen shows.
   const showCheckoutGateLoading = checkoutGatePhase === 'redirecting' || (checkoutGatePhase === 'confirming' && !justPurchased);
+  // Covers the OTHER gap: signing in, or reloading with an already-signed-in
+  // session, both land here with `signedUp` true before the real
+  // subscription/profile/admin reads have resolved even once — MembershipContext's
+  // `tier` falls back to 'online_free' and `isAdmin` to false during that
+  // window, which used to render straight into MainApp and show a member
+  // whichever free-plan UI those defaults imply for a beat (wrong for a
+  // trialing/paying member, and the reason the spotlight tour's stops could
+  // end up anchored to the wrong elements — it fired against that transient
+  // wrong layout). MainApp — and everything inside it — now doesn't mount at
+  // all until this clears, so nothing plan-dependent ever has a chance to
+  // render off a stale default.
+  const memberStateLoading = signedUp && (stateLoading || profileLoading);
 
   useWebDocumentScroll(signedUp);
 
   const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
   const isLargeDesktop = isDesktop && width >= LARGE_DESKTOP_BREAKPOINT;
-  const showSidebar = isDesktop && signedUp && !showCheckoutGateLoading;
+  const showSidebar = isDesktop && signedUp && !showCheckoutGateLoading && !memberStateLoading;
   // The About page is a landing page and reads full-bleed on desktop; every
   // other onboarding step (email capture, plan pickers) stays in the narrow
   // phone-frame column like the rest of the pre-signup flow.
@@ -681,11 +694,15 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
       >
         <ModalRootProvider>
           {signedUp ? (
-            <MainApp
-              messagesOpen={messagesOpen}
-              onOpenMessages={() => setMessagesOpen(true)}
-              onCloseMessages={() => setMessagesOpen(false)}
-            />
+            memberStateLoading ? (
+              <CheckoutRedirectLoadingScreen message="LOADING YOUR ACCOUNT" />
+            ) : (
+              <MainApp
+                messagesOpen={messagesOpen}
+                onOpenMessages={() => setMessagesOpen(true)}
+                onCloseMessages={() => setMessagesOpen(false)}
+              />
+            )
           ) : (
             <OnboardingFlow step={onboardingStep} setStep={setOnboardingStep} />
           )}

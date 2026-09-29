@@ -16,7 +16,8 @@ import {
   WeekDay,
 } from '../data/content';
 import { LOCATION_NAME, rowsForDate } from '../data/schedule';
-import { openLocationMaps } from '../lib/links';
+import { LOCATION_MAPS_URL } from '../lib/links';
+import { ExternalLinkPressable } from './ExternalLinkPressable';
 import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useIsDesktop } from '../lib/responsive';
@@ -100,9 +101,9 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                     {row.time} · {row.className}
                   </Text>
                   <Text style={styles.classMeta}>{row.classType}</Text>
-                  <Pressable onPress={openLocationMaps} hitSlop={4}>
+                  <ExternalLinkPressable href={LOCATION_MAPS_URL} hitSlop={4}>
                     <Text style={styles.classLocation}>{LOCATION_NAME}</Text>
-                  </Pressable>
+                  </ExternalLinkPressable>
                 </View>
                 {signedUp ? (
                   <View style={styles.signedUpWrap}>

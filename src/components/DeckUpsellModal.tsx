@@ -2,7 +2,8 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
-import { openDeckStore } from '../lib/links';
+import { ExternalLinkPressable } from './ExternalLinkPressable';
+import { DECK_STORE_URL } from '../lib/links';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -21,16 +22,9 @@ export function DeckUpsellModal({ visible, onDismiss }: Props) {
           <Text style={styles.headline}>WANT THE{'\n'}REAL THING?</Text>
           <Text style={styles.subtext}>The physical Deck of WODs — 54 cards, $52.</Text>
 
-          <Pressable
-            style={styles.getButton}
-            onPress={() => {
-              openDeckStore();
-              onDismiss();
-            }}
-            testID="deck-upsell-get"
-          >
+          <ExternalLinkPressable href={DECK_STORE_URL} style={styles.getButton} onPress={onDismiss} testID="deck-upsell-get">
             <Text style={styles.getButtonText}>GET THE DECK</Text>
-          </Pressable>
+          </ExternalLinkPressable>
 
           <Pressable onPress={onDismiss} hitSlop={8} style={styles.dismissLink} testID="deck-upsell-dismiss">
             <Text style={styles.dismissLinkText}>NO THANKS</Text>

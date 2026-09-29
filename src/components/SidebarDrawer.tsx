@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { DocsBadge } from './brand/DocsBadge';
+import { ExternalLinkPressable } from './ExternalLinkPressable';
 import { MembershipToggle } from './MembershipToggle';
 import { UnreadDot } from './UnreadDot';
 import { useChallenge } from '../context/ChallengeContext';
@@ -11,7 +12,7 @@ import { useDocsInbox } from '../context/DocsInboxContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { useTour } from '../context/TourContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
-import { openMerchStore, openLocationMaps } from '../lib/links';
+import { MERCH_STORE_URL, LOCATION_MAPS_URL } from '../lib/links';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { openFullSchedule } from '../lib/scheduleModal';
 import { colors, fonts, TAGLINE, LOCATION } from '../theme';
@@ -40,6 +41,11 @@ type Row = {
   icon: keyof typeof Ionicons.glyphMap;
   meta?: string;
   unread?: boolean;
+  // Present only on rows that leave the app for an outside site (MERCH
+  // STORE) — MenuRow renders those through ExternalLinkPressable instead of
+  // a plain Pressable. onPress still fires alongside it for the auxiliary
+  // "close the drawer first" side effect, it just never opens the link.
+  href?: string;
   onPress: () => void;
 };
 
@@ -151,7 +157,7 @@ export function SidebarDrawer({
       icon: 'calendar-outline',
       onPress: () => openNested(openFullSchedule),
     },
-    { key: 'merch', label: 'MERCH STORE', icon: 'bag-handle-outline', onPress: () => go(openMerchStore) },
+    { key: 'merch', label: 'MERCH STORE', icon: 'bag-handle-outline', href: MERCH_STORE_URL, onPress: onClose },
     // MESSAGE DOC is a member messaging Doc — meaningless for Doc's own
     // account, which uses DOC'S INBOX above instead. Every non-admin
     // account keeps this exactly where and what it's always been.
@@ -243,12 +249,12 @@ export function SidebarDrawer({
             </>
           )}
 
-          <Pressable style={styles.locationRow} onPress={openLocationMaps} testID="sidebar-location">
+          <ExternalLinkPressable href={LOCATION_MAPS_URL} style={styles.locationRow} testID="sidebar-location">
             <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.85)" />
             <Text style={styles.locationText}>
               {LOCATION.name}, {LOCATION.city}
             </Text>
-          </Pressable>
+          </ExternalLinkPressable>
 
           <Text style={styles.tagline}>{TAGLINE}</Text>
         </View>
@@ -261,8 +267,8 @@ export function SidebarDrawer({
 // at the same left edge instead of the label position depending on whether
 // the leading element is a 44px avatar or a 20px icon.
 function MenuRow({ row }: { row: Row }) {
-  return (
-    <Pressable style={styles.row} onPress={row.onPress} testID={`sidebar-${row.key}`}>
+  const content = (
+    <>
       <View style={styles.rowIconWrap}>
         <Ionicons name={row.icon} size={20} color={colors.white} />
       </View>
@@ -270,6 +276,18 @@ function MenuRow({ row }: { row: Row }) {
       {row.unread ? <UnreadDot style={styles.rowUnreadDot} /> : null}
       {row.meta ? <Text style={styles.rowMeta}>{row.meta}</Text> : null}
       <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
+    </>
+  );
+  if (row.href) {
+    return (
+      <ExternalLinkPressable href={row.href} style={styles.row} onPress={row.onPress} testID={`sidebar-${row.key}`}>
+        {content}
+      </ExternalLinkPressable>
+    );
+  }
+  return (
+    <Pressable style={styles.row} onPress={row.onPress} testID={`sidebar-${row.key}`}>
+      {content}
     </Pressable>
   );
 }

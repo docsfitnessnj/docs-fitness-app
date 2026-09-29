@@ -1,7 +1,7 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { openVideoBreakdown } from '../lib/links';
+import { ExternalLinkPressable } from './ExternalLinkPressable';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -16,10 +16,10 @@ type Props = {
 export function WatchVideoBreakdownButton({ videoUrl }: Props) {
   if (!videoUrl) return null;
   return (
-    <Pressable style={styles.button} onPress={() => openVideoBreakdown(videoUrl)} testID="watch-video-breakdown">
+    <ExternalLinkPressable href={videoUrl} style={styles.button} testID="watch-video-breakdown">
       <Ionicons name="play-circle" size={20} color={colors.greenDeep} />
       <Text style={styles.text}>WATCH VIDEO BREAKDOWN</Text>
-    </Pressable>
+    </ExternalLinkPressable>
   );
 }
 

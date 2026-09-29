@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DocsBadge } from './brand/DocsBadge';
+import { ExternalLinkPressable } from './ExternalLinkPressable';
 import { BadgeIcon } from './icons/BadgeIcon';
 import { useBadges } from '../context/BadgeContext';
 import { useChallengeLeaderboard, useCurrentChallenge } from '../context/ChallengeContext';
@@ -10,7 +11,7 @@ import { BADGE_MAP, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import { formatDateKey, isSameDay } from '../data/content';
 import { findNextClass } from '../data/schedule';
 import { formatEtTime } from '../lib/challengeSchedule';
-import { openMerchStore, openLocationMaps } from '../lib/links';
+import { MERCH_STORE_URL, LOCATION_MAPS_URL } from '../lib/links';
 import { useClassBooking } from '../lib/useClassBooking';
 import { navigateToTab } from '../lib/navigationRef';
 import { openMemberships } from '../lib/membershipsModal';
@@ -188,16 +189,16 @@ function FooterModule({ onOpenMessages }: { onOpenMessages: () => void }) {
         <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.green} />
         <Text style={styles.linkText}>Message Doc</Text>
       </Pressable>
-      <Pressable style={styles.linkRow} onPress={openMerchStore}>
+      <ExternalLinkPressable href={MERCH_STORE_URL} style={styles.linkRow}>
         <Ionicons name="bag-handle-outline" size={16} color={colors.green} />
         <Text style={styles.linkText}>Doc's Merch Store</Text>
-      </Pressable>
-      <Pressable style={styles.linkRow} onPress={openLocationMaps}>
+      </ExternalLinkPressable>
+      <ExternalLinkPressable href={LOCATION_MAPS_URL} style={styles.linkRow}>
         <Ionicons name="location-outline" size={16} color={colors.green} />
         <Text style={styles.linkText}>
           {LOCATION.name}, {LOCATION.city}
         </Text>
-      </Pressable>
+      </ExternalLinkPressable>
     </View>
   );
 }

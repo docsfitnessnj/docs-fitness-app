@@ -17,6 +17,10 @@ type ProfileRow = {
   // so every existing member keeps seeing tomorrow's workout unless they
   // deliberately turn it off.
   showTomorrowsWorkout: boolean;
+  // The spotlight tour's once-ever flag (profiles.tour_completed_at) — null
+  // means "never completed or skipped," on this account, ever, on any
+  // device. See TourContext, the only other reader/writer of this field.
+  tourCompletedAt: Date | null;
 };
 
 const DEFAULT_PROFILE: ProfileRow = {
@@ -27,6 +31,7 @@ const DEFAULT_PROFILE: ProfileRow = {
   howTrain: null,
   isAdmin: false,
   showTomorrowsWorkout: true,
+  tourCompletedAt: null,
 };
 
 export type UpdateProfileInput = {
@@ -55,9 +60,17 @@ type ProfileContextValue = {
   // dev/preview tier toggle used for demoing UI states.
   isAdmin: boolean;
   showTomorrowsWorkout: boolean;
+  // See ProfileRow.tourCompletedAt — read by TourContext to gate the
+  // spotlight tour's single entry point, alongside markTourCompleted below.
+  tourCompletedAt: Date | null;
   updateProfile: (input: UpdateProfileInput) => Promise<{ error: string | null }>;
   setHowTrain: (value: HowTrain) => Promise<void>;
   setShowTomorrowsWorkout: (value: boolean) => Promise<void>;
+  // Writes the tour's once-ever flag — true when the tour finishes or is
+  // skipped (both read as "done"), false only from the admin dev-preview
+  // "RESET SPOTLIGHT TOUR" control. Optimistic locally, best-effort against
+  // the backend, same pattern as setHowTrain/setShowTomorrowsWorkout above.
+  markTourCompleted: (completed: boolean) => Promise<void>;
 };
 
 const ProfileContext = createContext<ProfileContextValue | undefined>(undefined);
@@ -100,7 +113,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
     supabase
       .from('profiles')
-      .select('display_name, instagram_handle, favorite_quote, avatar_url, how_train, is_admin, show_tomorrows_workout')
+      .select(
+        'display_name, instagram_handle, favorite_quote, avatar_url, how_train, is_admin, show_tomorrows_workout, tour_completed_at'
+      )
       .eq('id', user.id)
       .maybeSingle()
       .then(({ data, error: fetchError }) => {
@@ -122,6 +137,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           howTrain: (data?.how_train as HowTrain | null) ?? null,
           isAdmin: data?.is_admin ?? false,
           showTomorrowsWorkout: data?.show_tomorrows_workout ?? true,
+          tourCompletedAt: data?.tour_completed_at ? new Date(data.tour_completed_at) : null,
         });
         setLoading(false);
       });
@@ -142,6 +158,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       howTrain: profile.howTrain,
       isAdmin: profile.isAdmin,
       showTomorrowsWorkout: profile.showTomorrowsWorkout,
+      tourCompletedAt: profile.tourCompletedAt,
       updateProfile: async (input) => {
         if (!user) return { error: 'Not signed in.' };
         try {
@@ -203,6 +220,21 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         if (updateError) {
           // Best-effort, same as setHowTrain above — the toggle still
           // reflects instantly on this device even if the write didn't land.
+        }
+      },
+      markTourCompleted: async (completed) => {
+        if (!user) return;
+        const tourCompletedAt = completed ? new Date() : null;
+        setProfile((prev) => ({ ...prev, tourCompletedAt }));
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ tour_completed_at: tourCompletedAt ? tourCompletedAt.toISOString() : null })
+          .eq('id', user.id);
+        if (updateError) {
+          // Best-effort, same as setHowTrain/setShowTomorrowsWorkout above —
+          // the flag still reflects instantly on this device even if the
+          // write didn't land; worst case the tour can fire once more on
+          // another device or a later session.
         }
       },
     }),

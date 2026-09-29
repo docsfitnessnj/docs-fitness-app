@@ -1,11 +1,12 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { ModalHeader } from '../components/ModalHeader';
 import { useProfile } from '../context/ProfileContext';
 import { dayHasContent, formatDateKey, getTwoWeekCalendar, WeekDay } from '../data/content';
 import { ClassRow, LOCATION_CITY, LOCATION_NAME, rowsForDate } from '../data/schedule';
-import { openLocationMaps } from '../lib/links';
+import { LOCATION_MAPS_URL } from '../lib/links';
 import { useClassBooking } from '../lib/useClassBooking';
 import { navigateToTab } from '../lib/navigationRef';
 import { colors, fonts } from '../theme';
@@ -166,14 +167,14 @@ export function FullScheduleScreen({ visible, onClose }: Props) {
           </View>
         </View>
 
-        <Pressable style={styles.locationCard} onPress={openLocationMaps} testID="full-schedule-location">
+        <ExternalLinkPressable href={LOCATION_MAPS_URL} style={styles.locationCard} testID="full-schedule-location">
           <Ionicons name="location-outline" size={20} color={colors.gold} />
           <View style={{ flex: 1 }}>
             <Text style={styles.locationName}>{LOCATION_NAME}</Text>
             <Text style={styles.locationCity}>{LOCATION_CITY} · Get directions</Text>
           </View>
           <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
-        </Pressable>
+        </ExternalLinkPressable>
       </ScrollView>
     </View>
   );
