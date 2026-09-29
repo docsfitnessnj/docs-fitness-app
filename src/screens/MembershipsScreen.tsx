@@ -17,6 +17,7 @@ import {
   ONLINE_PLAN_BULLETS,
   ONLINE_SECTION_HEADER,
   OnlinePlan,
+  OnlinePlanKey,
   foundingDeadlineLabel,
   foundingSpotsLeftLabel,
 } from '../data/plans';
@@ -77,6 +78,16 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
 
   if (!visible) return null;
 
+  // Real Supabase subscription state only — not the admin dev-preview
+  // simulated tier — so this tag can never show something that isn't
+  // actually true of the account. 'founding' is a locked-in rate on the
+  // Monthly card, not a separate card, so it counts as "on monthly" here.
+  const isCurrentOnlinePlan = (planKey: OnlinePlanKey) => {
+    if (subscription.status !== 'trialing' && subscription.status !== 'active') return false;
+    if (subscription.plan === planKey) return true;
+    return planKey === 'monthly' && subscription.plan === 'founding';
+  };
+
   const inPersonPlans = onlyFullAccess ? IN_PERSON_PLANS.filter((p) => p.key === 'monthly_unlimited') : IN_PERSON_PLANS;
 
   // The founding-vs-standard price is decided for real, server-side, inside
@@ -133,7 +144,7 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
         )}
         {tier === 'trial' && daysLeftInTrial !== null && (
           <Text style={styles.trialLine}>
-            {daysLeftInTrial} day{daysLeftInTrial === 1 ? '' : 's'} left in your trial
+            {daysLeftInTrial} DAY{daysLeftInTrial === 1 ? '' : 'S'} LEFT IN YOUR TRIAL
           </Text>
         )}
 
@@ -145,10 +156,16 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
             // instead of a separate card above it, exactly as the annual
             // plan already leads with its own "3 MONTHS FREE" banner.
             const founding = plan.key === 'monthly' && founding50.isLive;
+            const isCurrent = isCurrentOnlinePlan(plan.key);
             return (
               <View key={plan.key} style={styles.planCard}>
                 <View style={styles.planHeader}>
                   <Text style={styles.planName}>{plan.name}</Text>
+                  {isCurrent && (
+                    <View style={styles.currentPlanTag} testID={`current-plan-tag-${plan.key}`}>
+                      <Text style={styles.currentPlanTagText}>CURRENT PLAN</Text>
+                    </View>
+                  )}
                 </View>
                 <View style={styles.planBody}>
                   <View style={styles.priceRow}>
@@ -158,6 +175,10 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
                     </Text>
                     {founding && <Text style={styles.struckPrice}>{plan.price}</Text>}
                   </View>
+
+                  {plan.key === 'annual' && (
+                    <Text style={styles.annualSavingsLine}>Save $171 a year vs monthly.</Text>
+                  )}
 
                   {founding && (
                     <>
@@ -200,18 +221,24 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
                     </View>
                   ))}
 
-                  <Pressable
-                    style={styles.selectButton}
-                    onPress={() => chooseOnline(plan, founding)}
-                    disabled={checkoutPendingKey !== null}
-                    testID={founding ? 'select-founding-fifty' : `select-online-${plan.key}`}
-                  >
-                    {checkoutPendingKey === plan.key ? (
-                      <ActivityIndicator color={colors.white} />
-                    ) : (
-                      <Text style={styles.selectButtonText}>{founding ? 'CLAIM YOUR SPOT' : `CHOOSE ${plan.name}`}</Text>
-                    )}
-                  </Pressable>
+                  {isCurrent ? (
+                    <View style={styles.yourPlanButton} testID={`your-plan-${plan.key}`}>
+                      <Text style={styles.yourPlanButtonText}>YOUR PLAN</Text>
+                    </View>
+                  ) : (
+                    <Pressable
+                      style={styles.selectButton}
+                      onPress={() => chooseOnline(plan, founding)}
+                      disabled={checkoutPendingKey !== null}
+                      testID={founding ? 'select-founding-fifty' : `select-online-${plan.key}`}
+                    >
+                      {checkoutPendingKey === plan.key ? (
+                        <ActivityIndicator color={colors.white} />
+                      ) : (
+                        <Text style={styles.selectButtonText}>{founding ? 'CLAIM YOUR SPOT' : `CHOOSE ${plan.name}`}</Text>
+                      )}
+                    </Pressable>
+                  )}
                 </View>
               </View>
             );
@@ -302,9 +329,10 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   trialLine: {
-    color: colors.textMuted,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 13,
+    color: colors.gold,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 22,
+    letterSpacing: 1,
     marginBottom: 16,
   },
   unlockIntro: {
@@ -366,12 +394,28 @@ const styles = StyleSheet.create({
     backgroundColor: colors.green,
     paddingHorizontal: 20,
     paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
   },
   planName: {
     color: colors.white,
     fontFamily: fonts.labelBold,
     fontSize: 14,
     letterSpacing: 2,
+  },
+  currentPlanTag: {
+    backgroundColor: colors.gold,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  currentPlanTagText: {
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
+    fontSize: 10,
+    letterSpacing: 0.8,
   },
   planBody: {
     padding: 20,
@@ -391,6 +435,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 15,
     color: colors.textMuted,
+  },
+  // Same quiet supporting style as foundingValueLine/clarifyingNote below —
+  // one plain sentence, not a banner.
+  annualSavingsLine: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 6,
   },
   struckPrice: {
     color: colors.textMuted,
@@ -517,6 +570,23 @@ const styles = StyleSheet.create({
   },
   selectButtonText: {
     color: colors.white,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 1,
+  },
+  // Quiet, non-interactive replacement for selectButton on whichever card
+  // the member is really on — an outline, not the vivid green CTA, so it
+  // reads as "already active" rather than another choice to make.
+  yourPlanButton: {
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  yourPlanButtonText: {
+    color: colors.textMuted,
     fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 1,
