@@ -303,8 +303,13 @@ export default function CommunityScreen() {
   const [detailPostId, setDetailPostId] = useState<string | null>(null);
   const { posts } = useCommunity();
   const detailPost = detailPostId ? posts.find((p) => p.id === detailPostId) ?? null : null;
-  const { wodAccessLevel, communityAccess } = useMembership();
-  const { howTrain, loading: profileLoading } = useProfile();
+  const {
+    wodAccessLevel,
+    communityAccess,
+    stateLoading: membershipLoading,
+    stateRefetching: membershipRefetching,
+  } = useMembership();
+  const { howTrain, loading: profileLoading, refetching: profileRefetching } = useProfile();
   const { activeStories } = useStories();
   const tour = useTour();
   // Online members train on their own, so the in-person class sign-up card
@@ -336,13 +341,23 @@ export default function CommunityScreen() {
   // rule 1 real rather than assumed).
   const isFocused = useIsFocused();
   const tourStarted = useRef(false);
+  // Deliberately gated on member state being settled, not just focus — a
+  // background refetch (tab refocus, token refresh) racing this screen's
+  // mount must not consume the one attempt. Waiting here (rather than
+  // relying solely on tour.start()'s own internal settled check) means a
+  // refetch in flight at mount time just delays this effect until it
+  // resolves, instead of silently losing the only chance to show the tour
+  // this mount — see TourContext.start() for the matching defense-in-depth
+  // check.
+  const memberStateSettled = !membershipLoading && !membershipRefetching && !profileLoading && !profileRefetching;
   useEffect(() => {
-    if (!tourStarted.current && isFocused) {
-      tourStarted.current = true;
-      tour.start();
-    }
+    if (tourStarted.current) return;
+    if (!isFocused) return;
+    if (!memberStateSettled) return;
+    tourStarted.current = true;
+    tour.start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFocused]);
+  }, [isFocused, memberStateSettled]);
 
   const days = useMemo(() => getUpcomingDays(BOOKING_DAYS_AHEAD), []);
   const todayIndex = days.findIndex((d) => d.isToday);

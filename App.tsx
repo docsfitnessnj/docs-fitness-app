@@ -456,7 +456,8 @@ type MainAppProps = {
 };
 
 function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps) {
-  const { tier } = useMembership();
+  const { tier, stateLoading: membershipLoading, stateRefetching: membershipRefetching } = useMembership();
+  const { loading: profileLoading, refetching: profileRefetching } = useProfile();
   const checkoutGatePhase = useCheckoutGatePhase();
   // A brand-new online signup reads as 'online_free' for the brief window
   // before the real subscription confirms — exactly the window a checkout
@@ -465,7 +466,17 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
   // calm loading takeover: a real alert, not a screen, so the opaque overlay
   // in ResponsiveShell alone can't be trusted to cover it everywhere a modal
   // might portal to. Simplest fix is not letting it fire in the first place.
-  useWeeklyUpgradeNudge(tier === 'online_free' && !checkoutGatePhase);
+  //
+  // memberStateSettled guards the SAME alert against a second, distinct
+  // window: a background refetch of subscription/admin/profile data (token
+  // refresh, tab refocus) that transiently has nothing to do with checkout
+  // at all. MembershipContext now holds `tier` at its last loaded value for
+  // the whole refetch (it never reports 'online_free' as a default mid-
+  // flight), but this nudge is a one-shot, non-retracting Alert — it must
+  // never even evaluate during a window where `tier` MIGHT still be
+  // momentarily wrong, as defense in depth alongside that fix.
+  const memberStateSettled = !membershipLoading && !membershipRefetching && !profileLoading && !profileRefetching;
+  useWeeklyUpgradeNudge(tier === 'online_free' && !checkoutGatePhase && memberStateSettled);
   // Hides the bottom tab bar the moment any field is focused and the
   // keyboard opens, app-wide — previously only the hamburger drawer hid it,
   // so an open keyboard plus the tab bar could cover most of a form (the
@@ -637,8 +648,15 @@ type ResponsiveShellProps = {
 };
 
 function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
-  const { signedUp, justPurchased, stateLoading, stateError, retryState } = useMembership();
-  const { loading: profileLoading, error: profileError, retry: retryProfile } = useProfile();
+  const {
+    signedUp,
+    justPurchased,
+    stateLoading,
+    stateRefetching,
+    stateError,
+    retryState,
+  } = useMembership();
+  const { loading: profileLoading, refetching: profileRefetching, error: profileError, retry: retryProfile } = useProfile();
   const { width } = useWindowDimensions();
   const [messagesOpen, setMessagesOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('about');
@@ -662,6 +680,22 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
   // wrong layout). MainApp — and everything inside it — now doesn't mount at
   // all until this clears, so nothing plan-dependent ever has a chance to
   // render off a stale default.
+  //
+  // `stateLoading`/`profileLoading` are now scoped (as of this round's fix,
+  // in MembershipContext/SubscriptionContext/ProfileContext) to ONLY the
+  // very first load ever — a later background refetch (token refresh, tab
+  // refocus) flips `stateRefetching`/`profileRefetching` instead, which
+  // this gate deliberately does NOT check. That's the fix for the previous
+  // round's gate only covering initial load: before this round, every one
+  // of those contexts set its `loading` flag back to true on every refetch
+  // too, which both re-showed this takeover mid-session AND (in
+  // MembershipContext specifically) made `tier` fall back to 'online_free'
+  // while subscription.loading was true — long enough for a one-shot
+  // upsell alert to fire and never retract once the refetch resolved and
+  // the real tier came back. See SubscriptionContext/ProfileContext for the
+  // held-last-value mechanics, and MainApp/TourContext for the other half
+  // of the fix: one-shot effects off member state also checking
+  // `stateRefetching`/`profileRefetching` before ever evaluating.
   const memberStateLoading = signedUp && (stateLoading || profileLoading);
   // FAIL CLOSED: a fetch erroring also makes its own `loading` flag go
   // false — an error and a real success are NOT distinguishable by
@@ -680,13 +714,25 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
     console.log('[memberState:gate] decision', {
       signedUp,
       stateLoading,
+      stateRefetching,
       profileLoading,
+      profileRefetching,
       memberStateLoading,
       stateError,
       profileError,
       memberStateError,
     });
-  }, [signedUp, stateLoading, profileLoading, memberStateLoading, stateError, profileError, memberStateError]);
+  }, [
+    signedUp,
+    stateLoading,
+    stateRefetching,
+    profileLoading,
+    profileRefetching,
+    memberStateLoading,
+    stateError,
+    profileError,
+    memberStateError,
+  ]);
 
   useWebDocumentScroll(signedUp);
 

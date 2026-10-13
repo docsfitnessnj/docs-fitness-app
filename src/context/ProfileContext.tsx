@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
 import { useMembership } from './MembershipContext';
 import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
@@ -44,10 +44,25 @@ export type UpdateProfileInput = {
 };
 
 type ProfileContextValue = {
+  // True ONLY until the profile has been fetched successfully for the very
+  // first time ever — never flips true again for a later background
+  // refetch (token refresh, tab refocus, a manual `retry()` call). See
+  // `refetching` below for that case. Every field below keeps reporting its
+  // last successfully-loaded value for the whole time a refetch is in
+  // flight; none of them ever reset to DEFAULT_PROFILE mid-refetch.
   loading: boolean;
-  // Non-null only when the backend is genuinely unreachable / the schema
-  // hasn't been created yet — see isBackendUnavailableError. The profile
-  // screen shows this instead of crashing or silently discarding edits.
+  // True only while a refetch (a fetch AFTER the first successful load) is
+  // in flight. Purely informational — nothing should fail closed or fall
+  // back to a default on this. Anything that fires a one-time,
+  // non-retracting effect off profile state (the tour gate) must treat
+  // this exactly like `loading`: don't evaluate while either is true.
+  refetching: boolean;
+  // Non-null only when the INITIAL fetch failed — the backend is genuinely
+  // unreachable / the schema hasn't been created yet — see
+  // isBackendUnavailableError. The profile screen shows this instead of
+  // crashing or silently discarding edits. A refetch that errors after a
+  // successful earlier load keeps the last known good profile and does not
+  // populate this — see the fetch effect below.
   error: string | null;
   photoUri: string | null;
   name: string;
@@ -99,23 +114,41 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const { user, authReady } = useAuth();
   const [profile, setProfile] = useState<ProfileRow>(DEFAULT_PROFILE);
   const [loading, setLoading] = useState(true);
+  const [refetching, setRefetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
+  // Same first-load-vs-refetch distinction as SubscriptionContext's
+  // `hasLoadedOnce` — this effect re-runs on every `user` object identity
+  // change, which includes Supabase's own periodic TOKEN_REFRESHED auth
+  // event (fired on tab refocus and similar), not just a real sign-in.
+  const hasLoadedOnce = useRef(false);
 
   useEffect(() => {
     if (!authReady) return;
     if (!user) {
       setProfile(DEFAULT_PROFILE);
       setLoading(false);
+      setRefetching(false);
       setError(null);
+      hasLoadedOnce.current = false;
       return;
     }
 
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    const isRefetch = hasLoadedOnce.current;
+    if (isRefetch) {
+      setRefetching(true);
+      console.log('[memberState:profile] refetch start', {
+        userId: user.id,
+        heldIsAdmin: profile.isAdmin,
+        heldTourCompletedAt: profile.tourCompletedAt ? profile.tourCompletedAt.toISOString() : null,
+      });
+    } else {
+      setLoading(true);
+      setError(null);
+      console.log('[memberState:profile] fetch start', { userId: user.id });
+    }
 
-    console.log('[memberState:profile] fetch start', { userId: user.id });
     supabase
       .from('profiles')
       .select(
@@ -126,6 +159,21 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       .then(({ data, error: fetchError }) => {
         if (cancelled) return;
         if (fetchError) {
+          if (isRefetch) {
+            // A refetch failing must NEVER erase a profile this member
+            // already has, nor re-trigger the fail-closed retry screen —
+            // keep serving the last loaded profile exactly as-is, just log
+            // it. This path didn't used to exist — every failure (initial
+            // or not) looked identical and both set `error` + flipped
+            // `loading`, which is exactly what let a transient refetch
+            // failure read as "done loading, and now broken."
+            console.error('[memberState:profile] refetch error — keeping last known good state', fetchError, {
+              heldIsAdmin: profile.isAdmin,
+              heldTourCompletedAt: profile.tourCompletedAt ? profile.tourCompletedAt.toISOString() : null,
+            });
+            setRefetching(false);
+            return;
+          }
           // Was previously silent past this point except for the Profile
           // screen's own error banner — nothing gated on it. This is
           // specifically the error the previous round's fix could hit
@@ -143,10 +191,17 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           setLoading(false);
           return;
         }
-        console.log('[memberState:profile] fetch success', {
-          isAdmin: data?.is_admin ?? false,
-          tourCompletedAt: data?.tour_completed_at ?? null,
-        });
+        if (isRefetch) {
+          console.log('[memberState:profile] refetch success', {
+            isAdmin: data?.is_admin ?? false,
+            tourCompletedAt: data?.tour_completed_at ?? null,
+          });
+        } else {
+          console.log('[memberState:profile] fetch success', {
+            isAdmin: data?.is_admin ?? false,
+            tourCompletedAt: data?.tour_completed_at ?? null,
+          });
+        }
         setProfile({
           photoUri: data?.avatar_url ?? null,
           name: data?.display_name ?? '',
@@ -157,17 +212,24 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           showTomorrowsWorkout: data?.show_tomorrows_workout ?? true,
           tourCompletedAt: data?.tour_completed_at ? new Date(data.tour_completed_at) : null,
         });
-        setLoading(false);
+        hasLoadedOnce.current = true;
+        if (isRefetch) {
+          setRefetching(false);
+        } else {
+          setLoading(false);
+        }
       });
 
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady, user, retryTick]);
 
   const value = useMemo<ProfileContextValue>(
     () => ({
       loading,
+      refetching,
       error,
       photoUri: profile.photoUri,
       name: profile.name,
@@ -262,7 +324,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       },
       retry: () => setRetryTick((t) => t + 1),
     }),
-    [loading, error, profile, user]
+    [loading, refetching, error, profile, user]
   );
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;
