@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
 import { isCheckoutRedirectPending } from '../lib/checkoutRedirectGate';
+import { useMembership } from './MembershipContext';
 import { useProfile } from './ProfileContext';
 
 // The 4 spotlight stops, in order. Components register themselves under
@@ -35,8 +36,16 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   // alongside this — MainApp doesn't render at all until ProfileContext's
   // own fetch has resolved), `tourCompletedAt` already reflects the real,
   // loaded value, never a stale default.
-  const { tourCompletedAt, markTourCompleted } = useProfile();
+  const { tourCompletedAt, markTourCompleted, loading: profileLoading, refetching: profileRefetching } = useProfile();
+  // The tour reads subscription/admin-flag-derived tier data nowhere
+  // directly, but a mid-refetch render of the rest of the app (the exact
+  // window this round's escalation diagnosed in MembershipContext) is not a
+  // safe moment to measure spotlight targets against either — a stop
+  // anchored during that transient layout is the same class of bug as the
+  // tier-reset one. See `start()` below.
+  const { stateLoading: membershipLoading, stateRefetching: membershipRefetching } = useMembership();
   const completed = tourCompletedAt !== null;
+  const memberStateSettled = !profileLoading && !profileRefetching && !membershipLoading && !membershipRefetching;
   const [active, setActive] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const targets = useRef<Partial<Record<TourTargetKey, MeasurableNode | null>>>({});
@@ -68,10 +77,27 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
           tourCompletedAt: tourCompletedAt ? tourCompletedAt.toISOString() : null,
           completed,
           checkoutPending,
-          decision: completed ? 'BLOCKED (already completed/skipped)' : checkoutPending ? 'BLOCKED (checkout pending)' : 'ALLOWED',
+          memberStateSettled,
+          profileLoading,
+          profileRefetching,
+          membershipLoading,
+          membershipRefetching,
+          decision: completed
+            ? 'BLOCKED (already completed/skipped)'
+            : checkoutPending
+              ? 'BLOCKED (checkout pending)'
+              : !memberStateSettled
+                ? 'BLOCKED (member state loading/refetching)'
+                : 'ALLOWED',
         });
         if (completed) return;
         if (checkoutPending) return;
+        // Never measure spotlight targets against a render taken mid-fetch
+        // or mid-refetch — the one-shot caller (CommunityScreen's mount
+        // effect) is responsible for not burning its only attempt on this
+        // transient block; this check is defense in depth for any other
+        // caller.
+        if (!memberStateSettled) return;
         setStepIndex(0);
         setActive(true);
       },
@@ -106,7 +132,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [active, stepIndex, completed, markTourCompleted]
+    [active, stepIndex, completed, markTourCompleted, memberStateSettled, profileLoading, profileRefetching, membershipLoading, membershipRefetching]
   );
 
   return <TourContext.Provider value={value}>{children}</TourContext.Provider>;

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
 import { useSubscription } from './SubscriptionContext';
 import { loadJSON, saveJSON } from '../lib/storage';
@@ -80,10 +80,21 @@ type MembershipContextValue = {
   // should wait for this to clear rather than trust those defaults. See
   // ResponsiveShell in App.tsx, which is where that's actually enforced.
   stateLoading: boolean;
+  // True only while a background refetch (subscription or admin-flag,
+  // AFTER each has already loaded once) is in flight — `tier`/`isAdmin`
+  // keep reporting their last known good values throughout, never a
+  // default. Purely informational; nothing should fail closed on this.
+  // Anything that fires a one-time, non-retracting effect off member state
+  // (the upgrade nudge, the tour gate) must treat this exactly like
+  // stateLoading: don't evaluate while either is true.
+  stateRefetching: boolean;
   // Non-null when the subscription fetch OR the admin-flag fetch failed —
   // set alongside stateLoading clearing, never silently swallowed. See
   // ResponsiveShell: this must be checked BEFORE stateLoading, since a
-  // failed fetch also makes loading go false.
+  // failed fetch also makes loading go false. Scoped to each read's FIRST
+  // attempt only — a refetch that fails after an earlier success keeps the
+  // last known good tier/isAdmin and does not populate this, so it can
+  // never re-trigger the fail-closed retry screen mid-session.
   stateError: string | null;
   // Re-runs whichever of subscription/admin-flag actually failed. Also
   // triggers subscription's own refetch even if only the admin flag error'd
@@ -218,22 +229,44 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   // this flag shows.
   const [realAdmin, setRealAdmin] = useState(false);
   const [realAdminLoading, setRealAdminLoading] = useState(true);
-  // Non-null only when the fetch itself failed — previously this discarded
+  // True only while a background refetch of the admin flag (AFTER it has
+  // already loaded once) is in flight — see SubscriptionContext's identical
+  // `refetching` for the same reasoning.
+  const [realAdminRefetching, setRealAdminRefetching] = useState(false);
+  // Non-null only when the INITIAL fetch failed — previously this discarded
   // `error` entirely (`.then(({ data }) => ...)`), so a real failure against
   // production Supabase read as "loaded, not admin" instead of "failed to
-  // load," silently defaulting to false rather than surfacing anything.
+  // load," silently defaulting to false rather than surfacing anything. A
+  // refetch that errors after a successful earlier load keeps `realAdmin`
+  // at its last known value and does not populate this — see below.
   const [realAdminError, setRealAdminError] = useState<string | null>(null);
   const [realAdminRetryTick, setRealAdminRetryTick] = useState(0);
+  // Same first-load-vs-refetch distinction as SubscriptionContext's
+  // `hasLoadedOnce` — this effect re-runs on every `user` object identity
+  // change, which includes Supabase's own periodic TOKEN_REFRESHED auth
+  // event (fired on tab refocus and similar), not just a real sign-in. Before
+  // this round, EVERY one of those re-runs unconditionally set
+  // realAdminLoading(true) again, exactly the bug this round's escalation
+  // diagnosed in SubscriptionContext.
+  const realAdminHasLoadedOnce = useRef(false);
   useEffect(() => {
     if (!user) {
       setRealAdmin(false);
       setRealAdminError(null);
       setRealAdminLoading(false);
+      setRealAdminRefetching(false);
+      realAdminHasLoadedOnce.current = false;
       return;
     }
     let cancelled = false;
-    setRealAdminLoading(true);
-    console.log('[memberState:adminFlag] fetch start', { userId: user.id });
+    const isRefetch = realAdminHasLoadedOnce.current;
+    if (isRefetch) {
+      setRealAdminRefetching(true);
+      console.log('[memberState:adminFlag] refetch start', { userId: user.id, heldIsAdmin: realAdmin });
+    } else {
+      setRealAdminLoading(true);
+      console.log('[memberState:adminFlag] fetch start', { userId: user.id });
+    }
     supabase
       .from('profiles')
       .select('is_admin')
@@ -242,19 +275,36 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       .then(({ data, error: fetchError }) => {
         if (cancelled) return;
         if (fetchError) {
+          if (isRefetch) {
+            console.error('[memberState:adminFlag] refetch error — keeping last known good state', fetchError, {
+              heldIsAdmin: realAdmin,
+            });
+            setRealAdminRefetching(false);
+            return;
+          }
           console.error('[memberState:adminFlag] fetch error', fetchError);
           setRealAdminError(fetchError.message);
           setRealAdminLoading(false);
           return;
         }
-        console.log('[memberState:adminFlag] fetch success', { isAdmin: data?.is_admin ?? false });
+        if (isRefetch) {
+          console.log('[memberState:adminFlag] refetch success', { isAdmin: data?.is_admin ?? false });
+        } else {
+          console.log('[memberState:adminFlag] fetch success', { isAdmin: data?.is_admin ?? false });
+        }
         setRealAdminError(null);
         setRealAdmin(data?.is_admin ?? false);
-        setRealAdminLoading(false);
+        realAdminHasLoadedOnce.current = true;
+        if (isRefetch) {
+          setRealAdminRefetching(false);
+        } else {
+          setRealAdminLoading(false);
+        }
       });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, realAdminRetryTick]);
 
   const [simulated, setSimulated] = useState<SimulatedMembershipState>(() =>
@@ -349,15 +399,19 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     const communityAccess: 'full' | 'none' = tier === 'drop_in' ? 'none' : 'full';
 
     const computedStateLoading = subscription.loading || realAdminLoading;
+    const computedStateRefetching = subscription.refetching || realAdminRefetching;
     const computedStateError = subscription.error ?? realAdminError ?? null;
     if (signedUp) {
       console.log('[memberState:membership] tier computed', {
         tier,
         stateLoading: computedStateLoading,
+        stateRefetching: computedStateRefetching,
         stateError: computedStateError,
         subscriptionLoading: subscription.loading,
+        subscriptionRefetching: subscription.refetching,
         subscriptionError: subscription.error,
         realAdminLoading,
+        realAdminRefetching,
         realAdminError,
       });
     }
@@ -373,6 +427,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       // them — one simple rule for every account is safer than a second one
       // to keep in sync.
       stateLoading: computedStateLoading,
+      stateRefetching: computedStateRefetching,
       stateError: computedStateError,
       retryState: () => {
         subscription.retry();
@@ -475,9 +530,11 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   }, [
     realAdmin,
     realAdminLoading,
+    realAdminRefetching,
     realAdminError,
     simulatedTier,
     subscription.loading,
+    subscription.refetching,
     subscription.error,
     subscription.status,
     subscription.plan,
