@@ -14,14 +14,19 @@ export type SubscriptionStatus =
 export type SubscriptionPlan = 'monthly' | 'annual' | 'founding' | null;
 
 type SubscriptionContextValue = {
-  // True ONLY until the real subscription row has been fetched successfully
-  // for the very first time ever — callers treat "loading" as "no access
-  // yet," the safe direction to be wrong in for a moment (same convention
-  // FoundingFiftyContext uses). Deliberately does NOT flip true again for a
-  // later background refetch (token refresh, tab refocus, a manual
-  // `refetch()` call) — see `refetching` below for that. A refetch holds
-  // `status`/`plan`/etc at their last successfully-loaded values the whole
-  // time it's in flight; it never resets them to a default.
+  // True until the real subscription row has been fetched successfully for
+  // the very first time for WHOEVER is currently signed in — callers treat
+  // "loading" as "no access yet," the safe direction to be wrong in for a
+  // moment (same convention FoundingFiftyContext uses). Deliberately does
+  // NOT flip true again for a later background refetch of the SAME account
+  // (token refresh, tab refocus, a manual `refetch()` call) — see
+  // `refetching` below for that; a refetch holds `status`/`plan`/etc at
+  // their last successfully-loaded values the whole time it's in flight,
+  // never resetting them to a default. It DOES reset back to `true` on
+  // sign-out and stays `true` through the next sign-in's own first load —
+  // signing into a different (or the same) account from scratch is always
+  // treated exactly like a fresh page load, never like a refetch of
+  // whatever the previous account (or no account) last held.
   loading: boolean;
   // True only while a refetch (a fetch AFTER the first successful load) is
   // in flight. `status`/`plan`/etc keep reporting the last known good value
@@ -85,10 +90,18 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [error, setError] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
   // Whether a value has EVER loaded successfully — the first-load-vs-refetch
-  // distinction this round's fix hinges on. A ref, not state: it must be
-  // readable synchronously inside the same effect run that flips it, and it
-  // never itself needs to trigger a re-render (loading/refetching already do).
+  // distinction PR #108 hinges on. A ref, not state: it must be readable
+  // synchronously inside the same effect run that flips it, and it never
+  // itself needs to trigger a re-render (loading/refetching already do).
   const hasLoadedOnce = useRef(false);
+  // The id of whichever account this context last loaded (or attempted to
+  // load) for — null while signed out. Lets the effect below tell "this is
+  // the same account refreshing its token" (keep `hasLoadedOnce`, hold the
+  // value) apart from "this is a genuinely different identity: sign-out,
+  // sign-in, or switching accounts outright" (reset everything), which
+  // `user` object identity alone can't: a token refresh also gives `user` a
+  // new object reference even though it's the same account.
+  const lastUserId = useRef<string | null>(null);
 
   const refetch = async () => {
     if (!user) return;
@@ -139,14 +152,38 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     if (!authReady) return;
-    if (!user) {
+    const currentUserId = user?.id ?? null;
+    if (currentUserId !== lastUserId.current) {
+      // A genuine identity change — sign-out (currentUserId is null),
+      // sign-in, or (even though nothing in this app's UI does this today)
+      // switching directly from one account to another. The next fetch for
+      // this identity must never be classified as a refetch of whatever
+      // the PREVIOUS identity (or no identity at all) last held onto.
+      //
+      // `loading` is set to `true` here even for the sign-out case — NOT
+      // `false`. This is the fix for a production bug traced to this exact
+      // line: `useEffect`s run strictly after the render that changes
+      // `user`, so there is always at least one
+      // committed render — right after the NEXT sign-in flips `user` from
+      // null to the new account — where every downstream consumer sees the
+      // new, signed-in `user` while THIS effect hasn't re-run yet. If
+      // `loading` were left at `false` from the sign-out reset, that one
+      // render reads as "signed in, settled, nothing loaded" and hands out
+      // `row`'s default (null) as if it were the real answer — which is
+      // exactly how a freshly-signed-back-in paid member could flash the
+      // free-tier default for one frame, long enough for a one-shot effect
+      // (the upgrade nudge, the tour gate) elsewhere to fire against it.
+      // Holding `loading` at `true` through that entire gap closes it: the
+      // very next real render after sign-in already shows the loading gate,
+      // same as a fresh page load, until this effect's own fetch resolves.
+      lastUserId.current = currentUserId;
+      hasLoadedOnce.current = false;
       setRow(null);
       setError(null);
-      setLoading(false);
       setRefetching(false);
-      hasLoadedOnce.current = false;
-      return;
+      setLoading(true);
     }
+    if (!user) return;
     let cancelled = false;
     const isRefetch = hasLoadedOnce.current;
     if (isRefetch) {
