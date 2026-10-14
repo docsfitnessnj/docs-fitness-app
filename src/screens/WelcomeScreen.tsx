@@ -153,6 +153,17 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
           </Pressable>
         </View>
 
+        <Pressable
+          style={styles.signInRow}
+          onPress={() => onGoToSignIn(email.trim())}
+          hitSlop={8}
+          testID="welcome-sign-in"
+        >
+          <Text style={styles.signInText}>
+            Already a member? <Text style={styles.signInLink}>Sign in.</Text>
+          </Text>
+        </Pressable>
+
         <View style={styles.footer}>
           <DocsHorizontalLockup width={130} />
         </View>
@@ -327,5 +338,23 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelBold,
     fontSize: 15,
     letterSpacing: 1,
+  },
+  // Same quiet treatment as the footer "Already a member? Sign in." on the
+  // About page (AboutScreen's `signInRow`/`signInText`/`signInLink`) — a
+  // returning member who landed here via TRAIN ONLINE or BOOK YOUR CLASS
+  // gets the identical way back out, not a louder or different-looking one.
+  signInRow: {
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  signInText: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 13,
+  },
+  signInLink: {
+    color: colors.green,
+    fontFamily: fonts.bodySemiBold,
+    textDecorationLine: 'underline',
   },
 });
