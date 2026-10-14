@@ -23,6 +23,7 @@ type Props = {
   onOpenProfile: () => void;
   onOpenMemberships: () => void;
   onOpenMyWorkouts: () => void;
+  onOpenGroupChat: () => void;
   onOpenCloseFriends: () => void;
   onOpenMessages: () => void;
   onOpenAdminRoster: () => void;
@@ -58,6 +59,7 @@ export function SidebarDrawer({
   onOpenProfile,
   onOpenMemberships,
   onOpenMyWorkouts,
+  onOpenGroupChat,
   onOpenCloseFriends,
   onOpenMessages,
   onOpenAdminRoster,
@@ -117,6 +119,12 @@ export function SidebarDrawer({
       icon: 'barbell-outline',
       meta: String(myWorkoutsCount),
       onPress: () => openNested(onOpenMyWorkouts),
+    },
+    {
+      key: 'group-chat',
+      label: "DOC'S GROUP CHAT",
+      icon: 'chatbubbles-outline',
+      onPress: () => openNested(onOpenGroupChat),
     },
     // Admin's own messaging surface is DOC'S INBOX, not MESSAGE DOC (which
     // is just the member-side "message Doc" thread — pointless for Doc

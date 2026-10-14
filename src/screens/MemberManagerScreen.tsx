@@ -47,15 +47,17 @@ function statusColor(kind: AdminMemberStatusKind): string {
 export function MemberManagerScreen({ visible, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<AdminMember | null>(null);
-  const { grouped, loading, error } = useAdminMembers(visible);
+  const { grouped, loading, error, setMemberMuted } = useAdminMembers(visible);
   const badges = useBadges();
   const founding50 = useFoundingFifty();
   const jokerSaveConfirm = useSaveConfirmation();
+  const muteSaveConfirm = useSaveConfirmation();
 
   // A stale SAVED/error from a previous member shouldn't linger once Doc
   // moves on to look at someone else.
   useEffect(() => {
     jokerSaveConfirm.reset();
+    muteSaveConfirm.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
@@ -155,6 +157,37 @@ export function MemberManagerScreen({ visible, onClose }: Props) {
             >
               <Text style={[styles.grantButtonText, memberJoker && styles.revokeButtonText]}>
                 {memberJoker ? 'REVOKE' : 'GRANT'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.grantRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.grantTitle}>GROUP CHAT</Text>
+              <Text style={styles.grantSubtext}>
+                {selected.groupChatMuted ? 'Posting is turned off for this member.' : 'This member can post normally.'}
+              </Text>
+              <View style={styles.jokerSaveConfirmWrap}>
+                <SaveConfirmation state={muteSaveConfirm.state} errorMessage={muteSaveConfirm.errorMessage} />
+              </View>
+            </View>
+            <Pressable
+              style={[styles.grantButton, selected.groupChatMuted && styles.revokeButton]}
+              onPress={async () => {
+                muteSaveConfirm.start();
+                const nextMuted = !selected.groupChatMuted;
+                const { error: muteError } = await setMemberMuted(selected.id, nextMuted);
+                if (muteError) {
+                  muteSaveConfirm.fail(muteError);
+                  return;
+                }
+                setSelected((prev) => (prev ? { ...prev, groupChatMuted: nextMuted } : prev));
+                muteSaveConfirm.succeed();
+              }}
+              testID={selected.groupChatMuted ? 'unmute-group-chat-button' : 'mute-group-chat-button'}
+            >
+              <Text style={[styles.grantButtonText, selected.groupChatMuted && styles.revokeButtonText]}>
+                {selected.groupChatMuted ? 'UNMUTE' : 'MUTE'}
               </Text>
             </Pressable>
           </View>

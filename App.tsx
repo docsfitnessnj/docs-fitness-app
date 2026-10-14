@@ -101,6 +101,7 @@ import { MovementVaultScreen } from './src/screens/MovementVaultScreen';
 import { MemberManagerScreen } from './src/screens/MemberManagerScreen';
 import { ContentLibraryScreen } from './src/screens/ContentLibraryScreen';
 import { DocsInboxScreen } from './src/screens/DocsInboxScreen';
+import { DocsGroupChatScreen } from './src/screens/DocsGroupChatScreen';
 
 const PHONE_FRAME_MAX_WIDTH = 480;
 const MAIN_COLUMN_DESKTOP_WIDTH = 840;
@@ -453,9 +454,19 @@ type MainAppProps = {
   messagesOpen: boolean;
   onOpenMessages: () => void;
   onCloseMessages: () => void;
+  groupChatOpen: boolean;
+  onOpenGroupChat: () => void;
+  onCloseGroupChat: () => void;
 };
 
-function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps) {
+function MainApp({
+  messagesOpen,
+  onOpenMessages,
+  onCloseMessages,
+  groupChatOpen,
+  onOpenGroupChat,
+  onCloseGroupChat,
+}: MainAppProps) {
   const { tier, stateLoading: membershipLoading, stateRefetching: membershipRefetching } = useMembership();
   const { loading: profileLoading, refetching: profileRefetching } = useProfile();
   const checkoutGatePhase = useCheckoutGatePhase();
@@ -535,6 +546,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           subtitle={TAB_SUBTITLES[activeTab]}
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenSearch={() => setSearchOpen(true)}
+          onOpenGroupChat={activeTab === 'Community' ? onOpenGroupChat : undefined}
         />
         <RootNavigator tabBarHidden={sidebarOpen || keyboardVisible} />
         <TabBarTourMarker />
@@ -549,6 +561,7 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           onOpenProfile={() => setProfileOpen(true)}
           onOpenMemberships={() => openMemberships('all')}
           onOpenMyWorkouts={() => setMyWorkoutsOpen(true)}
+          onOpenGroupChat={onOpenGroupChat}
           onOpenCloseFriends={() => setCloseFriendsOpen(true)}
           onOpenMessages={onOpenMessages}
           onOpenAdminRoster={() => setAdminRosterOpen(true)}
@@ -575,6 +588,9 @@ function MainApp({ messagesOpen, onOpenMessages, onCloseMessages }: MainAppProps
           }}
           initialDraft={messagesDraft}
         />
+      </ScreenOverlay>
+      <ScreenOverlay visible={groupChatOpen} fullBleed={sidebarOpen}>
+        <DocsGroupChatScreen visible={groupChatOpen} onClose={onCloseGroupChat} />
       </ScreenOverlay>
       <ScreenOverlay visible={profileOpen} fullBleed={sidebarOpen}>
         <ProfileScreen visible={profileOpen} onClose={() => setProfileOpen(false)} />
@@ -659,6 +675,7 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
   const { loading: profileLoading, refetching: profileRefetching, error: profileError, retry: retryProfile } = useProfile();
   const { width } = useWindowDimensions();
   const [messagesOpen, setMessagesOpen] = useState(false);
+  const [groupChatOpen, setGroupChatOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('about');
   // Reactive read of the same gate the tour uses (see checkoutRedirectGate.ts).
   const checkoutGatePhase = useCheckoutGatePhase();
@@ -780,6 +797,9 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
                 messagesOpen={messagesOpen}
                 onOpenMessages={() => setMessagesOpen(true)}
                 onCloseMessages={() => setMessagesOpen(false)}
+                groupChatOpen={groupChatOpen}
+                onOpenGroupChat={() => setGroupChatOpen(true)}
+                onCloseGroupChat={() => setGroupChatOpen(false)}
               />
             )
           ) : (
@@ -810,7 +830,10 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
 
       {showSidebar && (
         <View style={[styles.sidebarColumn, { width: sidebarWidth }]}>
-          <IdentitySidebar onOpenMessages={() => setMessagesOpen(true)} />
+          <IdentitySidebar
+            onOpenMessages={() => setMessagesOpen(true)}
+            onOpenGroupChat={() => setGroupChatOpen(true)}
+          />
         </View>
       )}
     </View>

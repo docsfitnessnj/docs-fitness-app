@@ -21,6 +21,7 @@ const MEMBER_COUNT = 128;
 
 type Props = {
   onOpenMessages: () => void;
+  onOpenGroupChat: () => void;
 };
 
 function ChallengeModule() {
@@ -169,7 +170,13 @@ function JoinPromptModule() {
   );
 }
 
-function FooterModule({ onOpenMessages }: { onOpenMessages: () => void }) {
+function FooterModule({
+  onOpenMessages,
+  onOpenGroupChat,
+}: {
+  onOpenMessages: () => void;
+  onOpenGroupChat: () => void;
+}) {
   return (
     <View style={styles.footerCard}>
       <View style={styles.brandMark}>
@@ -185,6 +192,10 @@ function FooterModule({ onOpenMessages }: { onOpenMessages: () => void }) {
 
       <View style={styles.divider} />
 
+      <Pressable style={styles.linkRow} onPress={onOpenGroupChat} testID="sidebar-desktop-group-chat">
+        <Ionicons name="chatbubbles-outline" size={16} color={colors.green} />
+        <Text style={styles.linkText}>Doc's Group Chat</Text>
+      </Pressable>
       <Pressable style={styles.linkRow} onPress={onOpenMessages}>
         <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.green} />
         <Text style={styles.linkText}>Message Doc</Text>
@@ -203,7 +214,7 @@ function FooterModule({ onOpenMessages }: { onOpenMessages: () => void }) {
   );
 }
 
-export function IdentitySidebar({ onOpenMessages }: Props) {
+export function IdentitySidebar({ onOpenMessages, onOpenGroupChat }: Props) {
   const { fullContentAccess } = useMembership();
 
   return (
@@ -211,7 +222,7 @@ export function IdentitySidebar({ onOpenMessages }: Props) {
       <ChallengeModule />
       <NextClassModule />
       {fullContentAccess ? <YourWeekModule /> : <JoinPromptModule />}
-      <FooterModule onOpenMessages={onOpenMessages} />
+      <FooterModule onOpenMessages={onOpenMessages} onOpenGroupChat={onOpenGroupChat} />
     </View>
   );
 }

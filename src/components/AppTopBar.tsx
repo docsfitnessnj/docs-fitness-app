@@ -9,9 +9,13 @@ type Props = {
   subtitle?: string;
   onOpenSidebar: () => void;
   onOpenSearch: () => void;
+  // Only passed in on the Community tab — every other tab leaves this
+  // undefined and the icon simply doesn't render. Opens the same DOC'S
+  // GROUP CHAT screen as the hamburger drawer row and the desktop sidebar.
+  onOpenGroupChat?: () => void;
 };
 
-export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch }: Props) {
+export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupChat }: Props) {
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <View style={styles.bar}>
@@ -28,6 +32,11 @@ export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch }: Props) {
         </View>
 
         <View style={styles.rightGroup}>
+          {onOpenGroupChat && (
+            <Pressable onPress={onOpenGroupChat} hitSlop={8} style={styles.iconButton} testID="open-group-chat">
+              <Ionicons name="chatbubbles-outline" size={22} color={colors.text} />
+            </Pressable>
+          )}
           <Pressable onPress={onOpenSearch} hitSlop={8} style={styles.iconButton} testID="open-search">
             <Ionicons name="search-outline" size={22} color={colors.text} />
           </Pressable>
