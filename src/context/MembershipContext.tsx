@@ -249,15 +249,29 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   // realAdminLoading(true) again, exactly the bug this round's escalation
   // diagnosed in SubscriptionContext.
   const realAdminHasLoadedOnce = useRef(false);
+  // The id of whichever account this fetch last loaded (or attempted to
+  // load) for — null while signed out. See SubscriptionContext's identical
+  // `lastUserId` for why this (not `user` object identity alone) is what
+  // decides a genuine identity change, distinct from the same account's
+  // token simply refreshing.
+  const lastAdminFlagUserId = useRef<string | null>(null);
   useEffect(() => {
-    if (!user) {
+    const currentUserId = user?.id ?? null;
+    if (currentUserId !== lastAdminFlagUserId.current) {
+      // Sign-out, sign-in, or switching accounts outright — see
+      // SubscriptionContext's identical block for the full reasoning.
+      // `realAdminLoading` goes to `true` here, not `false`, even on
+      // sign-out — otherwise the render right after the NEXT sign-in,
+      // before THIS effect has re-run, would read "signed in, settled,
+      // not admin" as if that were the real, loaded answer.
+      lastAdminFlagUserId.current = currentUserId;
+      realAdminHasLoadedOnce.current = false;
       setRealAdmin(false);
       setRealAdminError(null);
-      setRealAdminLoading(false);
       setRealAdminRefetching(false);
-      realAdminHasLoadedOnce.current = false;
-      return;
+      setRealAdminLoading(true);
     }
+    if (!user) return;
     let cancelled = false;
     const isRefetch = realAdminHasLoadedOnce.current;
     if (isRefetch) {

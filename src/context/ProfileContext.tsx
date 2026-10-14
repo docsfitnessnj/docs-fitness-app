@@ -122,17 +122,34 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   // change, which includes Supabase's own periodic TOKEN_REFRESHED auth
   // event (fired on tab refocus and similar), not just a real sign-in.
   const hasLoadedOnce = useRef(false);
+  // The id of whichever account this context last loaded (or attempted to
+  // load) for — null while signed out. See SubscriptionContext's identical
+  // `lastUserId` for why this (not `user` object identity alone) is what
+  // decides a genuine identity change.
+  const lastUserId = useRef<string | null>(null);
 
   useEffect(() => {
     if (!authReady) return;
-    if (!user) {
+    const currentUserId = user?.id ?? null;
+    if (currentUserId !== lastUserId.current) {
+      // Sign-out, sign-in, or switching accounts outright — see
+      // SubscriptionContext's identical block for the full reasoning. The
+      // critical part: `loading` goes to `true` here, not `false`, even on
+      // sign-out (`currentUserId` null) — otherwise the render right after
+      // the NEXT sign-in, before THIS effect has re-run, would read
+      // "signed in, settled" over DEFAULT_PROFILE (tourCompletedAt: null)
+      // as if it were real. That stale-settled read is what let the
+      // spotlight tour fire again for an already-completed member
+      // immediately after an interactive sign-out/sign-in, even though
+      // `tour_completed_at` was set in the database the whole time.
+      lastUserId.current = currentUserId;
+      hasLoadedOnce.current = false;
       setProfile(DEFAULT_PROFILE);
-      setLoading(false);
       setRefetching(false);
       setError(null);
-      hasLoadedOnce.current = false;
-      return;
+      setLoading(true);
     }
+    if (!user) return;
 
     let cancelled = false;
     const isRefetch = hasLoadedOnce.current;
