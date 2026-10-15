@@ -23,6 +23,7 @@ export type AdminMember = {
   group: MemberGroupKey;
   statusKind: AdminMemberStatusKind;
   statusLabel: string | null;
+  groupChatMuted: boolean;
 };
 
 // The 7 sections Member Manager groups the roster into, in the exact order
@@ -53,6 +54,7 @@ type Row = {
   sub_current_period_end: string | null;
   sub_trial_end: string | null;
   sub_cancel_at_period_end: boolean | null;
+  group_chat_muted: boolean | null;
 };
 
 function formatDate(iso: string | null): string {
@@ -118,6 +120,7 @@ function mapRow(row: Row): AdminMember {
     group,
     statusKind,
     statusLabel,
+    groupChatMuted: row.group_chat_muted ?? false,
   };
 }
 
@@ -161,5 +164,18 @@ export function useAdminMembers(active: boolean) {
     [members]
   );
 
-  return { members, grouped, loading, error, refetch };
+  // Doc's Group Chat mute toggle — same admin-writes-another-profile path as
+  // badge grants, allowed by migration_012.sql's "admin can update any
+  // profile" policy. Live for the muted member within seconds regardless
+  // (see useGroupChat's own realtime subscription on their row) — this is
+  // just what makes Member Manager's own view reflect the change instantly
+  // too, without waiting on a full roster refetch.
+  const setMemberMuted = async (id: string, muted: boolean): Promise<{ error: string | null }> => {
+    const { error: updateError } = await supabase.from('profiles').update({ group_chat_muted: muted }).eq('id', id);
+    if (updateError) return { error: updateError.message };
+    setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, groupChatMuted: muted } : m)));
+    return { error: null };
+  };
+
+  return { members, grouped, loading, error, refetch, setMemberMuted };
 }
