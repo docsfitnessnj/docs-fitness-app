@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { REACTION_EMOJIS } from '../context/CommunityContext';
+import { useDisplayName } from '../context/ProfileContext';
+import { firstNameOf } from './typingLabel';
 import { isBackendUnavailableError, supabase } from './supabaseClient';
 
 const PAGE_SIZE = 50;
+const TYPING_IDLE_MS = 3000;
 
 export type GroupChatMessage = {
   id: string;
@@ -12,8 +16,12 @@ export type GroupChatMessage = {
   text: string;
   photoUrl: string | null;
   createdAt: number;
-  cheerCount: number;
-  cheeredByMe: boolean;
+  // Same 4-emoji set as the Community feed (shaka, fire, flex, heart) —
+  // see REACTION_EMOJIS in CommunityContext.tsx, the single source of
+  // truth both features read from. One count per emoji; `myReactions` is
+  // which of those this viewer has already placed on this message.
+  reactions: Record<string, number>;
+  myReactions: string[];
 };
 
 type ProfileRef = { display_name: string; avatar_url: string | null } | { display_name: string; avatar_url: string | null }[] | null;
@@ -21,6 +29,8 @@ type ProfileRef = { display_name: string; avatar_url: string | null } | { displa
 function profileOf(ref: ProfileRef) {
   return Array.isArray(ref) ? ref[0] : ref;
 }
+
+type CheerRow = { member_id: string; emoji: string };
 
 type MessageRow = {
   id: string;
@@ -30,11 +40,11 @@ type MessageRow = {
   created_at: string;
   deleted: boolean;
   profiles: ProfileRef;
-  group_chat_cheers: { member_id: string }[];
+  group_chat_cheers: CheerRow[];
 };
 
 const MESSAGE_SELECT =
-  'id, sender_id, body, photo_url, created_at, deleted, profiles(display_name, avatar_url), group_chat_cheers(member_id)';
+  'id, sender_id, body, photo_url, created_at, deleted, profiles(display_name, avatar_url), group_chat_cheers(member_id, emoji)';
 
 async function uploadGroupChatPhoto(userId: string, localUri: string): Promise<string> {
   const response = await fetch(localUri);
@@ -49,8 +59,20 @@ async function uploadGroupChatPhoto(userId: string, localUri: string): Promise<s
   return data.publicUrl;
 }
 
+function reactionsOf(rows: CheerRow[] | undefined, viewerId: string | undefined): { reactions: Record<string, number>; myReactions: string[] } {
+  const reactions: Record<string, number> = {};
+  for (const emoji of REACTION_EMOJIS) reactions[emoji] = 0;
+  const myReactions: string[] = [];
+  (rows ?? []).forEach((r) => {
+    reactions[r.emoji] = (reactions[r.emoji] ?? 0) + 1;
+    if (r.member_id === viewerId) myReactions.push(r.emoji);
+  });
+  return { reactions, myReactions };
+}
+
 export function useGroupChat(active: boolean) {
   const { user, authReady } = useAuth();
+  const displayName = useDisplayName();
   const [messages, setMessages] = useState<GroupChatMessage[]>([]); // ascending — oldest first, newest last
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -61,7 +83,14 @@ export function useGroupChat(active: boolean) {
   // drives "X IN THE CHAT", shown starting at 2, so the exact value before
   // the presence channel's first sync doesn't matter.
   const [presenceCount, setPresenceCount] = useState(1);
+  // Who else (never includes this viewer) is currently typing, per the
+  // presence channel below — formatted into copy by the screen via
+  // typingLabel() in lib/typingLabel.ts.
+  const [typingNames, setTypingNames] = useState<string[]>([]);
   const [muted, setMuted] = useState(false);
+
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Realtime INSERT payloads are the raw row only — no joined profile. Most
   // senders will already be in this cache from the initial page (everyone
@@ -77,6 +106,7 @@ export function useGroupChat(active: boolean) {
 
   const rowToMessage = (row: MessageRow): GroupChatMessage => {
     const cached = profileCache.current.get(row.sender_id);
+    const { reactions, myReactions } = reactionsOf(row.group_chat_cheers, user?.id);
     return {
       id: row.id,
       senderId: row.sender_id,
@@ -85,8 +115,8 @@ export function useGroupChat(active: boolean) {
       text: row.body,
       photoUrl: row.photo_url,
       createdAt: new Date(row.created_at).getTime(),
-      cheerCount: row.group_chat_cheers?.length ?? 0,
-      cheeredByMe: row.group_chat_cheers?.some((c) => c.member_id === user?.id) ?? false,
+      reactions,
+      myReactions,
     };
   };
 
@@ -129,11 +159,11 @@ export function useGroupChat(active: boolean) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, authReady, user]);
 
-  // Live messages + cheers. Every write (send, soft delete, cheer, uncheer)
-  // is fire-and-forget to the database — this subscription is the ONLY
-  // place local state actually changes for any of them, including the
-  // sender's/cheerer's own action. One state machine, no optimistic-vs-real
-  // reconciliation to get wrong.
+  // Live messages + reactions. Every write (send, soft delete, react,
+  // un-react) is fire-and-forget to the database — this subscription is
+  // the ONLY place local state actually changes for any of them, including
+  // the sender's/reactor's own action. One state machine, no optimistic-
+  // vs-real reconciliation to get wrong.
   useEffect(() => {
     if (!active || !user) return;
     const channel = supabase
@@ -143,8 +173,7 @@ export function useGroupChat(active: boolean) {
         if (row.deleted) return;
         setMessages((prev) => {
           if (prev.some((m) => m.id === row.id)) return prev;
-          const next = [...prev, rowToMessage({ ...row, group_chat_cheers: [] })];
-          return next;
+          return [...prev, rowToMessage({ ...row, group_chat_cheers: [] })];
         });
         if (!profileCache.current.has(row.sender_id)) {
           supabase
@@ -172,28 +201,32 @@ export function useGroupChat(active: boolean) {
         }
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_chat_cheers' }, (payload) => {
-        const row = payload.new as { message_id: string; member_id: string };
+        const row = payload.new as { message_id: string; member_id: string; emoji: string };
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === row.message_id
-              ? { ...m, cheerCount: m.cheerCount + 1, cheeredByMe: m.cheeredByMe || row.member_id === user.id }
-              : m
-          )
+          prev.map((m) => {
+            if (m.id !== row.message_id) return m;
+            const mine = row.member_id === user.id;
+            return {
+              ...m,
+              reactions: { ...m.reactions, [row.emoji]: (m.reactions[row.emoji] ?? 0) + 1 },
+              myReactions: mine && !m.myReactions.includes(row.emoji) ? [...m.myReactions, row.emoji] : m.myReactions,
+            };
+          })
         );
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'group_chat_cheers' }, (payload) => {
-        const row = payload.old as { message_id?: string; member_id?: string };
-        if (!row.message_id) return;
+        const row = payload.old as { message_id?: string; member_id?: string; emoji?: string };
+        if (!row.message_id || !row.emoji) return;
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === row.message_id
-              ? {
-                  ...m,
-                  cheerCount: Math.max(0, m.cheerCount - 1),
-                  cheeredByMe: row.member_id === user.id ? false : m.cheeredByMe,
-                }
-              : m
-          )
+          prev.map((m) => {
+            if (m.id !== row.message_id) return m;
+            const mine = row.member_id === user.id;
+            return {
+              ...m,
+              reactions: { ...m.reactions, [row.emoji!]: Math.max(0, (m.reactions[row.emoji!] ?? 0) - 1) },
+              myReactions: mine ? m.myReactions.filter((e) => e !== row.emoji) : m.myReactions,
+            };
+          })
         );
       })
       .subscribe();
@@ -223,26 +256,61 @@ export function useGroupChat(active: boolean) {
     };
   }, [active, user]);
 
-  // Presence — "X IN THE CHAT" only ever reflects members currently on this
-  // screen right now, via a Realtime presence channel (not a database
-  // table). Each mount tracks its own random key so the same account open
-  // in two tabs correctly counts as two.
+  // Presence — drives both "X IN THE CHAT" (members currently on this
+  // screen) and the typing indicator, over the SAME Realtime presence
+  // channel rather than a second one: each tracked payload carries this
+  // viewer's name and whether they're actively typing right now. No
+  // database writes for any of it. Each mount tracks its own random key
+  // so the same account open in two tabs correctly counts as two.
   useEffect(() => {
     if (!active || !user) return;
     const presenceKey = `${user.id}-${Math.random().toString(36).slice(2)}`;
+    const selfName = firstNameOf(displayName);
     const channel = supabase.channel('group-chat-presence', { config: { presence: { key: presenceKey } } });
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
-      const count = Object.values(state).reduce((sum, entries) => sum + (entries as unknown[]).length, 0);
+      let count = 0;
+      const typing: string[] = [];
+      Object.values(state).forEach((entries) => {
+        (entries as unknown as { userId: string; name: string; typing?: boolean }[]).forEach((entry) => {
+          count += 1;
+          if (entry.userId !== user.id && entry.typing) typing.push(entry.name);
+        });
+      });
       setPresenceCount(count || 1);
+      setTypingNames([...new Set(typing)]);
     });
     channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') channel.track({ userId: user.id, at: Date.now() });
+      if (status === 'SUBSCRIBED') channel.track({ userId: user.id, name: selfName, typing: false });
     });
+    presenceChannelRef.current = channel;
     return () => {
+      if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
       supabase.removeChannel(channel);
+      presenceChannelRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, user]);
+
+  // Call on every composer keystroke — marks this viewer typing on the
+  // shared presence channel above and pushes the auto-clear timer out
+  // another TYPING_IDLE_MS.
+  const notifyTyping = () => {
+    if (!user) return;
+    presenceChannelRef.current?.track({ userId: user.id, name: firstNameOf(displayName), typing: true });
+    if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
+    typingIdleTimerRef.current = setTimeout(() => {
+      presenceChannelRef.current?.track({ userId: user.id, name: firstNameOf(displayName), typing: false });
+    }, TYPING_IDLE_MS);
+  };
+
+  // Call on send, or when the composer empties out — clears typing
+  // immediately instead of waiting out the idle timer.
+  const notifyStopped = () => {
+    if (!user) return;
+    if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
+    presenceChannelRef.current?.track({ userId: user.id, name: firstNameOf(displayName), typing: false });
+  };
 
   const loadOlder = async () => {
     if (loadingOlder || !hasMoreOlder || messages.length === 0) return;
@@ -285,12 +353,16 @@ export function useGroupChat(active: boolean) {
     await supabase.from('group_chat_messages').update({ deleted: true }).eq('id', id);
   };
 
-  const toggleCheer = async (message: GroupChatMessage) => {
+  // Same reaction mechanism as the Community feed (see CommunityContext's
+  // addReaction/toggleLike) — insert to add, delete to remove, one row per
+  // (message, member, emoji). Realtime above is the only thing that ever
+  // updates local counts, including for this viewer's own tap.
+  const toggleReaction = async (message: GroupChatMessage, emoji: string) => {
     if (!user) return;
-    if (message.cheeredByMe) {
-      await supabase.from('group_chat_cheers').delete().eq('message_id', message.id).eq('member_id', user.id);
+    if (message.myReactions.includes(emoji)) {
+      await supabase.from('group_chat_cheers').delete().eq('message_id', message.id).eq('member_id', user.id).eq('emoji', emoji);
     } else {
-      await supabase.from('group_chat_cheers').insert({ message_id: message.id, member_id: user.id });
+      await supabase.from('group_chat_cheers').insert({ message_id: message.id, member_id: user.id, emoji });
     }
   };
 
@@ -316,14 +388,17 @@ export function useGroupChat(active: boolean) {
       messages,
       pinnedPrompt,
       presenceCount,
+      typingNames,
       muted,
       loadOlder,
       sendMessage,
       deleteMessage,
-      toggleCheer,
+      toggleReaction,
       setPinnedPrompt,
+      notifyTyping,
+      notifyStopped,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loading, loadingOlder, hasMoreOlder, error, messages, pinnedPrompt, presenceCount, muted]
+    [loading, loadingOlder, hasMoreOlder, error, messages, pinnedPrompt, presenceCount, typingNames, muted]
   );
 }

@@ -198,7 +198,7 @@ function FooterModule({
       </Pressable>
       <Pressable style={styles.linkRow} onPress={onOpenMessages}>
         <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.green} />
-        <Text style={styles.linkText}>Message Doc</Text>
+        <Text style={styles.linkText}>Message Doc Directly</Text>
       </Pressable>
       <ExternalLinkPressable href={MERCH_STORE_URL} style={styles.linkRow}>
         <Ionicons name="bag-handle-outline" size={16} color={colors.green} />

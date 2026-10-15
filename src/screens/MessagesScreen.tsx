@@ -2,7 +2,10 @@ import React, { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
 import { DocThreadView } from '../components/DocThreadView';
+import { useAuth } from '../context/AuthContext';
 import { useDocsInbox } from '../context/DocsInboxContext';
+import { useDisplayName } from '../context/ProfileContext';
+import { firstNameOf } from '../lib/typingLabel';
 import { colors } from '../theme';
 
 type Props = {
@@ -17,9 +20,11 @@ type Props = {
 // A member's one real conversation with Doc — see supabase/setup.sql /
 // migration_006.sql for the doc_threads / doc_messages schema this reads
 // and writes. Opening this screen marks the thread read, clearing the gold
-// unread dot on the MESSAGE DOC hamburger row.
+// unread dot on the MESSAGE DOC DIRECTLY hamburger row.
 export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
   const inbox = useDocsInbox();
+  const { user } = useAuth();
+  const displayName = useDisplayName();
 
   useEffect(() => {
     if (visible) inbox.markMyThreadRead();
@@ -30,13 +35,16 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
 
   return (
     <View style={styles.container}>
-      <ModalHeader title="MESSAGE DOC" onBack={onClose} backTestID="close-messages" />
+      <ModalHeader title="MESSAGE DOC DIRECTLY" onBack={onClose} backTestID="close-messages" />
       <DocThreadView
         messages={inbox.myMessages}
         onSend={inbox.sendMyMessage}
         onUnsend={inbox.unsendMessage}
         initialDraft={initialDraft}
         emptyStateText="Drop your questions here and Doc will get back to you personally."
+        threadId={user?.id ?? ''}
+        selfId={user?.id ?? ''}
+        selfLabel={firstNameOf(displayName)}
       />
     </View>
   );

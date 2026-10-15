@@ -19,6 +19,7 @@ import { DocsBadge } from '../components/brand/DocsBadge';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { ModalHeader } from '../components/ModalHeader';
 import { PostAuthorBadges } from '../components/PostAuthorBadges';
+import { REACTION_EMOJIS } from '../context/CommunityContext';
 import { useMembership } from '../context/MembershipContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { GroupChatMessage, useGroupChat } from '../lib/useGroupChat';
@@ -26,6 +27,7 @@ import { MediaAttachment } from '../lib/media';
 import { useMediaPicker } from '../lib/useMediaPicker';
 import { showAlert } from '../lib/alert';
 import { openMemberships } from '../lib/membershipsModal';
+import { typingLabel } from '../lib/typingLabel';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -100,17 +102,22 @@ function MessageRow({
   message,
   canModerate,
   myName,
+  pickerOpen,
   onDelete,
-  onCheer,
+  onTogglePicker,
+  onReact,
 }: {
   message: GroupChatMessage;
   canModerate: boolean;
   myName: string;
+  pickerOpen: boolean;
   onDelete: (id: string) => void;
-  onCheer: (message: GroupChatMessage) => void;
+  onTogglePicker: (id: string) => void;
+  onReact: (message: GroupChatMessage, emoji: string) => void;
 }) {
   const isMine = message.senderName === myName;
   const canShowMenu = isMine || canModerate;
+  const activeEmojis = REACTION_EMOJIS.filter((emoji) => message.reactions[emoji] > 0);
 
   const confirmDelete = () => {
     showAlert('Delete This Message?', "This can't be undone.", [
@@ -142,25 +149,47 @@ function MessageRow({
             </Pressable>
           )}
         </View>
-        {!!message.text && <Text style={styles.messageText}>{message.text}</Text>}
-        {!!message.photoUrl && <Image source={{ uri: message.photoUrl }} style={styles.messagePhoto} />}
         <Pressable
-          style={styles.cheerRow}
-          onPress={() => onCheer(message)}
-          hitSlop={8}
-          testID={`group-chat-cheer-${message.id}`}
+          onPress={() => onTogglePicker(message.id)}
+          onLongPress={() => onTogglePicker(message.id)}
+          testID={`group-chat-message-body-${message.id}`}
         >
-          <Ionicons
-            name={message.cheeredByMe ? 'megaphone' : 'megaphone-outline'}
-            size={14}
-            color={message.cheeredByMe ? colors.gold : colors.textMuted}
-          />
-          {message.cheerCount > 0 && (
-            <Text style={[styles.cheerCountText, message.cheeredByMe && styles.cheerCountTextActive]}>
-              {message.cheerCount}
-            </Text>
-          )}
+          {!!message.text && <Text style={styles.messageText}>{message.text}</Text>}
+          {!!message.photoUrl && <Image source={{ uri: message.photoUrl }} style={styles.messagePhoto} />}
         </Pressable>
+        {activeEmojis.length > 0 && (
+          <View style={styles.reactionRow}>
+            {activeEmojis.map((emoji) => (
+              <Pressable
+                key={emoji}
+                style={[styles.reactionPill, message.myReactions.includes(emoji) && styles.reactionPillActive]}
+                onPress={() => onReact(message, emoji)}
+                hitSlop={6}
+                testID={`group-chat-reaction-${message.id}-${emoji}`}
+              >
+                <Text style={styles.reactionEmoji}>{emoji}</Text>
+                <Text style={[styles.reactionCountText, message.myReactions.includes(emoji) && styles.reactionCountTextActive]}>
+                  {message.reactions[emoji]}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+        {pickerOpen && (
+          <View style={styles.reactionPicker} testID={`group-chat-reaction-picker-${message.id}`}>
+            {REACTION_EMOJIS.map((emoji) => (
+              <Pressable
+                key={emoji}
+                style={styles.reactionPickerOption}
+                onPress={() => onReact(message, emoji)}
+                hitSlop={6}
+                testID={`group-chat-reaction-picker-${message.id}-${emoji}`}
+              >
+                <Text style={styles.reactionPickerEmoji}>{emoji}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
       </View>
     </View>
   );
@@ -215,10 +244,16 @@ function PinnedPromptEditor({
 
 function Composer({
   muted,
+  typingNames,
   onSend,
+  onTyping,
+  onStoppedTyping,
 }: {
   muted: boolean;
+  typingNames: string[];
   onSend: (text: string, photoUri: string | null) => Promise<boolean>;
+  onTyping: () => void;
+  onStoppedTyping: () => void;
 }) {
   const [text, setText] = useState('');
   const [media, setMedia] = useState<MediaAttachment | null>(null);
@@ -235,8 +270,15 @@ function Composer({
 
   const canSend = (text.trim().length > 0 || !!media) && !sending;
 
+  const handleChangeText = (value: string) => {
+    setText(value);
+    if (value.trim().length > 0) onTyping();
+    else onStoppedTyping();
+  };
+
   const handleSend = async () => {
     if (!canSend) return;
+    onStoppedTyping();
     setSending(true);
     const ok = await onSend(text, media?.uri ?? null);
     setSending(false);
@@ -248,8 +290,15 @@ function Composer({
     }
   };
 
+  const typing = typingLabel(typingNames);
+
   return (
     <View style={styles.composerWrap}>
+      {typing && (
+        <Text style={styles.typingText} testID="group-chat-typing-indicator">
+          {typing}
+        </Text>
+      )}
       {media && (
         <View style={styles.composerMediaPreview} testID="group-chat-photo-preview">
           <Image source={{ uri: media.uri }} style={styles.composerMediaImage} />
@@ -266,7 +315,7 @@ function Composer({
           <TextInput
             style={styles.composerInput}
             value={text}
-            onChangeText={setText}
+            onChangeText={handleChangeText}
             placeholder="Say something"
             placeholderTextColor={colors.textMuted}
             multiline
@@ -288,13 +337,18 @@ function Composer({
 }
 
 // DOC'S GROUP CHAT — the couch to Community's stage. One live group chat for
-// the whole paid membership, backed by migration_012.sql (group_chat_messages
-// / group_chat_cheers / group_chat_settings) with Supabase Realtime for new
-// messages, cheers, soft deletes, and the member's own mute flag. Access
-// (open and post vs. the locked view) reads MembershipContext's already-
-// hardened `fullContentAccess` — settled state only, never a loading/
-// refetching default (see PRs 106-109) — never just hidden in the UI; the
-// same rule is enforced again, independently, by RLS in the database.
+// the whole paid membership, backed by migration_012.sql + migration_013.sql
+// (group_chat_messages / group_chat_cheers / group_chat_settings) with
+// Supabase Realtime for new messages, reactions, soft deletes, and the
+// member's own mute flag. Reactions use the same 4-emoji set as the
+// Community feed (shaka, fire, flex, heart) — tap or long-press a message to
+// open the picker, tap an existing pill to toggle your own reaction off.
+// Typing indicators ride the same presence channel as "X IN THE CHAT" — no
+// database writes. Access (open and post vs. the locked view) reads
+// MembershipContext's already-hardened `fullContentAccess` — settled state
+// only, never a loading/refetching default (see PRs 106-109) — never just
+// hidden in the UI; the same rule is enforced again, independently, by RLS
+// in the database.
 export function DocsGroupChatScreen({ visible, onClose }: Props) {
   const { fullContentAccess } = useMembership();
   const canModerate = useCanModerate();
@@ -303,6 +357,7 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
   const chat = useGroupChat(visible && fullContentAccess);
 
   const [editingPrompt, setEditingPrompt] = useState(false);
+  const [pickerMessageId, setPickerMessageId] = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
   const prevContentHeight = useRef(0);
@@ -408,8 +463,13 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
                 message={item.message}
                 canModerate={canModerate}
                 myName={myName}
+                pickerOpen={pickerMessageId === item.message.id}
                 onDelete={chat.deleteMessage}
-                onCheer={chat.toggleCheer}
+                onTogglePicker={(id) => setPickerMessageId((prev) => (prev === id ? null : id))}
+                onReact={(message, emoji) => {
+                  chat.toggleReaction(message, emoji);
+                  setPickerMessageId(null);
+                }}
               />
             )
           )}
@@ -417,7 +477,13 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
       )}
 
       <View style={{ paddingBottom: insets.bottom }}>
-        <Composer muted={chat.muted} onSend={chat.sendMessage} />
+        <Composer
+          muted={chat.muted}
+          typingNames={chat.typingNames}
+          onSend={chat.sendMessage}
+          onTyping={chat.notifyTyping}
+          onStoppedTyping={chat.notifyStopped}
+        />
       </View>
     </KeyboardAvoidingView>
   );
@@ -531,20 +597,52 @@ const styles = StyleSheet.create({
     marginTop: 6,
     backgroundColor: colors.card,
   },
-  cheerRow: {
+  reactionRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 6,
+  },
+  reactionPill: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     gap: 4,
-    marginTop: 6,
-    alignSelf: 'flex-start',
   },
-  cheerCountText: {
+  reactionPillActive: {
+    backgroundColor: colors.greenDeep,
+  },
+  reactionEmoji: {
+    fontSize: 13,
+  },
+  reactionCountText: {
     color: colors.textMuted,
     fontFamily: fonts.labelSemiBold,
-    fontSize: 12,
+    fontSize: 11,
   },
-  cheerCountTextActive: {
+  reactionCountTextActive: {
     color: colors.gold,
+  },
+  reactionPicker: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  reactionPickerOption: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactionPickerEmoji: {
+    fontSize: 20,
   },
   promptCard: {
     marginHorizontal: 16,
@@ -631,6 +729,13 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: colors.hairline,
+  },
+  typingText: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginBottom: 8,
   },
   composerMediaPreview: {
     position: 'relative',

@@ -42,12 +42,15 @@ export type Post = {
   unread: boolean;
 };
 
-export const REACTION_EMOJIS = ['👍', '🔥', '💪', '❤️'] as const;
-// The heart "like" button is just a shortcut for the 👍 reaction — one
+// Was ['👍', '🔥', '💪', '❤️'] — 👍 retired app-wide in favor of 🤙 (shaka),
+// migration_013.sql converts every stored 👍 row. Nothing else about the
+// reaction mechanism changed; this is purely which emoji strings are valid.
+export const REACTION_EMOJIS = ['🤙', '🔥', '💪', '❤️'] as const;
+// The heart "like" button is just a shortcut for the 🤙 reaction — one
 // shared mechanism instead of two separate counters like the old
 // local-only version had, now that reactions are real per-member rows in
 // the database (see community_reactions in supabase/setup.sql).
-const LIKE_EMOJI = '👍';
+const LIKE_EMOJI = '🤙';
 
 type CommunityContextValue = {
   loading: boolean;

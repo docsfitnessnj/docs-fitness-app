@@ -548,7 +548,7 @@ function MainApp({
           onOpenSearch={() => setSearchOpen(true)}
           onOpenGroupChat={activeTab === 'Community' ? onOpenGroupChat : undefined}
         />
-        <RootNavigator tabBarHidden={sidebarOpen || keyboardVisible} />
+        <RootNavigator tabBarHidden={sidebarOpen || keyboardVisible || groupChatOpen} />
         <TabBarTourMarker />
       </View>
       <ScreenOverlay visible={searchOpen}>
@@ -589,7 +589,19 @@ function MainApp({
           initialDraft={messagesDraft}
         />
       </ScreenOverlay>
-      <ScreenOverlay visible={groupChatOpen} fullBleed={sidebarOpen}>
+      {/* Deliberately hardcoded `fullBleed`, unlike every other row nested
+          under the drawer above — DOC'S GROUP CHAT must be a true full
+          screen takeover regardless of entry point (the Community top bar
+          icon and the desktop sidebar row both open it with sidebarOpen
+          false), matching the one other screen in the app that's a real
+          full-bleed takeover: the hamburger drawer itself. Member report
+          on a real phone: with fullBleed tied to sidebarOpen, opening the
+          chat from the top bar icon left the Community tab's content
+          (and the tab bar) still visible/scrollable behind it — the tab
+          bar hiding below (tabBarHidden includes groupChatOpen) is the
+          other half of actually covering everything, not just this
+          overlay's own box. */}
+      <ScreenOverlay visible={groupChatOpen} fullBleed>
         <DocsGroupChatScreen visible={groupChatOpen} onClose={onCloseGroupChat} />
       </ScreenOverlay>
       <ScreenOverlay visible={profileOpen} fullBleed={sidebarOpen}>
