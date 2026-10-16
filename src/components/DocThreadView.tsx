@@ -16,6 +16,8 @@ import { DocMessage, SendMessageInput, VoiceNote } from '../context/DocsInboxCon
 import { MediaAttachment } from '../lib/media';
 import { useMediaPicker } from '../lib/useMediaPicker';
 import { useKeyboardVisible } from '../lib/useKeyboardVisible';
+import { useTypingPresence } from '../lib/useTypingPresence';
+import { typingLabel } from '../lib/typingLabel';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -87,16 +89,28 @@ type Props = {
   // see a photo of the physical deck.
   initialDraft?: string;
   emptyStateText: string;
+  // Scopes the typing-presence channel to this one thread (the member's
+  // own user id either way — a member viewing their own thread, or an
+  // admin viewing that same member's thread from DOC'S INBOX) and names
+  // the viewer's own auth id plus what the OTHER side should see this
+  // viewer labeled as while typing ("Doc" from the admin side, the
+  // member's own first name from the member side). Presence only — no
+  // database writes, nothing persisted.
+  threadId: string;
+  selfId: string;
+  selfLabel: string;
 };
 
 // The shared thread UI for a member <-> Doc conversation — bubbles, auto-
-// grow input, voice notes, media attach/preview, unsend. Used both by
-// MessagesScreen (a member's own thread) and DocsInboxScreen's thread
-// detail (Doc replying to a specific member) — the data (which messages,
-// how to send/unsend) is entirely the caller's, via props, so this
-// component itself has no idea whether it's showing the member's or the
-// admin's side of the same conversation.
-export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyStateText }: Props) {
+// grow input, voice notes, media attach/preview, unsend, a live typing
+// indicator. Used both by MessagesScreen (a member's own thread) and
+// DocsInboxScreen's thread detail (Doc replying to a specific member) —
+// the data (which messages, how to send/unsend) is entirely the caller's,
+// via props, so this component itself has no idea whether it's showing
+// the member's or the admin's side of the same conversation; `selfLabel`
+// is the one piece of that identity it does need, purely to label the
+// typing presence it broadcasts.
+export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyStateText, threadId, selfId, selfLabel }: Props) {
   const [draft, setDraft] = useState('');
   const [draftHeight, setDraftHeight] = useState(MIN_INPUT_HEIGHT);
   const [media, setMedia] = useState<MediaAttachment | null>(null);
@@ -112,6 +126,12 @@ export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyS
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 200);
+
+  const { typingNames, notifyTyping, notifyStopped } = useTypingPresence(
+    `doc-thread-typing-${threadId}`,
+    selfId,
+    selfLabel
+  );
 
   useEffect(() => {
     if (initialDraft) {
@@ -139,6 +159,7 @@ export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyS
     setDraftHeight(MIN_INPUT_HEIGHT);
     setMedia(null);
     setPhotoPromptVisible(false);
+    notifyStopped();
     const ok = await onSend({ text, media: mediaToSend });
     if (!ok) {
       showAlert("Couldn't Send", "That message didn't go through. Check your connection and try again.");
@@ -259,6 +280,12 @@ export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyS
       </ScrollView>
 
       <View style={[styles.bottomArea, { paddingBottom: inputAreaBottomPadding }]}>
+        {typingLabel(typingNames) && (
+          <Text style={styles.typingText} testID="thread-typing-indicator">
+            {typingLabel(typingNames)}
+          </Text>
+        )}
+
         {photoPromptVisible && (
           <Text style={styles.photoHint} testID="verify-photo-prompt">
             ATTACH A PHOTO OF YOUR DECK
@@ -312,7 +339,11 @@ export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyS
               <TextInput
                 style={[styles.input, { height: Math.min(MAX_INPUT_HEIGHT, Math.max(MIN_INPUT_HEIGHT, draftHeight)) }]}
                 value={draft}
-                onChangeText={setDraft}
+                onChangeText={(text) => {
+                  setDraft(text);
+                  if (text.trim().length > 0) notifyTyping();
+                  else notifyStopped();
+                }}
                 placeholder="Type a message..."
                 placeholderTextColor={colors.textMuted}
                 multiline
@@ -454,6 +485,13 @@ const styles = StyleSheet.create({
   },
   voiceDurationMe: {
     color: colors.white,
+  },
+  typingText: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginBottom: 8,
   },
   photoHint: {
     color: colors.textMuted,

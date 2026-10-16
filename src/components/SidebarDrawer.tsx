@@ -126,9 +126,10 @@ export function SidebarDrawer({
       icon: 'chatbubbles-outline',
       onPress: () => openNested(onOpenGroupChat),
     },
-    // Admin's own messaging surface is DOC'S INBOX, not MESSAGE DOC (which
-    // is just the member-side "message Doc" thread — pointless for Doc
-    // himself). Sits right below MY WORKOUTS, near the top, admin-only.
+    // Admin's own messaging surface is DOC'S INBOX, not MESSAGE DOC
+    // DIRECTLY (which is just the member-side "message Doc" thread —
+    // pointless for Doc himself). Sits right below MY WORKOUTS, near the
+    // top, admin-only.
     ...(isAdmin
       ? [
           {
@@ -166,15 +167,15 @@ export function SidebarDrawer({
       onPress: () => openNested(openFullSchedule),
     },
     { key: 'merch', label: 'MERCH STORE', icon: 'bag-handle-outline', href: MERCH_STORE_URL, onPress: onClose },
-    // MESSAGE DOC is a member messaging Doc — meaningless for Doc's own
-    // account, which uses DOC'S INBOX above instead. Every non-admin
-    // account keeps this exactly where and what it's always been.
+    // MESSAGE DOC DIRECTLY is a member messaging Doc — meaningless for
+    // Doc's own account, which uses DOC'S INBOX above instead. Every
+    // non-admin account keeps this exactly where it's always been.
     ...(isAdmin
       ? []
       : [
           {
             key: 'message',
-            label: 'MESSAGE DOC',
+            label: 'MESSAGE DOC DIRECTLY',
             icon: 'chatbubble-ellipses-outline' as const,
             unread: inbox.myThreadUnread,
             onPress: () => openNested(onOpenMessages),
