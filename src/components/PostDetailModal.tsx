@@ -29,7 +29,7 @@ function CategoryTag({ category }: { category: string }) {
 // and the comment thread — this is where comments are actually read and
 // written, reached by tapping anywhere on a PostCard in the feed.
 export function PostDetailModal({ post, onClose, canInteract }: Props) {
-  const { toggleLike, addReaction, addComment, updateComment, deleteComment } = useCommunity();
+  const { addReaction, addComment, updateComment, deleteComment } = useCommunity();
   const isAdmin = useCanModerate();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
@@ -137,31 +137,25 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
           )}
 
           <View style={styles.reactionRow}>
-            {REACTION_EMOJIS.map((emoji) => (
-              <Pressable
-                key={emoji}
-                style={styles.reactionPill}
-                onPress={() => (canInteract ? addReaction(post.id, emoji) : interactionBlockedNudge())}
-              >
-                <Text style={styles.reactionEmoji}>{emoji}</Text>
-                {post.reactions[emoji] > 0 && <Text style={styles.reactionCount}>{post.reactions[emoji]}</Text>}
-              </Pressable>
-            ))}
+            {REACTION_EMOJIS.map((emoji) => {
+              const mine = post.myReactions.includes(emoji);
+              return (
+                <Pressable
+                  key={emoji}
+                  style={[styles.reactionPill, mine && styles.reactionPillActive]}
+                  onPress={() => (canInteract ? addReaction(post.id, emoji) : interactionBlockedNudge())}
+                  testID={`post-detail-reaction-${emoji}`}
+                >
+                  <Text style={styles.reactionEmoji}>{emoji}</Text>
+                  {post.reactions[emoji] > 0 && (
+                    <Text style={[styles.reactionCount, mine && styles.reactionCountActive]}>{post.reactions[emoji]}</Text>
+                  )}
+                </Pressable>
+              );
+            })}
           </View>
 
           <View style={styles.statsRow}>
-            <Pressable
-              style={styles.footerButton}
-              onPress={() => (canInteract ? toggleLike(post.id) : interactionBlockedNudge())}
-              testID="post-detail-like"
-            >
-              <Ionicons
-                name={post.liked ? 'heart' : 'heart-outline'}
-                size={18}
-                color={post.liked ? colors.green : colors.textMuted}
-              />
-              <Text style={styles.footerButtonText}>{post.likes}</Text>
-            </Pressable>
             <Text style={styles.footerButtonText}>
               {post.comments.length} comment{post.comments.length === 1 ? '' : 's'}
             </Text>
@@ -400,6 +394,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginRight: 6,
   },
+  reactionPillActive: {
+    backgroundColor: colors.greenDeep,
+  },
   reactionEmoji: {
     fontSize: 14,
   },
@@ -408,6 +405,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 12,
     marginLeft: 4,
+  },
+  reactionCountActive: {
+    color: colors.gold,
   },
   statsRow: {
     flexDirection: 'row',
@@ -419,10 +419,6 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.hairline,
     paddingVertical: 10,
     marginTop: 12,
-  },
-  footerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   footerButtonText: {
     color: colors.textMuted,

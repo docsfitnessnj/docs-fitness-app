@@ -2,11 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { REACTION_EMOJIS } from '../context/CommunityContext';
 import { useDisplayName } from '../context/ProfileContext';
+import { MediaAttachment } from './media';
 import { firstNameOf } from './typingLabel';
 import { isBackendUnavailableError, supabase } from './supabaseClient';
 
 const PAGE_SIZE = 50;
 const TYPING_IDLE_MS = 3000;
+// How often an actively-typing viewer re-asserts `typing: true` on the
+// presence channel — well inside TYPING_IDLE_MS so a single dropped/queued
+// presence update (see the sync handler below) never leaves the indicator
+// stuck off for the rest of the session; the next heartbeat self-heals it.
+const TYPING_HEARTBEAT_MS = 1500;
 
 export type GroupChatMessage = {
   id: string;
@@ -14,7 +20,8 @@ export type GroupChatMessage = {
   senderName: string;
   senderAvatarUrl: string | null;
   text: string;
-  photoUrl: string | null;
+  mediaUrl: string | null;
+  mediaType: 'image' | 'video' | null;
   createdAt: number;
   // Same 4-emoji set as the Community feed (shaka, fire, flex, heart) —
   // see REACTION_EMOJIS in CommunityContext.tsx, the single source of
@@ -36,7 +43,8 @@ type MessageRow = {
   id: string;
   sender_id: string;
   body: string;
-  photo_url: string | null;
+  media_url: string | null;
+  media_type: 'image' | 'video' | null;
   created_at: string;
   deleted: boolean;
   profiles: ProfileRef;
@@ -44,16 +52,22 @@ type MessageRow = {
 };
 
 const MESSAGE_SELECT =
-  'id, sender_id, body, photo_url, created_at, deleted, profiles(display_name, avatar_url), group_chat_cheers(member_id, emoji)';
+  'id, sender_id, body, media_url, media_type, created_at, deleted, profiles(display_name, avatar_url), group_chat_cheers(member_id, emoji)';
 
-async function uploadGroupChatPhoto(userId: string, localUri: string): Promise<string> {
+// Same upload shape as DocsInboxContext's uploadMessageFile — the extension
+// comes from `kind`, not a content-type sniff, so a video uploads as .mp4
+// (and gets served with the right content type) instead of silently being
+// named like a photo, which is why a video sent before this fix never
+// "came through": the receiving side had no way to know photo_url wasn't
+// actually a photo.
+async function uploadGroupChatMedia(userId: string, localUri: string, kind: 'image' | 'video'): Promise<string> {
   const response = await fetch(localUri);
   const blob = await response.blob();
-  const extension = blob.type.includes('png') ? 'png' : 'jpg';
+  const extension = kind === 'video' ? 'mp4' : blob.type.includes('png') ? 'png' : 'jpg';
   const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
   const { error } = await supabase.storage
     .from('group-chat-media')
-    .upload(path, blob, { upsert: false, contentType: blob.type || 'image/jpeg' });
+    .upload(path, blob, { upsert: false, contentType: blob.type || undefined });
   if (error) throw error;
   const { data } = supabase.storage.from('group-chat-media').getPublicUrl(path);
   return data.publicUrl;
@@ -91,6 +105,12 @@ export function useGroupChat(active: boolean) {
 
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The source of truth for "am I currently typing" — read by the presence
+  // channel's (re)subscribe handler and the heartbeat interval below, so
+  // both always reflect the live value rather than whatever was true when
+  // their closures were created.
+  const isTypingRef = useRef(false);
+  const typingHeartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Realtime INSERT payloads are the raw row only — no joined profile. Most
   // senders will already be in this cache from the initial page (everyone
@@ -113,7 +133,8 @@ export function useGroupChat(active: boolean) {
       senderName: cached?.name ?? 'Member',
       senderAvatarUrl: cached?.avatarUrl ?? null,
       text: row.body,
-      photoUrl: row.photo_url,
+      mediaUrl: row.media_url,
+      mediaType: row.media_type,
       createdAt: new Date(row.created_at).getTime(),
       reactions,
       myReactions,
@@ -231,7 +252,12 @@ export function useGroupChat(active: boolean) {
       })
       .subscribe();
     return () => {
-      supabase.removeChannel(channel);
+      // Deferred, not awaited: tearing down a Realtime channel sends a
+      // "leave" over the websocket and does internal bookkeeping that
+      // doesn't need to finish before the screen visually closes — see
+      // the fuller explanation on the presence channel's cleanup below,
+      // which is the one most likely to actually have work to do.
+      setTimeout(() => supabase.removeChannel(channel), 0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, user]);
@@ -252,16 +278,29 @@ export function useGroupChat(active: boolean) {
       )
       .subscribe();
     return () => {
-      supabase.removeChannel(channel);
+      setTimeout(() => supabase.removeChannel(channel), 0);
     };
   }, [active, user]);
 
   // Presence — drives both "X IN THE CHAT" (members currently on this
   // screen) and the typing indicator, over the SAME Realtime presence
   // channel rather than a second one: each tracked payload carries this
-  // viewer's name and whether they're actively typing right now. No
-  // database writes for any of it. Each mount tracks its own random key
-  // so the same account open in two tabs correctly counts as two.
+  // viewer's name, whether they're actively typing right now, and when
+  // that payload was tracked (`at`). No database writes for any of it.
+  // Each mount tracks its own random key so the same account open in two
+  // tabs correctly counts as two.
+  //
+  // The `at` timestamp exists specifically to fix a real bug: Phoenix's
+  // presence diff merge (see @supabase/phoenix's Presence.syncDiff) can
+  // leave a STALE meta entry sitting alongside a fresh one under the same
+  // presence key — e.g. if the "leave" half of an update's join+leave pair
+  // is delivered separately from (or is dropped relative to) the "join"
+  // half. The old code iterated every entry under a key and OR'd their
+  // `typing` flags together, so a stale leftover entry could permanently
+  // mask the real, current state — matching the reported "fires once,
+  // never again" symptom exactly. Keying off only the entry with the
+  // highest `at` per presence key means a stale duplicate can never again
+  // override the current one.
   useEffect(() => {
     if (!active || !user) return;
     const presenceKey = `${user.id}-${Math.random().toString(36).slice(2)}`;
@@ -272,44 +311,82 @@ export function useGroupChat(active: boolean) {
       let count = 0;
       const typing: string[] = [];
       Object.values(state).forEach((entries) => {
-        (entries as unknown as { userId: string; name: string; typing?: boolean }[]).forEach((entry) => {
-          count += 1;
-          if (entry.userId !== user.id && entry.typing) typing.push(entry.name);
-        });
+        const typed = entries as unknown as { userId: string; name: string; typing?: boolean; at?: number }[];
+        if (typed.length === 0) return;
+        count += 1;
+        const latest = typed.reduce((a, b) => ((b.at ?? 0) > (a.at ?? 0) ? b : a));
+        if (latest.userId !== user.id && latest.typing) typing.push(latest.name);
       });
       setPresenceCount(count || 1);
       setTypingNames([...new Set(typing)]);
     });
+    // Re-fires on every (re)join, including a reconnect after a dropped
+    // connection — re-asserts whatever this viewer's typing state actually
+    // is right now (via the ref, not a hardcoded false) so a connection
+    // blip mid-typing can't silently strand the rest of the chat on a
+    // stale "not typing" read.
     channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') channel.track({ userId: user.id, name: selfName, typing: false });
+      if (status === 'SUBSCRIBED') {
+        channel.track({ userId: user.id, name: selfName, typing: isTypingRef.current, at: Date.now() });
+      }
     });
     presenceChannelRef.current = channel;
     return () => {
       if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
-      supabase.removeChannel(channel);
+      if (typingHeartbeatTimerRef.current) clearInterval(typingHeartbeatTimerRef.current);
+      // Null the ref immediately (synchronous, cheap, makes notifyTyping/
+      // notifyStopped harmlessly no-op the instant this screen is on its
+      // way out) but defer the actual network teardown — tapping BACK on
+      // a real device was sometimes taking seconds (reported as "force
+      // closing the app") because this cleanup, along with the other two
+      // channels' above, ran synchronously inside React's unmount commit,
+      // the same commit that's supposed to make the screen disappear. On
+      // a slow/real mobile connection, three `removeChannel` calls each
+      // waiting on their own websocket round trip was enough to visibly
+      // block the paint. None of that teardown needs to finish before the
+      // screen is gone, so it now runs in a macrotask right after.
       presenceChannelRef.current = null;
+      setTimeout(() => supabase.removeChannel(channel), 0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, user]);
 
+  const trackTyping = (typing: boolean) => {
+    if (!user) return;
+    presenceChannelRef.current?.track({ userId: user.id, name: firstNameOf(displayName), typing, at: Date.now() });
+  };
+
   // Call on every composer keystroke — marks this viewer typing on the
   // shared presence channel above and pushes the auto-clear timer out
-  // another TYPING_IDLE_MS.
+  // another TYPING_IDLE_MS. Also arms a heartbeat that keeps re-asserting
+  // `typing: true` every TYPING_HEARTBEAT_MS for as long as the viewer
+  // keeps typing — belt-and-suspenders against the same class of dropped-
+  // update bug the `at` dedup above fixes on the receiving end: even if
+  // one presence update never reaches another viewer, the next heartbeat
+  // (well under TYPING_IDLE_MS later) does.
   const notifyTyping = () => {
     if (!user) return;
-    presenceChannelRef.current?.track({ userId: user.id, name: firstNameOf(displayName), typing: true });
+    isTypingRef.current = true;
+    trackTyping(true);
     if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
     typingIdleTimerRef.current = setTimeout(() => {
-      presenceChannelRef.current?.track({ userId: user.id, name: firstNameOf(displayName), typing: false });
+      isTypingRef.current = false;
+      trackTyping(false);
     }, TYPING_IDLE_MS);
+    if (!typingHeartbeatTimerRef.current) {
+      typingHeartbeatTimerRef.current = setInterval(() => {
+        if (isTypingRef.current) trackTyping(true);
+      }, TYPING_HEARTBEAT_MS);
+    }
   };
 
   // Call on send, or when the composer empties out — clears typing
   // immediately instead of waiting out the idle timer.
   const notifyStopped = () => {
     if (!user) return;
+    isTypingRef.current = false;
     if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
-    presenceChannelRef.current?.track({ userId: user.id, name: firstNameOf(displayName), typing: false });
+    trackTyping(false);
   };
 
   const loadOlder = async () => {
@@ -332,16 +409,16 @@ export function useGroupChat(active: boolean) {
     setLoadingOlder(false);
   };
 
-  const sendMessage = async (text: string, photoLocalUri: string | null): Promise<boolean> => {
+  const sendMessage = async (text: string, media: MediaAttachment | null): Promise<boolean> => {
     if (!user) return false;
     const trimmed = text.trim();
-    if (!trimmed && !photoLocalUri) return false;
+    if (!trimmed && !media) return false;
     try {
-      let photoUrl: string | null = null;
-      if (photoLocalUri) photoUrl = await uploadGroupChatPhoto(user.id, photoLocalUri);
+      let mediaUrl: string | null = null;
+      if (media) mediaUrl = await uploadGroupChatMedia(user.id, media.uri, media.type);
       const { error: insertError } = await supabase
         .from('group_chat_messages')
-        .insert({ sender_id: user.id, body: trimmed, photo_url: photoUrl });
+        .insert({ sender_id: user.id, body: trimmed, media_url: mediaUrl, media_type: media?.type ?? null });
       if (insertError) throw insertError;
       return true;
     } catch {
