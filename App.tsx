@@ -102,6 +102,7 @@ import { MemberManagerScreen } from './src/screens/MemberManagerScreen';
 import { ContentLibraryScreen } from './src/screens/ContentLibraryScreen';
 import { DocsInboxScreen } from './src/screens/DocsInboxScreen';
 import { DocsGroupChatScreen } from './src/screens/DocsGroupChatScreen';
+import { ScreenErrorBoundary } from './src/components/ScreenErrorBoundary';
 
 const PHONE_FRAME_MAX_WIDTH = 480;
 const MAIN_COLUMN_DESKTOP_WIDTH = 840;
@@ -602,7 +603,13 @@ function MainApp({
           other half of actually covering everything, not just this
           overlay's own box. */}
       <ScreenOverlay visible={groupChatOpen} fullBleed>
-        <DocsGroupChatScreen visible={groupChatOpen} onClose={onCloseGroupChat} />
+        {/* Unmounting via ScreenOverlay's own `!visible` early-return
+            (rather than toggling a prop) means reopening after a caught
+            error gets a genuinely fresh ScreenErrorBoundary instance —
+            `hasError` naturally resets, no manual key/reset wiring needed. */}
+        <ScreenErrorBoundary label="DOC'S GROUP CHAT">
+          <DocsGroupChatScreen visible={groupChatOpen} onClose={onCloseGroupChat} />
+        </ScreenErrorBoundary>
       </ScreenOverlay>
       <ScreenOverlay visible={profileOpen} fullBleed={sidebarOpen}>
         <ProfileScreen visible={profileOpen} onClose={() => setProfileOpen(false)} />

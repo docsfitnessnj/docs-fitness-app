@@ -1050,6 +1050,12 @@ create table if not exists public.group_chat_messages (
   body text not null default '',
   media_url text,
   media_type text check (media_type in ('image', 'video')),
+  -- A lightweight poster frame for a video message, captured client-side
+  -- at send time and uploaded alongside the video (migration_015.sql) —
+  -- the message list renders only this, never the video file itself,
+  -- until a member taps through to play it. Null for a photo message (the
+  -- photo is its own thumbnail) or a video sent before this column existed.
+  thumbnail_url text,
   deleted boolean not null default false,
   created_at timestamptz not null default now()
 );
@@ -1098,6 +1104,7 @@ begin
      or new.body is distinct from old.body
      or new.media_url is distinct from old.media_url
      or new.media_type is distinct from old.media_type
+     or new.thumbnail_url is distinct from old.thumbnail_url
      or new.created_at is distinct from old.created_at then
     raise exception 'Group chat messages cannot be edited, only deleted.';
   end if;

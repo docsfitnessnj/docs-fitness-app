@@ -1,12 +1,12 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
+  FlatList,
   Image,
   KeyboardAvoidingView,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -25,6 +25,7 @@ import { useMembership } from '../context/MembershipContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { GroupChatMessage, useGroupChat } from '../lib/useGroupChat';
 import { MediaAttachment } from '../lib/media';
+import { useIsDesktop } from '../lib/responsive';
 import { useKeyboardVisible } from '../lib/useKeyboardVisible';
 import { useMediaPicker } from '../lib/useMediaPicker';
 import { showAlert } from '../lib/alert';
@@ -164,7 +165,12 @@ function MediaReactionRow({
   );
 }
 
-function MessageRow({
+// Memoized so a Realtime event touching ONE message (a new reaction, a new
+// message appended) only re-renders that message's own row, not all 50 —
+// see the perf note on the FlatList itself in DocsGroupChatScreen for why
+// this matters for "open, scroll, send, react, back out, all feeling
+// immediate" with a media-heavy thread.
+const MessageRow = React.memo(function MessageRow({
   message,
   canModerate,
   myName,
@@ -202,7 +208,7 @@ function MessageRow({
   };
 
   return (
-    <View style={styles.messageRow} testID={`group-chat-message-${message.id}`}>
+    <View style={[styles.messageRow, message.pending && styles.messageRowPending]} testID={`group-chat-message-${message.id}`}>
       <Avatar name={message.senderName} uri={message.senderAvatarUrl} size={32} />
       <View style={styles.messageBody}>
         <View style={styles.messageHeaderRow}>
@@ -210,8 +216,12 @@ function MessageRow({
             {message.senderName}
           </Text>
           <PostAuthorBadges author={message.senderName} />
-          <Text style={styles.timeText}>{timeLabel(message.createdAt)}</Text>
-          {canShowMenu && (
+          {message.pending ? (
+            <Ionicons name="time-outline" size={12} color={colors.textMuted} testID={`group-chat-message-pending-${message.id}`} />
+          ) : (
+            <Text style={styles.timeText}>{timeLabel(message.createdAt)}</Text>
+          )}
+          {canShowMenu && !message.pending && (
             <Pressable onPress={openMenu} hitSlop={8} testID={`group-chat-message-menu-${message.id}`}>
               <Ionicons name="ellipsis-horizontal" size={16} color={colors.textMuted} />
             </Pressable>
@@ -230,8 +240,17 @@ function MessageRow({
             {!!message.text && <Text style={styles.messageText}>{message.text}</Text>}
             <Pressable onPress={() => onOpenViewer(message)} testID={`group-chat-message-media-${message.id}`}>
               {message.mediaType === 'video' ? (
+                // The list NEVER loads the actual video file (FIX 3) — only
+                // this lightweight poster frame, captured client-side at
+                // send time (see videoThumbnail.ts). The real file is only
+                // fetched once the viewer taps through to MediaViewer. No
+                // thumbnail (capture failed, or an older message sent
+                // before this fix) falls back to the plain placeholder.
                 <View style={styles.messageVideo}>
-                  <Ionicons name="play-circle" size={40} color={colors.white} />
+                  {message.thumbnailUrl && (
+                    <Image source={{ uri: message.thumbnailUrl }} style={styles.messageVideoThumb} />
+                  )}
+                  <Ionicons name="play-circle" size={40} color={colors.white} style={styles.messageVideoPlayIcon} />
                 </View>
               ) : (
                 <Image source={{ uri: message.mediaUrl! }} style={styles.messagePhoto} />
@@ -269,7 +288,7 @@ function MessageRow({
       </View>
     </View>
   );
-}
+});
 
 function PinnedPromptCard({ prompt }: { prompt: string }) {
   return (
@@ -321,12 +340,16 @@ function PinnedPromptEditor({
 function Composer({
   muted,
   typingNames,
+  sendError,
+  isDesktop,
   onSend,
   onTyping,
   onStoppedTyping,
 }: {
   muted: boolean;
   typingNames: string[];
+  sendError: string | null;
+  isDesktop: boolean;
   onSend: (text: string, media: MediaAttachment | null) => Promise<boolean>;
   onTyping: () => void;
   onStoppedTyping: () => void;
@@ -355,24 +378,52 @@ function Composer({
   const handleSend = async () => {
     if (!canSend) return;
     onStoppedTyping();
+    // Optimistic (FIX 2): clear immediately rather than waiting on the
+    // send to resolve — the message already appears in the list via
+    // useGroupChat's own optimistic update the instant onSend is called.
+    // A failure removes it there and shows a quiet note (sendError,
+    // rendered below) instead of this composer re-populating the text or
+    // blocking on an alert.
+    const sentText = text;
+    const sentMedia = media;
+    setText('');
+    setMedia(null);
     setSending(true);
-    const ok = await onSend(text, media);
+    await onSend(sentText, sentMedia);
     setSending(false);
-    if (ok) {
-      setText('');
-      setMedia(null);
-    } else {
-      showAlert("Couldn't Send", "That message didn't go through. Check your connection and try again.");
+  };
+
+  // Desktop convention: Enter sends, Shift+Enter inserts a newline. Phone
+  // keyboards don't have a physical Enter key in the same sense (mobile
+  // messaging apps universally treat it as "new line," with a dedicated
+  // send button instead) so this is desktop-only.
+  const handleKeyPress = (e: { nativeEvent: { key?: string; shiftKey?: boolean }; preventDefault?: () => void }) => {
+    if (!isDesktop) return;
+    if (e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
+      e.preventDefault?.();
+      handleSend();
     }
   };
 
   const typing = typingLabel(typingNames);
+  if (typing) {
+    // eslint-disable-next-line no-console
+    console.log('[typing] rendering typing line', { typingNames, label: typing });
+  } else if (typingNames.length > 0) {
+    // eslint-disable-next-line no-console
+    console.log('[typing] typingNames non-empty but typingLabel() produced nothing -- suppressed', { typingNames });
+  }
 
   return (
-    <View style={styles.composerWrap}>
+    <View style={[styles.composerWrap, isDesktop && styles.composerWrapDesktop]}>
       {typing && (
         <Text style={styles.typingText} testID="group-chat-typing-indicator">
           {typing}
+        </Text>
+      )}
+      {sendError && (
+        <Text style={styles.sendErrorText} testID="group-chat-send-error">
+          {sendError}
         </Text>
       )}
       {media && (
@@ -393,11 +444,12 @@ function Composer({
         <Pressable onPress={pick} hitSlop={8} style={styles.composerAttach} testID="group-chat-attach-photo">
           <Ionicons name="camera-outline" size={20} color={colors.green} />
         </Pressable>
-        <View style={styles.composerInputPill}>
+        <View style={[styles.composerInputPill, isDesktop && styles.composerInputPillDesktop]}>
           <TextInput
-            style={styles.composerInput}
+            style={[styles.composerInput, isDesktop && styles.composerInputDesktop]}
             value={text}
             onChangeText={handleChangeText}
+            onKeyPress={handleKeyPress as any}
             placeholder="Say something"
             placeholderTextColor={colors.textMuted}
             multiline
@@ -405,14 +457,31 @@ function Composer({
             autoCorrect
             spellCheck
             // Plain conversational text, not a credentials/contact/payment
-            // field — these three together are what actually suppress
-            // iOS's AutoFill accessory bar (key/card/location icons) over
-            // the keyboard; same pattern already used for the Community
-            // composer's title/body fields (see CreatePostModal.tsx).
+            // field. These attributes are what's actually supported for
+            // suppressing iOS's AutoFill accessory bar (key/card/location
+            // icons) from a web page — same pattern already used for the
+            // Community composer's title/body fields (CreatePostModal.tsx).
+            // FIX 6 (2nd attempt) note: Safari deliberately does not treat
+            // `autocomplete=off` as authoritative on fields it heuristically
+            // suspects could be a credential/contact field — this has been
+            // true since iOS 11 as a declared anti-pattern-prevention
+            // measure, not a bug in this app, and no combination of HTML
+            // attributes available to a web page can override it (confirmed
+            // against current Safari/WebKit release notes and WHATWG's own
+            // autofill spec, which explicitly allows a UA to ignore `off`).
+            // The one further lever tried here is `name` — an unexpected,
+            // non-credential-shaped value, since Safari's heuristic also
+            // weighs the field's name/id, not just autocomplete — everything
+            // else in this list was already in place as of round 113. If the
+            // bar still shows on a real device, that's this platform
+            // limitation, not something left unfixed; the composer's spacing
+            // (below) is what actually keeps the layout breathing around it
+            // regardless of whether Safari shows it.
             autoComplete="off"
             textContentType="none"
             importantForAutofill="no"
             inputMode="text"
+            {...({ name: 'group-chat-message-text' } as { name?: string })}
             testID="group-chat-input"
             aria-label="Message the group chat"
           />
@@ -449,16 +518,29 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
   const myName = useDisplayName();
   const { photoUri } = useProfile();
   const chat = useGroupChat(visible && fullContentAccess);
+  const isDesktop = useIsDesktop();
 
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [pickerMessageId, setPickerMessageId] = useState<string | null>(null);
   const [viewerMedia, setViewerMedia] = useState<MediaAttachment | null>(null);
 
-  const scrollRef = useRef<ScrollView>(null);
-  const prevContentHeight = useRef(0);
+  const listRef = useRef<FlatList<ListItem>>(null);
   const isLoadingOlderRef = useRef(false);
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardVisible();
+
+  // Stable across renders where the underlying data hasn't changed, so
+  // FlatList/React.memo'd rows don't all re-render just because the
+  // SCREEN re-rendered for an unrelated reason (e.g. the keyboard
+  // toggling) — part of the general perf pass: before this, the message
+  // list was a plain ScrollView + .map(), which both re-created every
+  // row's element on every render AND mounted every message (including
+  // every photo/video) at once, for the life of the screen. FlatList only
+  // renders what's near the viewport, which is also what makes "stop
+  // loading full video files in the list" and "photos load lazily as
+  // they scroll into view" (FIX 3) fall out for free rather than needing
+  // a separate IntersectionObserver-style mechanism.
+  const items = useMemo(() => buildListItems(chat.messages), [chat.messages]);
 
   if (!visible) return null;
   if (!fullContentAccess) return <LockedView onClose={onClose} />;
@@ -470,16 +552,26 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
     }
   };
 
-  const handleContentSizeChange = (_w: number, height: number) => {
-    if (isLoadingOlderRef.current) {
-      const delta = height - prevContentHeight.current;
-      if (delta > 0) scrollRef.current?.scrollTo({ y: delta, animated: false });
-      isLoadingOlderRef.current = false;
-    } else {
-      scrollRef.current?.scrollToEnd({ animated: false });
-    }
-    prevContentHeight.current = height;
-  };
+  const renderItem = ({ item }: { item: ListItem }) =>
+    item.kind === 'divider' ? (
+      <DateDivider label={item.label} />
+    ) : (
+      <MessageRow
+        message={item.message}
+        canModerate={canModerate}
+        myName={myName}
+        pickerOpen={pickerMessageId === item.message.id}
+        onDelete={chat.deleteMessage}
+        onTogglePicker={(id) => setPickerMessageId((prev) => (prev === id ? null : id))}
+        onReact={(message, emoji) => {
+          chat.toggleReaction(message, emoji);
+          setPickerMessageId(null);
+        }}
+        onOpenViewer={(message) =>
+          message.mediaUrl && setViewerMedia({ uri: message.mediaUrl, type: message.mediaType ?? 'image' })
+        }
+      />
+    );
 
   const openAdminMenu = () => {
     const buttons = chat.pinnedPrompt
@@ -503,8 +595,6 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
     showAlert('Pinned Prompt', undefined, buttons);
   };
 
-  const items = buildListItems(chat.messages);
-
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ModalHeader
@@ -521,74 +611,69 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
         }
       />
 
-      {editingPrompt && (
-        <PinnedPromptEditor
-          initialValue={chat.pinnedPrompt ?? ''}
-          onCancel={() => setEditingPrompt(false)}
-          onSave={async (text) => {
-            await chat.setPinnedPrompt(text.length > 0 ? text : null);
-            setEditingPrompt(false);
-          }}
-        />
-      )}
-      {!editingPrompt && !!chat.pinnedPrompt && <PinnedPromptCard prompt={chat.pinnedPrompt} />}
+      <View style={[styles.contentColumn, isDesktop && styles.contentColumnDesktop]}>
+        {editingPrompt && (
+          <PinnedPromptEditor
+            initialValue={chat.pinnedPrompt ?? ''}
+            onCancel={() => setEditingPrompt(false)}
+            onSave={async (text) => {
+              await chat.setPinnedPrompt(text.length > 0 ? text : null);
+              setEditingPrompt(false);
+            }}
+          />
+        )}
+        {!editingPrompt && !!chat.pinnedPrompt && <PinnedPromptCard prompt={chat.pinnedPrompt} />}
 
-      {chat.error ? (
-        <BackendErrorNotice message={chat.error} />
-      ) : (
-        <ScrollView
-          ref={scrollRef}
-          style={styles.list}
-          contentContainerStyle={styles.listContent}
-          onScroll={handleScroll}
-          scrollEventThrottle={32}
-          onContentSizeChange={handleContentSizeChange}
-        >
-          {chat.loadingOlder && <Text style={styles.loadingOlderText}>Loading earlier messages…</Text>}
-          {!chat.loading && items.length === 0 && (
-            <Text style={styles.emptyState} testID="group-chat-empty-state">
-              Nobody's said anything yet. Be the first.
-            </Text>
-          )}
-          {items.map((item) =>
-            item.kind === 'divider' ? (
-              <DateDivider key={item.key} label={item.label} />
-            ) : (
-              <MessageRow
-                key={item.key}
-                message={item.message}
-                canModerate={canModerate}
-                myName={myName}
-                pickerOpen={pickerMessageId === item.message.id}
-                onDelete={chat.deleteMessage}
-                onTogglePicker={(id) => setPickerMessageId((prev) => (prev === id ? null : id))}
-                onReact={(message, emoji) => {
-                  chat.toggleReaction(message, emoji);
-                  setPickerMessageId(null);
-                }}
-                onOpenViewer={(message) =>
-                  message.mediaUrl && setViewerMedia({ uri: message.mediaUrl, type: message.mediaType ?? 'image' })
-                }
-              />
-            )
-          )}
-        </ScrollView>
-      )}
+        {chat.error ? (
+          <BackendErrorNotice message={chat.error} />
+        ) : (
+          <FlatList
+            ref={listRef}
+            data={items}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.key}
+            style={styles.list}
+            contentContainerStyle={styles.listContent}
+            onScroll={handleScroll}
+            scrollEventThrottle={32}
+            // The idiomatic FlatList way to handle "prepend older items at
+            // the top without the visible content jumping" — replaces the
+            // old ScrollView version's manual height-diff-and-scrollTo
+            // dance (measure the delta, scrollTo by that delta) with
+            // something the list itself guarantees.
+            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+            onContentSizeChange={() => {
+              if (!isLoadingOlderRef.current) listRef.current?.scrollToEnd({ animated: false });
+              isLoadingOlderRef.current = false;
+            }}
+            ListHeaderComponent={chat.loadingOlder ? <Text style={styles.loadingOlderText}>Loading earlier messages…</Text> : null}
+            ListEmptyComponent={
+              !chat.loading ? (
+                <Text style={styles.emptyState} testID="group-chat-empty-state">
+                  Nobody's said anything yet. Be the first.
+                </Text>
+              ) : null
+            }
+          />
+        )}
 
-      {/* The keyboard already occupies the safe-area inset while it's up —
-          adding insets.bottom on top of it left a gap at the very bottom
-          of the composer where the screen's own background (not actually
-          "Community" — there's nothing behind this full-bleed overlay —
-          but still an odd bare strip) showed through. Same fix DocThreadView
-          already uses for the MESSAGE DOC DIRECTLY composer. */}
-      <View style={{ paddingBottom: keyboardVisible ? 0 : insets.bottom }}>
-        <Composer
-          muted={chat.muted}
-          typingNames={chat.typingNames}
-          onSend={chat.sendMessage}
-          onTyping={chat.notifyTyping}
-          onStoppedTyping={chat.notifyStopped}
-        />
+        {/* The keyboard already occupies the safe-area inset while it's up —
+            adding insets.bottom on top of it left a gap at the very bottom
+            of the composer where the screen's own background (not actually
+            "Community" — there's nothing behind this full-bleed overlay —
+            but still an odd bare strip) showed through. Same fix DocThreadView
+            already uses for the MESSAGE DOC DIRECTLY composer. */}
+        <View style={{ paddingBottom: keyboardVisible ? 0 : insets.bottom }}>
+          <Composer
+            muted={chat.muted}
+            typingNames={chat.typingNames}
+            sendError={chat.sendError}
+            isDesktop={isDesktop}
+            onSend={chat.sendMessage}
+            onTyping={chat.notifyTyping}
+            onStoppedTyping={chat.notifyStopped}
+          />
+        </View>
       </View>
 
       <MediaViewer media={viewerMedia} onClose={() => setViewerMedia(null)} filenameHint="docs-fitness-group-chat" />
@@ -601,6 +686,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingTop: 60,
+  },
+  contentColumn: {
+    flex: 1,
+  },
+  // FIX 5: on a wide desktop viewport, the chat's own full-bleed overlay
+  // would otherwise stretch edge to edge — a comfortably capped, centered
+  // column (wider than the phone layout's ~375px, not the whole browser
+  // window) reads much closer to a real desktop messaging app.
+  contentColumnDesktop: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
   },
   lockedBody: {
     flex: 1,
@@ -674,6 +771,11 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 14,
   },
+  // FIX 2: a sent-but-not-yet-confirmed message is visibly lighter —
+  // enough to read as "still going," not so faint it looks broken.
+  messageRowPending: {
+    opacity: 0.55,
+  },
   messageBody: {
     flex: 1,
   },
@@ -715,6 +817,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.greenDeep,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  messageVideoThumb: {
+    ...StyleSheet.absoluteFill,
+  },
+  messageVideoPlayIcon: {
+    // Sits on top of the thumbnail image (or the plain green placeholder,
+    // if there isn't one) — same position either way.
   },
   reactionRow: {
     flexDirection: 'row',
@@ -853,11 +963,22 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.hairline,
   },
+  composerWrapDesktop: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 8,
+  },
   typingText: {
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 12,
     fontStyle: 'italic',
+    marginBottom: 8,
+  },
+  sendErrorText: {
+    color: colors.scoreboardRed,
+    fontFamily: fonts.body,
+    fontSize: 12,
     marginBottom: 8,
   },
   composerMediaPreview: {
@@ -909,11 +1030,23 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     maxHeight: 100,
   },
+  // FIX 5: a noticeably larger, roomier composer on desktop — more
+  // vertical room to actually use the multi-line input comfortably with a
+  // mouse/keyboard, not just the phone-sized pill stretched wide.
+  composerInputPillDesktop: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    maxHeight: 160,
+  },
   composerInput: {
     color: colors.text,
     fontFamily: fonts.body,
     fontSize: 15,
     lineHeight: 20,
+  },
+  composerInputDesktop: {
+    fontSize: 17,
+    lineHeight: 23,
   },
   sendButton: {
     width: 36,
