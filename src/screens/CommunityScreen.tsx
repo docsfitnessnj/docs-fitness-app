@@ -66,7 +66,7 @@ function PostCard({
   onEdit: (post: Post) => void;
   onOpenDetail: (post: Post) => void;
 }) {
-  const { toggleLike, addReaction, togglePin, deletePost, markRead } = useCommunity();
+  const { addReaction, togglePin, deletePost, markRead } = useCommunity();
   const isAdmin = useCanModerate();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
@@ -200,50 +200,40 @@ function PostCard({
       )}
 
       <View style={styles.reactionRow}>
-        {REACTION_EMOJIS.map((emoji) => (
-          <Pressable
-            key={emoji}
-            style={styles.reactionPill}
-            onPress={(e) => {
-              e.stopPropagation();
-              canInteract ? addReaction(post.id, emoji) : interactionBlockedNudge();
-            }}
-          >
-            <Text style={styles.reactionEmoji}>{emoji}</Text>
-            {post.reactions[emoji] > 0 && <Text style={styles.reactionCount}>{post.reactions[emoji]}</Text>}
-          </Pressable>
-        ))}
+        {REACTION_EMOJIS.map((emoji) => {
+          const mine = post.myReactions.includes(emoji);
+          return (
+            <Pressable
+              key={emoji}
+              style={[styles.reactionPill, mine && styles.reactionPillActive]}
+              onPress={(e) => {
+                e.stopPropagation();
+                canInteract ? addReaction(post.id, emoji) : interactionBlockedNudge();
+              }}
+              testID={`post-card-reaction-${post.id}-${emoji}`}
+            >
+              <Text style={styles.reactionEmoji}>{emoji}</Text>
+              {post.reactions[emoji] > 0 && (
+                <Text style={[styles.reactionCount, mine && styles.reactionCountActive]}>{post.reactions[emoji]}</Text>
+              )}
+            </Pressable>
+          );
+        })}
       </View>
 
       <View style={styles.postFooter}>
-        <View style={styles.postFooterLeft}>
-          <Pressable
-            style={styles.footerButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              canInteract ? toggleLike(post.id) : interactionBlockedNudge();
-            }}
-          >
-            <Ionicons
-              name={post.liked ? 'heart' : 'heart-outline'}
-              size={18}
-              color={post.liked ? colors.green : colors.textMuted}
-            />
-            <Text style={styles.footerButtonText}>{post.likes}</Text>
-          </Pressable>
-          <Pressable
-            style={styles.footerButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              openDetail();
-            }}
-          >
-            <Ionicons name="chatbubble-outline" size={16} color={colors.textMuted} />
-            <Text style={styles.footerButtonText}>
-              {post.comments.length} comment{post.comments.length === 1 ? '' : 's'}
-            </Text>
-          </Pressable>
-        </View>
+        <Pressable
+          style={styles.footerButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            openDetail();
+          }}
+        >
+          <Ionicons name="chatbubble-outline" size={16} color={colors.textMuted} />
+          <Text style={styles.footerButtonText}>
+            {post.comments.length} comment{post.comments.length === 1 ? '' : 's'}
+          </Text>
+        </Pressable>
         <Text style={[styles.footerRightText, footerRightGold && styles.footerRightTextGold]}>
           {footerRightText}
         </Text>
@@ -704,6 +694,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginRight: 6,
   },
+  reactionPillActive: {
+    backgroundColor: colors.greenDeep,
+  },
   reactionEmoji: {
     fontSize: 14,
   },
@@ -713,6 +706,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginLeft: 4,
   },
+  reactionCountActive: {
+    color: colors.gold,
+  },
   postFooter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -721,14 +717,9 @@ const styles = StyleSheet.create({
     borderTopColor: colors.hairline,
     paddingTop: 10,
   },
-  postFooterLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   footerButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 20,
   },
   footerButtonText: {
     color: colors.textMuted,

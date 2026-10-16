@@ -1038,17 +1038,18 @@ as $$
   select coalesce((select p.group_chat_muted from public.profiles p where p.id = uid), false);
 $$;
 
--- Messages: text, an optional photo, or both. No titles, no threads, no
--- editing — a message can only ever be soft-deleted (the `deleted` flag),
--- never changed, enforced below by a trigger (RLS alone can't express
--- "this column only").
+-- Messages: text, an optional photo or video, or both. No titles, no
+-- threads, no editing — a message can only ever be soft-deleted (the
+-- `deleted` flag), never changed, enforced below by a trigger (RLS alone
+-- can't express "this column only"). Was photo_url-only (text, no type)
+-- until migration_014.sql renamed it and added media_type — same shape as
+-- community_posts.media_url/media_type and doc_messages.media_url/media_type.
 create table if not exists public.group_chat_messages (
   id uuid primary key default gen_random_uuid(),
   sender_id uuid not null references public.profiles (id) on delete cascade,
   body text not null default '',
-  -- The public storage URL of an attached photo, same convention as
-  -- community_posts.media_url / profiles.avatar_url.
-  photo_url text,
+  media_url text,
+  media_type text check (media_type in ('image', 'video')),
   deleted boolean not null default false,
   created_at timestamptz not null default now()
 );
@@ -1095,7 +1096,8 @@ as $$
 begin
   if new.sender_id is distinct from old.sender_id
      or new.body is distinct from old.body
-     or new.photo_url is distinct from old.photo_url
+     or new.media_url is distinct from old.media_url
+     or new.media_type is distinct from old.media_type
      or new.created_at is distinct from old.created_at then
     raise exception 'Group chat messages cannot be edited, only deleted.';
   end if;

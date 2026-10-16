@@ -31,9 +31,12 @@ export type Post = {
   text: string;
   category: string;
   media?: MediaAttachment | null;
-  likes: number;
-  liked: boolean;
   reactions: Record<string, number>;
+  // Which of REACTION_EMOJIS this viewer has already placed — drives the
+  // "active" pill styling and lets a tap toggle a reaction off (see
+  // addReaction below). The heart ❤️ is just REACTION_EMOJIS[0]; there's no
+  // separate "like" concept anymore.
+  myReactions: string[];
   comments: Comment[];
   pinned: boolean;
   kind: 'text' | 'wod';
@@ -42,15 +45,15 @@ export type Post = {
   unread: boolean;
 };
 
-// Was ['👍', '🔥', '💪', '❤️'] — 👍 retired app-wide in favor of 🤙 (shaka),
-// migration_013.sql converts every stored 👍 row. Nothing else about the
-// reaction mechanism changed; this is purely which emoji strings are valid.
-export const REACTION_EMOJIS = ['🤙', '🔥', '💪', '❤️'] as const;
-// The heart "like" button is just a shortcut for the 🤙 reaction — one
-// shared mechanism instead of two separate counters like the old
-// local-only version had, now that reactions are real per-member rows in
-// the database (see community_reactions in supabase/setup.sql).
-const LIKE_EMOJI = '🤙';
+// Was ['🤙', '🔥', '💪', '❤️'] (and before that ['👍', '🔥', '💪', '❤️']) —
+// heart now leads since it's the one that used to live as its own separate
+// "like" button; migration_014.sql converts every stored 🤙 row (the old
+// like button's emoji) to ❤️ so no like is lost. Nothing else about the
+// reaction mechanism changed; this is purely order + which emoji strings
+// are valid. The feed card's old dedicated heart "like" button is gone
+// (see PostCard / PostDetailModal) — the ❤️ pill in this same row is now
+// the only way to like a post, exactly like every other reaction.
+export const REACTION_EMOJIS = ['❤️', '🤙', '🔥', '💪'] as const;
 
 type CommunityContextValue = {
   loading: boolean;
@@ -63,7 +66,9 @@ type CommunityContextValue = {
   addWodResultPost: (author: string, title: string, meta: WodPostMeta, media?: MediaAttachment | null) => void;
   updateTextPost: (postId: string, title: string, text: string, media?: MediaAttachment | null) => void;
   deletePost: (postId: string) => void;
-  toggleLike: (postId: string) => void;
+  // Toggles the given reaction off if this viewer already placed it, on
+  // otherwise — the ❤️ pill is this feed's "like," using the exact same
+  // call as every other emoji.
   addReaction: (postId: string, emoji: string) => void;
   addComment: (postId: string, author: string, text: string) => void;
   updateComment: (postId: string, commentId: string, text: string) => void;
@@ -129,8 +134,11 @@ function relativeTimeLabel(ms: number): string {
 function rowToPost(row: PostRow, userId: string | undefined, lastViewedAt: Record<string, number>): Post {
   const reactions: Record<string, number> = {};
   for (const emoji of REACTION_EMOJIS) reactions[emoji] = 0;
-  for (const r of row.community_reactions) reactions[r.emoji] = (reactions[r.emoji] ?? 0) + 1;
-  const liked = row.community_reactions.some((r) => r.emoji === LIKE_EMOJI && r.author_id === userId);
+  const myReactions: string[] = [];
+  for (const r of row.community_reactions) {
+    reactions[r.emoji] = (reactions[r.emoji] ?? 0) + 1;
+    if (r.author_id === userId) myReactions.push(r.emoji);
+  }
 
   const comments: Comment[] = [...row.community_comments]
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
@@ -155,9 +163,8 @@ function rowToPost(row: PostRow, userId: string | undefined, lastViewedAt: Recor
     text: row.body,
     category: row.category,
     media: row.media_url ? { uri: row.media_url, type: row.media_type ?? 'image' } : null,
-    likes: reactions[LIKE_EMOJI] ?? 0,
-    liked,
     reactions,
+    myReactions,
     comments,
     pinned: row.pinned,
     kind: row.kind,
@@ -283,20 +290,19 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         setRows((prev) => prev.filter((r) => r.id !== postId));
         await supabase.from('community_posts').delete().eq('id', postId);
       },
-      toggleLike: async (postId) => {
-        if (!user) return;
-        const row = rows.find((r) => r.id === postId);
-        const alreadyLiked = row?.community_reactions.some((r) => r.emoji === LIKE_EMOJI && r.author_id === user.id);
-        if (alreadyLiked) {
-          await supabase.from('community_reactions').delete().eq('post_id', postId).eq('author_id', user.id).eq('emoji', LIKE_EMOJI);
-        } else {
-          await supabase.from('community_reactions').insert({ post_id: postId, author_id: user.id, emoji: LIKE_EMOJI });
-        }
-        refetch();
-      },
+      // Tapping a reaction pill toggles it off if this viewer already
+      // placed it — same mechanism as group chat's toggleReaction (see
+      // useGroupChat.ts). The heart ❤️ is just REACTION_EMOJIS[0]; there's
+      // no separate like button or like-specific code path anymore.
       addReaction: async (postId, emoji) => {
         if (!user) return;
-        await supabase.from('community_reactions').insert({ post_id: postId, author_id: user.id, emoji });
+        const row = rows.find((r) => r.id === postId);
+        const alreadyReacted = row?.community_reactions.some((r) => r.emoji === emoji && r.author_id === user.id);
+        if (alreadyReacted) {
+          await supabase.from('community_reactions').delete().eq('post_id', postId).eq('author_id', user.id).eq('emoji', emoji);
+        } else {
+          await supabase.from('community_reactions').insert({ post_id: postId, author_id: user.id, emoji });
+        }
         refetch();
       },
       addComment: async (postId, _author, text) => {

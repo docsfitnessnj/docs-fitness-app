@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '../components/Avatar';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
+import { MediaViewer } from '../components/MediaViewer';
 import { ModalHeader } from '../components/ModalHeader';
 import { PostAuthorBadges } from '../components/PostAuthorBadges';
 import { REACTION_EMOJIS } from '../context/CommunityContext';
@@ -24,6 +25,7 @@ import { useMembership } from '../context/MembershipContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { GroupChatMessage, useGroupChat } from '../lib/useGroupChat';
 import { MediaAttachment } from '../lib/media';
+import { useKeyboardVisible } from '../lib/useKeyboardVisible';
 import { useMediaPicker } from '../lib/useMediaPicker';
 import { showAlert } from '../lib/alert';
 import { openMemberships } from '../lib/membershipsModal';
@@ -98,6 +100,70 @@ function DateDivider({ label }: { label: string }) {
   );
 }
 
+// The condensed, "only what's active" reaction pill row — text messages'
+// tap-or-long-press-revealed summary.
+function ActiveReactionRow({
+  message,
+  onReact,
+}: {
+  message: GroupChatMessage;
+  onReact: (message: GroupChatMessage, emoji: string) => void;
+}) {
+  const activeEmojis = REACTION_EMOJIS.filter((emoji) => message.reactions[emoji] > 0);
+  if (activeEmojis.length === 0) return null;
+  return (
+    <View style={styles.reactionRow}>
+      {activeEmojis.map((emoji) => (
+        <Pressable
+          key={emoji}
+          style={[styles.reactionPill, message.myReactions.includes(emoji) && styles.reactionPillActive]}
+          onPress={() => onReact(message, emoji)}
+          hitSlop={6}
+          testID={`group-chat-reaction-${message.id}-${emoji}`}
+        >
+          <Text style={styles.reactionEmoji}>{emoji}</Text>
+          <Text style={[styles.reactionCountText, message.myReactions.includes(emoji) && styles.reactionCountTextActive]}>
+            {message.reactions[emoji]}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+// Every message with a photo or video gets this instead — all four emoji,
+// always visible, one tap to react (no reveal step). See the FIX 4 note on
+// DocsGroupChatScreen below for why media and text behave differently here.
+function MediaReactionRow({
+  message,
+  onReact,
+}: {
+  message: GroupChatMessage;
+  onReact: (message: GroupChatMessage, emoji: string) => void;
+}) {
+  return (
+    <View style={styles.reactionRow} testID={`group-chat-media-reactions-${message.id}`}>
+      {REACTION_EMOJIS.map((emoji) => {
+        const mine = message.myReactions.includes(emoji);
+        return (
+          <Pressable
+            key={emoji}
+            style={[styles.reactionPill, mine && styles.reactionPillActive]}
+            onPress={() => onReact(message, emoji)}
+            hitSlop={6}
+            testID={`group-chat-reaction-${message.id}-${emoji}`}
+          >
+            <Text style={styles.reactionEmoji}>{emoji}</Text>
+            {message.reactions[emoji] > 0 && (
+              <Text style={[styles.reactionCountText, mine && styles.reactionCountTextActive]}>{message.reactions[emoji]}</Text>
+            )}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function MessageRow({
   message,
   canModerate,
@@ -106,6 +172,7 @@ function MessageRow({
   onDelete,
   onTogglePicker,
   onReact,
+  onOpenViewer,
 }: {
   message: GroupChatMessage;
   canModerate: boolean;
@@ -114,10 +181,11 @@ function MessageRow({
   onDelete: (id: string) => void;
   onTogglePicker: (id: string) => void;
   onReact: (message: GroupChatMessage, emoji: string) => void;
+  onOpenViewer: (message: GroupChatMessage) => void;
 }) {
   const isMine = message.senderName === myName;
   const canShowMenu = isMine || canModerate;
-  const activeEmojis = REACTION_EMOJIS.filter((emoji) => message.reactions[emoji] > 0);
+  const hasMedia = !!message.mediaUrl;
 
   const confirmDelete = () => {
     showAlert('Delete This Message?', "This can't be undone.", [
@@ -149,46 +217,54 @@ function MessageRow({
             </Pressable>
           )}
         </View>
-        <Pressable
-          onPress={() => onTogglePicker(message.id)}
-          onLongPress={() => onTogglePicker(message.id)}
-          testID={`group-chat-message-body-${message.id}`}
-        >
-          {!!message.text && <Text style={styles.messageText}>{message.text}</Text>}
-          {!!message.photoUrl && <Image source={{ uri: message.photoUrl }} style={styles.messagePhoto} />}
-        </Pressable>
-        {activeEmojis.length > 0 && (
-          <View style={styles.reactionRow}>
-            {activeEmojis.map((emoji) => (
-              <Pressable
-                key={emoji}
-                style={[styles.reactionPill, message.myReactions.includes(emoji) && styles.reactionPillActive]}
-                onPress={() => onReact(message, emoji)}
-                hitSlop={6}
-                testID={`group-chat-reaction-${message.id}-${emoji}`}
-              >
-                <Text style={styles.reactionEmoji}>{emoji}</Text>
-                <Text style={[styles.reactionCountText, message.myReactions.includes(emoji) && styles.reactionCountTextActive]}>
-                  {message.reactions[emoji]}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
-        {pickerOpen && (
-          <View style={styles.reactionPicker} testID={`group-chat-reaction-picker-${message.id}`}>
-            {REACTION_EMOJIS.map((emoji) => (
-              <Pressable
-                key={emoji}
-                style={styles.reactionPickerOption}
-                onPress={() => onReact(message, emoji)}
-                hitSlop={6}
-                testID={`group-chat-reaction-picker-${message.id}-${emoji}`}
-              >
-                <Text style={styles.reactionPickerEmoji}>{emoji}</Text>
-              </Pressable>
-            ))}
-          </View>
+
+        {/* Text alone keeps the original light-touch interaction: tap or
+            long-press the message to reveal a picker, small counts only
+            for reactions that are actually there. A photo or video instead
+            gets the reaction row below it immediately (FIX 4) — reacting
+            to it shouldn't cost an extra tap — and tapping the media
+            itself opens it full screen (FIX 5) instead of toggling a
+            picker, so the two affordances don't fight over the same tap. */}
+        {hasMedia ? (
+          <>
+            {!!message.text && <Text style={styles.messageText}>{message.text}</Text>}
+            <Pressable onPress={() => onOpenViewer(message)} testID={`group-chat-message-media-${message.id}`}>
+              {message.mediaType === 'video' ? (
+                <View style={styles.messageVideo}>
+                  <Ionicons name="play-circle" size={40} color={colors.white} />
+                </View>
+              ) : (
+                <Image source={{ uri: message.mediaUrl! }} style={styles.messagePhoto} />
+              )}
+            </Pressable>
+            <MediaReactionRow message={message} onReact={onReact} />
+          </>
+        ) : (
+          <>
+            <Pressable
+              onPress={() => onTogglePicker(message.id)}
+              onLongPress={() => onTogglePicker(message.id)}
+              testID={`group-chat-message-body-${message.id}`}
+            >
+              {!!message.text && <Text style={styles.messageText}>{message.text}</Text>}
+            </Pressable>
+            <ActiveReactionRow message={message} onReact={onReact} />
+            {pickerOpen && (
+              <View style={styles.reactionPicker} testID={`group-chat-reaction-picker-${message.id}`}>
+                {REACTION_EMOJIS.map((emoji) => (
+                  <Pressable
+                    key={emoji}
+                    style={styles.reactionPickerOption}
+                    onPress={() => onReact(message, emoji)}
+                    hitSlop={6}
+                    testID={`group-chat-reaction-picker-${message.id}-${emoji}`}
+                  >
+                    <Text style={styles.reactionPickerEmoji}>{emoji}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </>
         )}
       </View>
     </View>
@@ -251,7 +327,7 @@ function Composer({
 }: {
   muted: boolean;
   typingNames: string[];
-  onSend: (text: string, photoUri: string | null) => Promise<boolean>;
+  onSend: (text: string, media: MediaAttachment | null) => Promise<boolean>;
   onTyping: () => void;
   onStoppedTyping: () => void;
 }) {
@@ -280,7 +356,7 @@ function Composer({
     if (!canSend) return;
     onStoppedTyping();
     setSending(true);
-    const ok = await onSend(text, media?.uri ?? null);
+    const ok = await onSend(text, media);
     setSending(false);
     if (ok) {
       setText('');
@@ -301,7 +377,13 @@ function Composer({
       )}
       {media && (
         <View style={styles.composerMediaPreview} testID="group-chat-photo-preview">
-          <Image source={{ uri: media.uri }} style={styles.composerMediaImage} />
+          {media.type === 'video' ? (
+            <View style={[styles.composerMediaImage, styles.composerMediaVideo]}>
+              <Ionicons name="videocam" size={16} color={colors.white} />
+            </View>
+          ) : (
+            <Image source={{ uri: media.uri }} style={styles.composerMediaImage} />
+          )}
           <Pressable style={styles.composerMediaRemove} onPress={() => setMedia(null)} testID="group-chat-remove-photo">
             <Ionicons name="close" size={12} color={colors.white} />
           </Pressable>
@@ -319,6 +401,18 @@ function Composer({
             placeholder="Say something"
             placeholderTextColor={colors.textMuted}
             multiline
+            autoCapitalize="sentences"
+            autoCorrect
+            spellCheck
+            // Plain conversational text, not a credentials/contact/payment
+            // field — these three together are what actually suppress
+            // iOS's AutoFill accessory bar (key/card/location icons) over
+            // the keyboard; same pattern already used for the Community
+            // composer's title/body fields (see CreatePostModal.tsx).
+            autoComplete="off"
+            textContentType="none"
+            importantForAutofill="no"
+            inputMode="text"
             testID="group-chat-input"
             aria-label="Message the group chat"
           />
@@ -358,11 +452,13 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
 
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [pickerMessageId, setPickerMessageId] = useState<string | null>(null);
+  const [viewerMedia, setViewerMedia] = useState<MediaAttachment | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
   const prevContentHeight = useRef(0);
   const isLoadingOlderRef = useRef(false);
   const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardVisible();
 
   if (!visible) return null;
   if (!fullContentAccess) return <LockedView onClose={onClose} />;
@@ -470,13 +566,22 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
                   chat.toggleReaction(message, emoji);
                   setPickerMessageId(null);
                 }}
+                onOpenViewer={(message) =>
+                  message.mediaUrl && setViewerMedia({ uri: message.mediaUrl, type: message.mediaType ?? 'image' })
+                }
               />
             )
           )}
         </ScrollView>
       )}
 
-      <View style={{ paddingBottom: insets.bottom }}>
+      {/* The keyboard already occupies the safe-area inset while it's up —
+          adding insets.bottom on top of it left a gap at the very bottom
+          of the composer where the screen's own background (not actually
+          "Community" — there's nothing behind this full-bleed overlay —
+          but still an odd bare strip) showed through. Same fix DocThreadView
+          already uses for the MESSAGE DOC DIRECTLY composer. */}
+      <View style={{ paddingBottom: keyboardVisible ? 0 : insets.bottom }}>
         <Composer
           muted={chat.muted}
           typingNames={chat.typingNames}
@@ -485,6 +590,8 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
           onStoppedTyping={chat.notifyStopped}
         />
       </View>
+
+      <MediaViewer media={viewerMedia} onClose={() => setViewerMedia(null)} filenameHint="docs-fitness-group-chat" />
     </KeyboardAvoidingView>
   );
 }
@@ -526,7 +633,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   listContent: {
-    paddingBottom: 12,
+    // A bit more than the old 12 — clean separation between the last
+    // message and the composer, so the composer reads as its own distinct
+    // area (the iMessage reference) instead of crowding the conversation.
+    paddingBottom: 20,
   },
   loadingOlderText: {
     color: colors.textMuted,
@@ -596,6 +706,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 6,
     backgroundColor: colors.card,
+  },
+  messageVideo: {
+    width: 180,
+    aspectRatio: 1,
+    borderRadius: 10,
+    marginTop: 6,
+    backgroundColor: colors.greenDeep,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   reactionRow: {
     flexDirection: 'row',
@@ -724,9 +843,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
   },
+  // The iMessage reference: a clearly separate, roomier band under the
+  // conversation, not a composer bunched up against the keyboard/AutoFill
+  // bar — paddingTop/paddingVertical bumped up from the original 10/9.
   composerWrap: {
     paddingHorizontal: 16,
-    paddingTop: 10,
+    paddingTop: 14,
+    paddingBottom: 4,
     borderTopWidth: 1,
     borderTopColor: colors.hairline,
   },
@@ -740,13 +863,18 @@ const styles = StyleSheet.create({
   composerMediaPreview: {
     position: 'relative',
     alignSelf: 'flex-start',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   composerMediaImage: {
     width: 56,
     height: 56,
     borderRadius: 8,
     backgroundColor: colors.card,
+  },
+  composerMediaVideo: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.greenDeep,
   },
   composerMediaRemove: {
     position: 'absolute',
@@ -762,8 +890,8 @@ const styles = StyleSheet.create({
   composerRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 8,
-    paddingBottom: 10,
+    gap: 10,
+    paddingBottom: 14,
   },
   composerAttach: {
     width: 36,
@@ -776,9 +904,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.hairline,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     maxHeight: 100,
   },
   composerInput: {
