@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { deferRemoveChannel, getOrCreateChannel } from './deferredRealtimeChannel';
 import { supabase } from './supabaseClient';
 
 const IDLE_CLEAR_MS = 3000;
@@ -32,7 +33,19 @@ export function useTypingPresence(channelName: string | null, selfId: string | n
   useEffect(() => {
     if (!channelName || !selfId) return;
     const presenceKey = `${selfId}-${Math.random().toString(36).slice(2)}`;
-    const channel = supabase.channel(channelName, { config: { presence: { key: presenceKey } } });
+    // This channel's topic (channelName) has to stay IDENTICAL across the
+    // member's and Doc's separate sessions to rendezvous on — unlike group
+    // chat's channels, it can't just be made unique per mount. See
+    // deferredRealtimeChannel.ts for how this avoids the same real-device
+    // white-screen crash that fix caused for: closing this screen defers
+    // this channel's removal by a macrotask, and getOrCreateChannel here
+    // cancels (and forces through immediately) any such pending removal
+    // for this exact topic before reusing/resubscribing it, so a fast
+    // reopen of the same thread never inherits a stale, about-to-be-
+    // removed channel object.
+    const channel = getOrCreateChannel(channelName, { config: { presence: { key: presenceKey } } });
+    // eslint-disable-next-line no-console
+    console.log('[typing] thread presence channel created', { channelName, presenceKey, selfLabel });
     // Every presence key is reduced to its single MOST RECENT entry (by
     // `at`) before reading `typing` off it — Phoenix's presence diff merge
     // (@supabase/phoenix's Presence.syncDiff) can leave a stale meta sitting
@@ -52,14 +65,27 @@ export function useTypingPresence(channelName: string | null, selfId: string | n
         const latest = typed.reduce((a, b) => ((b.at ?? 0) > (a.at ?? 0) ? b : a));
         if (latest.id !== selfId && latest.typing) names.push(latest.name);
       });
-      setTypingNames([...new Set(names)]);
+      const next = [...new Set(names)];
+      // eslint-disable-next-line no-console
+      console.log('[typing] thread presence sync received', { channelName, rawState: state, computedTypingNames: next });
+      setTypingNames(next);
     });
     // Re-fires on every (re)join, including a reconnect after a dropped
     // connection — re-asserts the CURRENT typing state (via the ref, not a
     // hardcoded false) so a connection blip mid-typing can't silently
     // strand the other side on a stale "not typing" read.
     channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') channel.track({ id: selfId, name: selfLabel, typing: isTypingRef.current, at: Date.now() });
+      // eslint-disable-next-line no-console
+      console.log('[typing] thread channel subscribe status changed', { channelName, status });
+      if (status === 'SUBSCRIBED') {
+        const payload = { id: selfId, name: selfLabel, typing: isTypingRef.current, at: Date.now() };
+        // eslint-disable-next-line no-console
+        console.log('[typing] thread channel SUBSCRIBED, sending initial track()', payload);
+        channel.track(payload).then((result) => {
+          // eslint-disable-next-line no-console
+          console.log('[typing] thread initial track() result', result);
+        });
+      }
     });
     channelRef.current = channel;
     return () => {
@@ -70,14 +96,28 @@ export function useTypingPresence(channelName: string | null, selfId: string | n
       // Deferred, not awaited — tearing down a Realtime channel shouldn't
       // block whatever just caused this screen to close (see the matching
       // note on the group chat presence channel's cleanup in
-      // useGroupChat.ts).
-      setTimeout(() => supabase.removeChannel(channel), 0);
+      // useGroupChat.ts) — but safely so, via deferRemoveChannel, which a
+      // fast reopen of this same thread can cancel. Plain
+      // `supabase.removeChannel` deliberately not used directly here.
+      deferRemoveChannel(channelName, channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelName, selfId]);
 
   const setTyping = (typing: boolean) => {
-    channelRef.current?.track({ id: selfId, name: selfLabel, typing, at: Date.now() });
+    const payload = { id: selfId, name: selfLabel, typing, at: Date.now() };
+    const channel = channelRef.current;
+    // eslint-disable-next-line no-console
+    console.log('[typing] thread track payload sending', { payload, channelIsNull: !channel });
+    if (!channel) {
+      // eslint-disable-next-line no-console
+      console.log('[typing] thread track SKIPPED -- channelRef.current is null');
+      return;
+    }
+    channel.track(payload).then((result) => {
+      // eslint-disable-next-line no-console
+      console.log('[typing] thread track() result', { result, payload });
+    });
   };
 
   // Call on every keystroke — marks this viewer typing and pushes out the
@@ -86,6 +126,8 @@ export function useTypingPresence(channelName: string | null, selfId: string | n
   // belt-and-suspenders against the same dropped-update class the `at`
   // dedup above fixes on the receiving end.
   const notifyTyping = () => {
+    // eslint-disable-next-line no-console
+    console.log('[typing] thread notifyTyping() called -- local keystroke detected');
     isTypingRef.current = true;
     setTyping(true);
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
@@ -103,6 +145,8 @@ export function useTypingPresence(channelName: string | null, selfId: string | n
   // Call on send (or on leaving the screen) — clears typing immediately
   // rather than waiting out the idle timer.
   const notifyStopped = () => {
+    // eslint-disable-next-line no-console
+    console.log('[typing] thread notifyStopped() called');
     isTypingRef.current = false;
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     setTyping(false);
