@@ -8,6 +8,7 @@ import { requestAppReset } from '../lib/appReset';
 import { showAlert } from '../lib/alert';
 import { openBillingPortal } from '../lib/stripeCheckout';
 import { clearAppStorage, loadJSON, saveJSON } from '../lib/storage';
+import { clearGroupChatCache } from '../lib/useGroupChat';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -99,8 +100,10 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
   // tree (App.tsx's resetKey) so every context re-initializes from its own
   // default state in one move — see clearAppStorage and appReset.ts for why
   // that's more reliable than calling each context's own reset
-  // individually. Lands back on the pre-signup About page since
-  // AuthContext's session is now null (see MembershipContext's signedUp).
+  // individually. clearGroupChatCache is the one exception that isn't React
+  // state at all (see useGroupChat.ts) so a remount alone can't clear it.
+  // Lands back on the pre-signup About page since AuthContext's session is
+  // now null (see MembershipContext's signedUp).
   const confirmSignOut = () => {
     showAlert("Sign out of Doc's Fitness?", undefined, [
       { text: 'Cancel', style: 'cancel' },
@@ -110,6 +113,7 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
         onPress: () => {
           authSignOut();
           clearAppStorage();
+          clearGroupChatCache();
           requestAppReset();
         },
       },

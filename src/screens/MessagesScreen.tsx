@@ -2,10 +2,7 @@ import React, { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ModalHeader } from '../components/ModalHeader';
 import { DocThreadView } from '../components/DocThreadView';
-import { useAuth } from '../context/AuthContext';
 import { useDocsInbox } from '../context/DocsInboxContext';
-import { useDisplayName } from '../context/ProfileContext';
-import { firstNameOf } from '../lib/typingLabel';
 import { colors } from '../theme';
 
 type Props = {
@@ -23,8 +20,6 @@ type Props = {
 // unread dot on the MESSAGE DOC DIRECTLY hamburger row.
 export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
   const inbox = useDocsInbox();
-  const { user } = useAuth();
-  const displayName = useDisplayName();
 
   useEffect(() => {
     if (visible) inbox.markMyThreadRead();
@@ -42,9 +37,6 @@ export function MessagesScreen({ visible, onClose, initialDraft }: Props) {
         onUnsend={inbox.unsendMessage}
         initialDraft={initialDraft}
         emptyStateText="Drop your questions here and Doc will get back to you personally."
-        threadId={user?.id ?? ''}
-        selfId={user?.id ?? ''}
-        selfLabel={firstNameOf(displayName)}
       />
     </View>
   );

@@ -2,19 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { REACTION_EMOJIS } from '../context/CommunityContext';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
-import { deferRemoveChannel, getOrCreateChannel } from './deferredRealtimeChannel';
+import { deferRemoveChannel, fastRemoveChannel, getOrCreateChannel } from './deferredRealtimeChannel';
 import { MediaAttachment } from './media';
-import { firstNameOf } from './typingLabel';
 import { isBackendUnavailableError, supabase } from './supabaseClient';
 import { captureVideoThumbnail } from './videoThumbnail';
 
 const PAGE_SIZE = 50;
-const TYPING_IDLE_MS = 3000;
-// How often an actively-typing viewer re-asserts `typing: true` on the
-// presence channel — well inside TYPING_IDLE_MS so a single dropped/queued
-// presence update (see the sync handler below) never leaves the indicator
-// stuck off for the rest of the session; the next heartbeat self-heals it.
-const TYPING_HEARTBEAT_MS = 1500;
 
 export type GroupChatMessage = {
   id: string;
@@ -46,6 +39,44 @@ export type GroupChatMessage = {
   pending?: boolean;
 };
 
+// FIX 3 (round 115): keeps the chat's last-loaded state alive across
+// open/close WITHIN this browser tab's session — a plain module-level
+// variable, not persisted anywhere, so it naturally resets on a real page
+// reload but survives DocsGroupChatScreen fully unmounting every time the
+// member backs out (that full unmount is itself deliberate, for a clean
+// per-open ScreenErrorBoundary reset — see App.tsx). Without this, every
+// reopen started from `loading: true` and an empty list, so the whole
+// FlatList — every row, every photo/video thumbnail — remounted from
+// nothing each time, which is what actually read as "taking seconds to
+// reload" even when the underlying image bytes were already sitting in the
+// browser's own HTTP cache (see uploadGroupChatFile's cacheControl for the
+// other half of that fix). A reopen now paints this cached state on the
+// very first frame, then quietly fetches only what's new since the
+// newest cached message instead of redoing the full most-recent-50 fetch —
+// see the initial-load effect below. Known, accepted tradeoff: a reaction
+// added to (or a delete of) an already-cached message while the chat was
+// closed won't retroactively show up on reopen — only new messages are
+// fetched, not re-checked existing ones. Realtime already catches every
+// live edit the instant it happens while the screen IS open, which is the
+// common case by far; this just doesn't also replay what was missed while
+// it wasn't.
+let cache: {
+  messages: GroupChatMessage[];
+  pinnedPrompt: string | null;
+  muted: boolean;
+  hasMoreOlder: boolean;
+} | null = null;
+
+// Called alongside requestAppReset() on sign-out (see SettingsScreen.tsx) —
+// this cache lives at module scope, outside React entirely, so remounting
+// the provider tree alone (what requestAppReset does) can't clear it.
+// Without this, signing out and back in as a DIFFERENT member on the same
+// tab could briefly show the previous member's cached `myReactions`
+// highlighting on old messages until the next new message arrives.
+export function clearGroupChatCache() {
+  cache = null;
+}
+
 type ProfileRef = { display_name: string; avatar_url: string | null } | { display_name: string; avatar_url: string | null }[] | null;
 
 function profileOf(ref: ProfileRef) {
@@ -70,11 +101,26 @@ type MessageRow = {
 const MESSAGE_SELECT =
   'id, sender_id, body, media_url, media_type, thumbnail_url, created_at, deleted, profiles(display_name, avatar_url), group_chat_cheers(member_id, emoji)';
 
+// FIX 3b (round 115): each path is unique (timestamp + random suffix) and
+// `upsert: false` means nothing ever overwrites it — once uploaded, the
+// bytes at this exact public URL never change. That makes it safe to tell
+// the browser (and any CDN in front of Supabase Storage) to cache it
+// essentially forever, instead of the SDK's own one-hour default — the
+// difference between a photo/video thumbnail silently redownloading the
+// next time the chat happens to be reopened more than an hour later, vs.
+// never again for the life of the browser's cache. This is the other half
+// of "reopening shows what was already loaded instantly" — the in-memory
+// chat-state cache (see the `cache` module variable above) means the
+// <Image>/thumbnail elements remount with the same URL right away, and
+// this is what lets the browser serve them from its own cache instead of
+// hitting the network again at all.
+const FAR_FUTURE_CACHE_CONTROL = `${60 * 60 * 24 * 365}`; // seconds, ~1 year
+
 async function uploadGroupChatFile(userId: string, blob: Blob, extension: string): Promise<string> {
   const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
   const { error } = await supabase.storage
     .from('group-chat-media')
-    .upload(path, blob, { upsert: false, contentType: blob.type || undefined });
+    .upload(path, blob, { upsert: false, contentType: blob.type || undefined, cacheControl: FAR_FUTURE_CACHE_CONTROL });
   if (error) throw error;
   const { data } = supabase.storage.from('group-chat-media').getPublicUrl(path);
   return data.publicUrl;
@@ -127,34 +173,26 @@ export function useGroupChat(active: boolean) {
   const { user, authReady } = useAuth();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
-  const [messages, setMessages] = useState<GroupChatMessage[]>([]); // ascending — oldest first, newest last
-  const [loading, setLoading] = useState(true);
+  // Seeded from the module-level cache above when there is one — see its
+  // comment for why. `loading` starts false in that case too: there's
+  // already something real to show, so the familiar spinner/empty-state
+  // flash only happens on the very first open of the session.
+  const [messages, setMessages] = useState<GroupChatMessage[]>(() => cache?.messages ?? []); // ascending — oldest first, newest last
+  const [loading, setLoading] = useState(() => !cache);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [hasMoreOlder, setHasMoreOlder] = useState(true);
+  const [hasMoreOlder, setHasMoreOlder] = useState(() => cache?.hasMoreOlder ?? true);
   const [error, setError] = useState<string | null>(null);
-  const [pinnedPrompt, setPinnedPromptState] = useState<string | null>(null);
+  const [pinnedPrompt, setPinnedPromptState] = useState<string | null>(() => cache?.pinnedPrompt ?? null);
   // Starts at 1 (just this viewer) rather than 0 — presenceCount only ever
   // drives "X IN THE CHAT", shown starting at 2, so the exact value before
   // the presence channel's first sync doesn't matter.
   const [presenceCount, setPresenceCount] = useState(1);
-  // Who else (never includes this viewer) is currently typing, per the
-  // presence channel below — formatted into copy by the screen via
-  // typingLabel() in lib/typingLabel.ts.
-  const [typingNames, setTypingNames] = useState<string[]>([]);
-  const [muted, setMuted] = useState(false);
+  const [muted, setMuted] = useState(() => cache?.muted ?? false);
   // A quiet, auto-clearing note for a failed send/delete (FIX 2) — never
   // a blocking alert. Null means nothing to show.
   const [sendError, setSendError] = useState<string | null>(null);
   const sendErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const typingIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // The source of truth for "am I currently typing" — read by the presence
-  // channel's (re)subscribe handler and the heartbeat interval below, so
-  // both always reflect the live value rather than whatever was true when
-  // their closures were created.
-  const isTypingRef = useRef(false);
-  const typingHeartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Keys (`${messageId}:${emoji}`) this viewer just applied optimistically
   // in toggleReaction, not yet reconciled against the Realtime echo of
   // that same write — see toggleReaction below. Lets the INSERT/DELETE
@@ -193,34 +231,69 @@ export function useGroupChat(active: boolean) {
     };
   };
 
-  // Initial load: most recent 50 messages, the pinned prompt, and this
-  // account's own mute flag — mirrors a fresh page load exactly once per
-  // time the screen opens.
+  // Initial load. First-ever open this session (no cache yet): most recent
+  // 50 messages, the pinned prompt, and this account's own mute flag —
+  // mirrors a fresh page load. Every reopen after that already has the
+  // cache's content on screen from the very first frame (see the `cache`
+  // module variable's comment above), so this instead fetches only
+  // messages newer than the newest one already showing — a much smaller
+  // request — and appends them, while still refreshing the pinned prompt
+  // and mute flag (both single cheap rows) so those stay correct even
+  // after being closed a while.
   useEffect(() => {
     if (!active || !authReady || !user) return;
     let cancelled = false;
-    setLoading(true);
+    const cachedAtOpen = cache;
+    if (!cachedAtOpen) setLoading(true);
     setError(null);
+
+    const messagesQuery = cachedAtOpen
+      ? supabase
+          .from('group_chat_messages')
+          .select(MESSAGE_SELECT)
+          .eq('deleted', false)
+          .gt(
+            'created_at',
+            new Date(cachedAtOpen.messages[cachedAtOpen.messages.length - 1]?.createdAt ?? 0).toISOString()
+          )
+          .order('created_at', { ascending: true })
+      : supabase
+          .from('group_chat_messages')
+          .select(MESSAGE_SELECT)
+          .eq('deleted', false)
+          .order('created_at', { ascending: false })
+          .limit(PAGE_SIZE);
+
     Promise.all([
-      supabase
-        .from('group_chat_messages')
-        .select(MESSAGE_SELECT)
-        .eq('deleted', false)
-        .order('created_at', { ascending: false })
-        .limit(PAGE_SIZE),
+      messagesQuery,
       supabase.from('group_chat_settings').select('pinned_prompt').eq('id', 1).maybeSingle(),
       supabase.from('profiles').select('group_chat_muted').eq('id', user.id).maybeSingle(),
     ]).then(([msgsRes, settingsRes, profileRes]) => {
       if (cancelled) return;
       if (msgsRes.error) {
-        setError(isBackendUnavailableError(msgsRes.error) ? "Can't load the chat right now." : msgsRes.error.message);
-        setLoading(false);
+        // A cached reopen already has something real on screen — a failed
+        // "what's new" refresh quietly leaves it as-is rather than
+        // replacing a working view with an error notice.
+        if (!cachedAtOpen) {
+          setError(isBackendUnavailableError(msgsRes.error) ? "Can't load the chat right now." : msgsRes.error.message);
+          setLoading(false);
+        }
         return;
       }
       const rows = (msgsRes.data as unknown as MessageRow[]) ?? [];
       rows.forEach((r) => cacheProfile(r.sender_id, r.profiles));
-      setMessages([...rows].reverse().map(rowToMessage));
-      setHasMoreOlder(rows.length === PAGE_SIZE);
+      if (cachedAtOpen) {
+        if (rows.length > 0) {
+          setMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => m.id));
+            const fresh = rows.filter((r) => !existingIds.has(r.id)).map(rowToMessage);
+            return fresh.length > 0 ? [...prev, ...fresh] : prev;
+          });
+        }
+      } else {
+        setMessages([...rows].reverse().map(rowToMessage));
+        setHasMoreOlder(rows.length === PAGE_SIZE);
+      }
       setPinnedPromptState((settingsRes.data as { pinned_prompt: string | null } | null)?.pinned_prompt ?? null);
       setMuted(!!(profileRes.data as { group_chat_muted: boolean } | null)?.group_chat_muted);
       setError(null);
@@ -231,6 +304,25 @@ export function useGroupChat(active: boolean) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, authReady, user]);
+
+  // Keeps the module-level cache current with the latest state, so the
+  // NEXT open (of this tab's session) can seed from it — see `cache`'s own
+  // comment above for why this lives outside React state entirely. Strips
+  // out any still-`pending` optimistic bubble first: closing the chat
+  // between sendMessage's optimistic insert and the real row coming back
+  // is the one window where that could happen, and caching it would
+  // resurrect a "sending…" ghost on the next open that nothing will ever
+  // resolve (sendMessage's own reconciliation is tied to THIS unmounting
+  // hook instance) — worse, likely alongside a genuine duplicate once the
+  // real row shows up through the normal "what's new" fetch below. Simply
+  // not caching it means the real message just shows up the normal way
+  // next time, exactly as if the screen had been closed before sending at
+  // all.
+  useEffect(() => {
+    if (!active) return;
+    const cacheable = messages.some((m) => m.pending) ? messages.filter((m) => !m.pending) : messages;
+    cache = { messages: cacheable, pinnedPrompt, muted, hasMoreOlder };
+  }, [active, messages, pinnedPrompt, muted, hasMoreOlder]);
 
   // Live messages + reactions. Every write (send, soft delete, react,
   // un-react) is fire-and-forget to the database — this subscription is
@@ -332,12 +424,18 @@ export function useGroupChat(active: boolean) {
       })
       .subscribe();
     return () => {
-      // Deferred, not awaited: tearing down a Realtime channel sends a
-      // "leave" over the websocket and does internal bookkeeping that
-      // doesn't need to finish before the screen visually closes — see
-      // the fuller explanation on the presence channel's cleanup below,
-      // which is the one most likely to actually have work to do.
-      setTimeout(() => supabase.removeChannel(channel), 0);
+      // Evicted immediately, not awaited — tearing down a Realtime channel
+      // normally sends a "leave" over the websocket and waits on the
+      // server's ack (or @supabase/realtime-js's own 10-second timeout)
+      // before it's actually dropped from the client's registry. Under a
+      // rapid open/close cycle that doesn't need to finish before the
+      // screen visually closes, and under MANY rapid cycles, waiting on it
+      // anyway would leave dozens of zombie channels simultaneously
+      // mid-teardown — see deferredRealtimeChannel.ts's header comment for
+      // the fuller mechanism (confirmed from library source) and why this
+      // one topic is unique-per-mount but still goes through the same fast
+      // eviction as the shared presence channel.
+      fastRemoveChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, user]);
@@ -347,8 +445,7 @@ export function useGroupChat(active: boolean) {
   useEffect(() => {
     if (!active || !user) return;
     // Unique per mount — see the matching note on the messages-live
-    // channel above for why (prevents a stale deferred removeChannel from
-    // a fast reopen tearing down the new mount's channel).
+    // channel above for why.
     const mountId = Math.random().toString(36).slice(2);
     const channel = supabase
       .channel(`group-chat-mute-${user.id}-${mountId}`)
@@ -362,169 +459,52 @@ export function useGroupChat(active: boolean) {
       )
       .subscribe();
     return () => {
-      setTimeout(() => supabase.removeChannel(channel), 0);
+      fastRemoveChannel(channel);
     };
   }, [active, user]);
 
-  // Presence — drives both "X IN THE CHAT" (members currently on this
-  // screen) and the typing indicator, over the SAME Realtime presence
-  // channel rather than a second one: each tracked payload carries this
-  // viewer's name, whether they're actively typing right now, and when
-  // that payload was tracked (`at`). No database writes for any of it.
-  // Each mount tracks its own random key so the same account open in two
-  // tabs correctly counts as two.
+  // Presence — drives "X IN THE CHAT" (members currently on this screen).
+  // No database writes. Each mount tracks its own random key so the same
+  // account open in two tabs correctly counts as two.
   //
-  // The `at` timestamp exists specifically to fix a real bug: Phoenix's
-  // presence diff merge (see @supabase/phoenix's Presence.syncDiff) can
-  // leave a STALE meta entry sitting alongside a fresh one under the same
-  // presence key — e.g. if the "leave" half of an update's join+leave pair
-  // is delivered separately from (or is dropped relative to) the "join"
-  // half. The old code iterated every entry under a key and OR'd their
-  // `typing` flags together, so a stale leftover entry could permanently
-  // mask the real, current state — matching the reported "fires once,
-  // never again" symptom exactly. Keying off only the entry with the
-  // highest `at` per presence key means a stale duplicate can never again
-  // override the current one.
+  // This used to also carry a typing indicator over the same channel —
+  // cut from scope (never worked against the real backend; see git history
+  // for the removed implementation if a future round wants to try again).
+  // The member-count half, below, is the part that actually works and
+  // stays.
   useEffect(() => {
     if (!active || !user) return;
     const presenceKey = `${user.id}-${Math.random().toString(36).slice(2)}`;
-    const selfName = firstNameOf(displayName);
-    // UNLIKE the other two channels above, this topic ('group-chat-
-    // presence') must stay the exact same string for every member —
-    // presence is peer-to-peer rendezvous, so everyone has to be on the
-    // same topic to see each other at all. (An earlier draft of this fix
-    // made this one unique per mount too, same as the others — that would
-    // have silently broken "X IN THE CHAT" and the typing indicator
-    // completely, since no two sessions would ever share a topic again;
-    // caught before it shipped.) getOrCreateChannel/deferRemoveChannel
-    // (deferredRealtimeChannel.ts) gets the crash fix's benefit a
-    // different way for this one: a fast reopen cancels and forces
-    // through any still-pending deferred removal for this exact topic
-    // before reusing it, instead of ever risking a stale teardown landing
-    // on the channel a new mount depends on.
+    // This topic ('group-chat-presence') must stay the exact same string
+    // for every member — presence is peer-to-peer rendezvous, so everyone
+    // has to be on the same topic to see each other at all.
+    // getOrCreateChannel/deferRemoveChannel (deferredRealtimeChannel.ts)
+    // gets the crash fix's benefit for this stable-topic channel: a fast
+    // reopen cancels and forces through any still-pending deferred removal
+    // for this exact topic before reusing it, instead of ever risking a
+    // stale teardown landing on the channel a new mount depends on.
     const channel = getOrCreateChannel('group-chat-presence', { config: { presence: { key: presenceKey } } });
-    // eslint-disable-next-line no-console
-    console.log('[typing] presence channel created', { topic: 'group-chat-presence', presenceKey, selfName });
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
       let count = 0;
-      const typing: string[] = [];
       Object.values(state).forEach((entries) => {
-        const typed = entries as unknown as { userId: string; name: string; typing?: boolean; at?: number }[];
-        if (typed.length === 0) return;
-        count += 1;
-        const latest = typed.reduce((a, b) => ((b.at ?? 0) > (a.at ?? 0) ? b : a));
-        if (latest.userId !== user.id && latest.typing) typing.push(latest.name);
-      });
-      const nextTyping = [...new Set(typing)];
-      // eslint-disable-next-line no-console
-      console.log('[typing] presence sync received', {
-        rawStateKeys: Object.keys(state),
-        rawState: state,
-        computedPresenceCount: count || 1,
-        computedTypingNames: nextTyping,
+        if ((entries as unknown[]).length > 0) count += 1;
       });
       setPresenceCount(count || 1);
-      setTypingNames(nextTyping);
     });
-    // Re-fires on every (re)join, including a reconnect after a dropped
-    // connection — re-asserts whatever this viewer's typing state actually
-    // is right now (via the ref, not a hardcoded false) so a connection
-    // blip mid-typing can't silently strand the rest of the chat on a
-    // stale "not typing" read.
     channel.subscribe((status) => {
-      // eslint-disable-next-line no-console
-      console.log('[typing] channel subscribe status changed', { status, presenceKey });
       if (status === 'SUBSCRIBED') {
-        const initialPayload = { userId: user.id, name: selfName, typing: isTypingRef.current, at: Date.now() };
-        // eslint-disable-next-line no-console
-        console.log('[typing] channel SUBSCRIBED, sending initial track()', initialPayload);
-        channel.track(initialPayload).then((result) => {
-          // eslint-disable-next-line no-console
-          console.log('[typing] initial track() result', result);
-        });
+        channel.track({ userId: user.id, at: Date.now() });
       }
     });
-    presenceChannelRef.current = channel;
     return () => {
-      if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
-      if (typingHeartbeatTimerRef.current) clearInterval(typingHeartbeatTimerRef.current);
-      // Null the ref immediately (synchronous, cheap, makes notifyTyping/
-      // notifyStopped harmlessly no-op the instant this screen is on its
-      // way out) but defer the actual network teardown — tapping BACK on
-      // a real device was sometimes taking seconds (reported as "force
-      // closing the app") because this cleanup, along with the other two
-      // channels' above, ran synchronously inside React's unmount commit,
-      // the same commit that's supposed to make the screen disappear. On
-      // a slow/real mobile connection, three `removeChannel` calls each
-      // waiting on their own websocket round trip was enough to visibly
-      // block the paint. None of that teardown needs to finish before the
-      // screen is gone, so it now runs in a macrotask right after.
-      presenceChannelRef.current = null;
+      // Deferred, not awaited — tearing down a Realtime channel shouldn't
+      // block whatever just caused this screen to close (see the matching
+      // note on the other channels' cleanup above).
       deferRemoveChannel('group-chat-presence', channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, user]);
-
-  const trackTyping = (typing: boolean) => {
-    if (!user) return;
-    const payload = { userId: user.id, name: firstNameOf(displayName), typing, at: Date.now() };
-    const channel = presenceChannelRef.current;
-    // eslint-disable-next-line no-console
-    console.log('[typing] track payload sending', { payload, channelIsNull: !channel });
-    if (!channel) {
-      // eslint-disable-next-line no-console
-      console.log('[typing] track SKIPPED -- presenceChannelRef.current is null (channel not mounted/already torn down)');
-      return;
-    }
-    channel.track(payload).then((result) => {
-      // eslint-disable-next-line no-console
-      console.log('[typing] track() result', { result, payload });
-    });
-  };
-
-  // Call on every composer keystroke — marks this viewer typing on the
-  // shared presence channel above and pushes the auto-clear timer out
-  // another TYPING_IDLE_MS. Also arms a heartbeat that keeps re-asserting
-  // `typing: true` every TYPING_HEARTBEAT_MS for as long as the viewer
-  // keeps typing — belt-and-suspenders against the same class of dropped-
-  // update bug the `at` dedup above fixes on the receiving end: even if
-  // one presence update never reaches another viewer, the next heartbeat
-  // (well under TYPING_IDLE_MS later) does.
-  const notifyTyping = () => {
-    if (!user) return;
-    // eslint-disable-next-line no-console
-    console.log('[typing] notifyTyping() called -- local keystroke detected');
-    isTypingRef.current = true;
-    trackTyping(true);
-    if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
-    typingIdleTimerRef.current = setTimeout(() => {
-      // eslint-disable-next-line no-console
-      console.log('[typing] idle timer fired -- clearing typing after', TYPING_IDLE_MS, 'ms of no keystrokes');
-      isTypingRef.current = false;
-      trackTyping(false);
-    }, TYPING_IDLE_MS);
-    if (!typingHeartbeatTimerRef.current) {
-      typingHeartbeatTimerRef.current = setInterval(() => {
-        if (isTypingRef.current) {
-          // eslint-disable-next-line no-console
-          console.log('[typing] heartbeat re-asserting typing:true');
-          trackTyping(true);
-        }
-      }, TYPING_HEARTBEAT_MS);
-    }
-  };
-
-  // Call on send, or when the composer empties out — clears typing
-  // immediately instead of waiting out the idle timer.
-  const notifyStopped = () => {
-    if (!user) return;
-    // eslint-disable-next-line no-console
-    console.log('[typing] notifyStopped() called');
-    isTypingRef.current = false;
-    if (typingIdleTimerRef.current) clearTimeout(typingIdleTimerRef.current);
-    trackTyping(false);
-  };
 
   const loadOlder = async () => {
     if (loadingOlder || !hasMoreOlder || messages.length === 0) return;
@@ -693,7 +673,6 @@ export function useGroupChat(active: boolean) {
       messages,
       pinnedPrompt,
       presenceCount,
-      typingNames,
       muted,
       sendError,
       loadOlder,
@@ -701,10 +680,8 @@ export function useGroupChat(active: boolean) {
       deleteMessage,
       toggleReaction,
       setPinnedPrompt,
-      notifyTyping,
-      notifyStopped,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loading, loadingOlder, hasMoreOlder, error, messages, pinnedPrompt, presenceCount, typingNames, muted, sendError]
+    [loading, loadingOlder, hasMoreOlder, error, messages, pinnedPrompt, presenceCount, muted, sendError]
   );
 }

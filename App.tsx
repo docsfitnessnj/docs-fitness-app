@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -848,12 +848,26 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
       </View>
 
       {showSidebar && (
-        <View style={[styles.sidebarColumn, { width: sidebarWidth }]}>
+        // A plain View here (no scroll) left the sidebar completely at the
+        // mercy of the browser window's actual height: on anything shorter
+        // than its full content (a real laptop at normal zoom, not just a
+        // cramped test window), the footer card's bottom rows — including
+        // the location link — ran off the bottom edge with no way to
+        // reach them at all; `body { overflow: hidden }` (index.html, for
+        // the phone-width layout's own fixed-height shell) means the
+        // browser's own page scroll can't bail it out either. A ScrollView
+        // scoped to just this column fixes that regardless of window
+        // height, independent of whatever the main column is doing.
+        <ScrollView
+          style={[styles.sidebarColumn, { width: sidebarWidth }]}
+          contentContainerStyle={styles.sidebarColumnContent}
+          showsVerticalScrollIndicator={false}
+        >
           <IdentitySidebar
             onOpenMessages={() => setMessagesOpen(true)}
             onOpenGroupChat={() => setGroupChatOpen(true)}
           />
-        </View>
+        </ScrollView>
       )}
     </View>
   );
@@ -970,7 +984,35 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
                               <ContentLibraryProvider>
                                 <TourProvider>
                                   <View style={styles.webSurround}>
-                                    <ResponsiveShell onLayoutRootView={onLayoutRootView} />
+                                    {/* Second, outer line of defense (FIX 2,
+                                        round 115): the narrower boundary
+                                        around DOC'S GROUP CHAT inside
+                                        MainApp only catches an error thrown
+                                        by that screen's OWN subtree. Under
+                                        very many rapid open/close cycles, a
+                                        stale Realtime channel reused across
+                                        mounts (see deferredRealtimeChannel.ts
+                                        for the confirmed mechanism) could
+                                        still leave something in an
+                                        inconsistent state one level up —
+                                        e.g. in ResponsiveShell/MainApp's own
+                                        re-render around the `groupChatOpen`
+                                        toggle, or AppTopBar's chat icon —
+                                        outside that narrow boundary's reach.
+                                        This one wraps the entire signed-in
+                                        app shell, so ANY error that escapes
+                                        up this far — chat-caused or not —
+                                        still degrades to a calm recovery
+                                        state instead of a dead white tab.
+                                        Retrying here remounts the whole
+                                        shell fresh (all of MainApp's own
+                                        state, groupChatOpen included, resets
+                                        to its defaults), a bigger reset than
+                                        the inner boundary's but still far
+                                        short of reloading the page. */}
+                                    <ScreenErrorBoundary label="DOC'S FITNESS">
+                                      <ResponsiveShell onLayoutRootView={onLayoutRootView} />
+                                    </ScreenErrorBoundary>
                                   </View>
                                 </TourProvider>
                               </ContentLibraryProvider>
@@ -1035,8 +1077,20 @@ const styles = StyleSheet.create({
     zIndex: 10001,
   },
   sidebarColumn: {
-    paddingTop: 60,
     paddingRight: 8,
+  },
+  // The main column's own paddingTop (60) exists to clear AppTopBar's real
+  // height — the sidebar isn't behind that bar at all, it's a separate
+  // column starting fresh, so matching that same 60 read as unneeded
+  // blank space above its first card. 20 is enough to clearly separate it
+  // from the top edge without the sidebar visually "starting too low" next
+  // to a main column whose actual content starts right under its own top
+  // bar. paddingBottom gives the last card (location included) genuine
+  // breathing room instead of ending flush with wherever the scrollable
+  // area happens to stop.
+  sidebarColumnContent: {
+    paddingTop: 20,
+    paddingBottom: 32,
   },
   mainAppRoot: {
     flex: 1,
