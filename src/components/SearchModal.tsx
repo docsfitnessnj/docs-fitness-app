@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useCommunity } from '../context/CommunityContext';
 import { WEEKDAY_WODS } from '../data/content';
 import { DECK_CARDS, deckCardLabel } from '../data/deckCards';
+import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -22,6 +23,7 @@ type Result = {
 
 export function SearchModal({ visible, onClose }: Props) {
   const [query, setQuery] = useState('');
+  const focusRing = useFocusRing();
   const { posts } = useCommunity();
   const navigation = useNavigation<any>();
 
@@ -70,12 +72,14 @@ export function SearchModal({ visible, onClose }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.searchRow}>
+      <View style={[styles.searchRow, { borderColor: focusRing.borderColor }]}>
         <Ionicons name="search" size={18} color={colors.green} />
         <TextInput
           style={styles.input}
           value={query}
           onChangeText={setQuery}
+          onFocus={focusRing.onFocus}
+          onBlur={focusRing.onBlur}
           placeholder="Search the app"
           placeholderTextColor={colors.textMuted}
           autoFocus

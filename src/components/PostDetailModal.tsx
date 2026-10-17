@@ -9,6 +9,7 @@ import { PostAuthorBadges } from './PostAuthorBadges';
 import { Comment, Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
+import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -16,6 +17,12 @@ type Props = {
   onClose: () => void;
   canInteract: boolean;
 };
+
+// One line at rest, grows with content up to ~5 lines then scrolls
+// internally — same measured-content-box pattern as DocsGroupChatScreen's
+// Composer and DocThreadView's MESSAGE DOC DIRECTLY composer.
+const MIN_COMMENT_HEIGHT = 21;
+const MAX_COMMENT_HEIGHT = 105; // 5 lines at 21px
 
 function CategoryTag({ category }: { category: string }) {
   return (
@@ -36,6 +43,8 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
   const [commentText, setCommentText] = useState('');
   const [editingComment, setEditingComment] = useState<Comment | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [commentContentHeight, setCommentContentHeight] = useState(MIN_COMMENT_HEIGHT);
+  const commentFocusRing = useFocusRing();
 
   if (!post) return null;
 
@@ -44,6 +53,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
   const cancelEdit = () => {
     setEditingComment(null);
     setCommentText('');
+    setCommentContentHeight(MIN_COMMENT_HEIGHT);
   };
 
   const submitComment = () => {
@@ -56,6 +66,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
     }
     addComment(post.id, displayName, commentText.trim());
     setCommentText('');
+    setCommentContentHeight(MIN_COMMENT_HEIGHT);
   };
 
   const openCommentMenu = (comment: Comment) => {
@@ -206,22 +217,34 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
           </View>
         )}
         <View style={styles.commentInputRow}>
-          <TextInput
-            style={styles.commentInput}
-            value={commentText}
-            onChangeText={setCommentText}
-            placeholder={canInteract ? 'Write a comment...' : 'Sign up to comment'}
-            placeholderTextColor={colors.textMuted}
-            autoCapitalize="sentences"
-            autoCorrect
-            spellCheck
-            onSubmitEditing={submitComment}
-            onFocus={() => !canInteract && interactionBlockedNudge()}
-            nativeID="post-detail-comment-input-field"
-            aria-label="Write a comment"
-            testID="post-detail-comment-input"
-          />
-          <Pressable onPress={submitComment} hitSlop={8} testID="post-detail-send-comment">
+          <View style={[styles.commentInputPill, { borderColor: commentFocusRing.borderColor }]}>
+            <TextInput
+              style={[
+                styles.commentInput,
+                { height: Math.min(MAX_COMMENT_HEIGHT, Math.max(MIN_COMMENT_HEIGHT, commentContentHeight)) },
+              ]}
+              value={commentText}
+              onChangeText={setCommentText}
+              onContentSizeChange={(e) => setCommentContentHeight(e.nativeEvent.contentSize.height)}
+              placeholder={canInteract ? 'Write a comment...' : 'Sign up to comment'}
+              placeholderTextColor={colors.textMuted}
+              multiline
+              {...({ rows: 1 } as { rows?: number })}
+              autoCapitalize="sentences"
+              autoCorrect
+              spellCheck
+              onSubmitEditing={submitComment}
+              onFocus={() => {
+                commentFocusRing.onFocus();
+                if (!canInteract) interactionBlockedNudge();
+              }}
+              onBlur={commentFocusRing.onBlur}
+              nativeID="post-detail-comment-input-field"
+              aria-label="Write a comment"
+              testID="post-detail-comment-input"
+            />
+          </View>
+          <Pressable onPress={submitComment} hitSlop={8} style={styles.commentSendButton} testID="post-detail-send-comment">
             <Ionicons name={editingComment ? 'checkmark' : 'send'} size={18} color={colors.green} />
           </Pressable>
         </View>
@@ -494,18 +517,37 @@ const styles = StyleSheet.create({
   },
   commentInputRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
+    gap: 10,
     backgroundColor: colors.card,
     borderTopWidth: 1,
     borderTopColor: colors.hairline,
     paddingHorizontal: 20,
     paddingVertical: 12,
   },
-  commentInput: {
+  // One rounded container only, modeled on the Skool composer — no nested
+  // visible box inside it. The TextInput's own height is computed exactly
+  // from its content (see commentContentHeight above), so this pill always
+  // wraps tightly around it via its own padding.
+  commentInputPill: {
     flex: 1,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  commentInput: {
     color: colors.text,
     fontFamily: fonts.body,
     fontSize: 16,
-    marginRight: 10,
+    lineHeight: 21,
+  },
+  commentSendButton: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

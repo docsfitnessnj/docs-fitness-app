@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { PasswordInput } from '../components/PasswordInput';
+import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -20,6 +21,7 @@ export default function SignInScreen({ onBack, onForgotPassword, initialEmail, o
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const emailFocusRing = useFocusRing();
 
   const canSubmit = email.trim().length > 3 && email.includes('@') && password.trim().length > 0 && !submitting;
 
@@ -45,9 +47,11 @@ export default function SignInScreen({ onBack, onForgotPassword, initialEmail, o
         <View style={styles.form}>
           <Text nativeID="sign-in-email-label" style={styles.label}>EMAIL ADDRESS</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { borderColor: emailFocusRing.borderColor }]}
             value={email}
             onChangeText={setEmail}
+            onFocus={emailFocusRing.onFocus}
+            onBlur={emailFocusRing.onBlur}
             placeholder="you@example.com"
             placeholderTextColor={colors.textMuted}
             autoCapitalize="none"

@@ -5,7 +5,7 @@ import { useGroupChatUnread } from '../context/GroupChatUnreadContext';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { deferRemoveChannel, fastRemoveChannel, getOrCreateChannel } from './deferredRealtimeChannel';
 import { MediaAttachment } from './media';
-import { describeChatFailure, isBackendUnavailableError, supabase } from './supabaseClient';
+import { describeChatFailure, isBackendUnavailableError, supabase, uploadFileWithProgress } from './supabaseClient';
 import { captureVideoThumbnail } from './videoThumbnail';
 
 const PAGE_SIZE = 50;
@@ -24,8 +24,7 @@ const PAGE_SIZE = 50;
 // both in sync).
 const MAX_GROUP_CHAT_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
 
-const VIDEO_TOO_LARGE_MESSAGE =
-  'That video is too big. Videos up to about 45 seconds usually work. Trim it and try again.';
+const VIDEO_TOO_LARGE_MESSAGE = 'Video too big. Trim it to under 45 seconds and try again.';
 const PHOTO_TOO_LARGE_MESSAGE = "That photo is too big to send. Try a smaller one.";
 
 export type GroupChatMessage = {
@@ -56,6 +55,11 @@ export type GroupChatMessage = {
   // instead of lingering in a failed state (see sendMessage's catch
   // block and `sendError` below for the quiet note shown instead).
   pending?: boolean;
+  // PART 4 — set only while `pending` is true and media is attached: a
+  // 0-1 fraction once real upload progress is available, or the literal
+  // string 'indeterminate' while it isn't yet (or never was, this send).
+  // Undefined otherwise — a text-only pending message never sets this.
+  uploadProgress?: number | 'indeterminate';
 };
 
 // FIX 3 (round 115): keeps the chat's last-loaded state alive across
@@ -135,8 +139,34 @@ const MESSAGE_SELECT =
 // hitting the network again at all.
 const FAR_FUTURE_CACHE_CONTROL = `${60 * 60 * 24 * 365}`; // seconds, ~1 year
 
-async function uploadGroupChatFile(userId: string, blob: Blob, extension: string): Promise<string> {
+// PART 4 — `onProgress`, when given, is called with a 0-1 fraction as real
+// upload bytes go out (uploadFileWithProgress, a raw-XHR replication of
+// exactly what supabase-js's own fetch-based upload sends, purely so
+// xhr.upload.onprogress is available) or with the literal string
+// 'indeterminate' if real progress couldn't be used for this upload (no
+// session token available at the moment it started, the only case that
+// falls through) — the caller then shows a smooth indeterminate animation
+// instead of a bar that would never move. A genuine upload failure (wrong
+// type, too big, quota, ...) is never swallowed by that fallback — it's
+// only for the inability to show real progress, not for the request
+// itself, so it's always re-thrown as-is.
+async function uploadGroupChatFile(
+  userId: string,
+  blob: Blob,
+  extension: string,
+  onProgress?: (progress: number | 'indeterminate') => void
+): Promise<string> {
   const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+  if (onProgress) {
+    try {
+      await uploadFileWithProgress('group-chat-media', path, blob, FAR_FUTURE_CACHE_CONTROL, onProgress);
+      const { data } = supabase.storage.from('group-chat-media').getPublicUrl(path);
+      return data.publicUrl;
+    } catch (err) {
+      if ((err as { __isStorageError?: boolean } | null)?.__isStorageError) throw err;
+      onProgress('indeterminate');
+    }
+  }
   const { error } = await supabase.storage
     .from('group-chat-media')
     .upload(path, blob, { upsert: false, contentType: blob.type || undefined, cacheControl: FAR_FUTURE_CACHE_CONTROL });
@@ -164,10 +194,14 @@ async function uploadGroupChatMedia(
   userId: string,
   blob: Blob,
   localUri: string,
-  kind: 'image' | 'video'
+  kind: 'image' | 'video',
+  onProgress?: (progress: number | 'indeterminate') => void
 ): Promise<{ mediaUrl: string; thumbnailUrl: string | null }> {
   const extension = kind === 'video' ? 'mp4' : blob.type.includes('png') ? 'png' : 'jpg';
-  const mediaUrl = await uploadGroupChatFile(userId, blob, extension);
+  // Progress is only tracked for the main file — the poster-frame thumbnail
+  // (below) is a small JPEG that uploads near-instantly and was never part
+  // of what read as "frozen."
+  const mediaUrl = await uploadGroupChatFile(userId, blob, extension, onProgress);
 
   let thumbnailUrl: string | null = null;
   if (kind === 'video') {
@@ -214,10 +248,13 @@ export function useGroupChat(active: boolean) {
   // the presence channel's first sync doesn't matter.
   const [presenceCount, setPresenceCount] = useState(1);
   const [muted, setMuted] = useState(() => cache?.muted ?? false);
-  // A quiet, auto-clearing note for a failed send/delete (FIX 2) — never
-  // a blocking alert. Null means nothing to show.
+  // A quiet note for a failed send/delete (FIX 2) — never a blocking
+  // alert. Null means nothing to show. Round 118: this used to clear
+  // itself after 4 seconds, which raced a member actually reading it
+  // (especially the oversized-video message, the whole point of which is
+  // to explain what to do about it). It now persists until the member
+  // dismisses it themselves — see showSendError/clearSendError below.
   const [sendError, setSendError] = useState<string | null>(null);
-  const sendErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keys (`${messageId}:${emoji}`) this viewer just applied optimistically
   // in toggleReaction, not yet reconciled against the Realtime echo of
@@ -568,13 +605,17 @@ export function useGroupChat(active: boolean) {
     setLoadingOlder(false);
   };
 
-  // Shared by sendMessage/deleteMessage's failure paths — a quiet,
-  // auto-clearing note (never a blocking alert).
+  // Shared by sendMessage/deleteMessage's failure paths — a quiet note,
+  // never a blocking alert, and never auto-dismissed (round 118): it waits
+  // to be read instead of racing the member for their own attention. Only
+  // clearSendError below — tapping the note itself, typing again, or
+  // picking a new attachment (see Composer in DocsGroupChatScreen.tsx) —
+  // ever clears it.
   const showSendError = (message: string) => {
     setSendError(message);
-    if (sendErrorTimerRef.current) clearTimeout(sendErrorTimerRef.current);
-    sendErrorTimerRef.current = setTimeout(() => setSendError(null), 4000);
   };
+
+  const clearSendError = () => setSendError(null);
 
   // FIX 2 — optimistic send: a temp message with a client-generated id
   // appears in `messages` immediately (pending: true), well before the
@@ -636,7 +677,9 @@ export function useGroupChat(active: boolean) {
       let mediaUrl: string | null = null;
       let thumbnailUrl: string | null = null;
       if (media && mediaBlob) {
-        const uploaded = await uploadGroupChatMedia(user.id, mediaBlob, media.uri, media.type);
+        const uploaded = await uploadGroupChatMedia(user.id, mediaBlob, media.uri, media.type, (progress) => {
+          setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, uploadProgress: progress } : m)));
+        });
         mediaUrl = uploaded.mediaUrl;
         thumbnailUrl = uploaded.thumbnailUrl;
       }
@@ -739,6 +782,7 @@ export function useGroupChat(active: boolean) {
       presenceCount,
       muted,
       sendError,
+      clearSendError,
       loadOlder,
       sendMessage,
       deleteMessage,

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, StyleProp, TextInput, TextStyle, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusRing } from '../lib/useFocusRing';
 import { colors } from '../theme';
 
 type Props = {
@@ -33,13 +34,16 @@ export function PasswordInput({
   onSubmitEditing,
 }: Props) {
   const [visible, setVisible] = useState(false);
+  const focusRing = useFocusRing();
 
   return (
     <View style={[{ position: 'relative', justifyContent: 'center' }, wrapperStyle]}>
       <TextInput
-        style={[style, { paddingRight: 44 }]}
+        style={[style, { paddingRight: 44 }, { borderColor: focusRing.borderColor }]}
         value={value}
         onChangeText={onChangeText}
+        onFocus={focusRing.onFocus}
+        onBlur={focusRing.onBlur}
         placeholder={placeholder}
         placeholderTextColor={colors.textMuted}
         secureTextEntry={!visible}

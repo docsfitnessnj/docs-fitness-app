@@ -199,6 +199,25 @@
       * {
         overscroll-behavior-y: contain;
       }
+      /* Kills the browser's default blue focus ring on every text input and
+         textarea, app-wide — iOS Safari draws it the instant any composer
+         or field is focused (chat, comments, search, profile, sign in,
+         ...), and it doesn't respect this app's own design language at
+         all. A global selector here is deliberate rather than hunting down
+         every TextInput individually: react-native-web renders every
+         TextInput as a plain <input>/<textarea>, so this one rule reaches
+         all of them, present and future, with no risk of missing one. The
+         app's own quiet replacement (the field's container border
+         shifting from the hairline to brand green on focus) is applied
+         per-component since react-native-web's TextInput style reset
+         already zeroes out `border` itself (see TextInput/index.js) — the
+         *visible* border members actually see lives one level up, on the
+         pill/row View wrapping the input. */
+      input:focus,
+      textarea:focus,
+      select:focus {
+        outline: none;
+      }
       /* These styles make the body full-height, tracking Safari's
          collapsing/expanding toolbar instead of a one-time snapshot. */
       html,
