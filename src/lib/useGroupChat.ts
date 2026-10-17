@@ -1,13 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { REACTION_EMOJIS } from '../context/CommunityContext';
+import { useGroupChatUnread } from '../context/GroupChatUnreadContext';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { deferRemoveChannel, fastRemoveChannel, getOrCreateChannel } from './deferredRealtimeChannel';
 import { MediaAttachment } from './media';
-import { isBackendUnavailableError, supabase } from './supabaseClient';
+import { describeChatFailure, isBackendUnavailableError, supabase } from './supabaseClient';
 import { captureVideoThumbnail } from './videoThumbnail';
 
 const PAGE_SIZE = 50;
+
+// Supabase's current plan caps a single uploaded file at 50MB — this is the
+// ONE place that number lives app-wide. A real iPhone video around a minute
+// long routinely exceeds it, which used to fail silently late (after the
+// whole upload had already run) with a generic "check your connection"
+// message that had nothing to do with what actually happened. Checked
+// client-side, before any upload begins (see sendMessage below), against
+// the file's REAL size — not an estimate from its duration — so the limit
+// stays accurate for photos too, not just video. When the Supabase plan
+// upgrades and the real cap rises, this is the one line that needs to
+// change (see also migration_016.sql, which sets the same number explicitly
+// on the group-chat-media bucket's own file_size_limit server-side — keep
+// both in sync).
+const MAX_GROUP_CHAT_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
+
+const VIDEO_TOO_LARGE_MESSAGE =
+  'That video is too big. Videos up to about 45 seconds usually work. Trim it and try again.';
+const PHOTO_TOO_LARGE_MESSAGE = "That photo is too big to send. Try a smaller one.";
 
 export type GroupChatMessage = {
   id: string;
@@ -134,13 +153,19 @@ async function uploadGroupChatFile(userId: string, blob: Blob, extension: string
 // actually a photo. For a video, also captures and uploads a poster frame
 // (see videoThumbnail.ts) — never blocks the send if capture fails, the
 // message just goes out without a thumbnail (the existing placeholder).
+//
+// Takes the already-fetched `blob` rather than fetching `localUri` itself —
+// sendMessage below fetches it once, up front, specifically so it can check
+// the real byte size against MAX_GROUP_CHAT_UPLOAD_BYTES BEFORE any upload
+// is attempted (and before the optimistic bubble even appears). `localUri`
+// is still needed separately for captureVideoThumbnail, which reads it via
+// an off-screen <video> element, not the blob.
 async function uploadGroupChatMedia(
   userId: string,
+  blob: Blob,
   localUri: string,
   kind: 'image' | 'video'
 ): Promise<{ mediaUrl: string; thumbnailUrl: string | null }> {
-  const response = await fetch(localUri);
-  const blob = await response.blob();
   const extension = kind === 'video' ? 'mp4' : blob.type.includes('png') ? 'png' : 'jpg';
   const mediaUrl = await uploadGroupChatFile(userId, blob, extension);
 
@@ -173,6 +198,7 @@ export function useGroupChat(active: boolean) {
   const { user, authReady } = useAuth();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
+  const { markRead } = useGroupChatUnread();
   // Seeded from the module-level cache above when there is one — see its
   // comment for why. `loading` starts false in that case too: there's
   // already something real to show, so the familiar spinner/empty-state
@@ -230,6 +256,15 @@ export function useGroupChat(active: boolean) {
       myReactions,
     };
   };
+
+  // Unread badge: opening the chat is "read everything up to now" —
+  // resets GroupChatUnreadContext's count to 0 and writes last_read_at
+  // immediately, rather than waiting for the message list to finish
+  // loading. markRead() itself is stable (useCallback) so this only fires
+  // on a genuine active-state transition, not on every render.
+  useEffect(() => {
+    if (active) markRead();
+  }, [active, markRead]);
 
   // Initial load. First-ever open this session (no cache yet): most recent
   // 50 messages, the pinned prompt, and this account's own mute flag —
@@ -350,6 +385,13 @@ export function useGroupChat(active: boolean) {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_chat_messages' }, (payload) => {
         const row = payload.new as MessageRow;
         if (row.deleted) return;
+        // Unread badge: a new message arriving from someone else WHILE
+        // this screen is actively open is, by definition, already seen —
+        // keep last_read_at current so closing right after never leaves a
+        // gap the badge would wrongly resurrect (see GroupChatUnreadContext
+        // for the fuller mechanics). Skipped for the sender's own message —
+        // sending was already its own "I'm caught up" moment.
+        if (row.sender_id !== user.id) markRead();
         setMessages((prev) => {
           if (prev.some((m) => m.id === row.id)) return prev;
           return [...prev, rowToMessage({ ...row, group_chat_cheers: [] })];
@@ -526,6 +568,14 @@ export function useGroupChat(active: boolean) {
     setLoadingOlder(false);
   };
 
+  // Shared by sendMessage/deleteMessage's failure paths — a quiet,
+  // auto-clearing note (never a blocking alert).
+  const showSendError = (message: string) => {
+    setSendError(message);
+    if (sendErrorTimerRef.current) clearTimeout(sendErrorTimerRef.current);
+    sendErrorTimerRef.current = setTimeout(() => setSendError(null), 4000);
+  };
+
   // FIX 2 — optimistic send: a temp message with a client-generated id
   // appears in `messages` immediately (pending: true), well before the
   // upload + insert round trip resolves. Once the real row comes back
@@ -540,6 +590,24 @@ export function useGroupChat(active: boolean) {
     if (!user) return false;
     const trimmed = text.trim();
     if (!trimmed && !media) return false;
+
+    // Honest size check, BEFORE any upload begins and before the optimistic
+    // bubble even appears — a real iPhone video around a minute long
+    // routinely exceeds Supabase's plan cap, and used to only fail late,
+    // after the whole file had already uploaded, with a message that
+    // blamed the connection for something the connection never did wrong.
+    // Reading the real file via fetch().blob() on a local file:// / blob:
+    // URI never touches the network — this is instant, not a real upload
+    // attempt.
+    let mediaBlob: Blob | null = null;
+    if (media) {
+      const fetchedBlob = await fetch(media.uri).then((r) => r.blob());
+      if (fetchedBlob.size > MAX_GROUP_CHAT_UPLOAD_BYTES) {
+        showSendError(media.type === 'video' ? VIDEO_TOO_LARGE_MESSAGE : PHOTO_TOO_LARGE_MESSAGE);
+        return false;
+      }
+      mediaBlob = fetchedBlob;
+    }
 
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const optimisticReactions: Record<string, number> = {};
@@ -567,8 +635,8 @@ export function useGroupChat(active: boolean) {
     try {
       let mediaUrl: string | null = null;
       let thumbnailUrl: string | null = null;
-      if (media) {
-        const uploaded = await uploadGroupChatMedia(user.id, media.uri, media.type);
+      if (media && mediaBlob) {
+        const uploaded = await uploadGroupChatMedia(user.id, mediaBlob, media.uri, media.type);
         mediaUrl = uploaded.mediaUrl;
         thumbnailUrl = uploaded.thumbnailUrl;
       }
@@ -586,11 +654,9 @@ export function useGroupChat(active: boolean) {
         return [...withoutTemp, rowToMessage(realRow)];
       });
       return true;
-    } catch {
+    } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      setSendError("Message didn't send. Check your connection and try again.");
-      if (sendErrorTimerRef.current) clearTimeout(sendErrorTimerRef.current);
-      sendErrorTimerRef.current = setTimeout(() => setSendError(null), 4000);
+      showSendError(describeChatFailure(err, "Message didn't send. Check your connection and try again."));
       return false;
     }
   };
@@ -606,9 +672,7 @@ export function useGroupChat(active: boolean) {
     const { error: deleteError } = await supabase.from('group_chat_messages').update({ deleted: true }).eq('id', id);
     if (deleteError && removed) {
       setMessages((prev) => (prev.some((m) => m.id === id) ? prev : [...prev, removed].sort((a, b) => a.createdAt - b.createdAt)));
-      setSendError("Couldn't delete that message. Check your connection and try again.");
-      if (sendErrorTimerRef.current) clearTimeout(sendErrorTimerRef.current);
-      sendErrorTimerRef.current = setTimeout(() => setSendError(null), 4000);
+      showSendError(describeChatFailure(deleteError, "Couldn't delete that message. Check your connection and try again."));
     }
   };
 

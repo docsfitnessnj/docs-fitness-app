@@ -39,6 +39,7 @@ import { FoundingFiftyProvider } from './src/context/FoundingFiftyContext';
 import { DocsInboxProvider } from './src/context/DocsInboxContext';
 import { ClassSignUpProvider } from './src/context/ClassSignUpContext';
 import { ContentLibraryProvider } from './src/context/ContentLibraryContext';
+import { GroupChatUnreadProvider } from './src/context/GroupChatUnreadContext';
 import { TourProvider, useTour } from './src/context/TourContext';
 import { AppTopBar } from './src/components/AppTopBar';
 import { SearchModal } from './src/components/SearchModal';
@@ -994,6 +995,7 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
                           <DocsInboxProvider>
                             <ClassSignUpProvider>
                               <ContentLibraryProvider>
+                                <GroupChatUnreadProvider>
                                 <TourProvider>
                                   <View style={styles.webSurround}>
                                     {/* Second, outer line of defense (FIX 2,
@@ -1027,6 +1029,7 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
                                     </ScreenErrorBoundary>
                                   </View>
                                 </TourProvider>
+                                </GroupChatUnreadProvider>
                               </ContentLibraryProvider>
                             </ClassSignUpProvider>
                           </DocsInboxProvider>

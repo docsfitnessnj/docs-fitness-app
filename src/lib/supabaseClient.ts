@@ -37,3 +37,36 @@ export function isBackendUnavailableError(error: unknown): boolean {
     message.includes('relation') && message.includes('does not exist')
   );
 }
+
+// Error-honesty pass (DOC'S GROUP CHAT, this round): a failed send/delete
+// used to always say "check your connection" regardless of WHY it actually
+// failed — a rejected upload (too large for the bucket's file_size_limit,
+// wrong mime type, any other Supabase Storage rejection) got exactly the
+// same blame-the-network copy as a real dropped connection, which is just
+// false: the file reached Supabase fine, Supabase said no. This picks
+// between three honest outcomes instead of one generic one: a genuine
+// network/backend-unavailable failure keeps the connection copy (it's
+// actually true there); a Supabase Storage rejection (`__isStorageError` —
+// set on every StorageError subclass @supabase/storage-js throws,
+// including the ones `.upload()` rejects with) says what Storage itself
+// reported, in something closer to plain words for the couple of shapes
+// worth naming specifically; anything else falls back to a flatly honest
+// "something went wrong," never blaming connectivity it has no evidence
+// points to.
+export function describeChatFailure(error: unknown, fallback: string): string {
+  if (isBackendUnavailableError(error)) {
+    return fallback;
+  }
+  const err = (error ?? {}) as { message?: string; __isStorageError?: boolean };
+  const message = err.message ?? '';
+  if (err.__isStorageError) {
+    if (/exceeded the maximum allowed size/i.test(message)) {
+      return "That file is too big to send.";
+    }
+    if (/mime type|not supported|invalid (file|mime)/i.test(message)) {
+      return "That file type isn't supported here.";
+    }
+    return message ? `Couldn't send that: ${message}` : "Couldn't send that — something went wrong with the upload.";
+  }
+  return message ? `Didn't go through: ${message}` : 'Something went wrong — try again.';
+}

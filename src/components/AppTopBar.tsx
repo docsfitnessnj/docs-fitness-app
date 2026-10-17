@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { DocsBadge } from './brand/DocsBadge';
+import { UnreadCountBadge } from './UnreadCountBadge';
+import { useGroupChatUnread } from '../context/GroupChatUnreadContext';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -16,6 +18,7 @@ type Props = {
 };
 
 export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupChat }: Props) {
+  const { unreadCount } = useGroupChatUnread();
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <View style={styles.bar}>
@@ -35,6 +38,7 @@ export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupCh
           {onOpenGroupChat && (
             <Pressable onPress={onOpenGroupChat} hitSlop={8} style={styles.iconButton} testID="open-group-chat">
               <Ionicons name="chatbubbles-outline" size={22} color={colors.text} />
+              <UnreadCountBadge count={unreadCount} style={styles.groupChatBadge} />
             </Pressable>
           )}
           <Pressable onPress={onOpenSearch} hitSlop={8} style={styles.iconButton} testID="open-search">
@@ -63,6 +67,11 @@ const styles = StyleSheet.create({
     padding: 4,
     width: 32,
     alignItems: 'center',
+  },
+  groupChatBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
   },
   titleWrap: {
     flex: 1,

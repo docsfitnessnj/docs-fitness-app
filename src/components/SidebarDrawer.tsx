@@ -6,9 +6,11 @@ import { DocsBadge } from './brand/DocsBadge';
 import { ExternalLinkPressable } from './ExternalLinkPressable';
 import { MembershipToggle } from './MembershipToggle';
 import { UnreadDot } from './UnreadDot';
+import { UnreadCountBadge } from './UnreadCountBadge';
 import { useChallenge } from '../context/ChallengeContext';
 import { useDeckProgress } from '../context/DeckProgressContext';
 import { useDocsInbox } from '../context/DocsInboxContext';
+import { useGroupChatUnread } from '../context/GroupChatUnreadContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { useTour } from '../context/TourContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
@@ -42,6 +44,10 @@ type Row = {
   icon: keyof typeof Ionicons.glyphMap;
   meta?: string;
   unread?: boolean;
+  // DOC'S GROUP CHAT's unread badge — a count, not just a dot (UnreadDot
+  // above is still what every other row's plain "something new" indicator
+  // uses). Undefined/0 renders nothing.
+  badgeCount?: number;
   // Present only on rows that leave the app for an outside site (MERCH
   // STORE) — MenuRow renders those through ExternalLinkPressable instead of
   // a plain Pressable. onPress still fires alongside it for the auxiliary
@@ -79,6 +85,7 @@ export function SidebarDrawer({
   const isAdmin = useCanModerate();
   const inbox = useDocsInbox();
   const docsInboxUnread = inbox.threads.some((t) => t.unread);
+  const { unreadCount: groupChatUnreadCount } = useGroupChatUnread();
   // Real admin only (not the dev-preview OR) — a regular member must never
   // even see the tier-preview toggle or the tour-reset dev control, let
   // alone flip them.
@@ -124,6 +131,7 @@ export function SidebarDrawer({
       key: 'group-chat',
       label: "DOC'S GROUP CHAT",
       icon: 'chatbubbles-outline',
+      badgeCount: groupChatUnreadCount,
       onPress: () => openNested(onOpenGroupChat),
     },
     // Admin's own messaging surface is DOC'S INBOX, not MESSAGE DOC
@@ -283,6 +291,7 @@ function MenuRow({ row }: { row: Row }) {
       </View>
       <Text style={styles.rowLabel}>{row.label}</Text>
       {row.unread ? <UnreadDot style={styles.rowUnreadDot} /> : null}
+      {row.badgeCount ? <UnreadCountBadge count={row.badgeCount} style={styles.rowUnreadBadge} /> : null}
       {row.meta ? <Text style={styles.rowMeta}>{row.meta}</Text> : null}
       <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
     </>
@@ -361,6 +370,9 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   rowUnreadDot: {
+    marginRight: 8,
+  },
+  rowUnreadBadge: {
     marginRight: 8,
   },
   footer: {
