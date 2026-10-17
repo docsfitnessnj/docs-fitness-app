@@ -9,6 +9,7 @@ import { ProfileBadgeCase } from '../components/ProfileBadgeCase';
 import { ProfilePhotoCropModal } from '../components/ProfilePhotoCropModal';
 import { HowTrain, useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
+import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -25,6 +26,9 @@ export function ProfileScreen({ visible, onClose }: Props) {
   const [draftName, setDraftName] = useState(name);
   const [draftHandle, setDraftHandle] = useState(instagramHandle);
   const [draftQuote, setDraftQuote] = useState(favoriteQuote);
+  const nameFocusRing = useFocusRing();
+  const handleFocusRing = useFocusRing();
+  const quoteFocusRing = useFocusRing();
   // null means "no selection yet" — shown for an account that signed up
   // before this field existed, or through a path that never set an answer
   // (see the Part 2 fix for the two About page doors that used to skip it).
@@ -148,9 +152,11 @@ export function ProfileScreen({ visible, onClose }: Props) {
 
           <Text nativeID="profile-name-label" style={styles.label}>NAME</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { borderColor: nameFocusRing.borderColor }]}
             value={draftName}
             onChangeText={setDraftName}
+            onFocus={nameFocusRing.onFocus}
+            onBlur={nameFocusRing.onBlur}
             placeholder={displayName}
             placeholderTextColor={colors.textMuted}
             autoComplete="name"
@@ -162,12 +168,14 @@ export function ProfileScreen({ visible, onClose }: Props) {
           />
 
           <Text nativeID="profile-handle-label" style={styles.label}>INSTAGRAM HANDLE</Text>
-          <View style={styles.handleRow}>
+          <View style={[styles.handleRow, { borderColor: handleFocusRing.borderColor }]}>
             <Text style={styles.handlePrefix}>@</Text>
             <TextInput
               style={styles.handleInput}
               value={draftHandle}
               onChangeText={(v) => setDraftHandle(v.replace(/^@+/, ''))}
+              onFocus={handleFocusRing.onFocus}
+              onBlur={handleFocusRing.onBlur}
               placeholder="yourhandle"
               placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
@@ -203,9 +211,11 @@ export function ProfileScreen({ visible, onClose }: Props) {
 
           <Text nativeID="profile-quote-label" style={styles.label}>FAVORITE QUOTE (OPTIONAL)</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { borderColor: quoteFocusRing.borderColor }]}
             value={draftQuote}
             onChangeText={setDraftQuote}
+            onFocus={quoteFocusRing.onFocus}
+            onBlur={quoteFocusRing.onBlur}
             placeholderTextColor={colors.textMuted}
             autoCapitalize="sentences"
             autoCorrect

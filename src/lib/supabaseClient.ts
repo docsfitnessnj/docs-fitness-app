@@ -70,3 +70,71 @@ export function describeChatFailure(error: unknown, fallback: string): string {
   }
   return message ? `Didn't go through: ${message}` : 'Something went wrong — try again.';
 }
+
+// @supabase/storage-js's own `.upload()` is built on `fetch()`, which has
+// no upload-progress API — confirmed by reading the installed package
+// (StorageFileApi.uploadOrUpdate, dist/index.cjs): it POSTs a FormData body
+// to `${storageUrl}/object/${bucket}/${path}` with `apikey` + a bearer
+// token @supabase/supabase-js injects per-request from the current session
+// (fetchWithAuth in its own dist/index.cjs), and that's it — no hook a
+// caller can observe bytes-sent through. This function sends the exact
+// same request — same URL shape, same multipart body (a `cacheControl`
+// field plus the file itself under the empty-string field name storage-js
+// uses), same headers — over a raw XMLHttpRequest instead, purely so
+// `xhr.upload.onprogress` can report real progress to the caller. Used by
+// useGroupChat.ts's uploadGroupChatFile for the one upload worth showing
+// progress on (a 20-30 second video); falls back to the plain
+// supabase.storage upload (and an indeterminate animation in the UI) if a
+// session token isn't available for any reason — see uploadGroupChatFile's
+// own catch branch, which never lets that fallback swallow a real upload
+// failure, only the inability to show real progress for one.
+export async function uploadFileWithProgress(
+  bucket: string,
+  path: string,
+  blob: Blob,
+  cacheControlSeconds: string,
+  onProgress: (fraction: number) => void
+): Promise<void> {
+  const { data } = await supabase.auth.getSession();
+  const accessToken = data.session?.access_token;
+  if (!accessToken) {
+    throw new Error('No session available for a progress-tracked upload');
+  }
+
+  const formData = new FormData();
+  formData.append('cacheControl', cacheControlSeconds);
+  formData.append('', blob);
+
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`);
+    xhr.setRequestHeader('apikey', SUPABASE_PUBLISHABLE_KEY);
+    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+    // Matches storage-js's own header for a plain (non-upsert) upload.
+    xhr.setRequestHeader('x-upsert', 'false');
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress(1);
+        resolve();
+        return;
+      }
+      let message = `Upload failed with status ${xhr.status}`;
+      try {
+        const body = JSON.parse(xhr.responseText) as { message?: string; error?: string };
+        message = body.message || body.error || message;
+      } catch {
+        // Non-JSON error body — keep the generic message.
+      }
+      const error = new Error(message) as Error & { __isStorageError: true; status: number; statusCode: string };
+      error.__isStorageError = true;
+      error.status = xhr.status;
+      error.statusCode = String(xhr.status);
+      reject(error);
+    };
+    xhr.onerror = () => reject(new Error('Network request failed'));
+    xhr.send(formData);
+  });
+}

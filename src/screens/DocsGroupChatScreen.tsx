@@ -1,5 +1,7 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
+  Easing,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -26,6 +28,7 @@ import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileCo
 import { GroupChatMessage, useGroupChat } from '../lib/useGroupChat';
 import { MediaAttachment } from '../lib/media';
 import { useIsDesktop } from '../lib/responsive';
+import { useFocusRing } from '../lib/useFocusRing';
 import { useKeyboardVisible } from '../lib/useKeyboardVisible';
 import { useMediaPicker } from '../lib/useMediaPicker';
 import { showAlert } from '../lib/alert';
@@ -176,6 +179,47 @@ function MediaReactionRow({
   );
 }
 
+// A thin gold bar along the bottom of a pending photo/video bubble, driven
+// by real upload progress from the storage upload (see uploadFileWithProgress
+// in supabaseClient.ts) — a 26-second video takes ~20-25s on real wifi, and
+// the bubble used to just sit there gray and silent the whole time, which
+// read as frozen rather than working. `progress` is a 0-1 fraction once
+// real progress is available, or the literal string 'indeterminate' when it
+// isn't (no session token yet, or any other reason the progress-tracked
+// upload path couldn't be used) — see useGroupChat.ts's uploadGroupChatFile,
+// which always prefers real progress and only ever falls back to this.
+function UploadProgressOverlay({ progress }: { progress: number | 'indeterminate' | undefined }) {
+  return (
+    <View style={styles.uploadOverlay} pointerEvents="none" testID="group-chat-upload-progress">
+      <Text style={styles.uploadLabel}>SENDING</Text>
+      {typeof progress === 'number' ? (
+        <View style={styles.uploadTrack}>
+          <View style={[styles.uploadFill, { width: `${Math.min(100, Math.max(4, Math.round(progress * 100)))}%` }]} />
+        </View>
+      ) : (
+        <IndeterminateUploadBar />
+      )}
+    </View>
+  );
+}
+
+function IndeterminateUploadBar() {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(anim, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim]);
+  const translateX = anim.interpolate({ inputRange: [0, 1], outputRange: ['-120%', '120%'] });
+  return (
+    <View style={styles.uploadTrack}>
+      <Animated.View style={[styles.uploadFill, styles.uploadFillIndeterminate, { transform: [{ translateX }] }]} />
+    </View>
+  );
+}
+
 // Memoized so a Realtime event touching ONE message (a new reaction, a new
 // message appended) only re-renders that message's own row, not all 50 —
 // see the perf note on the FlatList itself in DocsGroupChatScreen for why
@@ -262,9 +306,13 @@ const MessageRow = React.memo(function MessageRow({
                     <Image source={{ uri: message.thumbnailUrl }} style={styles.messageVideoThumb} />
                   )}
                   <Ionicons name="play-circle" size={40} color={colors.white} style={styles.messageVideoPlayIcon} />
+                  {message.pending && <UploadProgressOverlay progress={message.uploadProgress} />}
                 </View>
               ) : (
-                <Image source={{ uri: message.mediaUrl! }} style={styles.messagePhoto} />
+                <View style={styles.messagePhotoWrap}>
+                  <Image source={{ uri: message.mediaUrl! }} style={styles.messagePhoto} />
+                  {message.pending && <UploadProgressOverlay progress={message.uploadProgress} />}
+                </View>
               )}
             </Pressable>
             <MediaReactionRow message={message} onReact={onReact} />
@@ -365,21 +413,37 @@ function PinnedPromptEditor({
   );
 }
 
+// One line at rest, grows with content up to ~5 lines, then scrolls
+// internally — measured directly off the (unpadded) TextInput's own content
+// box, same pattern as DocThreadView's MESSAGE DOC DIRECTLY composer, which
+// already gets this right. Desktop uses its own larger line height.
+const MIN_INPUT_HEIGHT = 20;
+const MAX_INPUT_HEIGHT = 100; // 5 lines at 20px
+const MIN_INPUT_HEIGHT_DESKTOP = 23;
+const MAX_INPUT_HEIGHT_DESKTOP = 115; // 5 lines at 23px
+
 function Composer({
   muted,
   sendError,
   isDesktop,
   onSend,
+  onDismissSendError,
 }: {
   muted: boolean;
   sendError: string | null;
   isDesktop: boolean;
   onSend: (text: string, media: MediaAttachment | null) => Promise<boolean>;
+  onDismissSendError: () => void;
 }) {
   const [text, setText] = useState('');
   const [media, setMedia] = useState<MediaAttachment | null>(null);
   const [sending, setSending] = useState(false);
-  const { pick } = useMediaPicker(setMedia);
+  const [inputContentHeight, setInputContentHeight] = useState(MIN_INPUT_HEIGHT);
+  const focusRing = useFocusRing();
+  const { pick } = useMediaPicker((picked) => {
+    setMedia(picked);
+    onDismissSendError();
+  });
 
   if (muted) {
     return (
@@ -403,6 +467,7 @@ function Composer({
     const sentMedia = media;
     setText('');
     setMedia(null);
+    setInputContentHeight(MIN_INPUT_HEIGHT);
     setSending(true);
     await onSend(sentText, sentMedia);
     setSending(false);
@@ -423,9 +488,9 @@ function Composer({
   return (
     <View style={[styles.composerWrap, isDesktop && styles.composerWrapDesktop]}>
       {sendError && (
-        <Text style={styles.sendErrorText} testID="group-chat-send-error">
-          {sendError}
-        </Text>
+        <Pressable onPress={onDismissSendError} testID="group-chat-send-error">
+          <Text style={styles.sendErrorText}>{sendError}</Text>
+        </Pressable>
       )}
       {media && (
         <View style={styles.composerMediaPreview} testID="group-chat-photo-preview">
@@ -445,12 +510,37 @@ function Composer({
         <Pressable onPress={pick} hitSlop={8} style={styles.composerAttach} testID="group-chat-attach-photo">
           <Ionicons name="camera-outline" size={20} color={colors.green} />
         </Pressable>
-        <View style={[styles.composerInputPill, isDesktop && styles.composerInputPillDesktop]}>
+        <View
+          style={[
+            styles.composerInputPill,
+            isDesktop && styles.composerInputPillDesktop,
+            { borderColor: focusRing.borderColor },
+          ]}
+        >
           <TextInput
-            style={[styles.composerInput, isDesktop && styles.composerInputDesktop]}
+            style={[
+              styles.composerInput,
+              isDesktop && styles.composerInputDesktop,
+              {
+                height: Math.min(
+                  isDesktop ? MAX_INPUT_HEIGHT_DESKTOP : MAX_INPUT_HEIGHT,
+                  Math.max(isDesktop ? MIN_INPUT_HEIGHT_DESKTOP : MIN_INPUT_HEIGHT, inputContentHeight)
+                ),
+              },
+            ]}
             value={text}
-            onChangeText={setText}
+            onChangeText={(v) => {
+              setText(v);
+              onDismissSendError();
+            }}
             onKeyPress={handleKeyPress as any}
+            onContentSizeChange={(e) => setInputContentHeight(e.nativeEvent.contentSize.height)}
+            onFocus={focusRing.onFocus}
+            onBlur={focusRing.onBlur}
+            // Without this, the browser's own default of rows="2" inflates
+            // the very first onContentSizeChange reading before any text is
+            // typed, so the pill would start a line taller than it should.
+            {...({ rows: 1 } as { rows?: number })}
             placeholder="Say something"
             placeholderTextColor={colors.textMuted}
             multiline
@@ -673,6 +763,7 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
             sendError={chat.sendError}
             isDesktop={isDesktop}
             onSend={chat.sendMessage}
+            onDismissSendError={chat.clearSendError}
           />
         </View>
       </View>
@@ -816,12 +907,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
   },
-  messagePhoto: {
+  // Wraps the photo so the pending-upload overlay (a sibling, not nested
+  // inside the Image) has a positioned, correctly-rounded box to anchor
+  // and clip against — the video bubble already gets this for free from
+  // its own overflow:hidden container below.
+  messagePhotoWrap: {
     width: 180,
     aspectRatio: 1,
     borderRadius: 10,
     marginTop: 6,
+    overflow: 'hidden',
     backgroundColor: colors.card,
+  },
+  messagePhoto: {
+    width: '100%',
+    height: '100%',
   },
   messageVideo: {
     width: 180,
@@ -839,6 +939,46 @@ const styles = StyleSheet.create({
   messageVideoPlayIcon: {
     // Sits on top of the thumbnail image (or the plain green placeholder,
     // if there isn't one) — same position either way.
+  },
+  // PART 4 — visible upload progress on a pending photo/video bubble,
+  // replacing the old silent gray dimming (messageRowPending's opacity
+  // still applies to the row as a whole, but this scrim+bar reads clearly
+  // as "actively sending" rather than frozen even dimmed). Anchored to the
+  // bottom edge of the 180x180 media box; the parent's overflow:hidden
+  // clips it to the same rounded corners.
+  uploadOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 8,
+    paddingTop: 16,
+    paddingBottom: 6,
+    backgroundColor: 'rgba(5,76,61,0.55)',
+  },
+  uploadLabel: {
+    color: colors.white,
+    fontFamily: fonts.labelBold,
+    fontSize: 9,
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  uploadTrack: {
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    overflow: 'hidden',
+  },
+  uploadFill: {
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.gold,
+  },
+  // The indeterminate fallback: a fixed-width gold segment that sweeps
+  // back and forth across the track (see IndeterminateUploadBar) instead
+  // of filling left-to-right, since there's no real fraction to report.
+  uploadFillIndeterminate: {
+    width: '40%',
   },
   reactionRow: {
     flexDirection: 'row',
@@ -1027,6 +1167,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // One rounded container only — no nested visible box inside it. The
+  // TextInput's own height is computed exactly from its content (see the
+  // Composer function), so this pill always wraps tightly around it via
+  // its own padding instead of carrying a separate maxHeight that could
+  // clip a grown TextInput.
   composerInputPill: {
     flex: 1,
     backgroundColor: colors.card,
@@ -1035,7 +1180,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    maxHeight: 100,
   },
   // FIX 5: a noticeably larger, roomier composer on desktop — more
   // vertical room to actually use the multi-line input comfortably with a
@@ -1043,7 +1187,6 @@ const styles = StyleSheet.create({
   composerInputPillDesktop: {
     paddingHorizontal: 20,
     paddingVertical: 16,
-    maxHeight: 160,
   },
   composerInput: {
     color: colors.text,

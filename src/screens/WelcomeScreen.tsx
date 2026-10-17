@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
 import { PasswordInput } from '../components/PasswordInput';
+import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
 
 // A non-null result means "show this message" — `kind` picks the styling.
@@ -34,6 +35,7 @@ type Props = {
 
 export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Props) {
   const [email, setEmail] = useState('');
+  const emailFocusRing = useFocusRing();
   const [password, setPassword] = useState('');
   const [newsletterOptIn, setNewsletterOptIn] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -83,9 +85,11 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
         <View style={styles.form}>
           <Text nativeID="welcome-email-label" style={styles.label}>EMAIL ADDRESS</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { borderColor: emailFocusRing.borderColor }]}
             value={email}
             onChangeText={setEmail}
+            onFocus={emailFocusRing.onFocus}
+            onBlur={emailFocusRing.onBlur}
             placeholder="you@example.com"
             placeholderTextColor={colors.textMuted}
             autoCapitalize="none"

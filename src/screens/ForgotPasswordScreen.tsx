@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -14,6 +15,7 @@ export default function ForgotPasswordScreen({ onBack, onSendReset }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const emailFocusRing = useFocusRing();
 
   const canSubmit = email.trim().length > 3 && email.includes('@') && !submitting;
 
@@ -49,9 +51,11 @@ export default function ForgotPasswordScreen({ onBack, onSendReset }: Props) {
                 EMAIL ADDRESS
               </Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { borderColor: emailFocusRing.borderColor }]}
                 value={email}
                 onChangeText={setEmail}
+                onFocus={emailFocusRing.onFocus}
+                onBlur={emailFocusRing.onBlur}
                 placeholder="you@example.com"
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="none"

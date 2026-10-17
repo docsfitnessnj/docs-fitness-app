@@ -15,6 +15,7 @@ import { MediaViewer } from './MediaViewer';
 import { DocMessage, SendMessageInput, VoiceNote } from '../context/DocsInboxContext';
 import { MediaAttachment } from '../lib/media';
 import { useMediaPicker } from '../lib/useMediaPicker';
+import { useFocusRing } from '../lib/useFocusRing';
 import { useKeyboardVisible } from '../lib/useKeyboardVisible';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
@@ -99,6 +100,7 @@ type Props = {
 export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyStateText }: Props) {
   const [draft, setDraft] = useState('');
   const [draftHeight, setDraftHeight] = useState(MIN_INPUT_HEIGHT);
+  const draftFocusRing = useFocusRing();
   const [media, setMedia] = useState<MediaAttachment | null>(null);
   const [photoPromptVisible, setPhotoPromptVisible] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -308,11 +310,13 @@ export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyS
             <Pressable onPress={pick} hitSlop={8} style={styles.attachButton} testID="attach-media-button">
               <Ionicons name="camera-outline" size={20} color={colors.text} />
             </Pressable>
-            <View style={styles.inputPill}>
+            <View style={[styles.inputPill, { borderColor: draftFocusRing.borderColor }]}>
               <TextInput
                 style={[styles.input, { height: Math.min(MAX_INPUT_HEIGHT, Math.max(MIN_INPUT_HEIGHT, draftHeight)) }]}
                 value={draft}
                 onChangeText={setDraft}
+                onFocus={draftFocusRing.onFocus}
+                onBlur={draftFocusRing.onBlur}
                 placeholder="Type a message..."
                 placeholderTextColor={colors.textMuted}
                 multiline
