@@ -37,10 +37,21 @@ type Props = {
   onClose: () => void;
 };
 
+// Round 115 dropped this screen's paddingTop from a flat 60 to just
+// `insets.top`, chasing "dead space above the header" — but overshot:
+// with no safe-area inset at all (every desktop browser, and some phones),
+// that left literally zero gap, so BACK/title/ellipsis sat flush against
+// the very top edge. This is the comfortable middle: real breathing room
+// on top of whatever the safe area already accounts for, well short of
+// the old screen's worth of dead space, never flush with the edge on any
+// device — phone or desktop alike, since insets.top is 0 on desktop and
+// this still applies on top of that.
+const HEADER_TOP_BREATHING_ROOM = 14;
+
 function LockedView({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top + HEADER_TOP_BREATHING_ROOM }]}>
       <ModalHeader title="DOC'S GROUP CHAT" onBack={onClose} backTestID="close-group-chat" />
       <View style={styles.lockedBody}>
         <DocsBadge variant="white" size={96} />
@@ -588,7 +599,7 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { paddingTop: insets.top }]}
+      style={[styles.container, { paddingTop: insets.top + HEADER_TOP_BREATHING_ROOM }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ModalHeader
@@ -676,9 +687,11 @@ const styles = StyleSheet.create({
   // true full-bleed takeover (see its own comment above), so unlike every
   // other modal screen's flat `paddingTop: 60` (tuned for a screen that
   // still has a hidden tab bar's worth of chrome to account for), this one
-  // instead uses the device's REAL safe-area top inset — applied inline
-  // below, wherever this style is used — so it uses its full height and
-  // never eats more top space than the notch/status bar actually needs.
+  // instead uses the device's REAL safe-area top inset plus
+  // HEADER_TOP_BREATHING_ROOM — applied inline below, wherever this style
+  // is used — so it uses its full height without either eating a flat
+  // screen's worth of unneeded top space OR sitting flush against the
+  // very top edge with nothing at all.
   container: {
     flex: 1,
     backgroundColor: colors.background,
