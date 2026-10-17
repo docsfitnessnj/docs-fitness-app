@@ -858,8 +858,20 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
         // browser's own page scroll can't bail it out either. A ScrollView
         // scoped to just this column fixes that regardless of window
         // height, independent of whatever the main column is doing.
+        //
+        // react-native-web's ScrollView bakes `flexGrow: 1, flexShrink: 1`
+        // into its OWN base style (ScrollView/index.js's `commonStyle`),
+        // applied before `style` is merged in — a regression this round's
+        // ScrollView swap introduced without noticing: as a sibling of
+        // mainColumn (also flexGrow via `flex: 1`) inside layoutRow's row
+        // layout, the sidebar started competing for and winning a share of
+        // the SAME leftover space, growing well past its intended rail
+        // width at wide viewports instead of just sizing to `sidebarWidth`
+        // and stopping. flexGrow/flexShrink: 0 here is what actually pins
+        // it back to a fixed-width rail — `width` alone was never enough
+        // once ScrollView's own flexGrow:1 was in the mix.
         <ScrollView
-          style={[styles.sidebarColumn, { width: sidebarWidth }]}
+          style={[styles.sidebarColumn, { width: sidebarWidth, flexGrow: 0, flexShrink: 0 }]}
           contentContainerStyle={styles.sidebarColumnContent}
           showsVerticalScrollIndicator={false}
         >
