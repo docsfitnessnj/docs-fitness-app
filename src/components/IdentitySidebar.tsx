@@ -4,8 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { DocsBadge } from './brand/DocsBadge';
 import { ExternalLinkPressable } from './ExternalLinkPressable';
 import { BadgeIcon } from './icons/BadgeIcon';
+import { UnreadCountBadge } from './UnreadCountBadge';
 import { useBadges } from '../context/BadgeContext';
 import { useChallengeLeaderboard, useCurrentChallenge } from '../context/ChallengeContext';
+import { useGroupChatUnread } from '../context/GroupChatUnreadContext';
 import { useMembership } from '../context/MembershipContext';
 import { BADGE_MAP, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import { formatDateKey, isSameDay } from '../data/content';
@@ -177,6 +179,7 @@ function FooterModule({
   onOpenMessages: () => void;
   onOpenGroupChat: () => void;
 }) {
+  const { unreadCount } = useGroupChatUnread();
   return (
     <View style={styles.footerCard}>
       <View style={styles.brandMark}>
@@ -195,6 +198,7 @@ function FooterModule({
       <Pressable style={styles.linkRow} onPress={onOpenGroupChat} testID="sidebar-desktop-group-chat">
         <Ionicons name="chatbubbles-outline" size={16} color={colors.green} />
         <Text style={styles.linkText}>Doc's Group Chat</Text>
+        {unreadCount > 0 && <UnreadCountBadge count={unreadCount} style={styles.linkRowBadge} />}
       </Pressable>
       <Pressable style={styles.linkRow} onPress={onOpenMessages}>
         <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.green} />
@@ -429,6 +433,9 @@ const styles = StyleSheet.create({
     gap: 10,
     alignSelf: 'stretch',
     paddingVertical: 8,
+  },
+  linkRowBadge: {
+    marginLeft: 'auto',
   },
   linkText: {
     color: colors.text,

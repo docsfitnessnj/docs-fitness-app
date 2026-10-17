@@ -1201,9 +1201,12 @@ values (1, null)
 on conflict (id) do nothing;
 
 -- STORAGE: group-chat-media bucket — same public-read / owner-write shape
--- as avatars and message-media.
-insert into storage.buckets (id, name, public)
-values ('group-chat-media', 'group-chat-media', true)
+-- as avatars and message-media. file_size_limit (migration_016.sql) caps a
+-- single upload at Supabase's current plan maximum (50MB) explicitly,
+-- instead of relying solely on the platform's own enforcement — keep in
+-- sync with MAX_GROUP_CHAT_UPLOAD_BYTES in src/lib/useGroupChat.ts.
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('group-chat-media', 'group-chat-media', true, 52428800)
 on conflict (id) do nothing;
 
 drop policy if exists "group chat photos are publicly viewable" on storage.objects;
@@ -1231,6 +1234,40 @@ create policy "the uploader or admin can delete a group chat photo"
     bucket_id = 'group-chat-media'
     and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin(auth.uid()))
   );
+
+-- Unread badge (migration_016.sql): one row per member holding only when
+-- they last read the chat — the unread COUNT itself is never stored
+-- anywhere, it's computed client-side each time as "messages newer than my
+-- last_read_at, not mine, not deleted" (see GroupChatUnreadContext.tsx).
+-- Written both when a member opens the chat and again on every new message
+-- that arrives while they're actively viewing it, so last_read_at never
+-- falls behind what they've actually seen even if the tab closes abruptly.
+-- A member with no row yet is treated as having read nothing.
+create table if not exists public.group_chat_reads (
+  member_id uuid primary key references public.profiles (id) on delete cascade,
+  last_read_at timestamptz not null default now()
+);
+
+alter table public.group_chat_reads enable row level security;
+
+drop policy if exists "members read only their own read position" on public.group_chat_reads;
+create policy "members read only their own read position"
+  on public.group_chat_reads for select
+  to authenticated
+  using (member_id = auth.uid());
+
+drop policy if exists "members insert only their own read position" on public.group_chat_reads;
+create policy "members insert only their own read position"
+  on public.group_chat_reads for insert
+  to authenticated
+  with check (member_id = auth.uid() and public.has_group_chat_access(auth.uid()));
+
+drop policy if exists "members update only their own read position" on public.group_chat_reads;
+create policy "members update only their own read position"
+  on public.group_chat_reads for update
+  to authenticated
+  using (member_id = auth.uid())
+  with check (member_id = auth.uid());
 
 -- REALTIME — turn on live postgres_changes delivery for new/deleted
 -- messages, reaction counts, and (scoped to just the signed-in member's own
