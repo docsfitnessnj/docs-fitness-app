@@ -30,7 +30,6 @@ import { useKeyboardVisible } from '../lib/useKeyboardVisible';
 import { useMediaPicker } from '../lib/useMediaPicker';
 import { showAlert } from '../lib/alert';
 import { openMemberships } from '../lib/membershipsModal';
-import { typingLabel } from '../lib/typingLabel';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -39,8 +38,9 @@ type Props = {
 };
 
 function LockedView({ onClose }: { onClose: () => void }) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <ModalHeader title="DOC'S GROUP CHAT" onBack={onClose} backTestID="close-group-chat" />
       <View style={styles.lockedBody}>
         <DocsBadge variant="white" size={96} />
@@ -299,6 +299,23 @@ function PinnedPromptCard({ prompt }: { prompt: string }) {
   );
 }
 
+// FIX 4 (round 115): a quiet, one-time orientation for an empty thread with
+// no admin pinned prompt set — deliberately lighter-weight than
+// PinnedPromptCard (no gold border/eyebrow) so it never competes with a
+// real pinned prompt for attention; it only ever renders in the ONE
+// condition a pinned prompt can't already cover that role (see
+// DocsGroupChatScreen's own render below — pinned prompt set always wins,
+// whether or not the thread has messages yet). Disappears for good the
+// moment either becomes true: a pinned prompt gets set, or anyone sends
+// the first message.
+function WelcomeCard() {
+  return (
+    <View style={styles.welcomeCard} testID="group-chat-welcome-card">
+      <Text style={styles.welcomeText}>Welcome to Doc's Group Chat. The whole crew is in here. Say something.</Text>
+    </View>
+  );
+}
+
 function PinnedPromptEditor({
   initialValue,
   onSave,
@@ -339,20 +356,14 @@ function PinnedPromptEditor({
 
 function Composer({
   muted,
-  typingNames,
   sendError,
   isDesktop,
   onSend,
-  onTyping,
-  onStoppedTyping,
 }: {
   muted: boolean;
-  typingNames: string[];
   sendError: string | null;
   isDesktop: boolean;
   onSend: (text: string, media: MediaAttachment | null) => Promise<boolean>;
-  onTyping: () => void;
-  onStoppedTyping: () => void;
 }) {
   const [text, setText] = useState('');
   const [media, setMedia] = useState<MediaAttachment | null>(null);
@@ -369,15 +380,8 @@ function Composer({
 
   const canSend = (text.trim().length > 0 || !!media) && !sending;
 
-  const handleChangeText = (value: string) => {
-    setText(value);
-    if (value.trim().length > 0) onTyping();
-    else onStoppedTyping();
-  };
-
   const handleSend = async () => {
     if (!canSend) return;
-    onStoppedTyping();
     // Optimistic (FIX 2): clear immediately rather than waiting on the
     // send to resolve — the message already appears in the list via
     // useGroupChat's own optimistic update the instant onSend is called.
@@ -405,22 +409,8 @@ function Composer({
     }
   };
 
-  const typing = typingLabel(typingNames);
-  if (typing) {
-    // eslint-disable-next-line no-console
-    console.log('[typing] rendering typing line', { typingNames, label: typing });
-  } else if (typingNames.length > 0) {
-    // eslint-disable-next-line no-console
-    console.log('[typing] typingNames non-empty but typingLabel() produced nothing -- suppressed', { typingNames });
-  }
-
   return (
     <View style={[styles.composerWrap, isDesktop && styles.composerWrapDesktop]}>
-      {typing && (
-        <Text style={styles.typingText} testID="group-chat-typing-indicator">
-          {typing}
-        </Text>
-      )}
       {sendError && (
         <Text style={styles.sendErrorText} testID="group-chat-send-error">
           {sendError}
@@ -448,7 +438,7 @@ function Composer({
           <TextInput
             style={[styles.composerInput, isDesktop && styles.composerInputDesktop]}
             value={text}
-            onChangeText={handleChangeText}
+            onChangeText={setText}
             onKeyPress={handleKeyPress as any}
             placeholder="Say something"
             placeholderTextColor={colors.textMuted}
@@ -506,8 +496,9 @@ function Composer({
 // member's own mute flag. Reactions use the same 4-emoji set as the
 // Community feed (shaka, fire, flex, heart) — tap or long-press a message to
 // open the picker, tap an existing pill to toggle your own reaction off.
-// Typing indicators ride the same presence channel as "X IN THE CHAT" — no
-// database writes. Access (open and post vs. the locked view) reads
+// "X IN THE CHAT" rides a presence channel — no database writes. (A typing
+// indicator used to ride the same channel; cut from scope, see git history.)
+// Access (open and post vs. the locked view) reads
 // MembershipContext's already-hardened `fullContentAccess` — settled state
 // only, never a loading/refetching default (see PRs 106-109) — never just
 // hidden in the UI; the same rule is enforced again, independently, by RLS
@@ -596,7 +587,10 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={[styles.container, { paddingTop: insets.top }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ModalHeader
         title="DOC'S GROUP CHAT"
         onBack={onClose}
@@ -647,13 +641,12 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
               isLoadingOlderRef.current = false;
             }}
             ListHeaderComponent={chat.loadingOlder ? <Text style={styles.loadingOlderText}>Loading earlier messages…</Text> : null}
-            ListEmptyComponent={
-              !chat.loading ? (
-                <Text style={styles.emptyState} testID="group-chat-empty-state">
-                  Nobody's said anything yet. Be the first.
-                </Text>
-              ) : null
-            }
+            // FIX 4: the welcome card only ever shows up in the one gap a
+            // pinned prompt doesn't already fill — empty thread, nothing
+            // pinned. A pinned prompt set (chat.pinnedPrompt, rendered
+            // above the list regardless of message count) always takes
+            // precedence and this renders nothing extra underneath it.
+            ListEmptyComponent={!chat.loading ? (chat.pinnedPrompt ? null : <WelcomeCard />) : null}
           />
         )}
 
@@ -666,12 +659,9 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
         <View style={{ paddingBottom: keyboardVisible ? 0 : insets.bottom }}>
           <Composer
             muted={chat.muted}
-            typingNames={chat.typingNames}
             sendError={chat.sendError}
             isDesktop={isDesktop}
             onSend={chat.sendMessage}
-            onTyping={chat.notifyTyping}
-            onStoppedTyping={chat.notifyStopped}
           />
         </View>
       </View>
@@ -682,10 +672,16 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // No paddingTop here — DOC'S GROUP CHAT is the one screen that's always a
+  // true full-bleed takeover (see its own comment above), so unlike every
+  // other modal screen's flat `paddingTop: 60` (tuned for a screen that
+  // still has a hidden tab bar's worth of chrome to account for), this one
+  // instead uses the device's REAL safe-area top inset — applied inline
+  // below, wherever this style is used — so it uses its full height and
+  // never eats more top space than the notch/status bar actually needs.
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingTop: 60,
   },
   contentColumn: {
     flex: 1,
@@ -742,12 +738,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 10,
   },
-  emptyState: {
+  welcomeCard: {
+    marginTop: 40,
+    marginHorizontal: 24,
+    alignItems: 'center',
+  },
+  welcomeText: {
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 14,
+    lineHeight: 20,
     textAlign: 'center',
-    marginTop: 40,
   },
   dateDivider: {
     flexDirection: 'row',
@@ -967,13 +968,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 8,
-  },
-  typingText: {
-    color: colors.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 12,
-    fontStyle: 'italic',
-    marginBottom: 8,
   },
   sendErrorText: {
     color: colors.scoreboardRed,

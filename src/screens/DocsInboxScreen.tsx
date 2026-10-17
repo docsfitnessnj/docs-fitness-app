@@ -5,7 +5,6 @@ import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { Avatar } from '../components/Avatar';
 import { UnreadDot } from '../components/UnreadDot';
 import { DocThreadView } from '../components/DocThreadView';
-import { useAuth } from '../context/AuthContext';
 import { DocMessage, useDocsInbox } from '../context/DocsInboxContext';
 import { colors, fonts } from '../theme';
 
@@ -40,7 +39,6 @@ function previewOf(message: DocMessage): string {
 // of them instead of just one.
 export function DocsInboxScreen({ visible, onClose }: Props) {
   const inbox = useDocsInbox();
-  const { user } = useAuth();
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -81,9 +79,6 @@ export function DocsInboxScreen({ visible, onClose }: Props) {
           onSend={(input) => inbox.sendReply(selectedMemberId, input)}
           onUnsend={inbox.unsendMessage}
           emptyStateText="No messages in this thread yet."
-          threadId={selectedMemberId}
-          selfId={user?.id ?? ''}
-          selfLabel="Doc"
         />
       </View>
     );
