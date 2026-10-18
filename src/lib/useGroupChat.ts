@@ -5,7 +5,7 @@ import { useGroupChatUnread } from '../context/GroupChatUnreadContext';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { deferRemoveChannel, fastRemoveChannel, getOrCreateChannel } from './deferredRealtimeChannel';
 import { downscaleImageForUpload } from './downscaleImage';
-import { MediaAttachment } from './media';
+import { ViewableMedia } from './media';
 import { describeChatFailure, isBackendUnavailableError, supabase, uploadFileWithProgress } from './supabaseClient';
 import { captureVideoThumbnail } from './videoThumbnail';
 
@@ -35,7 +35,7 @@ export type GroupChatMessage = {
   senderAvatarUrl: string | null;
   text: string;
   mediaUrl: string | null;
-  mediaType: 'image' | 'video' | null;
+  mediaType: 'image' | 'video' | 'gif' | null;
   // A lightweight poster frame for a video message — the list renders
   // ONLY this (or, for a photo, the photo itself) and never the video file
   // until the viewer actually taps to play it. Null for a photo message
@@ -114,7 +114,7 @@ type MessageRow = {
   sender_id: string;
   body: string;
   media_url: string | null;
-  media_type: 'image' | 'video' | null;
+  media_type: 'image' | 'video' | 'gif' | null;
   thumbnail_url: string | null;
   created_at: string;
   deleted: boolean;
@@ -628,7 +628,7 @@ export function useGroupChat(active: boolean) {
   // below just drops the now-redundant temp-to-real swap instead of
   // inserting a second copy. On failure, the temp message is removed and
   // a quiet, auto-clearing note is shown — no blocking alert.
-  const sendMessage = async (text: string, media: MediaAttachment | null): Promise<boolean> => {
+  const sendMessage = async (text: string, media: ViewableMedia | null): Promise<boolean> => {
     if (!user) return false;
     const trimmed = text.trim();
     if (!trimmed && !media) return false;
@@ -642,7 +642,13 @@ export function useGroupChat(active: boolean) {
     // URI never touches the network — this is instant, not a real upload
     // attempt.
     let mediaBlob: Blob | null = null;
-    if (media) {
+    // A GIF's "attachment" is already GIPHY's own CDN URL (see GifPicker /
+    // giphy.ts) — nothing to fetch, downscale, size-check, or upload.
+    // GIPHY's terms prohibit rehosting their media, so this is the one
+    // media kind that skips the upload path entirely and sends straight
+    // through to the insert below with its remote URL as-is.
+    const directMediaUrl = media?.type === 'gif' ? media.uri : null;
+    if (media && media.type !== 'gif') {
       const fetchedBlob = await fetch(media.uri).then((r) => r.blob());
       // Speed pass: a photo is downscaled (~1600px longest edge, JPEG
       // ~0.8 quality) before the size check and before any upload begins
@@ -682,9 +688,9 @@ export function useGroupChat(active: boolean) {
     ]);
 
     try {
-      let mediaUrl: string | null = null;
+      let mediaUrl: string | null = directMediaUrl;
       let thumbnailUrl: string | null = null;
-      if (media && mediaBlob) {
+      if (media && mediaBlob && (media.type === 'image' || media.type === 'video')) {
         const uploaded = await uploadGroupChatMedia(user.id, mediaBlob, media.uri, media.type, (progress) => {
           setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, uploadProgress: progress } : m)));
         });

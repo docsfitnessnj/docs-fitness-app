@@ -4,6 +4,7 @@ import { AppPressable } from './AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { Avatar } from './Avatar';
+import { GifPicker } from './GifPicker';
 import { MediaViewer } from './MediaViewer';
 import { ModalHeader } from './ModalHeader';
 import { PostAuthorBadges } from './PostAuthorBadges';
@@ -45,6 +46,8 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
   const [editingComment, setEditingComment] = useState<Comment | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [commentContentHeight, setCommentContentHeight] = useState(MIN_COMMENT_HEIGHT);
+  const [commentGifUrl, setCommentGifUrl] = useState<string | null>(null);
+  const [gifPickerOpen, setGifPickerOpen] = useState(false);
   const commentFocusRing = useFocusRing();
 
   if (!post) return null;
@@ -59,14 +62,15 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
 
   const submitComment = () => {
     if (!canInteract) return interactionBlockedNudge();
-    if (!commentText.trim()) return;
+    if (!commentText.trim() && !commentGifUrl) return;
     if (editingComment) {
       updateComment(post.id, editingComment.id, commentText.trim());
       cancelEdit();
       return;
     }
-    addComment(post.id, displayName, commentText.trim());
+    addComment(post.id, displayName, commentText.trim(), commentGifUrl ?? undefined);
     setCommentText('');
+    setCommentGifUrl(null);
     setCommentContentHeight(MIN_COMMENT_HEIGHT);
   };
 
@@ -195,7 +199,15 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
                         </AppPressable>
                       )}
                     </View>
-                    <Text style={styles.commentText}>{comment.text}</Text>
+                    {!!comment.text && <Text style={styles.commentText}>{comment.text}</Text>}
+                    {!!comment.mediaUrl && (
+                      <Image
+                        source={{ uri: comment.mediaUrl }}
+                        style={styles.commentGifImage}
+                        resizeMode="cover"
+                        testID={`comment-gif-${comment.id}`}
+                      />
+                    )}
                     <View style={styles.commentMetaRow}>
                       <Text style={styles.commentMeta}>{comment.timeLabel}</Text>
                       <Ionicons name="heart-outline" size={12} color={colors.textMuted} />
@@ -217,7 +229,38 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
             </AppPressable>
           </View>
         )}
+        {commentGifUrl && (
+          <View style={styles.commentGifPreview} testID="post-detail-gif-preview">
+            <Image source={{ uri: commentGifUrl }} style={styles.commentGifPreviewImage} />
+            <AppPressable
+              style={styles.commentGifPreviewRemove}
+              onPress={() => setCommentGifUrl(null)}
+              testID="post-detail-remove-gif"
+            >
+              <Ionicons name="close" size={12} color={colors.white} />
+            </AppPressable>
+          </View>
+        )}
+        {gifPickerOpen && (
+          <View style={styles.gifPickerWrap}>
+            <GifPicker
+              onClose={() => setGifPickerOpen(false)}
+              onSelect={(gif) => {
+                setCommentGifUrl(gif.sendUrl);
+                setGifPickerOpen(false);
+              }}
+            />
+          </View>
+        )}
         <View style={styles.commentInputRow}>
+          <AppPressable
+            onPress={() => (canInteract ? setGifPickerOpen((v) => !v) : interactionBlockedNudge())}
+            hitSlop={8}
+            style={styles.commentGifButton}
+            testID="post-detail-attach-gif"
+          >
+            <Text style={styles.gifButtonText}>GIF</Text>
+          </AppPressable>
           <View style={[styles.commentInputPill, { borderColor: commentFocusRing.borderColor }]}>
             <TextInput
               style={[
@@ -478,6 +521,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 1,
   },
+  commentGifImage: {
+    width: 160,
+    aspectRatio: 1,
+    borderRadius: 10,
+    marginTop: 6,
+    backgroundColor: colors.background,
+  },
   commentMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -525,6 +575,47 @@ const styles = StyleSheet.create({
     borderTopColor: colors.hairline,
     paddingHorizontal: 20,
     paddingVertical: 12,
+  },
+  commentGifButton: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // No Ionicon reads unambiguously as "GIF" at this size — the app's own
+  // condensed caps label instead, same pattern as the group chat composer.
+  gifButtonText: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.4,
+  },
+  gifPickerWrap: {
+    paddingHorizontal: 20,
+    backgroundColor: colors.card,
+  },
+  commentGifPreview: {
+    position: 'relative',
+    alignSelf: 'flex-start',
+    marginHorizontal: 20,
+    marginTop: 8,
+  },
+  commentGifPreviewImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
+    backgroundColor: colors.background,
+  },
+  commentGifPreviewRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(18,33,28,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // One rounded container only, modeled on the Skool composer — no nested
   // visible box inside it. The TextInput's own height is computed exactly

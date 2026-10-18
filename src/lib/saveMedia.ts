@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import * as Sharing from 'expo-sharing';
 import { showAlert } from './alert';
-import { MediaAttachment } from './media';
+import { ViewableMedia } from './media';
 
 // Keyed by URI. Holds the in-flight/resolved fetch for a piece of media
 // currently open in MediaViewer, so a prefetch (started the instant the
@@ -34,8 +34,10 @@ function fetchBlobCached(uri: string): Promise<Blob> {
   return pending;
 }
 
-export function guessMimeType(media: MediaAttachment): string {
-  return media.type === 'video' ? 'video/mp4' : 'image/jpeg';
+export function guessMimeType(media: ViewableMedia): string {
+  if (media.type === 'video') return 'video/mp4';
+  if (media.type === 'gif') return 'image/gif';
+  return 'image/jpeg';
 }
 
 // Whether this browser can share a FILE of roughly this kind through the
@@ -72,7 +74,7 @@ export function canShareFilesOfType(mimeType: string): boolean {
 // request total, and resolves with real bytes already in hand well before
 // anyone decides to tap Save (see useSaveButton in MediaViewer.tsx, which
 // only ever lets a tap call shareMediaFile once this has resolved).
-export function prefetchMediaForSave(media: MediaAttachment): Promise<Blob> {
+export function prefetchMediaForSave(media: ViewableMedia): Promise<Blob> {
   return fetchBlobCached(media.uri);
 }
 
@@ -80,16 +82,16 @@ export function prefetchMediaForSave(media: MediaAttachment): Promise<Blob> {
 // trusting media.type's coarse image/video guess — covers a .mov or .webm
 // sent from somewhere other than this app's own camera/picker without the
 // download lying about what the file actually is.
-function extensionFor(mimeType: string, fallbackKind: 'image' | 'video'): string {
+function extensionFor(mimeType: string, fallbackKind: 'image' | 'video' | 'gif'): string {
   const subtype = mimeType.split('/')[1]?.split(';')[0]?.trim().toLowerCase();
   if (subtype === 'jpeg') return 'jpg';
   if (subtype === 'quicktime') return 'mov';
   if (subtype) return subtype;
-  return fallbackKind === 'video' ? 'mp4' : 'jpg';
+  return fallbackKind === 'video' ? 'mp4' : fallbackKind === 'gif' ? 'gif' : 'jpg';
 }
 
-function buildFilename(media: MediaAttachment, filenameHint: string, mimeType: string): string {
-  const kindWord = media.type === 'video' ? 'video' : 'photo';
+function buildFilename(media: ViewableMedia, filenameHint: string, mimeType: string): string {
+  const kindWord = media.type === 'video' ? 'video' : media.type === 'gif' ? 'gif' : 'photo';
   return `${filenameHint}-${kindWord}.${extensionFor(mimeType, media.type)}`;
 }
 
@@ -108,7 +110,7 @@ function buildFilename(media: MediaAttachment, filenameHint: string, mimeType: s
 // share sheet instead of downloading anything, and failed outright for
 // every video there regardless of age, with no reliable alternative ever
 // surfacing.
-export function downloadMediaDirectly(media: MediaAttachment, filenameHint: string) {
+export function downloadMediaDirectly(media: ViewableMedia, filenameHint: string) {
   const mimeType = guessMimeType(media);
   const filename = buildFilename(media, filenameHint, mimeType);
   const separator = media.uri.includes('?') ? '&' : '?';
@@ -131,7 +133,7 @@ export type ShareResult = 'shared' | 'canceled' | 'failed';
 // no await before navigator.share() itself — which is what keeps the
 // whole thing inside Safari's "this came from a real, recent tap" grace
 // period no matter how large the file is.
-export async function shareMediaFile(blob: Blob, media: MediaAttachment, filenameHint: string): Promise<ShareResult> {
+export async function shareMediaFile(blob: Blob, media: ViewableMedia, filenameHint: string): Promise<ShareResult> {
   const mimeType = blob.type || guessMimeType(media);
   const filename = buildFilename(media, filenameHint, mimeType);
   const file = new File([blob], filename, { type: mimeType });
@@ -151,7 +153,7 @@ export async function shareMediaFile(blob: Blob, media: MediaAttachment, filenam
 }
 
 // Native (non-web) save/share — unchanged from before.
-export async function saveOrShareMediaNative(media: MediaAttachment) {
+export async function saveOrShareMediaNative(media: ViewableMedia) {
   const mimeType = guessMimeType(media);
   try {
     const canShare = await Sharing.isAvailableAsync();
