@@ -73,12 +73,20 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
   const [prefs, setPrefs] = useState<NotificationPrefs>(() => loadJSON(NOTIFICATIONS_STORAGE_KEY, DEFAULT_NOTIFICATION_PREFS));
   const [cancelStage, setCancelStage] = useState<'none' | 'confirmed'>('none');
   const [openingPortal, setOpeningPortal] = useState(false);
-  // Online tiers now have a REAL Stripe subscription behind them — cancel
-  // (and card updates) go through the real billing portal, never the old
-  // locally-simulated "schedule a cancellation" flow, which would leave a
-  // member thinking they'd canceled while Stripe kept billing them.
-  // In-person tiers (still fully simulated) keep that original flow as-is.
-  const isOnlineTier = membership.tier === 'trial' || membership.tier === 'online_paid' || membership.tier === 'founding_50';
+  // Every tier with a REAL Stripe subscription behind it — online
+  // monthly/annual/founding, and (Stripe round two) in-person Monthly
+  // Unlimited — cancels (and card updates) through the real billing
+  // portal, never the old locally-simulated "schedule a cancellation"
+  // flow, which would leave a member thinking they'd canceled while
+  // Stripe kept billing them. 10 Class Pack and Drop In aren't
+  // subscriptions at all (nothing to cancel — a pack just expires, and
+  // Drop In never recurs), so they keep the original simulated flow,
+  // which here is purely cosmetic bookkeeping, not a real cancellation.
+  const hasRealSubscription =
+    membership.tier === 'trial' ||
+    membership.tier === 'online_paid' ||
+    membership.tier === 'founding_50' ||
+    membership.tier === 'in_person_unlimited';
 
   useEffect(() => {
     saveJSON(NOTIFICATIONS_STORAGE_KEY, prefs);
@@ -128,7 +136,7 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
   };
 
   const handleCancelRequest = () => {
-    if (isOnlineTier) {
+    if (hasRealSubscription) {
       // Stripe's own hosted portal already has its own cancel confirmation
       // — no need for a second one in-app first.
       openPortal();
@@ -220,7 +228,7 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
                   {openingPortal ? (
                     <ActivityIndicator color={colors.textMuted} />
                   ) : (
-                    <Text style={styles.cancelButtonText}>{isOnlineTier ? 'MANAGE / CANCEL' : 'CANCEL MEMBERSHIP'}</Text>
+                    <Text style={styles.cancelButtonText}>{hasRealSubscription ? 'MANAGE / CANCEL' : 'CANCEL MEMBERSHIP'}</Text>
                   )}
                 </Pressable>
               )}

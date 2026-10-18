@@ -11,7 +11,7 @@ export type SubscriptionStatus =
   | 'incomplete_expired'
   | 'unpaid'
   | null;
-export type SubscriptionPlan = 'monthly' | 'annual' | 'founding' | null;
+export type SubscriptionPlan = 'monthly' | 'annual' | 'founding' | 'in_person_monthly' | null;
 
 type SubscriptionContextValue = {
   // True until the real subscription row has been fetched successfully for
@@ -75,13 +75,16 @@ type Row = {
 
 const LOG_TAG = '[memberState:subscription]';
 
-// The real, server-written truth about a member's ONLINE subscription (see
-// supabase/setup.sql's `subscriptions` table and the stripe-webhook Edge
-// Function — the only thing that ever writes to it). No authenticated
-// client can insert or update this table at all, only read their own row,
-// so this context can never itself grant access; it only ever reports what
-// Stripe and the webhook already decided. In-person plans don't use this
-// context at all — they stay on MembershipContext's simulated state.
+// The real, server-written truth about a member's subscription — online
+// (monthly/annual/founding) AND, from Stripe round two on, in-person
+// Monthly Unlimited too, which is a real Stripe subscription exactly like
+// the online plans (see supabase/setup.sql's `subscriptions` table and the
+// stripe-webhook Edge Function — the only thing that ever writes to it).
+// No authenticated client can insert or update this table at all, only
+// read their own row, so this context can never itself grant access; it
+// only ever reports what Stripe and the webhook already decided. 10 Class
+// Pack and Drop In are one-time payments, not subscriptions — they don't
+// live here, see ClassPackContext for the 10 Class Pack's real credits.
 export function SubscriptionProvider({ children }: { children: React.ReactNode }) {
   const { user, authReady } = useAuth();
   const [row, setRow] = useState<Row | null>(null);

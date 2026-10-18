@@ -10,4 +10,10 @@ export const STRIPE_PRICE_IDS = {
   monthly: 'price_1UIsagK8jMUFAOQw3ZS1IXVO',
   founding: 'price_1UIseoK8jMUFAOQwWbIfi2pU',
   annual: 'price_1UIsfbK8jMUFAOQwQ2t9RMs8',
+  // IN PERSON (Stripe round two) — kept in hand-sync with the server copy
+  // (supabase/functions/_shared/prices.ts), same convention as the online
+  // ids above.
+  in_person_monthly: 'price_1US34vK8jMUFAOQw6KKUdNmh',
+  ten_pack: 'price_1US36lK8jMUFAOQw6ehhrYgJ',
+  drop_in: 'price_1US37zK8jMUFAOQwr6G5YPZE',
 } as const;

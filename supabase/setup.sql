@@ -28,10 +28,15 @@ create table if not exists public.profiles (
   favorite_quote text not null default '',
   avatar_url text,
   how_train text check (how_train in ('online', 'boathouse')),
-  -- In-person plans (Monthly Unlimited, 10 Class Pack, Drop In) are still
-  -- simulated — no real in-person billing yet — but the selection is stored
-  -- here (not just the selecting device's local storage) so Member Manager
-  -- can see it too. See admin_list_members() below.
+  -- Monthly Unlimited (IN PERSON) is a real Stripe subscription (see the
+  -- `subscriptions` table and the stripe-webhook Edge Function below) —
+  -- this column mirrors that onto the profile so RLS (has_group_chat_access
+  -- below) and Member Manager's roster can key off it directly. 'ten_pack'
+  -- and 'drop_in' are written by the webhook too, for Member Manager's
+  -- grouping, but neither one gates any real access by itself — see
+  -- MembershipContext's tier computation for what actually does. Locked to
+  -- service-role-only writes by the trigger further down (migration_019) —
+  -- no authenticated member can set their own in_person_plan.
   in_person_plan text check (in_person_plan in ('monthly_unlimited', 'ten_pack', 'drop_in')),
   is_admin boolean not null default false,
   -- Monthly Unlimited's SHOW TOMORROW'S WORKOUT setting (Settings &
@@ -92,6 +97,31 @@ create policy "admin can update any profile"
   to authenticated
   using (public.is_admin(auth.uid()))
   with check (public.is_admin(auth.uid()));
+
+-- in_person_plan (above) is a real, money-backed access switch from this
+-- round on — RLS alone can't express "every column but this one" for an
+-- otherwise-broad self-update policy, so this trigger (migration_019)
+-- silently reverts any change to it that didn't come from the Stripe
+-- webhook's service-role key, no matter what else is being updated in the
+-- same request.
+create or replace function public.enforce_in_person_plan_service_role_only()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.in_person_plan is distinct from old.in_person_plan and auth.role() <> 'service_role' then
+    new.in_person_plan := old.in_person_plan;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_in_person_plan_service_role_only on public.profiles;
+create trigger profiles_in_person_plan_service_role_only
+  before update on public.profiles
+  for each row execute function public.enforce_in_person_plan_service_role_only();
 
 -- A brand-new login (sign-up) automatically gets a blank profile row, so the
 -- rest of the app never has to special-case "no profile yet."
@@ -910,7 +940,11 @@ create table if not exists public.subscriptions (
   stripe_customer_id text,
   stripe_subscription_id text,
   price_id text,
-  plan text check (plan in ('monthly', 'annual', 'founding')),
+  -- 'in_person_monthly' (migration_019) is Monthly Unlimited (IN PERSON) —
+  -- a real Stripe subscription exactly like the online plans, just a
+  -- different price. See upsertSubscription() in the stripe-webhook Edge
+  -- Function, which also keeps profiles.in_person_plan in sync for it.
+  plan text check (plan in ('monthly', 'annual', 'founding', 'in_person_monthly')),
   -- Mirrors Stripe's own subscription.status values verbatim (trialing,
   -- active, past_due, canceled, incomplete, incomplete_expired, unpaid).
   status text,
@@ -950,6 +984,140 @@ create policy "only admin can read the stripe event log"
 -- the webhook's service-role key ever inserts here. The event id itself is
 -- the primary key, so a redelivered event (Stripe retries on timeout) is
 -- safely ignored rather than double-processed.
+
+-- ----------------------------------------------------------------------------
+-- CLASS_PACKS (migration_019) — 10 Class Pack credits. One row per pack
+-- purchased — a member can buy more than once, and the two RPCs below
+-- always spend/refund against whichever of their packs expires soonest but
+-- still has room. `total_credits` exists only so refund_class_pack_credit()
+-- can cap a refund at this pack's own original size instead of a hardcoded
+-- constant, in case a different pack size ever ships later.
+-- ----------------------------------------------------------------------------
+create table if not exists public.class_packs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  total_credits integer not null default 10,
+  credits_remaining integer not null default 10 check (credits_remaining >= 0),
+  purchased_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  stripe_checkout_session_id text unique,
+  created_at timestamptz not null default now()
+);
+
+alter table public.class_packs enable row level security;
+
+drop policy if exists "a member reads their own class packs" on public.class_packs;
+create policy "a member reads their own class packs"
+  on public.class_packs for select
+  to authenticated
+  using (user_id = auth.uid());
+
+-- No insert/update/delete policy for `authenticated` at all — only the
+-- Stripe webhook's service-role key ever grants a pack, and the two
+-- security-definer RPCs below are the only way credits ever move, each one
+-- scoped to auth.uid()'s own pack(s).
+
+-- Spends one credit from whichever of the caller's own packs expires
+-- soonest among those that still have credit left — used the moment a 10
+-- Class Pack member books a class. Raises if they have no active pack with
+-- credit left, so a client bug can never silently book against nothing.
+create or replace function public.use_class_pack_credit()
+returns table (credits_remaining integer, expires_at timestamptz)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_pack_id uuid;
+begin
+  select cp.id into target_pack_id
+  from public.class_packs cp
+  where cp.user_id = auth.uid()
+    and cp.credits_remaining > 0
+    and cp.expires_at > now()
+  order by cp.expires_at asc
+  limit 1;
+
+  if target_pack_id is null then
+    raise exception 'No active class pack with credits remaining.';
+  end if;
+
+  -- The explicit table alias (not just `public.class_packs`) is required
+  -- here, not stylistic — this function's RETURNS TABLE(credits_remaining,
+  -- expires_at) declares OUT parameters of those exact names, which would
+  -- otherwise shadow the bare column names in the SET/RETURNING clauses
+  -- below and fail with "column reference is ambiguous".
+  return query
+    update public.class_packs cp
+    set credits_remaining = cp.credits_remaining - 1
+    where cp.id = target_pack_id
+    returning cp.credits_remaining, cp.expires_at;
+end;
+$$;
+
+grant execute on function public.use_class_pack_credit() to authenticated;
+
+-- The inverse — cancelling a 10 Class Pack booking refunds the credit.
+-- Silently does nothing (returns zero rows) if the caller has no pack with
+-- room for a refund, rather than erroring — a cancel should never be able
+-- to fail the whole action over bookkeeping.
+create or replace function public.refund_class_pack_credit()
+returns table (credits_remaining integer, expires_at timestamptz)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_pack_id uuid;
+begin
+  select cp.id into target_pack_id
+  from public.class_packs cp
+  where cp.user_id = auth.uid()
+    and cp.credits_remaining < cp.total_credits
+    and cp.expires_at > now()
+  order by cp.expires_at asc
+  limit 1;
+
+  if target_pack_id is null then
+    return;
+  end if;
+
+  return query
+    update public.class_packs cp
+    set credits_remaining = least(cp.credits_remaining + 1, cp.total_credits)
+    where cp.id = target_pack_id
+    returning cp.credits_remaining, cp.expires_at;
+end;
+$$;
+
+grant execute on function public.refund_class_pack_credit() to authenticated;
+
+-- ----------------------------------------------------------------------------
+-- IN_PERSON_PURCHASES (migration_019) — the webhook's confirmation record
+-- for a one-time in-person purchase (10 Class Pack or Drop In), keyed by
+-- the Stripe Checkout Session id (not the event id — session id is what
+-- the browser's own success redirect carries back, and what the client
+-- polls for). Also Doc's own audit trail of every in-person one-time sale,
+-- same spirit as stripe_events above.
+-- ----------------------------------------------------------------------------
+create table if not exists public.in_person_purchases (
+  id text primary key,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  plan text not null check (plan in ('ten_pack', 'drop_in')),
+  amount_cents integer,
+  created_at timestamptz not null default now()
+);
+
+alter table public.in_person_purchases enable row level security;
+
+drop policy if exists "a member reads their own in-person purchases" on public.in_person_purchases;
+create policy "a member reads their own in-person purchases"
+  on public.in_person_purchases for select
+  to authenticated
+  using (user_id = auth.uid());
+
+-- No write policy for `authenticated` — only the webhook's service-role key
+-- ever inserts here, same convention as stripe_events/subscriptions above.
 
 -- admin_list_members(): the one call Member Manager needs for its full
 -- roster in a single round trip — profile fields, the member's real email

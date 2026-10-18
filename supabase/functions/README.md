@@ -1,19 +1,36 @@
 # Supabase Edge Functions
 
-Real, trusted Stripe billing work for the ONLINE membership tiers. This app
-is a static site with no server of its own, so anything that must be
-trusted (reading `STRIPE_SECRET_KEY`, verifying a webhook signature,
-deciding who really gets access) runs here instead of in the browser.
+Real, trusted Stripe billing work for every membership tier — online AND,
+from Stripe round two, the three IN PERSON plans (Monthly Unlimited, 10
+Class Pack, Drop In). This app is a static site with no server of its own,
+so anything that must be trusted (reading `STRIPE_SECRET_KEY`, verifying a
+webhook signature, deciding who really gets access) runs here instead of
+in the browser.
 
 - `create-checkout` — a signed-in member calls this to start a real Stripe
-  Checkout session for Monthly or Annual (Online). Re-checks Founding 50
-  eligibility itself server-side; the client never gets to say "give me the
-  founding price."
+  Checkout session for one of 5 plans: Monthly or Annual (Online), Monthly
+  Unlimited (IN PERSON) — all 3 real subscriptions — or 10 Class Pack / Drop
+  In (IN PERSON), both one-time payments. Re-checks Founding 50 eligibility
+  itself server-side; the client never gets to say "give me the founding
+  price," and never gets to send a raw Stripe price id either — only a plan
+  name, which this function maps to the real price itself.
 - `stripe-webhook` — Stripe calls this directly (not the app). Verifies the
   request's signature, then writes the real truth about a member's
-  subscription to the database — the only place that ever happens.
-- `customer-portal` — a signed-in member with an existing subscription calls
-  this to open Stripe's hosted billing portal (update card, cancel).
+  subscription (`subscriptions` table) or one-time in-person purchase
+  (`class_packs` for 10 Class Pack, `in_person_purchases` for both one-time
+  plans) to the database — the only place any of that ever happens. Also
+  keeps `profiles.in_person_plan` in sync for Monthly Unlimited and 10 Class
+  Pack, the column Member Manager's roster and `has_group_chat_access()`
+  key off. Listens for the same event types as round one
+  (`checkout.session.completed`, `customer.subscription.created/updated/
+  deleted`, `invoice.payment_failed`) — round two added new handling inside
+  `checkout.session.completed` for one-time (`mode: 'payment'`) sessions,
+  not a new event type, so **no Stripe dashboard webhook configuration
+  change is needed** as long as the endpoint is already subscribed to
+  those 4 event types (it was, for round one).
+- `customer-portal` — a signed-in member with an existing subscription (online
+  or in-person Monthly Unlimited) calls this to open Stripe's hosted billing
+  portal (update card, cancel).
 
 ## Deploying
 

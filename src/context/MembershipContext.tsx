@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
+import { useClassPack } from './ClassPackContext';
 import { useSubscription } from './SubscriptionContext';
 import { loadJSON, saveJSON } from '../lib/storage';
 import { supabase } from '../lib/supabaseClient';
@@ -28,9 +29,10 @@ export type MembershipTier =
 export type InPersonPlan = 'monthly_unlimited' | 'ten_pack' | 'drop_in';
 
 const TRIAL_WARNING_THRESHOLD_DAYS = 3;
+// Admin dev-preview only, from here on — real 10 Class Pack credits come
+// from ClassPackContext (the real class_packs table). See setDevTier.
 const TEN_PACK_SIZE = 10;
 const RENEWAL_CYCLE_DAYS = 30;
-const IN_PERSON_TIERS: MembershipTier[] = ['ten_pack', 'drop_in', 'in_person_unlimited'];
 
 // Human-readable plan label for the admin roster / booking notifications —
 // keeps that copy in one place instead of re-deriving it at each call site.
@@ -146,17 +148,20 @@ type MembershipContextValue = {
   // planRenewsAt/trialEndsAt either way.
   cancellationRequested: boolean;
 
-  selectInPersonPlan: (plan: InPersonPlan) => void;
-  // The About page's BOOK YOUR CLASS door — real account signup landing on
-  // the free tier: booking access, first-class-free, full (non-anonymous)
-  // community. TRAIN ONLINE's door goes through real Stripe Checkout
-  // instead (see startOnlineCheckout) — there's no simulated trial door
-  // anymore.
+  // The About page's BOOK YOUR CLASS door, and in-person onboarding's own
+  // DROP IN choice — real account signup landing on the free tier: booking
+  // access, first-class-free, full (non-anonymous) community. TRAIN
+  // ONLINE's door, and in-person onboarding's Monthly Unlimited / 10 Class
+  // Pack choices, all go through real Stripe Checkout instead (see
+  // startOnlineCheckout / startInPersonCheckout) — there's no simulated
+  // trial or in-person plan-switch door anymore for a real member.
   enterFreeTier: () => void;
-  // Called once a real Stripe Checkout redirect-back has been confirmed
-  // (the subscription row shows trialing/active) — fires the purchase
-  // celebration and clears any leftover in-person cancellation flag.
-  notifyOnlineCheckoutSuccess: () => void;
+  // Called once a real Stripe Checkout redirect-back has been confirmed —
+  // the subscription row shows trialing/active (online, or in-person
+  // Monthly Unlimited), or a one-time purchase (10 Class Pack, Drop In) is
+  // confirmed via in_person_purchases. Fires the purchase celebration and
+  // clears any leftover in-person cancellation flag.
+  notifyCheckoutSuccess: () => void;
   setDevTier: (tier: MembershipTier) => void;
   // Dev-preview-only: forces the "first time visitor" Dockside variant —
   // online_free with no trial history — regardless of what was previewed
@@ -179,14 +184,16 @@ const MembershipContext = createContext<MembershipContextValue | undefined>(unde
 
 const SIMULATED_STORAGE_KEY = 'docsfitness.simulatedMembership.v1';
 
-// In-person plans (Monthly Unlimited, 10 Class Pack, Drop In) and Doc's own
-// admin/dev-preview tier are still exactly the simulated system this app
-// has always used — this round only wires real billing for the ONLINE
-// tiers. It's persisted so a signed-in member's simulated (in-person/
-// preview) plan survives a reload, same as their real Supabase session.
-// Since there's no real in-person billing backend, this stays one shared
-// simulated state per *device*, not per account, for the in-person branch —
-// unchanged from before this round.
+// Doc's own admin/dev-preview tier (setDevTier, below `isAdminPreview`) is
+// still exactly the simulated system this app has always used — she can
+// preview any of the 6 member-facing tiers, in-person included, without
+// that touching real billing. For every other (non-admin) account, as of
+// Stripe round two, Monthly Unlimited and 10 Class Pack are both real —
+// see the subscriptions/class_packs tables and SubscriptionContext/
+// ClassPackContext — and Drop In is a real one-time payment started from
+// the booking flow itself, never a persistent tier at all. This state is
+// still persisted per *device*, not per account, since it only ever
+// matters for Doc's own dev-preview now.
 type SimulatedMembershipState = {
   tier: MembershipTier;
   trialEndsAtMs: number | null;
@@ -218,6 +225,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   const signedUp = !!session;
   const email = session?.user?.email ?? null;
   const subscription = useSubscription();
+  const classPack = useClassPack();
 
   // A small, deliberately separate read of just the real admin flag — kept
   // local to this context rather than depending on ProfileContext, since
@@ -344,21 +352,22 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
   const value = useMemo<MembershipContextValue>(() => {
     // Real admin: fully unchanged, exactly today's simulated system — the
     // dev-preview toggle keeps working for Doc's testing regardless of
-    // what's really in the subscriptions table for her own account.
-    // Non-admin, currently on an in-person plan (still simulated, untouched
-    // by this round): keep that as-is too. Otherwise (a real member's
-    // online branch): the subscriptions table is the only truth.
+    // what's really in the subscriptions/class_packs tables for her own
+    // account. Every other account's tier is computed entirely from real
+    // server data from here on — the subscriptions table (online plans AND
+    // in-person Monthly Unlimited, both real Stripe subscriptions) and
+    // ClassPackContext (10 Class Pack's real credits).
     const isAdminPreview = realAdmin;
-    const onInPersonPlan = IN_PERSON_TIERS.includes(simulatedTier);
 
     let tier: MembershipTier;
     let hasEverTrialed: boolean;
-    if (isAdminPreview || onInPersonPlan) {
+    if (isAdminPreview) {
       tier = simulatedTier;
       hasEverTrialed = simulatedHasEverTrialed;
-    } else if (subscription.loading) {
-      // Safe default while the real read is in flight — the safe direction
-      // to be wrong in for a moment is "no access yet," not the reverse.
+    } else if (subscription.loading || classPack.loading) {
+      // Safe default while the real reads are in flight — the safe
+      // direction to be wrong in for a moment is "no access yet," not the
+      // reverse.
       tier = 'online_free';
       hasEverTrialed = simulatedHasEverTrialed;
     } else if (subscription.status === 'trialing') {
@@ -367,12 +376,23 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     } else if (subscription.status === 'active' && subscription.plan === 'founding') {
       tier = 'founding_50';
       hasEverTrialed = true;
+    } else if (subscription.status === 'active' && subscription.plan === 'in_person_monthly') {
+      tier = 'in_person_unlimited';
+      hasEverTrialed = true;
     } else if (subscription.status === 'active') {
       tier = 'online_paid';
       hasEverTrialed = true;
+    } else if (classPack.active) {
+      // An expired or fully-spent pack never lands here — ClassPackContext
+      // only reports `active` for a pack that still has both credit and
+      // time left, so a lapsed pack falls straight through to online_free
+      // below, which is exactly what sends a booking through the drop-in
+      // gate instead.
+      tier = 'ten_pack';
+      hasEverTrialed = simulatedHasEverTrialed || subscription.status !== null;
     } else {
       // past_due / canceled / incomplete / incomplete_expired / unpaid /
-      // no row at all — no real active access.
+      // no row at all, and no active class pack — no real active access.
       tier = 'online_free';
       hasEverTrialed = simulatedHasEverTrialed || subscription.status !== null;
     }
@@ -392,14 +412,13 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       ? ['online_paid', 'founding_50', 'in_person_unlimited'].includes(tier) && planStartedAt
         ? new Date(planStartedAt + RENEWAL_CYCLE_DAYS * 24 * 60 * 60 * 1000)
         : null
-      : tier === 'online_paid' || tier === 'founding_50'
+      : tier === 'online_paid' || tier === 'founding_50' || tier === 'in_person_unlimited'
         ? subscription.currentPeriodEnd
-        : tier === 'in_person_unlimited' && planStartedAt
-          ? new Date(planStartedAt + RENEWAL_CYCLE_DAYS * 24 * 60 * 60 * 1000)
-          : null;
+        : null;
 
     const cancellationRequested =
-      !isAdminPreview && (tier === 'online_paid' || tier === 'founding_50' || tier === 'trial')
+      !isAdminPreview &&
+      (tier === 'online_paid' || tier === 'founding_50' || tier === 'trial' || tier === 'in_person_unlimited')
         ? subscription.cancelAtPeriodEnd
         : simulatedCancellationRequested;
 
@@ -410,11 +429,16 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       tier === 'founding_50' ||
       tier === 'in_person_unlimited';
     const wodAccessLevel: WodAccessLevel = fullContentAccess ? 'full' : tier === 'online_free' ? 'partial' : 'none';
-    const communityAccess: 'full' | 'none' = tier === 'drop_in' ? 'none' : 'full';
+    // Every tier gets full community access now — including Drop In, which
+    // used to read 'none' back when it was a persistent simulated tier. A
+    // real Drop In purchase gets the exact same access as a 10 Class Pack
+    // (community + booking, no full content unlock); 'drop_in' is only
+    // ever the account's actual `tier` during Doc's own dev-preview now.
+    const communityAccess: 'full' | 'none' = 'full';
 
-    const computedStateLoading = subscription.loading || realAdminLoading;
-    const computedStateRefetching = subscription.refetching || realAdminRefetching;
-    const computedStateError = subscription.error ?? realAdminError ?? null;
+    const computedStateLoading = subscription.loading || classPack.loading || realAdminLoading;
+    const computedStateRefetching = subscription.refetching || classPack.refetching || realAdminRefetching;
+    const computedStateError = subscription.error ?? classPack.error ?? realAdminError ?? null;
     if (signedUp) {
       console.log('[memberState:membership] tier computed', {
         tier,
@@ -436,15 +460,15 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       // Same "safe direction to be wrong in" convention as subscription's
       // own `loading` — while true, `tier` may still be the 'online_free'
       // fallback and `isAdmin` may still be false regardless of the real
-      // account. isAdminPreview/onInPersonPlan (admin dev-preview, in-person
-      // tiers) don't depend on either read, but this doesn't special-case
-      // them — one simple rule for every account is safer than a second one
-      // to keep in sync.
+      // account. isAdminPreview (admin dev-preview) doesn't depend on any
+      // of these reads, but this doesn't special-case it — one simple rule
+      // for every account is safer than a second one to keep in sync.
       stateLoading: computedStateLoading,
       stateRefetching: computedStateRefetching,
       stateError: computedStateError,
       retryState: () => {
         subscription.retry();
+        classPack.retry();
         setRealAdminRetryTick((t) => t + 1);
       },
       email,
@@ -462,38 +486,17 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       storiesAccess: fullContentAccess,
       communityAccess,
       bookingAccess: true,
-      tenPackClassesRemaining,
+      tenPackClassesRemaining: isAdminPreview ? tenPackClassesRemaining : classPack.creditsRemaining,
       firstClassUsed,
       newsletterOptIn,
       justPurchased,
       planRenewsAt,
       cancellationRequested,
 
-      selectInPersonPlan: (plan: InPersonPlan) => {
-        const nextTier = plan === 'monthly_unlimited' ? 'in_person_unlimited' : plan === 'ten_pack' ? 'ten_pack' : 'drop_in';
-        setSimulated((prev) => ({
-          ...prev,
-          tier: nextTier,
-          tenPackClassesRemaining: plan === 'ten_pack' ? TEN_PACK_SIZE : prev.tenPackClassesRemaining,
-          // Drop In is a one-off, not a membership — no celebration for it.
-          justPurchased: plan !== 'drop_in' ? true : prev.justPurchased,
-          planStartedAt: plan === 'monthly_unlimited' ? Date.now() : prev.planStartedAt,
-          cancellationRequested: false,
-        }));
-        // Still simulated (no real in-person billing) — but mirrored to the
-        // member's own profile row so it's visible beyond just this device,
-        // for Member Manager's plan grouping. Best-effort: this selection
-        // already lives in local storage as the real source of truth for
-        // this device's own access, so a failed mirror write here doesn't
-        // block anything the member can do.
-        if (user) {
-          supabase.from('profiles').update({ in_person_plan: plan }).eq('id', user.id).then(() => {});
-        }
-      },
       enterFreeTier: () => {
         setSimulated((prev) => ({ ...prev, tier: 'online_free' }));
       },
-      notifyOnlineCheckoutSuccess: () => {
+      notifyCheckoutSuccess: () => {
         setSimulated((prev) => ({ ...prev, justPurchased: true, cancellationRequested: false }));
       },
       setDevTier: (nextTier: MembershipTier) => {
@@ -527,10 +530,26 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         setSimulated((prev) => ({ ...prev, tier: 'online_free', hasEverTrialed: false }));
       },
       dismissTrialWarning: () => setSimulated((prev) => ({ ...prev, trialWarningDismissed: true })),
-      useTenPackClass: () =>
-        setSimulated((prev) => ({ ...prev, tenPackClassesRemaining: Math.max(0, (prev.tenPackClassesRemaining ?? TEN_PACK_SIZE) - 1) })),
-      refundTenPackClass: () =>
-        setSimulated((prev) => ({ ...prev, tenPackClassesRemaining: Math.min(TEN_PACK_SIZE, (prev.tenPackClassesRemaining ?? 0) + 1) })),
+      useTenPackClass: () => {
+        if (isAdminPreview) {
+          setSimulated((prev) => ({
+            ...prev,
+            tenPackClassesRemaining: Math.max(0, (prev.tenPackClassesRemaining ?? TEN_PACK_SIZE) - 1),
+          }));
+          return;
+        }
+        classPack.useCredit();
+      },
+      refundTenPackClass: () => {
+        if (isAdminPreview) {
+          setSimulated((prev) => ({
+            ...prev,
+            tenPackClassesRemaining: Math.min(TEN_PACK_SIZE, (prev.tenPackClassesRemaining ?? 0) + 1),
+          }));
+          return;
+        }
+        classPack.refundCredit();
+      },
       useFirstClass: () => setSimulated((prev) => ({ ...prev, firstClassUsed: true })),
       setNewsletterOptIn: (optIn: boolean) => setSimulated((prev) => ({ ...prev, newsletterOptIn: optIn })),
       clearJustPurchased: () => setSimulated((prev) => ({ ...prev, justPurchased: false })),
@@ -556,6 +575,14 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     subscription.currentPeriodEnd,
     subscription.cancelAtPeriodEnd,
     subscription.retry,
+    classPack.loading,
+    classPack.refetching,
+    classPack.error,
+    classPack.active,
+    classPack.creditsRemaining,
+    classPack.retry,
+    classPack.useCredit,
+    classPack.refundCredit,
     planStartedAt,
     signedUp,
     email,

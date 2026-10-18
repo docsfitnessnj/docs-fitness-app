@@ -41,9 +41,10 @@ function statusColor(kind: AdminMemberStatusKind): string {
 // by Row Level Security regardless of what this screen shows).
 //
 // The roster below is grouped by real plan (online: the real Stripe-backed
-// subscriptions table via admin_list_members(); in-person: still the
-// simulated in_person_plan column — see useAdminMembers) rather than one
-// flat list, so Doc can tell at a glance who's paying, trialing, or lapsed.
+// subscriptions table via admin_list_members(); in-person: the
+// profiles.in_person_plan column, which the Stripe webhook now keeps in
+// sync for real too — see useAdminMembers) rather than one flat list, so
+// Doc can tell at a glance who's paying, trialing, or lapsed.
 export function MemberManagerScreen({ visible, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<AdminMember | null>(null);

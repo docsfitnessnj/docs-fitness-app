@@ -3,6 +3,7 @@ import { clearCheckoutRedirectPending, markCheckoutRedirecting } from './checkou
 import { supabase } from './supabaseClient';
 
 export type OnlineCheckoutPlan = 'monthly' | 'annual';
+export type InPersonCheckoutPlan = 'in_person_monthly' | 'ten_pack' | 'drop_in';
 
 const GENERIC_CHECKOUT_ERROR = "Couldn't start checkout right now. Check your connection and try again.";
 const GENERIC_PORTAL_ERROR = "Couldn't open billing right now. Check your connection and try again.";
@@ -58,6 +59,36 @@ export async function startOnlineCheckout(plan: OnlineCheckoutPlan): Promise<{ e
   // NOT end in a real redirect; left set on success since the page is
   // about to navigate away entirely (cleared later, when the purchase
   // celebration is dismissed after the member returns).
+  markCheckoutRedirecting();
+  try {
+    const { data, error } = await supabase.functions.invoke('create-checkout', {
+      body: { plan, origin: currentOrigin() },
+    });
+    if (error) {
+      clearCheckoutRedirectPending();
+      return { error: await messageFromInvokeError(error, GENERIC_CHECKOUT_ERROR) };
+    }
+    const url = (data as { url?: string } | null)?.url;
+    if (!url) {
+      clearCheckoutRedirectPending();
+      return { error: GENERIC_CHECKOUT_ERROR };
+    }
+    await openHostedUrl(url);
+    return { error: null };
+  } catch {
+    clearCheckoutRedirectPending();
+    return { error: GENERIC_CHECKOUT_ERROR };
+  }
+}
+
+// Starts a real Stripe Checkout session for one of the three in-person
+// plans. in_person_monthly is a subscription (no trial — in person's hook
+// is the first class free, handled entirely client-side before this is
+// ever called, never a Stripe trial). ten_pack and drop_in are one-time
+// payments. Same loading-gate/error-handling shape as startOnlineCheckout
+// above — the server (create-checkout) is still the only thing that ever
+// decides the real price.
+export async function startInPersonCheckout(plan: InPersonCheckoutPlan): Promise<{ error: string | null }> {
   markCheckoutRedirecting();
   try {
     const { data, error } = await supabase.functions.invoke('create-checkout', {
