@@ -1,7 +1,8 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { AppPressable } from './AppPressable';
 import { DocsBadge } from './brand/DocsBadge';
 import { ExternalLinkPressable } from './ExternalLinkPressable';
 import { MembershipToggle } from './MembershipToggle';
@@ -236,10 +237,10 @@ export function SidebarDrawer({
       <View style={styles.root}>
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
           <View style={styles.backRow}>
-            <Pressable onPress={onClose} hitSlop={8} style={styles.backButton} testID="close-sidebar">
+            <AppPressable onPress={onClose} hitSlop={8} style={styles.backButton} testID="close-sidebar">
               <Ionicons name="chevron-back" size={20} color={colors.white} />
               <Text style={styles.backButtonText}>BACK</Text>
-            </Pressable>
+            </AppPressable>
           </View>
 
           <View style={styles.badgeWrap}>
@@ -260,9 +261,9 @@ export function SidebarDrawer({
                 <MembershipToggle />
               </View>
 
-              <Pressable onPress={resetTour} hitSlop={8} style={styles.devResetRow} testID="dev-reset-tour">
+              <AppPressable onPress={resetTour} hitSlop={8} style={styles.devResetRow} testID="dev-reset-tour">
                 <Text style={styles.devResetText}>RESET SPOTLIGHT TOUR (DEV)</Text>
-              </Pressable>
+              </AppPressable>
             </>
           )}
 
@@ -304,9 +305,9 @@ function MenuRow({ row }: { row: Row }) {
     );
   }
   return (
-    <Pressable style={styles.row} onPress={row.onPress} testID={`sidebar-${row.key}`}>
+    <AppPressable style={styles.row} onPress={row.onPress} testID={`sidebar-${row.key}`}>
       {content}
-    </Pressable>
+    </AppPressable>
   );
 }
 

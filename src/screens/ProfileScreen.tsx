@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppPressable } from '../components/AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { ModalHeader } from '../components/ModalHeader';
@@ -9,6 +10,7 @@ import { ProfileBadgeCase } from '../components/ProfileBadgeCase';
 import { ProfilePhotoCropModal } from '../components/ProfilePhotoCropModal';
 import { HowTrain, useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
+import { useActionCompletion } from '../lib/useActionCompletion';
 import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts } from '../theme';
 
@@ -34,7 +36,8 @@ export function ProfileScreen({ visible, onClose }: Props) {
   // (see the Part 2 fix for the two About page doors that used to skip it).
   const [draftHowTrain, setDraftHowTrain] = useState<HowTrain | null>(howTrain);
   const [cropUri, setCropUri] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const { status: saveStatus, run: runSave } = useActionCompletion();
+  const saving = saveStatus === 'busy';
 
   // Reset the draft to the saved values every time the sheet opens.
   useEffect(() => {
@@ -82,29 +85,28 @@ export function ProfileScreen({ visible, onClose }: Props) {
     setCropUri(null);
   };
 
-  const save = async () => {
-    setSaving(true);
-    const result = await updateProfile({
-      name: draftName,
-      instagramHandle: draftHandle,
-      favoriteQuote: draftQuote,
-      photoUri: draftPhotoUri,
-    });
-    if (result.error) {
-      setSaving(false);
-      showAlert("Couldn't Save", result.error);
-      return;
-    }
-    // Separate write from updateProfile above — same pattern as the
-    // Show Tomorrow's Workout toggle elsewhere in this context. Everything
-    // driven by this answer (the Community layout, the leaderboard tag)
-    // reads it live off profile context state, so it takes effect the
-    // moment this resolves, no reload needed.
-    if (draftHowTrain && draftHowTrain !== howTrain) {
-      await setHowTrain(draftHowTrain);
-    }
-    setSaving(false);
-    onClose();
+  const save = () => {
+    runSave(async () => {
+      const result = await updateProfile({
+        name: draftName,
+        instagramHandle: draftHandle,
+        favoriteQuote: draftQuote,
+        photoUri: draftPhotoUri,
+      });
+      if (result.error) {
+        showAlert("Couldn't Save", result.error);
+        return false;
+      }
+      // Separate write from updateProfile above — same pattern as the
+      // Show Tomorrow's Workout toggle elsewhere in this context. Everything
+      // driven by this answer (the Community layout, the leaderboard tag)
+      // reads it live off profile context state, so it takes effect the
+      // moment this resolves, no reload needed.
+      if (draftHowTrain && draftHowTrain !== howTrain) {
+        await setHowTrain(draftHowTrain);
+      }
+      return true;
+    }, onClose);
   };
 
   const handleBack = () => {
@@ -142,12 +144,12 @@ export function ProfileScreen({ visible, onClose }: Props) {
       <ModalHeader title="PROFILE" onBack={handleBack} backTestID="close-profile" />
 
       <ScrollView contentContainerStyle={styles.body}>
-          <Pressable onPress={pickPhoto} style={styles.photoWrap} testID="profile-photo-picker">
+          <AppPressable onPress={pickPhoto} style={styles.photoWrap} testID="profile-photo-picker">
             <Avatar name={displayName} uri={draftPhotoUri} size={96} />
             <View style={styles.photoEditBadge}>
               <Ionicons name="camera" size={16} color={colors.white} />
             </View>
-          </Pressable>
+          </AppPressable>
           <Text style={styles.photoHint}>Tap to choose and crop a photo</Text>
 
           <Text nativeID="profile-name-label" style={styles.label}>NAME</Text>
@@ -189,7 +191,7 @@ export function ProfileScreen({ visible, onClose }: Props) {
 
           <Text nativeID="profile-how-train-label" style={styles.label}>HOW DO YOU TRAIN</Text>
           <View style={styles.segmentRow}>
-            <Pressable
+            <AppPressable
               style={[styles.segment, draftHowTrain === 'online' && styles.segmentActive]}
               onPress={() => setDraftHowTrain('online')}
               testID="profile-how-train-online"
@@ -197,8 +199,8 @@ export function ProfileScreen({ visible, onClose }: Props) {
               <Text style={[styles.segmentText, draftHowTrain === 'online' && styles.segmentTextActive]}>
                 TRAIN ONLINE
               </Text>
-            </Pressable>
-            <Pressable
+            </AppPressable>
+            <AppPressable
               style={[styles.segment, draftHowTrain === 'boathouse' && styles.segmentActive]}
               onPress={() => setDraftHowTrain('boathouse')}
               testID="profile-how-train-boathouse"
@@ -206,7 +208,7 @@ export function ProfileScreen({ visible, onClose }: Props) {
               <Text style={[styles.segmentText, draftHowTrain === 'boathouse' && styles.segmentTextActive]}>
                 TRAIN AT THE BOATHOUSE
               </Text>
-            </Pressable>
+            </AppPressable>
           </View>
 
           <Text nativeID="profile-quote-label" style={styles.label}>FAVORITE QUOTE (OPTIONAL)</Text>
@@ -224,9 +226,22 @@ export function ProfileScreen({ visible, onClose }: Props) {
             aria-label="Favorite quote"
           />
 
-          <Pressable style={[styles.saveButton, saving && styles.saveButtonDisabled]} disabled={saving} onPress={save} testID="save-profile">
-            <Text style={styles.saveButtonText}>{saving ? 'SAVING...' : 'SAVE'}</Text>
-          </Pressable>
+          <AppPressable
+            style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+            pressedStyle={styles.saveButtonPressed}
+            disabled={saving}
+            onPress={save}
+            testID="save-profile"
+          >
+            {saveStatus === 'completed' ? (
+              <View style={styles.saveButtonCompletedRow}>
+                <Ionicons name="checkmark" size={15} color={colors.white} />
+                <Text style={styles.saveButtonText}>SAVED</Text>
+              </View>
+            ) : (
+              <Text style={styles.saveButtonText}>{saving ? 'SAVING...' : 'SAVE'}</Text>
+            )}
+          </AppPressable>
 
           <ProfileBadgeCase />
 
@@ -363,11 +378,19 @@ const styles = StyleSheet.create({
   saveButtonDisabled: {
     opacity: 0.6,
   },
+  saveButtonPressed: {
+    backgroundColor: colors.greenDeep,
+  },
   saveButtonText: {
     color: colors.white,
     fontFamily: fonts.labelBold,
     fontSize: 14,
     letterSpacing: 1,
+  },
+  saveButtonCompletedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   footnote: {
     color: colors.textMuted,

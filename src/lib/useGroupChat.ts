@@ -4,6 +4,7 @@ import { REACTION_EMOJIS } from '../context/CommunityContext';
 import { useGroupChatUnread } from '../context/GroupChatUnreadContext';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { deferRemoveChannel, fastRemoveChannel, getOrCreateChannel } from './deferredRealtimeChannel';
+import { downscaleImageForUpload } from './downscaleImage';
 import { MediaAttachment } from './media';
 import { describeChatFailure, isBackendUnavailableError, supabase, uploadFileWithProgress } from './supabaseClient';
 import { captureVideoThumbnail } from './videoThumbnail';
@@ -643,11 +644,18 @@ export function useGroupChat(active: boolean) {
     let mediaBlob: Blob | null = null;
     if (media) {
       const fetchedBlob = await fetch(media.uri).then((r) => r.blob());
-      if (fetchedBlob.size > MAX_GROUP_CHAT_UPLOAD_BYTES) {
+      // Speed pass: a photo is downscaled (~1600px longest edge, JPEG
+      // ~0.8 quality) before the size check and before any upload begins
+      // — both the send and every other member's later load of it get
+      // faster. A video is left exactly as uploaded; see
+      // downscaleImage.ts for why re-encoding video client-side would
+      // make things worse, not better.
+      const uploadBlob = media.type === 'image' ? await downscaleImageForUpload(fetchedBlob) : fetchedBlob;
+      if (uploadBlob.size > MAX_GROUP_CHAT_UPLOAD_BYTES) {
         showSendError(media.type === 'video' ? VIDEO_TOO_LARGE_MESSAGE : PHOTO_TOO_LARGE_MESSAGE);
         return false;
       }
-      mediaBlob = fetchedBlob;
+      mediaBlob = uploadBlob;
     }
 
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppPressable } from './AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { Avatar } from './Avatar';
@@ -135,7 +136,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
           )}
 
           {post.media && (
-            <Pressable onPress={() => setViewerOpen(true)} testID="post-detail-media">
+            <AppPressable onPress={() => setViewerOpen(true)} testID="post-detail-media">
               {post.media.type === 'image' ? (
                 <Image source={{ uri: post.media.uri }} style={styles.media} resizeMode="cover" />
               ) : (
@@ -144,14 +145,14 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
                   <Text style={styles.mediaVideoText}>VIDEO ATTACHED</Text>
                 </View>
               )}
-            </Pressable>
+            </AppPressable>
           )}
 
           <View style={styles.reactionRow}>
             {REACTION_EMOJIS.map((emoji) => {
               const mine = post.myReactions.includes(emoji);
               return (
-                <Pressable
+                <AppPressable
                   key={emoji}
                   style={[styles.reactionPill, mine && styles.reactionPillActive]}
                   onPress={() => (canInteract ? addReaction(post.id, emoji) : interactionBlockedNudge())}
@@ -161,7 +162,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
                   {post.reactions[emoji] > 0 && (
                     <Text style={[styles.reactionCount, mine && styles.reactionCountActive]}>{post.reactions[emoji]}</Text>
                   )}
-                </Pressable>
+                </AppPressable>
               );
             })}
           </View>
@@ -185,13 +186,13 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
                         <PostAuthorBadges author={comment.author} />
                       </View>
                       {(isAdmin || ownComment) && (
-                        <Pressable
+                        <AppPressable
                           onPress={() => openCommentMenu(comment)}
                           hitSlop={8}
                           testID={`comment-menu-${comment.id}`}
                         >
                           <Ionicons name="ellipsis-horizontal" size={14} color={colors.textMuted} />
-                        </Pressable>
+                        </AppPressable>
                       )}
                     </View>
                     <Text style={styles.commentText}>{comment.text}</Text>
@@ -211,9 +212,9 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
         {editingComment && (
           <View style={styles.editingBar}>
             <Text style={styles.editingBarText}>Editing comment</Text>
-            <Pressable onPress={cancelEdit} hitSlop={8} testID="cancel-edit-comment">
+            <AppPressable onPress={cancelEdit} hitSlop={8} testID="cancel-edit-comment">
               <Text style={styles.editingBarCancel}>CANCEL</Text>
-            </Pressable>
+            </AppPressable>
           </View>
         )}
         <View style={styles.commentInputRow}>
@@ -244,9 +245,9 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
               testID="post-detail-comment-input"
             />
           </View>
-          <Pressable onPress={submitComment} hitSlop={8} style={styles.commentSendButton} testID="post-detail-send-comment">
+          <AppPressable onPress={submitComment} hitSlop={8} style={styles.commentSendButton} testID="post-detail-send-comment">
             <Ionicons name={editingComment ? 'checkmark' : 'send'} size={18} color={colors.green} />
-          </Pressable>
+          </AppPressable>
         </View>
       </View>
 

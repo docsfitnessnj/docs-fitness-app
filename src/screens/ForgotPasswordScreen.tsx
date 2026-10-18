@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppPressable } from '../components/AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts } from '../theme';
@@ -30,10 +31,10 @@ export default function ForgotPasswordScreen({ onBack, onSendReset }: Props) {
 
   return (
     <View style={styles.container}>
-      <Pressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="forgot-password-back">
+      <AppPressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="forgot-password-back">
         <Ionicons name="chevron-back" size={20} color={colors.text} />
         <Text style={styles.backText}>BACK</Text>
-      </Pressable>
+      </AppPressable>
 
       <View style={styles.content}>
         <Text style={styles.title}>RESET PASSWORD</Text>
@@ -74,14 +75,14 @@ export default function ForgotPasswordScreen({ onBack, onSendReset }: Props) {
                 </Text>
               )}
 
-              <Pressable
+              <AppPressable
                 style={[styles.sendButton, !canSubmit && styles.sendButtonDisabled]}
                 disabled={!canSubmit}
                 onPress={handleSend}
                 testID="forgot-password-send"
               >
                 <Text style={styles.sendButtonText}>{submitting ? 'SENDING...' : 'SEND RESET LINK'}</Text>
-              </Pressable>
+              </AppPressable>
             </View>
           </>
         )}

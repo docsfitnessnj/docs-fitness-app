@@ -1,7 +1,8 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { AppPressable } from './AppPressable';
 import { DocsBadge } from './brand/DocsBadge';
 import { UnreadCountBadge } from './UnreadCountBadge';
 import { useGroupChatUnread } from '../context/GroupChatUnreadContext';
@@ -22,9 +23,9 @@ export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupCh
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <View style={styles.bar}>
-        <Pressable onPress={onOpenSidebar} hitSlop={8} style={styles.iconButton} testID="open-sidebar">
+        <AppPressable onPress={onOpenSidebar} hitSlop={8} style={styles.iconButton} testID="open-sidebar">
           <Ionicons name="menu-outline" size={24} color={colors.text} />
-        </Pressable>
+        </AppPressable>
 
         <View style={styles.titleWrap}>
           <View style={styles.titleRow}>
@@ -36,14 +37,14 @@ export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupCh
 
         <View style={styles.rightGroup}>
           {onOpenGroupChat && (
-            <Pressable onPress={onOpenGroupChat} hitSlop={8} style={styles.iconButton} testID="open-group-chat">
+            <AppPressable onPress={onOpenGroupChat} hitSlop={8} style={styles.iconButton} testID="open-group-chat">
               <Ionicons name="chatbubbles-outline" size={22} color={colors.text} />
               <UnreadCountBadge count={unreadCount} style={styles.groupChatBadge} />
-            </Pressable>
+            </AppPressable>
           )}
-          <Pressable onPress={onOpenSearch} hitSlop={8} style={styles.iconButton} testID="open-search">
+          <AppPressable onPress={onOpenSearch} hitSlop={8} style={styles.iconButton} testID="open-search">
             <Ionicons name="search-outline" size={22} color={colors.text} />
-          </Pressable>
+          </AppPressable>
         </View>
       </View>
     </SafeAreaView>

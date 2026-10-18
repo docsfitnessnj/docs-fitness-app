@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppPressable } from '../components/AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { PasswordInput } from '../components/PasswordInput';
 import { useFocusRing } from '../lib/useFocusRing';
@@ -35,10 +36,10 @@ export default function SignInScreen({ onBack, onForgotPassword, initialEmail, o
 
   return (
     <View style={styles.container}>
-      <Pressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="sign-in-back">
+      <AppPressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="sign-in-back">
         <Ionicons name="chevron-back" size={20} color={colors.text} />
         <Text style={styles.backText}>BACK</Text>
-      </Pressable>
+      </AppPressable>
 
       <View style={styles.content}>
         <Text style={styles.title}>SIGN IN</Text>
@@ -82,18 +83,19 @@ export default function SignInScreen({ onBack, onForgotPassword, initialEmail, o
             </Text>
           )}
 
-          <Pressable
+          <AppPressable
             style={[styles.signInButton, !canSubmit && styles.signInButtonDisabled]}
+            pressedStyle={styles.signInButtonPressed}
             disabled={!canSubmit}
             onPress={handleSignIn}
             testID="sign-in-submit"
           >
             <Text style={styles.signInButtonText}>{submitting ? 'PLEASE WAIT...' : 'SIGN IN'}</Text>
-          </Pressable>
+          </AppPressable>
 
-          <Pressable onPress={onForgotPassword} hitSlop={8} style={styles.forgotPasswordLink} testID="sign-in-forgot-password">
+          <AppPressable onPress={onForgotPassword} hitSlop={8} style={styles.forgotPasswordLink} testID="sign-in-forgot-password">
             <Text style={styles.forgotPasswordText}>Forgot password?</Text>
-          </Pressable>
+          </AppPressable>
         </View>
       </View>
     </View>
@@ -169,6 +171,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 15,
     alignItems: 'center',
+  },
+  signInButtonPressed: {
+    backgroundColor: colors.greenDeep,
   },
   signInButtonDisabled: {
     opacity: 0.5,

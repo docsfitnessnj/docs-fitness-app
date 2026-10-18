@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Image, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppPressable } from './AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import {
   RecordingPresets,
@@ -49,7 +50,7 @@ function VoiceMessageBubble({ uri, durationMs, mine }: { uri: string; durationMs
   const progress = totalSeconds > 0 ? Math.min(status.currentTime / totalSeconds, 1) : 0;
 
   return (
-    <Pressable style={styles.voiceRow} onPress={toggle} testID="voice-note-play">
+    <AppPressable style={styles.voiceRow} onPress={toggle} testID="voice-note-play">
       <View style={[styles.voicePlayButton, mine && styles.voicePlayButtonMe]}>
         <Ionicons name={status.playing ? 'pause' : 'play'} size={13} color={mine ? colors.green : colors.white} />
       </View>
@@ -57,7 +58,7 @@ function VoiceMessageBubble({ uri, durationMs, mine }: { uri: string; durationMs
         <View style={[styles.voiceTrackFill, mine && styles.voiceTrackFillMe, { width: `${progress * 100}%` }]} />
       </View>
       <Text style={[styles.voiceDuration, mine && styles.voiceDurationMe]}>{formatClock(remaining)}</Text>
-    </Pressable>
+    </AppPressable>
   );
 }
 
@@ -72,10 +73,10 @@ function VoiceReviewIndicator({ uri, durationMs }: { uri: string; durationMs: nu
   const remaining = status.currentTime > 0 ? Math.max(totalSeconds - status.currentTime, 0) : totalSeconds;
 
   return (
-    <Pressable style={styles.recordingIndicator} onPress={toggle} testID="voice-review-play">
+    <AppPressable style={styles.recordingIndicator} onPress={toggle} testID="voice-review-play">
       <Ionicons name={status.playing ? 'pause' : 'play'} size={16} color={colors.green} />
       <Text style={styles.recordingTime}>{formatClock(remaining)}</Text>
-    </Pressable>
+    </AppPressable>
   );
 }
 
@@ -233,14 +234,14 @@ export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyS
           </Text>
         )}
         {messages.map((message) => (
-          <Pressable
+          <AppPressable
             key={message.id}
             style={[styles.bubble, message.mine ? styles.bubbleMe : styles.bubbleDoc]}
             onLongPress={() => message.mine && openMessageMenu(message.id)}
             testID={`message-bubble-${message.id}`}
           >
             {message.media && (
-              <Pressable onPress={() => setViewerMedia(message.media!)} testID={`message-media-${message.id}`}>
+              <AppPressable onPress={() => setViewerMedia(message.media!)} testID={`message-media-${message.id}`}>
                 {message.media.type === 'image' ? (
                   <Image source={{ uri: message.media.uri }} style={styles.bubbleImage} />
                 ) : (
@@ -248,7 +249,7 @@ export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyS
                     <Ionicons name="play-circle" size={40} color={colors.white} />
                   </View>
                 )}
-              </Pressable>
+              </AppPressable>
             )}
             {message.voice && (
               <VoiceMessageBubble uri={message.voice.uri} durationMs={message.voice.durationMs} mine={message.mine} />
@@ -256,7 +257,7 @@ export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyS
             {message.text.length > 0 && (
               <Text style={[styles.bubbleText, message.mine && styles.bubbleTextMe]}>{message.text}</Text>
             )}
-          </Pressable>
+          </AppPressable>
         ))}
       </ScrollView>
 
@@ -276,40 +277,40 @@ export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyS
                 <Ionicons name="videocam" size={16} color={colors.white} />
               </View>
             )}
-            <Pressable style={styles.mediaPreviewRemove} onPress={() => setMedia(null)} testID="message-media-remove">
+            <AppPressable style={styles.mediaPreviewRemove} onPress={() => setMedia(null)} testID="message-media-remove">
               <Ionicons name="close" size={12} color={colors.white} />
-            </Pressable>
+            </AppPressable>
           </View>
         )}
 
         {isRecording ? (
           <View style={styles.recordingRow} testID="voice-recording-row">
-            <Pressable onPress={cancelRecording} hitSlop={8} style={styles.recordingCancelButton} testID="voice-cancel-button">
+            <AppPressable onPress={cancelRecording} hitSlop={8} style={styles.recordingCancelButton} testID="voice-cancel-button">
               <Ionicons name="trash-outline" size={20} color={colors.textMuted} />
-            </Pressable>
+            </AppPressable>
             <View style={styles.recordingIndicator}>
               <View style={styles.recordingDot} />
               <Text style={styles.recordingTime}>{formatClock((recorderState.durationMillis ?? 0) / 1000)}</Text>
             </View>
-            <Pressable onPress={stopRecording} hitSlop={8} style={styles.sendButton} testID="voice-stop-button">
+            <AppPressable onPress={stopRecording} hitSlop={8} style={styles.sendButton} pressedStyle={styles.sendButtonPressed} testID="voice-stop-button">
               <Ionicons name="stop" size={18} color={colors.white} />
-            </Pressable>
+            </AppPressable>
           </View>
         ) : recordedVoice ? (
           <View style={styles.recordingRow} testID="voice-review-row">
-            <Pressable onPress={discardRecordedVoice} hitSlop={8} style={styles.recordingCancelButton} testID="voice-review-discard">
+            <AppPressable onPress={discardRecordedVoice} hitSlop={8} style={styles.recordingCancelButton} testID="voice-review-discard">
               <Ionicons name="trash-outline" size={20} color={colors.textMuted} />
-            </Pressable>
+            </AppPressable>
             <VoiceReviewIndicator uri={recordedVoice.uri} durationMs={recordedVoice.durationMs} />
-            <Pressable onPress={sendRecordedVoice} hitSlop={8} style={styles.sendButton} testID="voice-review-send">
+            <AppPressable onPress={sendRecordedVoice} hitSlop={8} style={styles.sendButton} pressedStyle={styles.sendButtonPressed} testID="voice-review-send">
               <Ionicons name="send" size={18} color={colors.white} />
-            </Pressable>
+            </AppPressable>
           </View>
         ) : (
           <View style={styles.inputRow}>
-            <Pressable onPress={pick} hitSlop={8} style={styles.attachButton} testID="attach-media-button">
+            <AppPressable onPress={pick} hitSlop={8} style={styles.attachButton} testID="attach-media-button">
               <Ionicons name="camera-outline" size={20} color={colors.text} />
-            </Pressable>
+            </AppPressable>
             <View style={[styles.inputPill, { borderColor: draftFocusRing.borderColor }]}>
               <TextInput
                 style={[styles.input, { height: Math.min(MAX_INPUT_HEIGHT, Math.max(MIN_INPUT_HEIGHT, draftHeight)) }]}
@@ -335,13 +336,13 @@ export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyS
               />
             </View>
             {hasDraftContent ? (
-              <Pressable onPress={send} hitSlop={8} style={styles.sendButton} testID="send-message-button">
+              <AppPressable onPress={send} hitSlop={8} style={styles.sendButton} pressedStyle={styles.sendButtonPressed} testID="send-message-button">
                 <Ionicons name="send" size={18} color={colors.white} />
-              </Pressable>
+              </AppPressable>
             ) : (
-              <Pressable onPress={startRecording} hitSlop={8} style={styles.micButton} testID="voice-note-button">
+              <AppPressable onPress={startRecording} hitSlop={8} style={styles.micButton} testID="voice-note-button">
                 <Ionicons name="mic-outline" size={20} color={colors.text} />
-              </Pressable>
+              </AppPressable>
             )}
           </View>
         )}
@@ -546,6 +547,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.green,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  sendButtonPressed: {
+    backgroundColor: colors.greenDeep,
   },
   recordingRow: {
     flexDirection: 'row',

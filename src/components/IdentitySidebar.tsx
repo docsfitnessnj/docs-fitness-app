@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { AppPressable } from './AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { DocsBadge } from './brand/DocsBadge';
 import { ExternalLinkPressable } from './ExternalLinkPressable';
@@ -32,7 +33,7 @@ function ChallengeModule() {
   const top3 = leaderboard.slice(0, 3);
 
   return (
-    <Pressable style={styles.card} onPress={() => navigateToTab('DocsCows')} testID="sidebar-challenge-module">
+    <AppPressable style={styles.card} onPress={() => navigateToTab('DocsCows')} testID="sidebar-challenge-module">
       <View style={styles.cardHeaderRow}>
         <Ionicons name="flame" size={13} color={colors.gold} />
         <Text style={styles.cardHeading}>{current.isClosed ? 'THIS WEEK’S RESULTS' : 'THIS WEEK’S CHALLENGE'}</Text>
@@ -65,7 +66,7 @@ function ChallengeModule() {
       ) : (
         <Text style={styles.challengeTitle}>Coming this week.</Text>
       )}
-    </Pressable>
+    </AppPressable>
   );
 }
 
@@ -96,13 +97,13 @@ function NextClassModule() {
           <Text style={styles.signedUpText}>YOU'RE IN</Text>
         </View>
       ) : (
-        <Pressable
+        <AppPressable
           style={styles.signUpButton}
           onPress={() => handleSignUp(row, dateKey, weekdayName)}
           testID="sidebar-next-class-signup"
         >
           <Text style={styles.signUpButtonText}>SIGN UP</Text>
-        </Pressable>
+        </AppPressable>
       )}
     </View>
   );
@@ -165,9 +166,9 @@ function JoinPromptModule() {
       <Text style={styles.joinPromptText}>
         Unlock every WOD, the full Deck of WODs, the Weekly Challenge, and the Trophy Case.
       </Text>
-      <Pressable style={styles.joinButton} onPress={() => openMemberships('unlock')} testID="sidebar-join-button">
+      <AppPressable style={styles.joinButton} onPress={() => openMemberships('unlock')} testID="sidebar-join-button">
         <Text style={styles.joinButtonText}>SEE MEMBERSHIPS</Text>
-      </Pressable>
+      </AppPressable>
     </View>
   );
 }
@@ -195,15 +196,15 @@ function FooterModule({
 
       <View style={styles.divider} />
 
-      <Pressable style={styles.linkRow} onPress={onOpenGroupChat} testID="sidebar-desktop-group-chat">
+      <AppPressable style={styles.linkRow} onPress={onOpenGroupChat} testID="sidebar-desktop-group-chat">
         <Ionicons name="chatbubbles-outline" size={16} color={colors.green} />
         <Text style={styles.linkText}>Doc's Group Chat</Text>
         {unreadCount > 0 && <UnreadCountBadge count={unreadCount} style={styles.linkRowBadge} />}
-      </Pressable>
-      <Pressable style={styles.linkRow} onPress={onOpenMessages}>
+      </AppPressable>
+      <AppPressable style={styles.linkRow} onPress={onOpenMessages}>
         <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.green} />
         <Text style={styles.linkText}>Message Doc Directly</Text>
-      </Pressable>
+      </AppPressable>
       <ExternalLinkPressable href={MERCH_STORE_URL} style={styles.linkRow}>
         <Ionicons name="bag-handle-outline" size={16} color={colors.green} />
         <Text style={styles.linkText}>Doc's Merch Store</Text>

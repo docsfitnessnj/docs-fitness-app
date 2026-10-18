@@ -8,7 +8,6 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -16,6 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppPressable } from '../components/AppPressable';
 import { Avatar } from '../components/Avatar';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
@@ -61,13 +61,13 @@ function LockedView({ onClose }: { onClose: () => void }) {
         <Text style={styles.lockedText} testID="group-chat-locked-text">
           Members only.
         </Text>
-        <Pressable
+        <AppPressable
           style={styles.lockedButton}
           onPress={() => openMemberships('all')}
           testID="group-chat-view-memberships"
         >
           <Text style={styles.lockedButtonText}>VIEW MEMBERSHIPS</Text>
-        </Pressable>
+        </AppPressable>
       </View>
     </View>
   );
@@ -129,7 +129,7 @@ function ActiveReactionRow({
   return (
     <View style={styles.reactionRow}>
       {activeEmojis.map((emoji) => (
-        <Pressable
+        <AppPressable
           key={emoji}
           style={[styles.reactionPill, message.myReactions.includes(emoji) && styles.reactionPillActive]}
           onPress={() => onReact(message, emoji)}
@@ -140,7 +140,7 @@ function ActiveReactionRow({
           <Text style={[styles.reactionCountText, message.myReactions.includes(emoji) && styles.reactionCountTextActive]}>
             {message.reactions[emoji]}
           </Text>
-        </Pressable>
+        </AppPressable>
       ))}
     </View>
   );
@@ -161,7 +161,7 @@ function MediaReactionRow({
       {REACTION_EMOJIS.map((emoji) => {
         const mine = message.myReactions.includes(emoji);
         return (
-          <Pressable
+          <AppPressable
             key={emoji}
             style={[styles.reactionPill, mine && styles.reactionPillActive]}
             onPress={() => onReact(message, emoji)}
@@ -172,7 +172,7 @@ function MediaReactionRow({
             {message.reactions[emoji] > 0 && (
               <Text style={[styles.reactionCountText, mine && styles.reactionCountTextActive]}>{message.reactions[emoji]}</Text>
             )}
-          </Pressable>
+          </AppPressable>
         );
       })}
     </View>
@@ -277,9 +277,9 @@ const MessageRow = React.memo(function MessageRow({
             <Text style={styles.timeText}>{timeLabel(message.createdAt)}</Text>
           )}
           {canShowMenu && !message.pending && (
-            <Pressable onPress={openMenu} hitSlop={8} testID={`group-chat-message-menu-${message.id}`}>
+            <AppPressable onPress={openMenu} hitSlop={8} testID={`group-chat-message-menu-${message.id}`}>
               <Ionicons name="ellipsis-horizontal" size={16} color={colors.textMuted} />
-            </Pressable>
+            </AppPressable>
           )}
         </View>
 
@@ -293,7 +293,7 @@ const MessageRow = React.memo(function MessageRow({
         {hasMedia ? (
           <>
             {!!message.text && <Text style={styles.messageText}>{message.text}</Text>}
-            <Pressable onPress={() => onOpenViewer(message)} testID={`group-chat-message-media-${message.id}`}>
+            <AppPressable onPress={() => onOpenViewer(message)} testID={`group-chat-message-media-${message.id}`}>
               {message.mediaType === 'video' ? (
                 // The list NEVER loads the actual video file (FIX 3) — only
                 // this lightweight poster frame, captured client-side at
@@ -314,23 +314,23 @@ const MessageRow = React.memo(function MessageRow({
                   {message.pending && <UploadProgressOverlay progress={message.uploadProgress} />}
                 </View>
               )}
-            </Pressable>
+            </AppPressable>
             <MediaReactionRow message={message} onReact={onReact} />
           </>
         ) : (
           <>
-            <Pressable
+            <AppPressable
               onPress={() => onTogglePicker(message.id)}
               onLongPress={() => onTogglePicker(message.id)}
               testID={`group-chat-message-body-${message.id}`}
             >
               {!!message.text && <Text style={styles.messageText}>{message.text}</Text>}
-            </Pressable>
+            </AppPressable>
             <ActiveReactionRow message={message} onReact={onReact} />
             {pickerOpen && (
               <View style={styles.reactionPicker} testID={`group-chat-reaction-picker-${message.id}`}>
                 {REACTION_EMOJIS.map((emoji) => (
-                  <Pressable
+                  <AppPressable
                     key={emoji}
                     style={styles.reactionPickerOption}
                     onPress={() => onReact(message, emoji)}
@@ -338,7 +338,7 @@ const MessageRow = React.memo(function MessageRow({
                     testID={`group-chat-reaction-picker-${message.id}-${emoji}`}
                   >
                     <Text style={styles.reactionPickerEmoji}>{emoji}</Text>
-                  </Pressable>
+                  </AppPressable>
                 ))}
               </View>
             )}
@@ -398,16 +398,16 @@ function PinnedPromptEditor({
         testID="group-chat-pinned-prompt-input"
       />
       <View style={styles.promptEditorRow}>
-        <Pressable style={styles.promptEditorCancel} onPress={onCancel} testID="group-chat-pinned-prompt-cancel">
+        <AppPressable style={styles.promptEditorCancel} onPress={onCancel} testID="group-chat-pinned-prompt-cancel">
           <Text style={styles.promptEditorCancelText}>CANCEL</Text>
-        </Pressable>
-        <Pressable
+        </AppPressable>
+        <AppPressable
           style={styles.promptEditorSave}
           onPress={() => onSave(value.trim())}
           testID="group-chat-pinned-prompt-save"
         >
           <Text style={styles.promptEditorSaveText}>SAVE</Text>
-        </Pressable>
+        </AppPressable>
       </View>
     </View>
   );
@@ -488,9 +488,9 @@ function Composer({
   return (
     <View style={[styles.composerWrap, isDesktop && styles.composerWrapDesktop]}>
       {sendError && (
-        <Pressable onPress={onDismissSendError} testID="group-chat-send-error">
+        <AppPressable onPress={onDismissSendError} testID="group-chat-send-error">
           <Text style={styles.sendErrorText}>{sendError}</Text>
-        </Pressable>
+        </AppPressable>
       )}
       {media && (
         <View style={styles.composerMediaPreview} testID="group-chat-photo-preview">
@@ -501,15 +501,15 @@ function Composer({
           ) : (
             <Image source={{ uri: media.uri }} style={styles.composerMediaImage} />
           )}
-          <Pressable style={styles.composerMediaRemove} onPress={() => setMedia(null)} testID="group-chat-remove-photo">
+          <AppPressable style={styles.composerMediaRemove} onPress={() => setMedia(null)} testID="group-chat-remove-photo">
             <Ionicons name="close" size={12} color={colors.white} />
-          </Pressable>
+          </AppPressable>
         </View>
       )}
       <View style={styles.composerRow}>
-        <Pressable onPress={pick} hitSlop={8} style={styles.composerAttach} testID="group-chat-attach-photo">
+        <AppPressable onPress={pick} hitSlop={8} style={styles.composerAttach} testID="group-chat-attach-photo">
           <Ionicons name="camera-outline" size={20} color={colors.green} />
-        </Pressable>
+        </AppPressable>
         <View
           style={[
             styles.composerInputPill,
@@ -577,14 +577,15 @@ function Composer({
             aria-label="Message the group chat"
           />
         </View>
-        <Pressable
+        <AppPressable
           style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
+          pressedStyle={styles.sendButtonPressed}
           onPress={handleSend}
           disabled={!canSend}
           testID="group-chat-send"
         >
           <Ionicons name="arrow-up" size={18} color={colors.white} />
-        </Pressable>
+        </AppPressable>
       </View>
     </View>
   );
@@ -660,7 +661,12 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
           setPickerMessageId(null);
         }}
         onOpenViewer={(message) =>
-          message.mediaUrl && setViewerMedia({ uri: message.mediaUrl, type: message.mediaType ?? 'image' })
+          message.mediaUrl &&
+          setViewerMedia({
+            uri: message.mediaUrl,
+            type: message.mediaType ?? 'image',
+            posterUri: message.thumbnailUrl ?? undefined,
+          })
         }
       />
     );
@@ -699,9 +705,9 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
         subtitle={chat.presenceCount >= 2 ? `${chat.presenceCount} IN THE CHAT` : undefined}
         rightElement={
           canModerate ? (
-            <Pressable onPress={openAdminMenu} hitSlop={8} testID="group-chat-admin-menu">
+            <AppPressable onPress={openAdminMenu} hitSlop={8} testID="group-chat-admin-menu">
               <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
-            </Pressable>
+            </AppPressable>
           ) : undefined
         }
       />
@@ -1205,6 +1211,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  sendButtonPressed: {
+    backgroundColor: colors.goldDeep,
   },
   sendButtonDisabled: {
     opacity: 0.4,

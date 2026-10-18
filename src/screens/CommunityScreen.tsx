@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppPressable } from '../components/AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
 import { Avatar } from '../components/Avatar';
@@ -31,7 +32,7 @@ function ComposerBar({ onOpen }: { onOpen: () => void }) {
   const { registerTarget } = useTour();
   const isDesktop = useIsDesktop();
   return (
-    <Pressable
+    <AppPressable
       ref={registerTarget('composer-bar')}
       style={[styles.composerBar, isDesktop && styles.composerBarDesktop]}
       onPress={onOpen}
@@ -43,7 +44,7 @@ function ComposerBar({ onOpen }: { onOpen: () => void }) {
         </Text>
         <Ionicons name="add-circle" size={isDesktop ? 26 : 22} color={colors.gold} />
       </View>
-    </Pressable>
+    </AppPressable>
   );
 }
 
@@ -119,7 +120,7 @@ function PostCard({
   const footerRightGold = post.unread && !!lastComment;
 
   return (
-    <Pressable
+    <AppPressable
       style={[styles.post, isDesktop && styles.postDesktop, post.pinned && styles.postPinned]}
       onPress={openDetail}
       testID={`post-card-${post.id}`}
@@ -149,7 +150,7 @@ function PostCard({
           </View>
         </View>
         {(isAdmin || isOwn) && (
-          <Pressable
+          <AppPressable
             onPress={(e) => {
               e.stopPropagation();
               openMenu();
@@ -158,7 +159,7 @@ function PostCard({
             testID={`post-menu-${post.id}`}
           >
             <Ionicons name="ellipsis-horizontal" size={18} color={colors.textMuted} />
-          </Pressable>
+          </AppPressable>
         )}
       </View>
 
@@ -203,7 +204,7 @@ function PostCard({
         {REACTION_EMOJIS.map((emoji) => {
           const mine = post.myReactions.includes(emoji);
           return (
-            <Pressable
+            <AppPressable
               key={emoji}
               style={[styles.reactionPill, mine && styles.reactionPillActive]}
               onPress={(e) => {
@@ -216,13 +217,13 @@ function PostCard({
               {post.reactions[emoji] > 0 && (
                 <Text style={[styles.reactionCount, mine && styles.reactionCountActive]}>{post.reactions[emoji]}</Text>
               )}
-            </Pressable>
+            </AppPressable>
           );
         })}
       </View>
 
       <View style={styles.postFooter}>
-        <Pressable
+        <AppPressable
           style={styles.footerButton}
           onPress={(e) => {
             e.stopPropagation();
@@ -233,12 +234,12 @@ function PostCard({
           <Text style={styles.footerButtonText}>
             {post.comments.length} comment{post.comments.length === 1 ? '' : 's'}
           </Text>
-        </Pressable>
+        </AppPressable>
         <Text style={[styles.footerRightText, footerRightGold && styles.footerRightTextGold]}>
           {footerRightText}
         </Text>
       </View>
-    </Pressable>
+    </AppPressable>
   );
 }
 
@@ -250,9 +251,9 @@ function ClosedCommunityNotice() {
       <Text style={styles.closedSubtext}>
         Drop-In classes cover booking only. Add a class package or go Unlimited for full community access.
       </Text>
-      <Pressable style={styles.closedButton} onPress={() => openMemberships('all')}>
+      <AppPressable style={styles.closedButton} onPress={() => openMemberships('all')}>
         <Text style={styles.closedButtonText}>SEE PLANS</Text>
-      </Pressable>
+      </AppPressable>
     </View>
   );
 }

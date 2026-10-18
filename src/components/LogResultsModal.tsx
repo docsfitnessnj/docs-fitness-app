@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { AppPressable } from './AppPressable';
 import { AppModal } from './AppModal';
 import { MediaAttachmentPicker } from './MediaAttachmentPicker';
 import { ModalHeader } from './ModalHeader';
@@ -10,6 +12,7 @@ import { formatResultsLine, useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatShortDate, parseMoveRow } from '../data/content';
 import { showAlert } from '../lib/alert';
 import { openMovementVault } from '../lib/movementVaultModal';
+import { useActionCompletion } from '../lib/useActionCompletion';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -54,10 +57,13 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
     }
   };
 
+  const { status: saveStatus, run: runSave } = useActionCompletion();
+  const { status: postStatus, run: runPost } = useActionCompletion();
+
   const handleSaveResults = () => {
-    markCompleteIfNeeded();
-    showAlert('Saved', 'Your result is saved privately to My Workouts.');
-    onClose();
+    runSave(() => {
+      markCompleteIfNeeded();
+    }, onClose);
   };
 
   const handlePostToCommunity = () => {
@@ -66,15 +72,15 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
       {
         text: 'Post',
         onPress: () => {
-          markCompleteIfNeeded();
-          addWodResultPost(
-            displayName,
-            title,
-            { workoutTitle, dateLabel, notes: log.notes.trim(), resultsLine: formatResultsLine(log) },
-            log.media
-          );
-          showAlert('Posted!', 'Your result is live on the Community board.');
-          onClose();
+          runPost(() => {
+            markCompleteIfNeeded();
+            addWodResultPost(
+              displayName,
+              title,
+              { workoutTitle, dateLabel, notes: log.notes.trim(), resultsLine: formatResultsLine(log) },
+              log.media
+            );
+          }, onClose);
         },
       },
     ]);
@@ -190,12 +196,36 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
           </View>
 
           <View style={styles.actionRow}>
-            <Pressable style={styles.saveButton} onPress={handleSaveResults} testID="save-results">
-              <Text style={styles.saveButtonText}>SAVE RESULTS</Text>
-            </Pressable>
-            <Pressable style={styles.postButton} onPress={handlePostToCommunity} testID="post-to-community">
-              <Text style={styles.postButtonText}>POST TO COMMUNITY</Text>
-            </Pressable>
+            <AppPressable
+              style={styles.saveButton}
+              pressedStyle={styles.saveButtonPressed}
+              onPress={handleSaveResults}
+              testID="save-results"
+            >
+              {saveStatus === 'completed' ? (
+                <View style={styles.completedRow}>
+                  <Ionicons name="checkmark" size={14} color={colors.green} />
+                  <Text style={styles.saveButtonText}>SAVED</Text>
+                </View>
+              ) : (
+                <Text style={styles.saveButtonText}>SAVE RESULTS</Text>
+              )}
+            </AppPressable>
+            <AppPressable
+              style={styles.postButton}
+              pressedStyle={styles.postButtonPressed}
+              onPress={handlePostToCommunity}
+              testID="post-to-community"
+            >
+              {postStatus === 'completed' ? (
+                <View style={styles.completedRow}>
+                  <Ionicons name="checkmark" size={14} color={colors.white} />
+                  <Text style={styles.postButtonText}>POSTED</Text>
+                </View>
+              ) : (
+                <Text style={styles.postButtonText}>POST TO COMMUNITY</Text>
+              )}
+            </AppPressable>
           </View>
         </ScrollView>
       </View>
@@ -303,6 +333,9 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     alignItems: 'center',
   },
+  saveButtonPressed: {
+    backgroundColor: 'rgba(7,102,82,0.1)',
+  },
   saveButtonText: {
     color: colors.green,
     fontFamily: fonts.labelBold,
@@ -316,10 +349,18 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     alignItems: 'center',
   },
+  postButtonPressed: {
+    backgroundColor: colors.greenDeep,
+  },
   postButtonText: {
     color: colors.white,
     fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 1,
+  },
+  completedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
 });

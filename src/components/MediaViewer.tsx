@@ -1,11 +1,29 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { GestureResponderEvent, Image, NativeTouchEvent, Pressable, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  GestureResponderEvent,
+  Image,
+  NativeTouchEvent,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { AppModal } from './AppModal';
+import { AppPressable } from './AppPressable';
 import { MediaAttachment } from '../lib/media';
-import { prefetchMediaForSave, saveOrShareMedia } from '../lib/saveMedia';
-import { colors } from '../theme';
+import {
+  canShareFilesOfType,
+  downloadMediaDirectly,
+  guessMimeType,
+  prefetchMediaForSave,
+  saveOrShareMediaNative,
+  shareMediaFile,
+} from '../lib/saveMedia';
+import { showAlert } from '../lib/alert';
+import { colors, fonts } from '../theme';
 
 type Props = {
   media: MediaAttachment | null;
@@ -44,10 +62,10 @@ function touchDistance(touches: NativeTouchEvent[]): number {
 // Full-screen photo/video viewer shared by Messages (conversation media) and
 // Community (post media): pinch-zoom + pan on photos, standard controls on
 // video, swipe-down or the X to dismiss back to exactly where the caller
-// was (this only ever overlays — it never navigates), and a save/share
-// button. One unified touch handler decides pinch vs. pan vs.
-// swipe-to-dismiss from the current zoom scale, rather than three
-// competing gesture recognizers.
+// was (this only ever overlays — it never navigates), and a save button.
+// One unified touch handler decides pinch vs. pan vs. swipe-to-dismiss
+// from the current zoom scale, rather than three competing gesture
+// recognizers.
 export function MediaViewer({ media, onClose, filenameHint = 'docs-fitness-media' }: Props) {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
@@ -65,17 +83,6 @@ export function MediaViewer({ media, onClose, filenameHint = 'docs-fitness-media
     reset();
     onClose();
   };
-
-  // Starts downloading the file the moment it's opened full-screen, well
-  // before anyone taps Save — see prefetchMediaForSave's own comment for
-  // why: a video can take long enough to fetch that the save button's own
-  // tap-to-share call would otherwise lose Safari's "this came from a real
-  // tap" grace period and get silently rejected. By the time someone
-  // actually taps Save, the bytes are typically already in hand (or at
-  // least well underway) from having spent time watching/looking first.
-  useEffect(() => {
-    if (media) prefetchMediaForSave(media);
-  }, [media]);
 
   if (!media) return null;
 
@@ -148,17 +155,16 @@ export function MediaViewer({ media, onClose, filenameHint = 'docs-fitness-media
         testID="media-viewer"
       >
         <View style={styles.topBar}>
-          <Pressable onPress={handleClose} hitSlop={10} style={styles.iconButton} testID="media-viewer-close">
-            <Ionicons name="close" size={24} color={colors.white} />
-          </Pressable>
-          <Pressable
-            onPress={() => saveOrShareMedia(media, filenameHint)}
+          <AppPressable
+            onPress={handleClose}
             hitSlop={10}
             style={styles.iconButton}
-            testID="media-viewer-save"
+            pressedStyle={styles.iconButtonPressed}
+            testID="media-viewer-close"
           >
-            <Ionicons name="download-outline" size={22} color={colors.white} />
-          </Pressable>
+            <Ionicons name="close" size={24} color={colors.white} />
+          </AppPressable>
+          <SaveButton media={media} filenameHint={filenameHint} />
         </View>
 
         <View style={[styles.mediaWrap, { transform: [{ translateY: dragY }] }]}>
@@ -172,7 +178,7 @@ export function MediaViewer({ media, onClose, filenameHint = 'docs-fitness-media
               resizeMode="contain"
             />
           ) : (
-            <VideoPane uri={media.uri} />
+            <VideoPane uri={media.uri} posterUri={media.posterUri} />
           )}
         </View>
       </View>
@@ -180,11 +186,258 @@ export function MediaViewer({ media, onClose, filenameHint = 'docs-fitness-media
   );
 }
 
-function VideoPane({ uri }: { uri: string }) {
+type SaveState = 'idle' | 'preparing' | 'ready' | 'saved';
+
+// PART 3 — bulletproof phone save. navigator.share() must be invoked
+// inside a fresh, direct user gesture with the file already in memory —
+// no fetch in between, or Safari silently drops it. The button's own
+// visible state is what makes that true every time instead of hoping a
+// background prefetch finished in time: it starts "preparing" (spinner)
+// the instant the viewer opens, flips to a gold "READY — TAP TO SAVE"
+// pill only once the bytes have actually landed, and that pill's own tap
+// is the fresh gesture navigator.share() rides — zero network wait,
+// because there's nothing left to wait on by the time it's tappable.
+// Desktop (no file-sharing Web Share support) skips all of this — see
+// downloadMediaDirectly, a synchronous anchor-download with no prepare
+// step at all.
+function SaveButton({ media, filenameHint }: { media: MediaAttachment; filenameHint: string }) {
+  const [state, setState] = useState<SaveState>('idle');
+  const blobRef = useRef<Blob | null>(null);
+  const savedRevertTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const web = Platform.OS === 'web';
+  const sharePath = web && canShareFilesOfType(guessMimeType(media));
+
+  useEffect(() => {
+    blobRef.current = null;
+    if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current);
+    if (!sharePath) {
+      setState('idle');
+      return;
+    }
+    let cancelled = false;
+    setState('preparing');
+    prefetchMediaForSave(media)
+      .then((blob) => {
+        if (cancelled) return;
+        blobRef.current = blob;
+        setState('ready');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Drops back to a plain, tappable icon rather than hanging in
+        // "preparing" forever or popping an alert nobody asked for yet —
+        // the next tap (handled below) retries and only then, if it fails
+        // again, says so.
+        setState('idle');
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [media.uri, sharePath]);
+
+  const flashSaved = (revertTo: SaveState) => {
+    setState('saved');
+    savedRevertTimer.current = setTimeout(() => setState(revertTo), 900);
+  };
+
+  const onPress = async () => {
+    if (!web) {
+      await saveOrShareMediaNative(media);
+      return;
+    }
+
+    if (!sharePath) {
+      downloadMediaDirectly(media, filenameHint);
+      flashSaved('idle');
+      return;
+    }
+
+    if (state === 'preparing' || state === 'saved') return;
+
+    if (state === 'idle') {
+      // Either the first render hasn't caught up yet, or an earlier
+      // prefetch failed -- either way, a tap here means "try now," and a
+      // failure at THIS point (a deliberate, gesture-driven attempt) is
+      // worth actually telling them about.
+      setState('preparing');
+      try {
+        blobRef.current = await prefetchMediaForSave(media);
+        setState('ready');
+      } catch {
+        setState('idle');
+        showAlert('Couldn’t Download', "Couldn't download this file to save it. Check your connection and try again.");
+      }
+      return;
+    }
+
+    if (state === 'ready' && blobRef.current) {
+      const result = await shareMediaFile(blobRef.current, media, filenameHint);
+      if (result === 'shared') {
+        flashSaved('ready');
+      } else if (result === 'failed') {
+        showAlert('Save Failed', "Your device closed the share sheet without saving. Try again.");
+        setState('ready');
+      } else {
+        // Canceled -- the member changing their mind, not a failure.
+        // Bytes are still cached and valid, so stay ready for another try.
+        setState('ready');
+      }
+    }
+  };
+
+  useEffect(
+    () => () => {
+      if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current);
+    },
+    []
+  );
+
+  if (sharePath && (state === 'ready' || state === 'saved')) {
+    return (
+      <AppPressable
+        onPress={onPress}
+        style={styles.readyPill}
+        pressedStyle={styles.readyPillPressed}
+        testID="media-viewer-save"
+      >
+        <Ionicons name={state === 'saved' ? 'checkmark' : 'download-outline'} size={15} color={colors.greenDeep} />
+        <Text style={styles.readyPillText}>{state === 'saved' ? 'SAVED' : 'READY — TAP TO SAVE'}</Text>
+      </AppPressable>
+    );
+  }
+
+  return (
+    <AppPressable
+      onPress={onPress}
+      hitSlop={10}
+      style={styles.iconButton}
+      pressedStyle={styles.iconButtonPressed}
+      testID="media-viewer-save"
+    >
+      {sharePath && state === 'preparing' ? (
+        <ActivityIndicator size="small" color={colors.white} testID="media-viewer-save-spinner" />
+      ) : state === 'saved' ? (
+        <Ionicons name="checkmark" size={22} color={colors.white} />
+      ) : (
+        <Ionicons name="download-outline" size={22} color={colors.white} />
+      )}
+    </AppPressable>
+  );
+}
+
+// How long the video must sit in "playing, no painted frame yet" before
+// this calls it undecodable rather than just still buffering — generous
+// enough that a normal slow-network stall never trips it.
+const UNDECODABLE_GRACE_MS = 3000;
+
+// PART 1 — the HEVC black-video fallback. Chrome (most hardware) can
+// demux an HEVC/H.265 .mp4 fine — duration, audio track, container
+// metadata all check out — but can't decode the actual picture, so
+// playback "succeeds": audio plays, the element reports real dimensions
+// from the container's own track header, and no `error` event ever
+// fires. The one honest signal left is whether a frame actually got
+// painted. `requestVideoFrameCallback` answers that directly where it's
+// supported (current Chromium/WebKit); elsewhere this falls back to
+// sampling `videoWidth`/`videoHeight` after playback has demonstrably
+// started (`currentTime > 0`) — a codec Chrome truly can't decode paints
+// nothing, ever, so the element's own intrinsic size never resolves away
+// from 0 either way that's checked.
+function useUndecodableVideoDetector(videoEl: HTMLVideoElement | null, uri: string) {
+  const [cannotPlay, setCannotPlay] = useState(false);
+
+  useEffect(() => {
+    setCannotPlay(false);
+    if (Platform.OS !== 'web' || !videoEl) return;
+    let cancelled = false;
+    let gotFrame = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const videoAny = videoEl as HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: () => void) => number;
+    };
+
+    const armTimeout = () => {
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        const noDimensions = videoEl.videoWidth === 0 || videoEl.videoHeight === 0;
+        if (!gotFrame && noDimensions) setCannotPlay(true);
+      }, UNDECODABLE_GRACE_MS);
+    };
+
+    const onLoadedData = () => {
+      if (cancelled) return;
+      if (typeof videoAny.requestVideoFrameCallback === 'function') {
+        videoAny.requestVideoFrameCallback(() => {
+          gotFrame = true;
+        });
+      }
+      armTimeout();
+    };
+    const onError = () => {
+      if (!cancelled) setCannotPlay(true);
+    };
+
+    videoEl.addEventListener('loadeddata', onLoadedData, { once: true });
+    videoEl.addEventListener('error', onError);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      videoEl.removeEventListener('loadeddata', onLoadedData);
+      videoEl.removeEventListener('error', onError);
+    };
+  }, [videoEl, uri]);
+
+  return cannotPlay;
+}
+
+function VideoPane({ uri, posterUri }: { uri: string; posterUri?: string }) {
   const player = useVideoPlayer(uri, (p) => {
     p.play();
   });
-  return <VideoView player={player} style={styles.video} nativeControls contentFit="contain" testID="media-viewer-video" />;
+  const viewRef = useRef<{ nativeRef?: React.RefObject<HTMLVideoElement> } | null>(null);
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const cannotPlay = useUndecodableVideoDetector(videoEl, uri);
+
+  useEffect(() => {
+    // The underlying <video> DOM node is attached by the time this effect
+    // runs (refs commit before effects) — grabbed once per uri so the
+    // detector effect above has something to attach its own listeners to.
+    const el = viewRef.current?.nativeRef?.current ?? null;
+    setVideoEl(el);
+    // expo-video's web VideoView doesn't expose a `preload` prop, so this
+    // sets it directly on the real element — belt-and-suspenders beside
+    // the browser's own ~metadata-ish default when the attribute is
+    // unset. The explicit play() call right below naturally starts
+    // streaming real data past just metadata once the viewer is actually
+    // open (that's the point of opening it), the same way it would with
+    // any video player; this only matters for not preloading data before
+    // that point.
+    if (el) el.preload = 'metadata';
+  }, [uri]);
+
+  return (
+    <View style={styles.videoBox}>
+      {posterUri && <Image source={{ uri: posterUri }} style={styles.videoPoster} resizeMode="contain" />}
+      <VideoView
+        ref={viewRef as never}
+        player={player}
+        style={styles.video}
+        nativeControls
+        contentFit="contain"
+        testID="media-viewer-video"
+      />
+      {cannotPlay && (
+        <View style={styles.undecodableBanner} testID="media-viewer-undecodable" pointerEvents="none">
+          <Text style={styles.undecodableText}>
+            This video cannot play in this browser. It will still play on your phone.
+          </Text>
+        </View>
+      )}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -195,6 +448,7 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
     paddingHorizontal: 16,
     paddingTop: 56,
     zIndex: 2,
@@ -207,6 +461,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconButtonPressed: {
+    backgroundColor: 'rgba(255,255,255,0.32)',
+  },
+  readyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.gold,
+    borderRadius: 20,
+    height: 40,
+    paddingHorizontal: 14,
+  },
+  readyPillPressed: {
+    backgroundColor: colors.goldDeep,
+  },
+  readyPillText: {
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
+    fontSize: 12,
+    letterSpacing: 0.6,
+  },
   mediaWrap: {
     flex: 1,
     alignItems: 'center',
@@ -216,8 +491,34 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  video: {
+  videoBox: {
     width: '100%',
     height: '70%',
+  },
+  video: {
+    width: '100%',
+    height: '100%',
+  },
+  videoPoster: {
+    ...StyleSheet.absoluteFill,
+  },
+  undecodableBanner: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    top: '50%',
+    transform: [{ translateY: -30 }],
+    alignItems: 'center',
+  },
+  undecodableText: {
+    color: colors.white,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: 'center',
+    backgroundColor: 'rgba(5,76,61,0.75)',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
 });

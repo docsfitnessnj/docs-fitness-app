@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppPressable } from './AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useCommunity } from '../context/CommunityContext';
@@ -89,9 +90,9 @@ export function SearchModal({ visible, onClose }: Props) {
           nativeID="app-search-input"
           aria-label="Search the app"
         />
-        <Pressable onPress={onClose} hitSlop={8}>
+        <AppPressable onPress={onClose} hitSlop={8}>
           <Text style={styles.cancelText}>CANCEL</Text>
-        </Pressable>
+        </AppPressable>
       </View>
 
       {query.trim().length === 0 ? (
@@ -106,10 +107,10 @@ export function SearchModal({ visible, onClose }: Props) {
             <View key={section} style={styles.section}>
               <Text style={styles.sectionLabel}>{section}</Text>
               {sectionResults.map((r) => (
-                <Pressable key={r.id} style={styles.resultRow} onPress={() => handleSelect(r)}>
+                <AppPressable key={r.id} style={styles.resultRow} onPress={() => handleSelect(r)}>
                   <Text style={styles.resultTitle}>{r.title}</Text>
                   {r.subtitle && <Text style={styles.resultSubtitle}>{r.subtitle}</Text>}
-                </Pressable>
+                </AppPressable>
               ))}
             </View>
           );

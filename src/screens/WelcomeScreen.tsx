@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -10,6 +9,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { AppPressable } from '../components/AppPressable';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
 import { PasswordInput } from '../components/PasswordInput';
@@ -60,10 +60,10 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {onBack && (
-        <Pressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="welcome-back">
+        <AppPressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="welcome-back">
           <Ionicons name="chevron-back" size={20} color={colors.text} />
           <Text style={styles.backText}>BACK</Text>
-        </Pressable>
+        </AppPressable>
       )}
       <View style={[styles.content, isDesktop && styles.contentDesktop]}>
         <View style={[styles.brandMark, isDesktop && styles.brandMarkDesktop]}>
@@ -114,7 +114,7 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
             testID="welcome-password"
           />
 
-          <Pressable
+          <AppPressable
             style={styles.checkboxRow}
             onPress={() => setNewsletterOptIn((v) => !v)}
             hitSlop={4}
@@ -124,7 +124,7 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
               {newsletterOptIn && <Ionicons name="checkmark" size={13} color={colors.white} />}
             </View>
             <Text style={styles.checkboxLabel}>Send me The Weekly Kettlebell, Doc's weekly newsletter.</Text>
-          </Pressable>
+          </AppPressable>
 
           {feedback && (
             <Text
@@ -147,17 +147,18 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
             </Text>
           )}
 
-          <Pressable
+          <AppPressable
             style={[styles.continueButton, !canSubmit && styles.continueButtonDisabled]}
+            pressedStyle={styles.continueButtonPressed}
             disabled={!canSubmit}
             onPress={handleContinue}
             testID="welcome-continue"
           >
             <Text style={styles.continueButtonText}>{submitting ? 'PLEASE WAIT...' : 'CONTINUE'}</Text>
-          </Pressable>
+          </AppPressable>
         </View>
 
-        <Pressable
+        <AppPressable
           style={styles.signInRow}
           onPress={() => onGoToSignIn(email.trim())}
           hitSlop={8}
@@ -166,7 +167,7 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
           <Text style={styles.signInText}>
             Already a member? <Text style={styles.signInLink}>Sign in.</Text>
           </Text>
-        </Pressable>
+        </AppPressable>
 
         <View style={styles.footer}>
           <DocsHorizontalLockup width={130} />
@@ -333,6 +334,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 15,
     alignItems: 'center',
+  },
+  continueButtonPressed: {
+    backgroundColor: colors.greenDeep,
   },
   continueButtonDisabled: {
     opacity: 0.5,
