@@ -11,7 +11,11 @@ export type Comment = {
   author: string;
   text: string;
   timeLabel: string;
-  likes: number;
+  // Full five-emoji reaction set (migration_018.sql), replacing the old
+  // single-heart like — same shape as Post's own reactions/myReactions
+  // below, just scoped to this one comment.
+  reactions: Record<string, number>;
+  myReactions: string[];
   // GIPHY-powered (see lib/giphy.ts) — the only media kind a comment
   // supports. GIPHY's own CDN URL, never uploaded anywhere.
   mediaUrl?: string | null;
@@ -81,6 +85,11 @@ type CommunityContextValue = {
   addComment: (postId: string, author: string, text: string, gifUrl?: string) => void;
   updateComment: (postId: string, commentId: string, text: string) => void;
   deleteComment: (postId: string, commentId: string) => void;
+  // Same toggle-on/toggle-off mechanism as addReaction, scoped to one
+  // comment (migration_018.sql's community_comment_reactions) — replaces
+  // the old single-heart like, which was decorative only and never had a
+  // working tap handler.
+  addCommentReaction: (postId: string, commentId: string, emoji: string) => void;
   // Resolves true if the pin/unpin actually went through — false if the
   // database rejected it (pin limit reached, or not actually an admin).
   togglePin: (postId: string) => Promise<boolean>;
@@ -96,6 +105,8 @@ function nameOf(ref: ProfileRef): string {
   return profile?.display_name?.trim() || 'Member';
 }
 
+type ReactionRow = { emoji: string; author_id: string };
+
 type CommentRow = {
   id: string;
   body: string;
@@ -103,9 +114,22 @@ type CommentRow = {
   author_id: string;
   media_url: string | null;
   profiles: ProfileRef;
+  community_comment_reactions: ReactionRow[];
 };
 
-type ReactionRow = { emoji: string; author_id: string };
+// Shared by posts and comments (same shape: a row with an emoji + who
+// placed it) — tallies per-emoji counts and which of them this viewer
+// placed themselves.
+function reactionsOf(rows: ReactionRow[], userId: string | undefined): { reactions: Record<string, number>; myReactions: string[] } {
+  const reactions: Record<string, number> = {};
+  for (const emoji of REACTION_EMOJIS) reactions[emoji] = 0;
+  const myReactions: string[] = [];
+  for (const r of rows) {
+    reactions[r.emoji] = (reactions[r.emoji] ?? 0) + 1;
+    if (r.author_id === userId) myReactions.push(r.emoji);
+  }
+  return { reactions, myReactions };
+}
 
 type PostRow = {
   id: string;
@@ -127,7 +151,7 @@ type PostRow = {
 };
 
 const POST_SELECT =
-  'id, title, body, category, kind, media_url, media_type, workout_title, workout_notes, workout_results_line, pinned, created_at, author_id, profiles(display_name), community_comments(id, body, created_at, author_id, media_url, profiles(display_name)), community_reactions(emoji, author_id)';
+  'id, title, body, category, kind, media_url, media_type, workout_title, workout_notes, workout_results_line, pinned, created_at, author_id, profiles(display_name), community_comments(id, body, created_at, author_id, media_url, profiles(display_name), community_comment_reactions(emoji, author_id)), community_reactions(emoji, author_id)';
 
 function relativeTimeLabel(ms: number): string {
   const diffMs = Date.now() - ms;
@@ -141,24 +165,22 @@ function relativeTimeLabel(ms: number): string {
 }
 
 function rowToPost(row: PostRow, userId: string | undefined, lastViewedAt: Record<string, number>): Post {
-  const reactions: Record<string, number> = {};
-  for (const emoji of REACTION_EMOJIS) reactions[emoji] = 0;
-  const myReactions: string[] = [];
-  for (const r of row.community_reactions) {
-    reactions[r.emoji] = (reactions[r.emoji] ?? 0) + 1;
-    if (r.author_id === userId) myReactions.push(r.emoji);
-  }
+  const { reactions, myReactions } = reactionsOf(row.community_reactions, userId);
 
   const comments: Comment[] = [...row.community_comments]
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-    .map((c) => ({
-      id: c.id,
-      author: nameOf(c.profiles),
-      text: c.body,
-      timeLabel: relativeTimeLabel(new Date(c.created_at).getTime()),
-      likes: 0,
-      mediaUrl: c.media_url ?? null,
-    }));
+    .map((c) => {
+      const commentReactions = reactionsOf(c.community_comment_reactions, userId);
+      return {
+        id: c.id,
+        author: nameOf(c.profiles),
+        text: c.body,
+        timeLabel: relativeTimeLabel(new Date(c.created_at).getTime()),
+        reactions: commentReactions.reactions,
+        myReactions: commentReactions.myReactions,
+        mediaUrl: c.media_url ?? null,
+      };
+    });
 
   const createdAt = new Date(row.created_at).getTime();
   const latestActivity = comments.length > 0 ? Math.max(createdAt, new Date(row.community_comments[row.community_comments.length - 1].created_at).getTime()) : createdAt;
@@ -328,6 +350,22 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       },
       updateComment: async (postId, commentId, text) => {
         await supabase.from('community_comments').update({ body: text }).eq('id', commentId);
+        refetch();
+      },
+      // Same toggle shape as addReaction above, just scoped to one comment
+      // (community_comment_reactions, migration_018.sql) instead of a
+      // post. No live Realtime push here either -- same refetch-after-
+      // write behavior every other Community write already uses.
+      addCommentReaction: async (postId, commentId, emoji) => {
+        if (!user) return;
+        const post = rows.find((r) => r.id === postId);
+        const comment = post?.community_comments.find((c) => c.id === commentId);
+        const alreadyReacted = comment?.community_comment_reactions.some((r) => r.emoji === emoji && r.author_id === user.id);
+        if (alreadyReacted) {
+          await supabase.from('community_comment_reactions').delete().eq('comment_id', commentId).eq('author_id', user.id).eq('emoji', emoji);
+        } else {
+          await supabase.from('community_comment_reactions').insert({ comment_id: commentId, author_id: user.id, emoji });
+        }
         refetch();
       },
       deleteComment: async (postId, commentId) => {

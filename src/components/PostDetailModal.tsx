@@ -38,7 +38,7 @@ function CategoryTag({ category }: { category: string }) {
 // and the comment thread — this is where comments are actually read and
 // written, reached by tapping anywhere on a PostCard in the feed.
 export function PostDetailModal({ post, onClose, canInteract }: Props) {
-  const { addReaction, addComment, updateComment, deleteComment } = useCommunity();
+  const { addReaction, addComment, updateComment, deleteComment, addCommentReaction } = useCommunity();
   const isAdmin = useCanModerate();
   const displayName = useDisplayName();
   const { photoUri } = useProfile();
@@ -208,10 +208,29 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
                         testID={`comment-gif-${comment.id}`}
                       />
                     )}
+                    <View style={styles.commentReactionRow}>
+                      {REACTION_EMOJIS.map((emoji) => {
+                        const mine = comment.myReactions.includes(emoji);
+                        return (
+                          <AppPressable
+                            key={emoji}
+                            style={[styles.commentReactionPill, mine && styles.commentReactionPillActive]}
+                            onPress={() => (canInteract ? addCommentReaction(post.id, comment.id, emoji) : interactionBlockedNudge())}
+                            hitSlop={4}
+                            testID={`comment-reaction-${comment.id}-${emoji}`}
+                          >
+                            <Text style={styles.commentReactionEmoji}>{emoji}</Text>
+                            {comment.reactions[emoji] > 0 && (
+                              <Text style={[styles.commentReactionCount, mine && styles.commentReactionCountActive]}>
+                                {comment.reactions[emoji]}
+                              </Text>
+                            )}
+                          </AppPressable>
+                        );
+                      })}
+                    </View>
                     <View style={styles.commentMetaRow}>
                       <Text style={styles.commentMeta}>{comment.timeLabel}</Text>
-                      <Ionicons name="heart-outline" size={12} color={colors.textMuted} />
-                      <Text style={styles.commentMeta}>{comment.likes}</Text>
                     </View>
                   </View>
                 </View>
@@ -527,6 +546,42 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 6,
     backgroundColor: colors.background,
+  },
+  // Same five-emoji reaction row as the post's own (reactionRow/reactionPill
+  // above), scaled down to match the comment's smaller typography —
+  // replaces the old single-heart like (never more than decorative; see
+  // migration_018.sql). Applies uniformly to every row in post.comments,
+  // top-level and threaded replies alike (this view has never visually
+  // distinguished them — both render through this same flat map).
+  commentReactionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 6,
+  },
+  commentReactionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginRight: 4,
+    marginBottom: 4,
+  },
+  commentReactionPillActive: {
+    backgroundColor: colors.greenDeep,
+  },
+  commentReactionEmoji: {
+    fontSize: 11,
+  },
+  commentReactionCount: {
+    color: colors.text,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 10,
+    marginLeft: 3,
+  },
+  commentReactionCountActive: {
+    color: colors.gold,
   },
   commentMetaRow: {
     flexDirection: 'row',

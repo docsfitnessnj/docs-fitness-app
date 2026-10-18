@@ -289,6 +289,41 @@ create policy "members can remove their own reaction"
   to authenticated
   using (author_id = auth.uid());
 
+-- Added by migration_018.sql — the same five-emoji reaction set posts use
+-- (REACTION_EMOJIS in CommunityContext.tsx), on comments too, replacing the
+-- old single-heart like (which was always decorative client-side only —
+-- never backed by a database column, so there was nothing to carry over
+-- when this table was introduced; see migration_018.sql for the full
+-- explanation). Same shape and RLS as community_reactions above.
+create table if not exists public.community_comment_reactions (
+  id uuid primary key default gen_random_uuid(),
+  comment_id uuid not null references public.community_comments (id) on delete cascade,
+  author_id uuid not null references public.profiles (id) on delete cascade,
+  emoji text not null,
+  created_at timestamptz not null default now(),
+  unique (comment_id, author_id, emoji)
+);
+
+alter table public.community_comment_reactions enable row level security;
+
+drop policy if exists "comment reactions are readable by any signed-in member" on public.community_comment_reactions;
+create policy "comment reactions are readable by any signed-in member"
+  on public.community_comment_reactions for select
+  to authenticated
+  using (true);
+
+drop policy if exists "members can react to comments as themselves" on public.community_comment_reactions;
+create policy "members can react to comments as themselves"
+  on public.community_comment_reactions for insert
+  to authenticated
+  with check (author_id = auth.uid());
+
+drop policy if exists "members can remove their own comment reaction" on public.community_comment_reactions;
+create policy "members can remove their own comment reaction"
+  on public.community_comment_reactions for delete
+  to authenticated
+  using (author_id = auth.uid());
+
 -- ----------------------------------------------------------------------------
 -- WORKOUT TRACKING: WOD completions, Deck completions, Weekly Challenge
 -- entries. All strictly private to the member who logged them (this is
