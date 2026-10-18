@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   GestureResponderEvent,
   Image,
   NativeTouchEvent,
@@ -22,6 +23,7 @@ import {
   saveOrShareMediaNative,
   shareMediaFile,
 } from '../lib/saveMedia';
+import { browserCanDecodeHevc, detectVideoCodecFromUrl } from '../lib/videoCodec';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
@@ -188,28 +190,31 @@ export function MediaViewer({ media, onClose, filenameHint = 'docs-fitness-media
 
 type SaveState = 'idle' | 'preparing' | 'ready' | 'saved';
 
-// PART 3 — bulletproof phone save. navigator.share() must be invoked
-// inside a fresh, direct user gesture with the file already in memory —
-// no fetch in between, or Safari silently drops it. The button's own
-// visible state is what makes that true every time instead of hoping a
-// background prefetch finished in time: it starts "preparing" (spinner)
-// the instant the viewer opens, flips to a gold "READY — TAP TO SAVE"
-// pill only once the bytes have actually landed, and that pill's own tap
-// is the fresh gesture navigator.share() rides — zero network wait,
-// because there's nothing left to wait on by the time it's tappable.
-// Desktop (no file-sharing Web Share support) skips all of this — see
-// downloadMediaDirectly, a synchronous anchor-download with no prepare
-// step at all.
+// Bulletproof phone save, icon-only, no text in any state. navigator.share()
+// must be invoked inside a fresh, direct user gesture with the file already
+// in memory — no fetch in between, or Safari silently drops it. The same
+// 40×40 circle carries every state instead of a labeled pill: a plain
+// translucent circle with a spinner while bytes are still in flight, gold
+// with the download arrow (plus a one-time pulse) the instant they land, and
+// gold with a checkmark for a ~900ms flash right after a share or download —
+// that gold-circle tap is the fresh gesture navigator.share() rides, with
+// zero network wait left by the time it's tappable. Desktop (no
+// file-sharing Web Share support) skips the prepare step entirely — see
+// downloadMediaDirectly, a synchronous anchor-download — but still gets the
+// same gold checkmark flash on success.
 function SaveButton({ media, filenameHint }: { media: MediaAttachment; filenameHint: string }) {
   const [state, setState] = useState<SaveState>('idle');
   const blobRef = useRef<Blob | null>(null);
   const savedRevertTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pulseScale = useRef(new Animated.Value(1)).current;
+  const wasReadyRef = useRef(false);
 
   const web = Platform.OS === 'web';
   const sharePath = web && canShareFilesOfType(guessMimeType(media));
 
   useEffect(() => {
     blobRef.current = null;
+    wasReadyRef.current = false;
     if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current);
     if (!sharePath) {
       setState('idle');
@@ -236,6 +241,23 @@ function SaveButton({ media, filenameHint }: { media: MediaAttachment; filenameH
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [media.uri, sharePath]);
+
+  // Fires once, right as the icon turns gold-ready (never again while it
+  // stays ready, never on the desktop download path, which has no
+  // persistent "ready" state) -- a quiet nudge that bytes just landed and
+  // the fresh tap Apple requires for navigator.share() is now live.
+  useEffect(() => {
+    if (state === 'ready' && !wasReadyRef.current) {
+      wasReadyRef.current = true;
+      pulseScale.setValue(1);
+      Animated.sequence([
+        Animated.timing(pulseScale, { toValue: 1.3, duration: 160, useNativeDriver: true }),
+        Animated.spring(pulseScale, { toValue: 1, useNativeDriver: true }),
+      ]).start();
+    } else if (state === 'idle') {
+      wasReadyRef.current = false;
+    }
+  }, [state, pulseScale]);
 
   const flashSaved = (revertTo: SaveState) => {
     setState('saved');
@@ -294,35 +316,30 @@ function SaveButton({ media, filenameHint }: { media: MediaAttachment; filenameH
     []
   );
 
-  if (sharePath && (state === 'ready' || state === 'saved')) {
-    return (
-      <AppPressable
-        onPress={onPress}
-        style={styles.readyPill}
-        pressedStyle={styles.readyPillPressed}
-        testID="media-viewer-save"
-      >
-        <Ionicons name={state === 'saved' ? 'checkmark' : 'download-outline'} size={15} color={colors.greenDeep} />
-        <Text style={styles.readyPillText}>{state === 'saved' ? 'SAVED' : 'READY — TAP TO SAVE'}</Text>
-      </AppPressable>
-    );
-  }
+  // Gold treatment covers both success paths: the phone's persistent
+  // "ready to share" state, and the one-shot "saved" flash shared by the
+  // phone-share AND desktop-download taps alike -- same icon-only circle
+  // throughout, never a pill, never a word.
+  const isGoldReady = (sharePath && state === 'ready') || state === 'saved';
+  const iconColor = isGoldReady ? colors.greenDeep : colors.white;
 
   return (
     <AppPressable
       onPress={onPress}
       hitSlop={10}
-      style={styles.iconButton}
-      pressedStyle={styles.iconButtonPressed}
+      style={isGoldReady ? styles.iconButtonGold : styles.iconButton}
+      pressedStyle={isGoldReady ? styles.iconButtonGoldPressed : styles.iconButtonPressed}
       testID="media-viewer-save"
     >
-      {sharePath && state === 'preparing' ? (
-        <ActivityIndicator size="small" color={colors.white} testID="media-viewer-save-spinner" />
-      ) : state === 'saved' ? (
-        <Ionicons name="checkmark" size={22} color={colors.white} />
-      ) : (
-        <Ionicons name="download-outline" size={22} color={colors.white} />
-      )}
+      <Animated.View style={{ transform: [{ scale: pulseScale }] }}>
+        {sharePath && state === 'preparing' ? (
+          <ActivityIndicator size="small" color={colors.white} testID="media-viewer-save-spinner" />
+        ) : state === 'saved' ? (
+          <Ionicons name="checkmark" size={22} color={iconColor} testID="media-viewer-save-check" />
+        ) : (
+          <Ionicons name="download-outline" size={22} color={iconColor} />
+        )}
+      </Animated.View>
     </AppPressable>
   );
 }
@@ -344,12 +361,16 @@ const UNDECODABLE_GRACE_MS = 3000;
 // started (`currentTime > 0`) — a codec Chrome truly can't decode paints
 // nothing, ever, so the element's own intrinsic size never resolves away
 // from 0 either way that's checked.
-function useUndecodableVideoDetector(videoEl: HTMLVideoElement | null, uri: string) {
+function useUndecodableVideoDetector(videoEl: HTMLVideoElement | null, uri: string, skip: boolean) {
   const [cannotPlay, setCannotPlay] = useState(false);
 
   useEffect(() => {
     setCannotPlay(false);
-    if (Platform.OS !== 'web' || !videoEl) return;
+    // `skip` means a codec-based verdict (videoCodec.ts) already answered
+    // the question definitively, one way or the other -- a browser that
+    // genuinely can decode this file should never have this timer armed
+    // against it, no matter how slow the network is.
+    if (Platform.OS !== 'web' || !videoEl || skip) return;
     let cancelled = false;
     let gotFrame = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -388,10 +409,12 @@ function useUndecodableVideoDetector(videoEl: HTMLVideoElement | null, uri: stri
       videoEl.removeEventListener('loadeddata', onLoadedData);
       videoEl.removeEventListener('error', onError);
     };
-  }, [videoEl, uri]);
+  }, [videoEl, uri, skip]);
 
   return cannotPlay;
 }
+
+type CodecVerdict = 'checking' | 'known-ok' | 'known-undecodable' | 'unknown';
 
 function VideoPane({ uri, posterUri }: { uri: string; posterUri?: string }) {
   const player = useVideoPlayer(uri, (p) => {
@@ -399,7 +422,47 @@ function VideoPane({ uri, posterUri }: { uri: string; posterUri?: string }) {
   });
   const viewRef = useRef<{ nativeRef?: React.RefObject<HTMLVideoElement> } | null>(null);
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
-  const cannotPlay = useUndecodableVideoDetector(videoEl, uri);
+  const [codecVerdict, setCodecVerdict] = useState<CodecVerdict>('checking');
+
+  // PART 3 — asks the file's own container what codec it actually carries
+  // (videoCodec.ts, via a couple of small HTTP Range reads against the
+  // Supabase object URL -- no download, no server/database change) rather
+  // than trusting that narrowing the picker's accept list forced a
+  // transcode. HEVC is fine on a browser with hardware HEVC decode (iPhone/
+  // iPad Safari) and genuinely undecodable on most desktop Chrome/Firefox --
+  // `browserCanDecodeHevc()` is what tells those two apart. A verdict here
+  // short-circuits the frame-painted heuristic below entirely, so a phone
+  // that can actually decode the file is never at risk of the heuristic's
+  // own timer misfiring the "cannot play" banner on it.
+  useEffect(() => {
+    setCodecVerdict('checking');
+    if (Platform.OS !== 'web') {
+      setCodecVerdict('known-ok');
+      return;
+    }
+    let cancelled = false;
+    detectVideoCodecFromUrl(uri)
+      .then((codec) => {
+        if (cancelled) return;
+        if (codec === 'hevc') setCodecVerdict(browserCanDecodeHevc() ? 'known-ok' : 'known-undecodable');
+        else if (codec === 'h264') setCodecVerdict('known-ok');
+        else setCodecVerdict('unknown');
+      })
+      .catch(() => {
+        if (!cancelled) setCodecVerdict('unknown');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [uri]);
+
+  // Still armed as a safety net while the codec check is in flight or ends
+  // up inconclusive -- catches a genuinely undecodable file even if the
+  // container couldn't be parsed -- but never armed once the codec check
+  // has a definitive answer either way.
+  const skipHeuristic = codecVerdict === 'known-ok' || codecVerdict === 'known-undecodable';
+  const heuristicCannotPlay = useUndecodableVideoDetector(videoEl, uri, skipHeuristic);
+  const cannotPlay = codecVerdict === 'known-undecodable' || (!skipHeuristic && heuristicCannotPlay);
 
   useEffect(() => {
     // The underlying <video> DOM node is attached by the time this effect
@@ -414,19 +477,27 @@ function VideoPane({ uri, posterUri }: { uri: string; posterUri?: string }) {
     // streaming real data past just metadata once the viewer is actually
     // open (that's the point of opening it), the same way it would with
     // any video player; this only matters for not preloading data before
-    // that point.
-    if (el) el.preload = 'metadata';
-  }, [uri]);
+    // that point. The poster is set the same way -- the browser's own
+    // native `poster` attribute, which shows until real decoded data
+    // arrives and then steps aside with zero extra DOM elements, rather
+    // than a separate absolutely-positioned <Image> sibling that would sit
+    // in its own stacking context ABOVE this static-positioned <video> and
+    // silently swallow every tap meant for the native play/pause controls.
+    if (el) {
+      el.preload = 'metadata';
+      if (posterUri) el.poster = posterUri;
+    }
+  }, [uri, posterUri]);
 
   return (
     <View style={styles.videoBox}>
-      {posterUri && <Image source={{ uri: posterUri }} style={styles.videoPoster} resizeMode="contain" />}
       <VideoView
         ref={viewRef as never}
         player={player}
         style={styles.video}
         nativeControls
         contentFit="contain"
+        playsInline
         testID="media-viewer-video"
       />
       {cannotPlay && (
@@ -464,23 +535,16 @@ const styles = StyleSheet.create({
   iconButtonPressed: {
     backgroundColor: 'rgba(255,255,255,0.32)',
   },
-  readyPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.gold,
-    borderRadius: 20,
+  iconButtonGold: {
+    width: 40,
     height: 40,
-    paddingHorizontal: 14,
+    borderRadius: 20,
+    backgroundColor: colors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  readyPillPressed: {
+  iconButtonGoldPressed: {
     backgroundColor: colors.goldDeep,
-  },
-  readyPillText: {
-    color: colors.greenDeep,
-    fontFamily: fonts.labelBold,
-    fontSize: 12,
-    letterSpacing: 0.6,
   },
   mediaWrap: {
     flex: 1,
@@ -498,9 +562,6 @@ const styles = StyleSheet.create({
   video: {
     width: '100%',
     height: '100%',
-  },
-  videoPoster: {
-    ...StyleSheet.absoluteFill,
   },
   undecodableBanner: {
     position: 'absolute',

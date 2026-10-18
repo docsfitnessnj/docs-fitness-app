@@ -12,4 +12,11 @@ export type MediaAttachment = {
   // for a video from a source (Community, Message Doc Directly) that
   // doesn't capture one.
   posterUri?: string;
+  // Detected at selection time for a video (web only — see
+  // useMediaPicker.ts's pickWebMedia and videoCodec.ts). Purely
+  // informational: a send is never blocked by this, since an iPhone plays
+  // its own HEVC video natively regardless of what's picked. Kept on the
+  // attachment mainly so the send path and any future diagnostics can see
+  // what was actually picked without re-inspecting the file.
+  videoCodec?: 'h264' | 'hevc' | 'unknown';
 };

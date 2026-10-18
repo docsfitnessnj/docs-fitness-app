@@ -2,6 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Linking, Platform } from 'react-native';
 import { MediaAttachment } from './media';
 import { showAlert } from './alert';
+import { detectVideoCodecFromFile } from './videoCodec';
 
 function denied(source: 'photo library' | 'camera') {
   showAlert(
@@ -60,7 +61,11 @@ function pickWebFile(capture?: 'user' | 'environment'): Promise<File | null> {
 async function pickWebMedia(capture?: 'user' | 'environment'): Promise<MediaAttachment | null> {
   const file = await pickWebFile(capture);
   if (!file) return null;
-  return { uri: URL.createObjectURL(file), type: file.type.startsWith('video/') ? 'video' : 'image' };
+  const type = file.type.startsWith('video/') ? 'video' : 'image';
+  // Informational only (see videoCodec.ts / MediaAttachment.videoCodec) — never
+  // blocks the send, since an iPhone plays its own HEVC video natively either way.
+  const videoCodec = type === 'video' ? await detectVideoCodecFromFile(file) : undefined;
+  return { uri: URL.createObjectURL(file), type, videoCodec };
 }
 
 // Shared photo/video picking logic behind "ADD PHOTO / VIDEO" (the big
