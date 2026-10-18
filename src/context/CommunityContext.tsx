@@ -55,8 +55,13 @@ export type Post = {
 // reaction mechanism changed; this is purely order + which emoji strings
 // are valid. The feed card's old dedicated heart "like" button is gone
 // (see PostCard / PostDetailModal) — the ❤️ pill in this same row is now
-// the only way to like a post, exactly like every other reaction.
-export const REACTION_EMOJIS = ['❤️', '🤙', '🔥', '💪'] as const;
+// the only way to like a post, exactly like every other reaction. 😂 added
+// at the end (round after GIF support) — both the cheers (group chat) and
+// reactions (Community) tables store the emoji character itself in a plain
+// text column with no check constraint on which characters are allowed, so
+// adding a fifth value here is the entire change; nothing in the database
+// needed to move.
+export const REACTION_EMOJIS = ['❤️', '🤙', '🔥', '💪', '😂'] as const;
 
 type CommunityContextValue = {
   loading: boolean;
