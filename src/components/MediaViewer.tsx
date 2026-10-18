@@ -534,30 +534,70 @@ function VideoPane({ uri, posterUri }: { uri: string; posterUri?: string }) {
     }
   };
 
+  // DESKTOP — a second, app-styled affordance into the same fullscreen the
+  // (now-fixed) native control bar offers, placed well clear of that bar
+  // so it's never fiddly to hit on a large video. Toggles: requestFullscreen
+  // when nothing is fullscreen yet, exitFullscreen when this video already
+  // is -- both called synchronously inside the click, same gesture
+  // requirement as the phone path above. Escape exiting fullscreen is
+  // inherent to the Fullscreen API itself, nothing to wire up for that.
+  const onExpandPress = () => {
+    const el = videoEl;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement === el) {
+        document.exitFullscreen?.()?.catch(() => {});
+      } else {
+        el.requestFullscreen?.()?.catch(() => {});
+      }
+    } catch {
+      // Refused -- inline playback is unaffected either way.
+    }
+  };
+
   return (
-    <View style={[styles.videoBox, isDesktop && styles.videoBoxDesktop]}>
-      <VideoView
-        ref={viewRef as never}
-        player={player}
-        style={styles.video}
-        nativeControls
-        contentFit="contain"
-        playsInline
-        testID="media-viewer-video"
-      />
-      {!isDesktop && !hasInteracted && !cannotPlay && (
-        <AppPressable
-          onPress={onTapToPlayFullscreen}
-          style={StyleSheet.absoluteFill}
-          testID="media-viewer-video-tap-fullscreen"
+    <View style={styles.videoPaneRoot}>
+      <View style={[styles.videoBox, isDesktop && styles.videoBoxDesktop]}>
+        <VideoView
+          ref={viewRef as never}
+          player={player}
+          style={styles.video}
+          nativeControls
+          contentFit="contain"
+          playsInline
+          // Without this, expo-video's web VideoView sets the <video>'s
+          // controlsList to "nofullscreen" by default, which hides/disables
+          // the browser's own native fullscreen button in the control bar --
+          // the exact "barely visible and not clickable" symptom reported on
+          // desktop Chrome. This restores it to a normal, working control.
+          fullscreenOptions={{ enable: true }}
+          testID="media-viewer-video"
         />
-      )}
-      {cannotPlay && (
-        <View style={styles.undecodableBanner} testID="media-viewer-undecodable" pointerEvents="none">
-          <Text style={styles.undecodableText}>
-            This video cannot play in this browser. It will still play on your phone.
-          </Text>
-        </View>
+        {!isDesktop && !hasInteracted && !cannotPlay && (
+          <AppPressable
+            onPress={onTapToPlayFullscreen}
+            style={StyleSheet.absoluteFill}
+            testID="media-viewer-video-tap-fullscreen"
+          />
+        )}
+        {cannotPlay && (
+          <View style={styles.undecodableBanner} testID="media-viewer-undecodable" pointerEvents="none">
+            <Text style={styles.undecodableText}>
+              This video cannot play in this browser. It will still play on your phone.
+            </Text>
+          </View>
+        )}
+      </View>
+      {isDesktop && !cannotPlay && (
+        <AppPressable
+          onPress={onExpandPress}
+          hitSlop={10}
+          style={[styles.iconButton, styles.expandButtonPosition]}
+          pressedStyle={styles.iconButtonPressed}
+          testID="media-viewer-expand"
+        >
+          <Ionicons name="expand-outline" size={20} color={colors.white} />
+        </AppPressable>
       )}
     </View>
   );
@@ -607,21 +647,36 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  // Fills mediaWrap so the desktop expand button (below) can anchor to the
+  // viewer's own bottom-right corner rather than the video box's -- same
+  // bounds either way (the video box is always full width), but this keeps
+  // the button's position independent of exactly how tall the video box is.
+  videoPaneRoot: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   videoBox: {
     width: '100%',
     height: '70%',
   },
-  // DESKTOP — fills nearly the full viewer height instead of the phone's
-  // more conservative 70%; contentFit="contain" still keeps the video's
-  // own aspect ratio intact, and the close/save controls stay reachable
-  // above it since this is still sized relative to mediaWrap (itself
-  // already constrained below the fixed-height topBar, never over it).
+  // DESKTOP — fills most of the viewer height instead of the phone's more
+  // conservative 70%, while leaving a clear margin band below for the
+  // expand button (further down) so it never sits over the video's own
+  // native control bar; contentFit="contain" still keeps the video's own
+  // aspect ratio intact, and the close/save controls stay reachable above.
   videoBoxDesktop: {
-    height: '92%',
+    height: '80%',
   },
   video: {
     width: '100%',
     height: '100%',
+  },
+  expandButtonPosition: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
   },
   undecodableBanner: {
     position: 'absolute',
