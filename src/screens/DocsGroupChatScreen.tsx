@@ -19,6 +19,7 @@ import { AppPressable } from '../components/AppPressable';
 import { Avatar } from '../components/Avatar';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
+import { GifPicker } from '../components/GifPicker';
 import { MediaViewer } from '../components/MediaViewer';
 import { ModalHeader } from '../components/ModalHeader';
 import { PostAuthorBadges } from '../components/PostAuthorBadges';
@@ -26,7 +27,7 @@ import { REACTION_EMOJIS } from '../context/CommunityContext';
 import { useMembership } from '../context/MembershipContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { GroupChatMessage, useGroupChat } from '../lib/useGroupChat';
-import { MediaAttachment } from '../lib/media';
+import { MediaAttachment, ViewableMedia } from '../lib/media';
 import { useIsDesktop } from '../lib/responsive';
 import { useFocusRing } from '../lib/useFocusRing';
 import { useKeyboardVisible } from '../lib/useKeyboardVisible';
@@ -432,18 +433,28 @@ function Composer({
   muted: boolean;
   sendError: string | null;
   isDesktop: boolean;
-  onSend: (text: string, media: MediaAttachment | null) => Promise<boolean>;
+  onSend: (text: string, media: ViewableMedia | null) => Promise<boolean>;
   onDismissSendError: () => void;
 }) {
   const [text, setText] = useState('');
   const [media, setMedia] = useState<MediaAttachment | null>(null);
   const [sending, setSending] = useState(false);
   const [inputContentHeight, setInputContentHeight] = useState(MIN_INPUT_HEIGHT);
+  const [gifPickerOpen, setGifPickerOpen] = useState(false);
   const focusRing = useFocusRing();
   const { pick } = useMediaPicker((picked) => {
     setMedia(picked);
     onDismissSendError();
   });
+
+  // GIFs send immediately on tap -- unlike a picked photo/video, there's no
+  // attach-then-review step. The current draft text is left untouched (the
+  // GIF goes out as its own message), matching the chat-app convention
+  // this mirrors (Slack/Discord/iMessage all send a picked GIF instantly).
+  const handleSendGif = (url: string) => {
+    setGifPickerOpen(false);
+    void onSend('', { uri: url, type: 'gif' });
+  };
 
   if (muted) {
     return (
@@ -506,9 +517,18 @@ function Composer({
           </AppPressable>
         </View>
       )}
+      {gifPickerOpen && <GifPicker onClose={() => setGifPickerOpen(false)} onSelect={(gif) => handleSendGif(gif.sendUrl)} />}
       <View style={styles.composerRow}>
         <AppPressable onPress={pick} hitSlop={8} style={styles.composerAttach} testID="group-chat-attach-photo">
           <Ionicons name="camera-outline" size={20} color={colors.green} />
+        </AppPressable>
+        <AppPressable
+          onPress={() => setGifPickerOpen((v) => !v)}
+          hitSlop={8}
+          style={styles.composerAttach}
+          testID="group-chat-attach-gif"
+        >
+          <Text style={styles.gifButtonText}>GIF</Text>
         </AppPressable>
         <View
           style={[
@@ -615,7 +635,7 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
 
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [pickerMessageId, setPickerMessageId] = useState<string | null>(null);
-  const [viewerMedia, setViewerMedia] = useState<MediaAttachment | null>(null);
+  const [viewerMedia, setViewerMedia] = useState<ViewableMedia | null>(null);
 
   const listRef = useRef<FlatList<ListItem>>(null);
   const isLoadingOlderRef = useRef(false);
@@ -660,14 +680,21 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
           chat.toggleReaction(message, emoji);
           setPickerMessageId(null);
         }}
-        onOpenViewer={(message) =>
-          message.mediaUrl &&
-          setViewerMedia({
-            uri: message.mediaUrl,
-            type: message.mediaType ?? 'image',
-            posterUri: message.thumbnailUrl ?? undefined,
-          })
-        }
+        onOpenViewer={(message) => {
+          if (!message.mediaUrl) return;
+          // A GIF has no poster frame (and isn't a MediaAttachment at all
+          // — see media.ts) -- branched separately so each object literal
+          // matches its own member of the ViewableMedia union exactly.
+          if (message.mediaType === 'gif') {
+            setViewerMedia({ uri: message.mediaUrl, type: 'gif' });
+          } else {
+            setViewerMedia({
+              uri: message.mediaUrl,
+              type: message.mediaType ?? 'image',
+              posterUri: message.thumbnailUrl ?? undefined,
+            });
+          }
+        }}
       />
     );
 
@@ -1172,6 +1199,15 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // No Ionicon reads unambiguously as "GIF" at this size — the app's own
+  // condensed caps label instead, same treatment/weight as the camera
+  // icon it sits beside (same green, same 36x36 tap target).
+  gifButtonText: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.4,
   },
   // One rounded container only — no nested visible box inside it. The
   // TextInput's own height is computed exactly from its content (see the

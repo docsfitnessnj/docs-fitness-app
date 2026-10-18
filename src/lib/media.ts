@@ -20,3 +20,15 @@ export type MediaAttachment = {
   // what was actually picked without re-inspecting the file.
   videoCodec?: 'h264' | 'hevc' | 'unknown';
 };
+
+// A GIF attachment — GIPHY-powered (see lib/giphy.ts), remote-only, and
+// never uploaded anywhere (GIPHY's terms prohibit rehosting their media).
+// Kept as its own narrow type rather than widening MediaAttachment.type
+// app-wide: most MediaAttachment consumers (Community posts, Message Doc
+// Directly, Workout Log) don't support GIFs and shouldn't have to account
+// for a type they can never actually receive.
+export type GifAttachment = { uri: string; type: 'gif' };
+
+// What DOC'S GROUP CHAT's send path and the full-screen MediaViewer can
+// show — a locally-picked photo/video, or a GIPHY GIF.
+export type ViewableMedia = MediaAttachment | GifAttachment;

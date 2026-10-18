@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { AppModal } from './AppModal';
 import { AppPressable } from './AppPressable';
-import { MediaAttachment } from '../lib/media';
+import { ViewableMedia } from '../lib/media';
 import {
   canShareFilesOfType,
   downloadMediaDirectly,
@@ -29,7 +29,7 @@ import { useIsDesktop } from '../lib/responsive';
 import { colors, fonts } from '../theme';
 
 type Props = {
-  media: MediaAttachment | null;
+  media: ViewableMedia | null;
   onClose: () => void;
   // Base filename (no extension) offered to the share sheet / download.
   filenameHint?: string;
@@ -171,7 +171,11 @@ export function MediaViewer({ media, onClose, filenameHint = 'docs-fitness-media
         </View>
 
         <View style={[styles.mediaWrap, { transform: [{ translateY: dragY }] }]}>
-          {media.type === 'image' ? (
+          {media.type === 'video' ? (
+            <VideoPane uri={media.uri} posterUri={media.posterUri} />
+          ) : (
+            // Image and gif both render here -- a GIF is just an <img> the
+            // browser already animates natively, same as any other image.
             <Image
               source={{ uri: media.uri }}
               style={[
@@ -180,8 +184,6 @@ export function MediaViewer({ media, onClose, filenameHint = 'docs-fitness-media
               ]}
               resizeMode="contain"
             />
-          ) : (
-            <VideoPane uri={media.uri} posterUri={media.posterUri} />
           )}
         </View>
       </View>
@@ -203,7 +205,7 @@ type SaveState = 'idle' | 'preparing' | 'ready' | 'saved';
 // file-sharing Web Share support) skips the prepare step entirely — see
 // downloadMediaDirectly, a synchronous anchor-download — but still gets the
 // same gold checkmark flash on success.
-function SaveButton({ media, filenameHint }: { media: MediaAttachment; filenameHint: string }) {
+function SaveButton({ media, filenameHint }: { media: ViewableMedia; filenameHint: string }) {
   const [state, setState] = useState<SaveState>('idle');
   const blobRef = useRef<Blob | null>(null);
   const savedRevertTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

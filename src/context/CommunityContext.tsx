@@ -12,6 +12,9 @@ export type Comment = {
   text: string;
   timeLabel: string;
   likes: number;
+  // GIPHY-powered (see lib/giphy.ts) — the only media kind a comment
+  // supports. GIPHY's own CDN URL, never uploaded anywhere.
+  mediaUrl?: string | null;
 };
 
 export type WodPostMeta = {
@@ -70,7 +73,7 @@ type CommunityContextValue = {
   // otherwise — the ❤️ pill is this feed's "like," using the exact same
   // call as every other emoji.
   addReaction: (postId: string, emoji: string) => void;
-  addComment: (postId: string, author: string, text: string) => void;
+  addComment: (postId: string, author: string, text: string, gifUrl?: string) => void;
   updateComment: (postId: string, commentId: string, text: string) => void;
   deleteComment: (postId: string, commentId: string) => void;
   // Resolves true if the pin/unpin actually went through — false if the
@@ -93,6 +96,7 @@ type CommentRow = {
   body: string;
   created_at: string;
   author_id: string;
+  media_url: string | null;
   profiles: ProfileRef;
 };
 
@@ -118,7 +122,7 @@ type PostRow = {
 };
 
 const POST_SELECT =
-  'id, title, body, category, kind, media_url, media_type, workout_title, workout_notes, workout_results_line, pinned, created_at, author_id, profiles(display_name), community_comments(id, body, created_at, author_id, profiles(display_name)), community_reactions(emoji, author_id)';
+  'id, title, body, category, kind, media_url, media_type, workout_title, workout_notes, workout_results_line, pinned, created_at, author_id, profiles(display_name), community_comments(id, body, created_at, author_id, media_url, profiles(display_name)), community_reactions(emoji, author_id)';
 
 function relativeTimeLabel(ms: number): string {
   const diffMs = Date.now() - ms;
@@ -148,6 +152,7 @@ function rowToPost(row: PostRow, userId: string | undefined, lastViewedAt: Recor
       text: c.body,
       timeLabel: relativeTimeLabel(new Date(c.created_at).getTime()),
       likes: 0,
+      mediaUrl: c.media_url ?? null,
     }));
 
   const createdAt = new Date(row.created_at).getTime();
@@ -305,9 +310,15 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         }
         refetch();
       },
-      addComment: async (postId, _author, text) => {
+      addComment: async (postId, _author, text, gifUrl) => {
         if (!user) return;
-        await supabase.from('community_comments').insert({ post_id: postId, author_id: user.id, body: text });
+        await supabase.from('community_comments').insert({
+          post_id: postId,
+          author_id: user.id,
+          body: text,
+          media_url: gifUrl ?? null,
+          media_type: gifUrl ? 'gif' : null,
+        });
         refetch();
       },
       updateComment: async (postId, commentId, text) => {

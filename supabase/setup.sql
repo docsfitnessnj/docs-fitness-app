@@ -223,6 +223,13 @@ create table if not exists public.community_comments (
   -- real in the data, even though today's UI only shows one flat level.
   parent_comment_id uuid references public.community_comments (id) on delete cascade,
   body text not null,
+  -- Added by migration_017.sql — a comment's only supported media kind is
+  -- a GIF (GIPHY-powered), not a general photo/video attachment feature;
+  -- media_url is GIPHY's own CDN URL, same shape (url + type) as every
+  -- other media-bearing table in this schema, just narrower in what
+  -- media_type allows for now.
+  media_url text,
+  media_type text check (media_type in ('gif')),
   created_at timestamptz not null default now()
 );
 
@@ -1049,7 +1056,10 @@ create table if not exists public.group_chat_messages (
   sender_id uuid not null references public.profiles (id) on delete cascade,
   body text not null default '',
   media_url text,
-  media_type text check (media_type in ('image', 'video')),
+  -- 'gif' added by migration_017.sql — a GIF message's media_url is
+  -- GIPHY's own CDN URL, never a Supabase Storage path (GIPHY's terms
+  -- prohibit rehosting their media), so nothing is ever uploaded for it.
+  media_type text check (media_type in ('image', 'video', 'gif')),
   -- A lightweight poster frame for a video message, captured client-side
   -- at send time and uploaded alongside the video (migration_015.sql) —
   -- the message list renders only this, never the video file itself,
