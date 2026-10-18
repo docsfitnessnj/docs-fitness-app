@@ -1,6 +1,7 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { AppPressable } from './AppPressable';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -29,12 +30,12 @@ type Props = {
 export function ModalHeader({ title, onBack, backTestID, backLabel, subtitle, rightElement }: Props) {
   return (
     <View style={styles.header}>
-      <Pressable onPress={onBack} hitSlop={8} style={styles.backButton} testID={backTestID ?? 'modal-back'}>
+      <AppPressable onPress={onBack} hitSlop={8} style={styles.backButton} testID={backTestID ?? 'modal-back'}>
         <Ionicons name="chevron-back" size={22} color={colors.text} />
         <Text style={styles.backText} numberOfLines={1}>
           {backLabel ?? 'BACK'}
         </Text>
-      </Pressable>
+      </AppPressable>
       <View style={styles.titleWrap}>
         <Text style={styles.title} numberOfLines={1}>
           {title}

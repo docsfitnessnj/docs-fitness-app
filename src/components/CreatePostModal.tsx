@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppPressable } from './AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { Avatar } from './Avatar';
@@ -7,6 +8,7 @@ import { MediaAttachmentPicker } from './MediaAttachmentPicker';
 import { Post, useCommunity } from '../context/CommunityContext';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { MediaAttachment } from '../lib/media';
+import { useActionCompletion } from '../lib/useActionCompletion';
 import { colors, fonts } from '../theme';
 
 // ~4 lines at the body input's 22px line height — a modest starting box,
@@ -68,35 +70,49 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
   };
 
   const canSubmit = title.trim().length > 0 && body.trim().length > 0;
+  const { status: submitStatus, run: runSubmit } = useActionCompletion();
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    if (editingPost) {
-      updateTextPost(editingPost.id, title, body.trim(), media);
-    } else {
-      addTextPost(displayName, title, body.trim(), undefined, media);
-    }
-    reset();
-    onClose();
+    runSubmit(() => {
+      if (editingPost) {
+        updateTextPost(editingPost.id, title, body.trim(), media);
+      } else {
+        addTextPost(displayName, title, body.trim(), undefined, media);
+      }
+    }, () => {
+      reset();
+      onClose();
+    });
   };
 
   return (
     <AppModal visible={visible} animationType="slide" onRequestClose={handleClose}>
       <View style={styles.composeContainer}>
         <View style={styles.composeHeader}>
-          <Pressable onPress={handleClose} hitSlop={8} testID="compose-close" aria-label="Close">
+          <AppPressable onPress={handleClose} hitSlop={8} testID="compose-close" aria-label="Close">
             <Ionicons name="close" size={26} color={colors.text} />
-          </Pressable>
-          <Pressable
+          </AppPressable>
+          <AppPressable
             onPress={handleSubmit}
             disabled={!canSubmit}
             style={[styles.postPill, canSubmit && styles.postPillActive]}
+            pressedStyle={canSubmit ? styles.postPillPressed : undefined}
             testID="compose-submit"
           >
-            <Text style={[styles.postPillText, canSubmit && styles.postPillTextActive]}>
-              {editingPost ? 'SAVE' : 'POST'}
-            </Text>
-          </Pressable>
+            {submitStatus === 'completed' ? (
+              <View style={styles.postPillCompletedRow}>
+                <Ionicons name="checkmark" size={13} color={colors.white} />
+                <Text style={[styles.postPillText, styles.postPillTextActive]}>
+                  {editingPost ? 'SAVED' : 'POSTED'}
+                </Text>
+              </View>
+            ) : (
+              <Text style={[styles.postPillText, canSubmit && styles.postPillTextActive]}>
+                {editingPost ? 'SAVE' : 'POST'}
+              </Text>
+            )}
+          </AppPressable>
         </View>
 
         <ScrollView
@@ -186,6 +202,14 @@ const styles = StyleSheet.create({
   },
   postPillActive: {
     backgroundColor: colors.green,
+  },
+  postPillPressed: {
+    backgroundColor: colors.greenDeep,
+  },
+  postPillCompletedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   postPillText: {
     color: colors.textMuted,

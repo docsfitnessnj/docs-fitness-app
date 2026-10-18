@@ -42,17 +42,27 @@ export function ExternalLinkPressable({
   fallbackMessage = "Couldn't open that link right now.",
   children,
 }: Props) {
+  // Same press-state dim every other tappable control in the app gets
+  // (see AppPressable) — folded in by hand here rather than delegating to
+  // that component, since this one specifically relies on react-native-web
+  // rendering a real anchor tag (see the comment above), which AppPressable
+  // doesn't need to know anything about.
+  const pressedAwareStyle = (state: { pressed: boolean }) => [
+    typeof style === 'function' ? (style as (s: { pressed: boolean }) => StyleProp<ViewStyle>)(state) : style,
+    state.pressed && { opacity: 0.6 },
+  ];
+
   if (Platform.OS === 'web') {
     const anchorProps = { href, hrefAttrs: { target: '_blank', rel: 'noopener noreferrer' } } as object;
     return (
-      <Pressable style={style} testID={testID} hitSlop={hitSlop} onPress={onPress} {...anchorProps}>
+      <Pressable style={pressedAwareStyle} testID={testID} hitSlop={hitSlop} onPress={onPress} {...anchorProps}>
         {children}
       </Pressable>
     );
   }
   return (
     <Pressable
-      style={style}
+      style={pressedAwareStyle}
       testID={testID}
       hitSlop={hitSlop}
       onPress={() => {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { AppPressable } from './AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { LogResultsModal } from './LogResultsModal';
 import { ScheduleStrip } from './ScheduleStrip';
@@ -38,9 +39,9 @@ type Props = {
 
 function TrainingNearVentnorLine() {
   return (
-    <Pressable onPress={openFullSchedule} hitSlop={8} style={styles.ventnorLineWrap} testID="ventnor-book-class-line">
+    <AppPressable onPress={openFullSchedule} hitSlop={8} style={styles.ventnorLineWrap} testID="ventnor-book-class-line">
       <Text style={styles.ventnorLineText}>TRAINING NEAR VENTNOR? BOOK A CLASS AT DOC'S</Text>
-    </Pressable>
+    </AppPressable>
   );
 }
 
@@ -111,18 +112,23 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                       <Ionicons name="checkmark-circle" size={13} color={colors.green} />
                       <Text style={styles.signedUpBadgeText}>YOU'RE IN</Text>
                     </View>
-                    <Pressable
+                    <AppPressable
                       style={styles.cancelPill}
                       onPress={() => handleCancel(row)}
                       testID={`cancel-class-${row.id}`}
                     >
                       <Text style={styles.cancelPillText}>CANCEL CLASS</Text>
-                    </Pressable>
+                    </AppPressable>
                   </View>
                 ) : (
-                  <Pressable style={styles.signUpPill} onPress={() => handleSignUp(row)} testID={`sign-up-${row.id}`}>
+                  <AppPressable
+                    style={styles.signUpPill}
+                    pressedStyle={styles.signUpPillPressed}
+                    onPress={() => handleSignUp(row)}
+                    testID={`sign-up-${row.id}`}
+                  >
                     <Text style={styles.signUpPillText}>SIGN UP</Text>
-                  </Pressable>
+                  </AppPressable>
                 )}
               </View>
             );
@@ -137,7 +143,7 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
         </>
       )}
 
-      <Pressable
+      <AppPressable
         style={styles.wodBar}
         onPress={() => setWodExpanded((v) => !v)}
         testID="wod-bar-toggle"
@@ -155,7 +161,7 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
           )}
           <Ionicons name={wodExpanded ? 'chevron-up' : 'chevron-down'} size={22} color={colors.textMuted} />
         </View>
-      </Pressable>
+      </AppPressable>
 
       {!showClassCard && <TrainingNearVentnorLine />}
 
@@ -189,7 +195,7 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                 })}
 
                 <View style={styles.buttonRow}>
-                  <Pressable
+                  <AppPressable
                     style={[styles.completeButton, isComplete && styles.completeButtonDone]}
                     onPress={toggleComplete}
                     testID="day-panel-complete"
@@ -197,10 +203,10 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                     <Text style={[styles.completeButtonText, isComplete && styles.completeButtonTextDone]}>
                       {isComplete ? 'COMPLETED ✓' : 'MARK COMPLETE'}
                     </Text>
-                  </Pressable>
-                  <Pressable style={styles.logButton} onPress={() => setLogOpen(true)} testID="day-panel-log">
+                  </AppPressable>
+                  <AppPressable style={styles.logButton} onPress={() => setLogOpen(true)} testID="day-panel-log">
                     <Text style={styles.logButtonText}>LOG RESULTS</Text>
-                  </Pressable>
+                  </AppPressable>
                 </View>
               </View>
               )
@@ -235,7 +241,7 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                       );
                     })}
                     <View style={styles.buttonRow}>
-                      <Pressable
+                      <AppPressable
                         style={[styles.completeButton, isComplete && styles.completeButtonDone]}
                         onPress={toggleComplete}
                         testID="day-panel-complete"
@@ -243,10 +249,10 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                         <Text style={[styles.completeButtonText, isComplete && styles.completeButtonTextDone]}>
                           {isComplete ? 'COMPLETED ✓' : 'MARK COMPLETE'}
                         </Text>
-                      </Pressable>
-                      <Pressable style={styles.logButton} onPress={() => setLogOpen(true)} testID="day-panel-log">
+                      </AppPressable>
+                      <AppPressable style={styles.logButton} onPress={() => setLogOpen(true)} testID="day-panel-log">
                         <Text style={styles.logButtonText}>LOG RESULTS</Text>
-                      </Pressable>
+                      </AppPressable>
                     </View>
                   </>
                 ) : (
@@ -268,13 +274,13 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
               </View>
             )
           ) : (
-            <Pressable style={styles.lockedCard} onPress={() => openMemberships('unlock')} testID="day-panel-locked-unlock">
+            <AppPressable style={styles.lockedCard} onPress={() => openMemberships('unlock')} testID="day-panel-locked-unlock">
               <Ionicons name="lock-closed" size={24} color={colors.textMuted} />
               <View style={styles.lockedLinkRow}>
                 <Text style={styles.lockedLinkText}>Join to unlock this workout</Text>
                 <Ionicons name="chevron-forward" size={14} color={colors.green} />
               </View>
-            </Pressable>
+            </AppPressable>
           )
         ) : (
           <View style={styles.lockedCard}>
@@ -521,6 +527,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
+  },
+  signUpPillPressed: {
+    backgroundColor: colors.greenDeep,
   },
   signUpPillText: {
     color: colors.white,

@@ -13,6 +13,10 @@ export const colors = {
   // Accent — Masters yellow
   gold: '#E5B80B',
   goldBright: '#FFD520',
+  // Pressed-state equivalent of `gold` (darkened ~25%, same relationship
+  // `greenDeep` has to `green`) — every gold-backgrounds-on-press control
+  // app-wide uses this one value rather than each screen picking its own.
+  goldDeep: '#AC8A08',
 
   // Scoreboard red — leaderboard time badges only
   scoreboardRed: '#9E1B32',
