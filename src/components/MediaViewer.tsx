@@ -25,6 +25,7 @@ import {
 } from '../lib/saveMedia';
 import { browserCanDecodeHevc, detectVideoCodecFromUrl } from '../lib/videoCodec';
 import { showAlert } from '../lib/alert';
+import { useIsDesktop } from '../lib/responsive';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -423,6 +424,8 @@ function VideoPane({ uri, posterUri }: { uri: string; posterUri?: string }) {
   const viewRef = useRef<{ nativeRef?: React.RefObject<HTMLVideoElement> } | null>(null);
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [codecVerdict, setCodecVerdict] = useState<CodecVerdict>('checking');
+  const [hasInteracted, setHasInteracted] = useState(false);
+  const isDesktop = useIsDesktop();
 
   // PART 3 — asks the file's own container what codec it actually carries
   // (videoCodec.ts, via a couple of small HTTP Range reads against the
@@ -489,8 +492,50 @@ function VideoPane({ uri, posterUri }: { uri: string; posterUri?: string }) {
     }
   }, [uri, posterUri]);
 
+  useEffect(() => {
+    setHasInteracted(false);
+  }, [uri]);
+
+  // PHONE — collapse "tap play, then separately tap the native controls'
+  // own expand/fullscreen button" into one tap. A transparent catcher sits
+  // over the video until the first interaction; its own tap handler calls
+  // play() and enters the device's native fullscreen video player
+  // SYNCHRONOUSLY, in the same call stack as the tap itself -- not after
+  // any await -- because Safari only honors a fullscreen request made
+  // directly inside a real user gesture. webkitEnterFullscreen is the iOS
+  // Safari-specific API a <video> element exposes for its own native
+  // fullscreen player; requestFullscreen is the standard Fullscreen API
+  // used where that's what's supported instead. If neither is available,
+  // or either is refused, playback still continues inline (play() already
+  // fired above) rather than the tap doing nothing. Once tapped, the
+  // catcher unmounts for good -- native controls (pause/scrub, and taking
+  // this device back into/out of fullscreen) are never blocked again, same
+  // as every other state of this viewer.
+  const onTapToPlayFullscreen = () => {
+    setHasInteracted(true);
+    const el = videoEl;
+    if (!el) return;
+    try {
+      el.play()?.catch(() => {});
+    } catch {
+      // play() can throw synchronously in some environments -- fullscreen
+      // is still worth attempting below.
+    }
+    const elAny = el as HTMLVideoElement & { webkitEnterFullscreen?: () => void };
+    try {
+      if (typeof elAny.webkitEnterFullscreen === 'function') {
+        elAny.webkitEnterFullscreen();
+      } else if (typeof el.requestFullscreen === 'function') {
+        el.requestFullscreen()?.catch(() => {});
+      }
+    } catch {
+      // Fullscreen refused by this platform -- the play() call above
+      // already has inline playback underway, so the tap still "worked."
+    }
+  };
+
   return (
-    <View style={styles.videoBox}>
+    <View style={[styles.videoBox, isDesktop && styles.videoBoxDesktop]}>
       <VideoView
         ref={viewRef as never}
         player={player}
@@ -500,6 +545,13 @@ function VideoPane({ uri, posterUri }: { uri: string; posterUri?: string }) {
         playsInline
         testID="media-viewer-video"
       />
+      {!isDesktop && !hasInteracted && !cannotPlay && (
+        <AppPressable
+          onPress={onTapToPlayFullscreen}
+          style={StyleSheet.absoluteFill}
+          testID="media-viewer-video-tap-fullscreen"
+        />
+      )}
       {cannotPlay && (
         <View style={styles.undecodableBanner} testID="media-viewer-undecodable" pointerEvents="none">
           <Text style={styles.undecodableText}>
@@ -558,6 +610,14 @@ const styles = StyleSheet.create({
   videoBox: {
     width: '100%',
     height: '70%',
+  },
+  // DESKTOP — fills nearly the full viewer height instead of the phone's
+  // more conservative 70%; contentFit="contain" still keeps the video's
+  // own aspect ratio intact, and the close/save controls stay reachable
+  // above it since this is still sized relative to mediaWrap (itself
+  // already constrained below the fixed-height topBar, never over it).
+  videoBoxDesktop: {
+    height: '92%',
   },
   video: {
     width: '100%',
