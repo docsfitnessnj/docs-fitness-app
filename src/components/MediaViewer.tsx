@@ -1,10 +1,10 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GestureResponderEvent, Image, NativeTouchEvent, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { AppModal } from './AppModal';
 import { MediaAttachment } from '../lib/media';
-import { saveOrShareMedia } from '../lib/saveMedia';
+import { prefetchMediaForSave, saveOrShareMedia } from '../lib/saveMedia';
 import { colors } from '../theme';
 
 type Props = {
@@ -65,6 +65,17 @@ export function MediaViewer({ media, onClose, filenameHint = 'docs-fitness-media
     reset();
     onClose();
   };
+
+  // Starts downloading the file the moment it's opened full-screen, well
+  // before anyone taps Save — see prefetchMediaForSave's own comment for
+  // why: a video can take long enough to fetch that the save button's own
+  // tap-to-share call would otherwise lose Safari's "this came from a real
+  // tap" grace period and get silently rejected. By the time someone
+  // actually taps Save, the bytes are typically already in hand (or at
+  // least well underway) from having spent time watching/looking first.
+  useEffect(() => {
+    if (media) prefetchMediaForSave(media);
+  }, [media]);
 
   if (!media) return null;
 
@@ -146,7 +157,7 @@ export function MediaViewer({ media, onClose, filenameHint = 'docs-fitness-media
             style={styles.iconButton}
             testID="media-viewer-save"
           >
-            <Ionicons name="share-outline" size={22} color={colors.white} />
+            <Ionicons name="download-outline" size={22} color={colors.white} />
           </Pressable>
         </View>
 
