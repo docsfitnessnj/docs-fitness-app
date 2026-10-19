@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { useAuth } from './AuthContext';
 import { MediaAttachment } from '../lib/media';
 import { loadJSON, saveJSON } from '../lib/storage';
-import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
+import { describeChatFailure, isBackendUnavailableError, supabase } from '../lib/supabaseClient';
 
 // Draft log text (rounds/time/kettlebell/notes/media) while a WOD is still
 // in progress stays local-only — nobody else needs to see a result you
@@ -66,6 +66,15 @@ type WorkoutLogContextValue = {
   isCompleted: (dayKey: string) => boolean;
   toggleCompleted: (dayKey: string, workoutTitle: string, dateLabel: string, timestamp: number) => void;
   completedWorkouts: CompletedWorkout[];
+  // A completion write that didn't actually land in the database — surfaced
+  // so the screen can show a quiet, honest note instead of leaving the
+  // member with a checkmark that silently evaporates the next time they
+  // sign in (the root cause this round fixed: these writes used to fire and
+  // forget, so a failure left the optimistic local state as the only copy,
+  // gone the moment the app re-fetched from the real database). Rolled back
+  // automatically on failure — see toggleCompleted/syncCompletedRow below.
+  writeError: string | null;
+  clearWriteError: () => void;
 };
 
 const WorkoutLogContext = createContext<WorkoutLogContextValue | undefined>(undefined);
@@ -107,6 +116,7 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
   const [completedRows, setCompletedRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   useEffect(() => {
     saveJSON(DRAFT_LOGS_STORAGE_KEY, drafts);
@@ -151,29 +161,33 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
       .map(rowToCompletedWorkout)
       .sort((a, b) => b.completedAt - a.completedAt);
 
+    // Updating an already-completed day's logged results (rounds/time/KB/
+    // notes/media). Optimistic, same shape as toggleCompleted below — on a
+    // failed write this rolls the row back to what it was before the edit
+    // and surfaces writeError, rather than leaving an edit on screen that
+    // never actually reached the database.
     const syncCompletedRow = async (dayKey: string, log: WorkoutLog) => {
       if (!user) return;
       const existing = completedByDay.get(dayKey);
       if (!existing) return; // not completed yet — nothing to sync, stays a local draft
-      await supabase
+      const patch = {
+        rounds: log.rounds,
+        time_taken: log.time,
+        kettlebell_kg: log.kettlebell ? Number(log.kettlebell) || null : null,
+        notes: log.notes,
+        media_url: log.media?.uri ?? null,
+        media_type: log.media?.type ?? null,
+      };
+      setCompletedRows((prev) => prev.map((r) => (r.day_key === dayKey ? { ...r, ...patch } : r)));
+      const { error: updateError } = await supabase
         .from('wod_completions')
-        .update({
-          rounds: log.rounds,
-          time_taken: log.time,
-          kettlebell_kg: log.kettlebell ? Number(log.kettlebell) || null : null,
-          notes: log.notes,
-          media_url: log.media?.uri ?? null,
-          media_type: log.media?.type ?? null,
-        })
+        .update(patch)
         .eq('user_id', user.id)
         .eq('day_key', dayKey);
-      setCompletedRows((prev) =>
-        prev.map((r) =>
-          r.day_key === dayKey
-            ? { ...r, rounds: log.rounds, time_taken: log.time, kettlebell_kg: log.kettlebell ? Number(log.kettlebell) || null : null, notes: log.notes, media_url: log.media?.uri ?? null, media_type: log.media?.type ?? null }
-            : r
-        )
-      );
+      if (updateError) {
+        setCompletedRows((prev) => prev.map((r) => (r.day_key === dayKey ? existing : r)));
+        setWriteError(describeChatFailure(updateError, "Couldn't save those results. Check your connection and try again."));
+      }
     };
 
     return {
@@ -201,11 +215,28 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
         syncCompletedRow(dayKey, nextLog);
       },
       isCompleted: (dayKey) => completedByDay.has(dayKey),
+      // Optimistic, but no longer fire-and-forget (the root cause this round
+      // fixed): both branches await the write and roll the local state back
+      // to exactly what it was if the write fails, instead of leaving a
+      // checkmark on screen that was never actually saved — that gap is
+      // what let a completion "disappear" on the next sign-in, because
+      // there was never a real row behind it to re-fetch.
       toggleCompleted: (dayKey, workoutTitle, dateLabel, timestamp) => {
         if (!user) return;
         if (completedByDay.has(dayKey)) {
+          const removedRow = completedByDay.get(dayKey)!;
           setCompletedRows((prev) => prev.filter((r) => r.day_key !== dayKey));
-          supabase.from('wod_completions').delete().eq('user_id', user.id).eq('day_key', dayKey);
+          supabase
+            .from('wod_completions')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('day_key', dayKey)
+            .then(({ error: deleteError }) => {
+              if (deleteError) {
+                setCompletedRows((prev) => [...prev, removedRow]);
+                setWriteError(describeChatFailure(deleteError, "Couldn't undo that completion. Check your connection and try again."));
+              }
+            });
           return;
         }
         const log = drafts[dayKey] ?? EMPTY_WORKOUT_LOG;
@@ -224,28 +255,38 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
           completed_at: nowIso,
         };
         setCompletedRows((prev) => [...prev, newRow]);
-        supabase.from('wod_completions').upsert(
-          {
-            user_id: user.id,
-            day_key: dayKey,
-            workout_title: workoutTitle,
-            date_label: dateLabel,
-            workout_timestamp: timestamp,
-            rounds: log.rounds,
-            time_taken: log.time,
-            kettlebell_kg: newRow.kettlebell_kg,
-            notes: log.notes,
-            media_url: newRow.media_url,
-            media_type: newRow.media_type,
-            completed_at: nowIso,
-          },
-          { onConflict: 'user_id,day_key' }
-        );
+        supabase
+          .from('wod_completions')
+          .upsert(
+            {
+              user_id: user.id,
+              day_key: dayKey,
+              workout_title: workoutTitle,
+              date_label: dateLabel,
+              workout_timestamp: timestamp,
+              rounds: log.rounds,
+              time_taken: log.time,
+              kettlebell_kg: newRow.kettlebell_kg,
+              notes: log.notes,
+              media_url: newRow.media_url,
+              media_type: newRow.media_type,
+              completed_at: nowIso,
+            },
+            { onConflict: 'user_id,day_key' }
+          )
+          .then(({ error: upsertError }) => {
+            if (upsertError) {
+              setCompletedRows((prev) => prev.filter((r) => r.day_key !== dayKey));
+              setWriteError(describeChatFailure(upsertError, "Couldn't save that completion. Check your connection and try again."));
+            }
+          });
       },
       completedWorkouts,
+      writeError,
+      clearWriteError: () => setWriteError(null),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drafts, completedRows, completedByDay, loading, error, user]);
+  }, [drafts, completedRows, completedByDay, loading, error, writeError, user]);
 
   return <WorkoutLogContext.Provider value={value}>{children}</WorkoutLogContext.Provider>;
 }

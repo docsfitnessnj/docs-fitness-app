@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { DECK_CARDS } from '../data/deckCards';
+import { DECK_SHUFFLE_ORDER_RESCUE_KEY } from '../context/DeckProgressContext';
 import { loadJSON, saveJSON } from './storage';
 import { supabase } from './supabaseClient';
 
@@ -60,15 +62,35 @@ async function importLocalDataForUser(userId: string): Promise<void> {
     const { error } = await supabase.from('deck_completions').upsert(deckRows, { onConflict: 'user_id,card_id' });
     if (error) throw error;
   }
+
+  // Deck browse-grid order (migration_020) — this one wasn't an old
+  // pre-backend key, it's the CURRENT key DeckProgressContext wrote to
+  // every time a member reshuffled, right up until this round. Rescue
+  // whatever this device has, but only as this account's FIRST order: if
+  // another device already synced one for this account (e.g. a beta tester
+  // who signs in on their phone before this rescue runs on their laptop),
+  // that one wins — `ignoreDuplicates` makes this insert a no-op rather
+  // than clobbering a real, possibly-already-reshuffled account order with
+  // a stale local one.
+  const knownIds = new Set(DECK_CARDS.map((c) => c.id));
+  const localOrder = loadJSON<string[]>(DECK_SHUFFLE_ORDER_RESCUE_KEY, []);
+  const validLocalOrder = localOrder.length === DECK_CARDS.length && localOrder.every((id) => knownIds.has(id));
+  if (validLocalOrder) {
+    const { error } = await supabase
+      .from('deck_browse_order')
+      .upsert({ user_id: userId, card_order: localOrder }, { onConflict: 'user_id', ignoreDuplicates: true });
+    if (error) throw error;
+  }
 }
 
 // Runs once per device, the first time a session is available after this
 // backend round ships — brings this device's pre-backend local data (WOD
-// completions + logs, Deck completions) into the now-signed-in account,
-// then marks the device done so it's never attempted again. Device-scoped
-// (not account-scoped) on purpose, matching "on first sign in" literally —
-// this is about not losing whatever was sitting on this browser before
-// accounts existed, not about per-account replay.
+// completions + logs, Deck completions) AND this round's own newly-migrated
+// local-only data (the Deck browse grid order) into the now-signed-in
+// account, then marks the device done so it's never attempted again.
+// Device-scoped (not account-scoped) on purpose, matching "on first sign
+// in" literally — this is about not losing whatever was sitting on this
+// browser before accounts existed, not about per-account replay.
 export function useLocalImportOnFirstSignIn() {
   const { user, authReady } = useAuth();
 

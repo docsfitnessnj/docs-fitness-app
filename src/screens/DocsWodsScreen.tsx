@@ -46,7 +46,7 @@ function RestDay() {
 
 export default function DocsWodsScreen() {
   const { wodAccessLevel } = useMembership();
-  const { isCompleted, toggleCompleted } = useWorkoutLog();
+  const { isCompleted, toggleCompleted, writeError, clearWriteError } = useWorkoutLog();
   const [logOpen, setLogOpen] = useState(false);
 
   const week = useMemo(() => getCurrentWeek(), []);
@@ -77,6 +77,11 @@ export default function DocsWodsScreen() {
 
   return (
     <ScreenContainer>
+      {writeError && (
+        <Pressable onPress={clearWriteError} testID="wod-write-error">
+          <Text style={styles.writeErrorText}>{writeError}</Text>
+        </Pressable>
+      )}
       <DateStrip
         week={week}
         selectedIndex={selectedIndex}
@@ -240,6 +245,12 @@ export default function DocsWodsScreen() {
 }
 
 const styles = StyleSheet.create({
+  writeErrorText: {
+    color: colors.scoreboardRed,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    marginBottom: 10,
+  },
   lockedCard: {
     backgroundColor: colors.card,
     borderWidth: 1,
