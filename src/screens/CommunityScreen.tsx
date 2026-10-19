@@ -13,6 +13,7 @@ import { StatusBanner } from '../components/StatusBanner';
 import { StoryRow } from '../components/StoryRow';
 import { DateStrip } from '../components/DateStrip';
 import { DayPanel } from '../components/DayPanel';
+import { useClassSignUp } from '../context/ClassSignUpContext';
 import { Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
 import { useMembership } from '../context/MembershipContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
@@ -297,20 +298,26 @@ export default function CommunityScreen() {
   const {
     wodAccessLevel,
     communityAccess,
+    hasActivePack,
     stateLoading: membershipLoading,
     stateRefetching: membershipRefetching,
   } = useMembership();
   const { howTrain, loading: profileLoading, refetching: profileRefetching } = useProfile();
   const { activeStories } = useStories();
   const tour = useTour();
+  const displayName = useDisplayName();
+  const { bookingEvents } = useClassSignUp();
   // Online members train on their own, so the in-person class sign-up card
   // and schedule strip aren't the front door for them the way they are for
-  // Boathouse locals — everyone else (Boathouse members, guests, and anyone
-  // who hasn't answered yet) keeps today's booking-first layout. Deliberately
-  // derived from the member's profile alone, not from `days[selectedIndex]`
-  // or any other per-day state — an online member must never see the class
-  // card on ANY date they tap, not just the default/today view, so this must
-  // stay independent of which day is currently selected.
+  // Boathouse locals — UNLESS they've layered in-person booking on top of
+  // their online plan (an active 10 Class Pack, or they've paid for a drop
+  // in before — a class pack/drop-in is always an ADDITION, never a
+  // competing plan, so it must show through regardless of what `howTrain`
+  // says). Everyone else (Boathouse members, guests, and anyone who hasn't
+  // answered yet) keeps today's booking-first layout either way.
+  // Deliberately derived from the member's profile/pack/booking-history
+  // alone, not from `days[selectedIndex]` or any other per-day state — this
+  // must never flip depending on which date happens to be selected.
   //
   // While the profile is still loading, `howTrain` reads as null (the same
   // shape as "no answer on file"), which this same rule maps to the
@@ -319,7 +326,10 @@ export default function CommunityScreen() {
   // mocked profile response resolves same-tick, so this window never shows
   // up in a simulated test; it only exists once a real network delay is in
   // the picture. See profileLoading below, which is what actually closes it.
-  const showClassCard = howTrain !== 'online';
+  const hasBookedDropInBefore = bookingEvents.some(
+    (event) => event.type === 'booked' && event.planType === 'Drop In' && event.memberName === displayName
+  );
+  const showClassCard = howTrain !== 'online' || hasActivePack || hasBookedDropInBefore;
 
   // First-open spotlight tour: fires once per install. tour.start() is the
   // tour's single gated entry point (see TourContext) — it already refuses

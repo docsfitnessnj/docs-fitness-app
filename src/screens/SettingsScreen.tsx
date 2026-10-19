@@ -214,6 +214,22 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
               <Text style={styles.cancelFlag}>CANCELLATION SCHEDULED</Text>
             )}
 
+            {/* A 10 Class Pack is an ADDITION, never a replacement for
+                whatever plan is already shown above — this is the stacked
+                case: an active pack on top of a real plan (tier is already
+                reporting that plan, not 'ten_pack', so the block above
+                never shows it). Purely informational: Manage/Cancel below
+                still only ever acts on the subscription. */}
+            {membership.hasActivePack && membership.tier !== 'ten_pack' && (
+              <View style={styles.packStackRow} testID="settings-pack-stack">
+                <Text style={styles.packStackLabel}>10 CLASS PACK</Text>
+                <Text style={styles.packStackMeta}>
+                  {membership.tenPackClassesRemaining ?? 0} classes left
+                  {membership.tenPackExpiresAt ? ` · expires ${formatDate(membership.tenPackExpiresAt)}` : ''}
+                </Text>
+              </View>
+            )}
+
             <View style={styles.membershipButtonRow}>
               <Pressable style={styles.changePlanButton} onPress={onOpenMemberships} testID="settings-change-plan">
                 <Text style={styles.changePlanButtonText}>CHANGE PLAN</Text>
@@ -367,6 +383,26 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1,
     marginTop: 8,
+  },
+  // A thin divider sets this apart as a second, stacked block rather than
+  // more detail about the plan named above it.
+  packStackRow: {
+    borderTopWidth: 1,
+    borderTopColor: colors.hairline,
+    marginTop: 14,
+    paddingTop: 14,
+  },
+  packStackLabel: {
+    color: colors.text,
+    fontFamily: fonts.labelBold,
+    fontSize: 15,
+    letterSpacing: 0.5,
+  },
+  packStackMeta: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    marginTop: 3,
   },
   membershipButtonRow: {
     flexDirection: 'row',

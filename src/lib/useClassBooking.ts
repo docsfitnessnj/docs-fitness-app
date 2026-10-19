@@ -76,7 +76,12 @@ export function useClassBooking() {
       return;
     }
 
-    if (membership.tier === 'ten_pack') {
+    // A class pack is an ADDITION on top of whatever plan (or no plan) the
+    // account already has — this must key off hasActivePack, never
+    // `tier === 'ten_pack'`, or an online member who also bought a pack
+    // would fall straight through to the $25 drop-in gate below and be
+    // charged again for a class their pack already covers.
+    if (membership.hasActivePack) {
       const remaining = membership.tenPackClassesRemaining ?? 0;
       if (remaining <= 0) {
         showAlert('No Classes Left', 'Your 10 Class Pack is used up. Grab a new pack or switch plans in Memberships.');
@@ -120,7 +125,7 @@ export function useClassBooking() {
         style: 'destructive',
         onPress: () => {
           cancelSignUp(dateKey, row.id);
-          if (membership.tier === 'ten_pack') membership.refundTenPackClass();
+          if (membership.hasActivePack) membership.refundTenPackClass();
         },
       },
     ]);

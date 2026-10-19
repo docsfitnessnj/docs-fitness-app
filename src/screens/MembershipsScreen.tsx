@@ -71,7 +71,7 @@ function priceDifferenceLine(currentTier: MembershipTier, nextPrice: number): st
 }
 
 export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: Props) {
-  const { tier, daysLeftInTrial, tenPackClassesRemaining } = useMembership();
+  const { tier, daysLeftInTrial, hasActivePack, tenPackClassesRemaining } = useMembership();
   const founding50 = useFoundingFifty();
   const subscription = useSubscription();
   const [checkoutPendingKey, setCheckoutPendingKey] = useState<string | null>(null);
@@ -138,9 +138,16 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
       return;
     }
     const checkoutPlan = plan.key === 'monthly_unlimited' ? 'in_person_monthly' : 'ten_pack';
+    // Monthly Unlimited is a real plan switch — comparing it to whatever
+    // plan the member is currently on is the right framing, same as the
+    // online cards above. A 10 Class Pack is an ADDITION, never a
+    // replacement for any plan the member already has, so comparing its
+    // price to "your current plan" is simply the wrong question — no
+    // comparison line for it at all.
+    const comparisonLine = plan.key === 'monthly_unlimited' ? priceDifferenceLine(tier, priceNumber(plan.price)) : '';
     showAlert(
       `Start Checkout For ${plan.name}?`,
-      `You'll go to Stripe to ${plan.key === 'monthly_unlimited' ? 'start' : 'buy'} ${plan.name} — ${plan.price}${plan.cadence}.${priceDifferenceLine(tier, priceNumber(plan.price))}`,
+      `You'll go to Stripe to ${plan.key === 'monthly_unlimited' ? 'start' : 'buy'} ${plan.name} — ${plan.price}${plan.cadence}.${comparisonLine}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -301,6 +308,11 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
               )}
               <View style={styles.planHeader}>
                 <Text style={styles.planName}>{plan.name}</Text>
+                {plan.key === 'ten_pack' && hasActivePack && (
+                  <View style={styles.currentPlanTag} testID="your-pack-tag">
+                    <Text style={styles.currentPlanTagText}>YOUR PACK</Text>
+                  </View>
+                )}
               </View>
               <View style={styles.planBody}>
                 <Text style={styles.planPrice}>
@@ -308,7 +320,7 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
                   <Text style={styles.planCadence}>{plan.cadence}</Text>
                 </Text>
 
-                {plan.key === 'ten_pack' && tier === 'ten_pack' && (
+                {plan.key === 'ten_pack' && hasActivePack && (
                   <Text style={styles.classesLeft} testID="ten-pack-classes-left">
                     {tenPackClassesRemaining ?? 0} classes left
                   </Text>
@@ -328,18 +340,29 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
 
                 {plan.clarifyingNote && <Text style={styles.clarifyingNote}>{plan.clarifyingNote}</Text>}
 
-                <Pressable
-                  style={styles.selectButton}
-                  onPress={() => chooseInPerson(plan)}
-                  disabled={checkoutPendingKey !== null}
-                  testID={`select-in-person-${plan.key}`}
-                >
-                  {checkoutPendingKey === plan.key ? (
-                    <ActivityIndicator color={colors.white} />
-                  ) : (
-                    <Text style={styles.selectButtonText}>CHOOSE {plan.name}</Text>
-                  )}
-                </Pressable>
+                {plan.key === 'ten_pack' && hasActivePack ? (
+                  // Owning a pack already — this button reflects that
+                  // instead of offering a fresh purchase. Buying a second
+                  // pack stays possible, just not from here: the normal
+                  // CHOOSE button comes back the moment this one is empty
+                  // or expired (hasActivePack goes false).
+                  <View style={styles.yourPlanButton} testID="your-pack-button">
+                    <Text style={styles.yourPlanButtonText}>{tenPackClassesRemaining ?? 0} CLASSES LEFT</Text>
+                  </View>
+                ) : (
+                  <Pressable
+                    style={styles.selectButton}
+                    onPress={() => chooseInPerson(plan)}
+                    disabled={checkoutPendingKey !== null}
+                    testID={`select-in-person-${plan.key}`}
+                  >
+                    {checkoutPendingKey === plan.key ? (
+                      <ActivityIndicator color={colors.white} />
+                    ) : (
+                      <Text style={styles.selectButtonText}>CHOOSE {plan.name}</Text>
+                    )}
+                  </Pressable>
+                )}
               </View>
             </View>
           ))}

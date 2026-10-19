@@ -16,6 +16,17 @@ import { supabase } from '../lib/supabaseClient';
 // - ten_pack: Boathouse 10 Class Pack — community + booking, workouts locked
 // - drop_in: Boathouse Drop In — booking only, no community, workouts locked
 // - admin: Doc's own account — full access + community moderation
+//
+// STACKING: `tier` names exactly one of the states above — whichever one
+// wins (online/in-person-unlimited beats a lone pack, which beats no plan
+// at all). It deliberately does NOT by itself tell you whether an account
+// also holds a 10 Class Pack on top of that — a class pack (or a drop-in)
+// is always an ADDITION, never a competing plan, so an online_paid member
+// can hold an active pack at the same time `tier` reads 'online_paid', not
+// 'ten_pack'. `tier` only ever reports 'ten_pack' for an account with no
+// other plan standing in front of it. Anything that needs to know "does
+// this account have a pack right now, regardless of what else they have"
+// must read `hasActivePack` below, never compare `tier` to 'ten_pack'.
 export type MembershipTier =
   | 'trial'
   | 'online_paid'
@@ -126,8 +137,23 @@ type MembershipContextValue = {
   // Class booking is available to every tier — kept as an explicit flag
   // (rather than assumed) so call sites read intent, not "true" literals.
   bookingAccess: boolean;
-  // Only meaningful for tier === 'ten_pack'; null otherwise.
+  // True whenever this account has a real, unexpired 10 Class Pack with
+  // credit left — independent of `tier`. A class pack is an ADDITION on
+  // top of whatever plan (or no plan) the account already has, never a
+  // replacement for it, so this can be true at the same time as `tier`
+  // is 'online_paid', 'founding_50', 'trial', or 'in_person_unlimited' —
+  // `tier` only ever reports 'ten_pack' itself for an account with NO
+  // other plan standing in front of it. Anything that shows or spends
+  // pack credits must check this, never `tier === 'ten_pack'` alone, or
+  // it silently stops working the moment the same account also buys (or
+  // already has) an online plan.
+  hasActivePack: boolean;
+  // Meaningful whenever hasActivePack is true (not just tier === 'ten_pack'
+  // — see above). Null when there's no active pack.
   tenPackClassesRemaining: number | null;
+  // The active pack's own expiry date — same "meaningful whenever
+  // hasActivePack" rule as tenPackClassesRemaining above.
+  tenPackExpiresAt: Date | null;
   // Whether this account has already redeemed its one free first class —
   // once true, every booking (for this tier) goes through the normal gates.
   firstClassUsed: boolean;
@@ -486,7 +512,13 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       storiesAccess: fullContentAccess,
       communityAccess,
       bookingAccess: true,
+      // Admin dev-preview has no real pack to check — it previews whichever
+      // single tier is selected, so "has an active pack" there just means
+      // "currently previewing the ten_pack tier." Every real account reads
+      // this straight from ClassPackContext, regardless of `tier`.
+      hasActivePack: isAdminPreview ? simulatedTier === 'ten_pack' : classPack.active,
       tenPackClassesRemaining: isAdminPreview ? tenPackClassesRemaining : classPack.creditsRemaining,
+      tenPackExpiresAt: isAdminPreview ? null : classPack.expiresAt,
       firstClassUsed,
       newsletterOptIn,
       justPurchased,
@@ -580,6 +612,7 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     classPack.error,
     classPack.active,
     classPack.creditsRemaining,
+    classPack.expiresAt,
     classPack.retry,
     classPack.useCredit,
     classPack.refundCredit,
