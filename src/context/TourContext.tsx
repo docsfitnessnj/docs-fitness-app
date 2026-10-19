@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
 import { isCheckoutRedirectPending } from '../lib/checkoutRedirectGate';
+import { claimTour, releaseInterruption } from '../lib/interruptionGate';
 import { useMembership } from './MembershipContext';
 import { useProfile } from './ProfileContext';
 
@@ -53,6 +54,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
   const finish = () => {
     setActive(false);
+    releaseInterruption('tour');
     markTourCompleted(true);
   };
 
@@ -98,6 +100,15 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         // transient block; this check is defense in depth for any other
         // caller.
         if (!memberStateSettled) return;
+        // Claims the shared interruption slot (interruptionGate.ts) BEFORE
+        // flipping React state — the tour has top priority and claims it
+        // outright, pre-empting anything else. This happens synchronously,
+        // in the same tick as every other check above, so any other
+        // self-launching popup whose own effect runs later in this same
+        // commit (children fire before parents — see that file's own
+        // comment) reliably sees the tour already owns the slot, never a
+        // stale "nothing's showing yet."
+        claimTour();
         setStepIndex(0);
         setActive(true);
       },
@@ -126,6 +137,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       // TOUR (DEV)" control). Writes false to the DB, same as `completed`
       // itself now does everywhere else.
       resetForTesting: () => {
+        claimTour();
         markTourCompleted(false);
         setStepIndex(0);
         setActive(true);

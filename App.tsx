@@ -485,27 +485,11 @@ function MainApp({
   onOpenGroupChat,
   onCloseGroupChat,
 }: MainAppProps) {
-  const { tier, stateLoading: membershipLoading, stateRefetching: membershipRefetching } = useMembership();
-  const { loading: profileLoading, refetching: profileRefetching } = useProfile();
-  const checkoutGatePhase = useCheckoutGatePhase();
-  // A brand-new online signup reads as 'online_free' for the brief window
-  // before the real subscription confirms — exactly the window a checkout
-  // redirect (or, on return, the confirmation poll) can be in progress. This
-  // is what was popping the "Unlock Everything" nudge alert on top of the
-  // calm loading takeover: a real alert, not a screen, so the opaque overlay
-  // in ResponsiveShell alone can't be trusted to cover it everywhere a modal
-  // might portal to. Simplest fix is not letting it fire in the first place.
-  //
-  // memberStateSettled guards the SAME alert against a second, distinct
-  // window: a background refetch of subscription/admin/profile data (token
-  // refresh, tab refocus) that transiently has nothing to do with checkout
-  // at all. MembershipContext now holds `tier` at its last loaded value for
-  // the whole refetch (it never reports 'online_free' as a default mid-
-  // flight), but this nudge is a one-shot, non-retracting Alert — it must
-  // never even evaluate during a window where `tier` MIGHT still be
-  // momentarily wrong, as defense in depth alongside that fix.
-  const memberStateSettled = !membershipLoading && !membershipRefetching && !profileLoading && !profileRefetching;
-  useWeeklyUpgradeNudge(tier === 'online_free' && !checkoutGatePhase && memberStateSettled);
+  // All of this popup's own gating (member state settling, the checkout
+  // redirect window, the shared interruption slot, and its own
+  // session/in-person-arrival rules) now lives inside the hook itself —
+  // see upgradeNudge.ts.
+  useWeeklyUpgradeNudge();
   // Hides the bottom tab bar the moment any field is focused and the
   // keyboard opens, app-wide — previously only the hamburger drawer hid it,
   // so an open keyboard plus the tab bar could cover most of a form (the

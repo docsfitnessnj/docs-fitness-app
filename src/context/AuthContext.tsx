@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { markSignedUpThisSession } from '../lib/signupSessionFlag';
 import { supabase } from '../lib/supabaseClient';
 
 export type AuthResult = {
@@ -125,6 +126,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // the answer unset (same as today), not a broken signup.
           await supabase.from('profiles').update({ how_train: howTrain }).eq('id', data.user.id);
         }
+        // Marks this browser session as the one the account was created
+        // in — see signupSessionFlag.ts for why, and upgradeNudge.ts for
+        // the one place it's read. This is the single real signup entry
+        // point every onboarding door funnels through, so marking it here
+        // covers all of them at once.
+        if (data.user) markSignedUpThisSession(data.user.id);
         return { error: null };
       },
       signInWithPassword: async (email, password) => {
