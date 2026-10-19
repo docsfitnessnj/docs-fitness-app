@@ -6,6 +6,7 @@ import { LogResultsModal } from './LogResultsModal';
 import { ScheduleStrip } from './ScheduleStrip';
 import { WatchVideoBreakdownButton } from './WatchVideoBreakdownButton';
 import { TappableMovementText } from './movement/TappableMovementText';
+import { useMembership } from '../context/MembershipContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import {
   formatDateKey,
@@ -51,6 +52,7 @@ function TrainingNearVentnorLine() {
 export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
   const { isCompleted, toggleCompleted } = useWorkoutLog();
   const { isSignedUp, handleSignUp: signUpForClass, handleCancel: cancelClass } = useClassBooking();
+  const { hasActivePack, tenPackClassesRemaining } = useMembership();
   const isDesktop = useIsDesktop();
   const [logOpen, setLogOpen] = useState(false);
   const [wodExpanded, setWodExpanded] = useState(false);
@@ -93,6 +95,12 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
           <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>
             DOC'S FITNESS GROUP TRAINING (IN PERSON)
           </Text>
+          {hasActivePack && (
+            <Text style={styles.packClassesLeft} testID="pack-classes-left">
+              <Text style={styles.packClassesLeftNumber}>{tenPackClassesRemaining ?? 0}</Text>
+              <Text style={styles.packClassesLeftRest}> OF 10 CLASSES LEFT</Text>
+            </Text>
+          )}
           {scheduleRows.map((row) => {
             const signedUp = isSignedUp(dateKey, row.id);
             return (
@@ -365,6 +373,24 @@ const styles = StyleSheet.create({
   },
   cardHeadingDesktop: {
     fontSize: 26,
+  },
+  // Quiet, condensed-caps line under the card heading — only the number is
+  // gold, so it reads at a glance without competing with the heading above
+  // it or the SIGN UP pills below.
+  packClassesLeft: {
+    marginBottom: 10,
+  },
+  packClassesLeftNumber: {
+    color: colors.gold,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.8,
+  },
+  packClassesLeftRest: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.8,
   },
   weekendFixedLabel: {
     color: colors.green,
