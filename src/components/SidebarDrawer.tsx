@@ -123,7 +123,7 @@ export function SidebarDrawer({
     { key: 'memberships', label: 'MEMBERSHIPS', icon: 'card-outline', onPress: () => openNested(onOpenMemberships) },
     {
       key: 'workouts',
-      label: 'MY WORKOUTS',
+      label: 'MY COMPLETED WORKOUTS',
       icon: 'barbell-outline',
       meta: String(myWorkoutsCount),
       onPress: () => openNested(onOpenMyWorkouts),

@@ -308,6 +308,11 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
               )}
               <View style={styles.planHeader}>
                 <Text style={styles.planName}>{plan.name}</Text>
+                {plan.key === 'monthly_unlimited' && tier === 'in_person_unlimited' && (
+                  <View style={styles.currentPlanTag} testID="current-plan-tag-monthly_unlimited">
+                    <Text style={styles.currentPlanTagText}>CURRENT PLAN</Text>
+                  </View>
+                )}
                 {plan.key === 'ten_pack' && hasActivePack && (
                   <View style={styles.currentPlanTag} testID="your-pack-tag">
                     <Text style={styles.currentPlanTagText}>YOUR PACK</Text>
@@ -340,7 +345,11 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
 
                 {plan.clarifyingNote && <Text style={styles.clarifyingNote}>{plan.clarifyingNote}</Text>}
 
-                {plan.key === 'ten_pack' && hasActivePack ? (
+                {plan.key === 'monthly_unlimited' && tier === 'in_person_unlimited' ? (
+                  <View style={styles.yourPlanButton} testID="your-plan-monthly_unlimited">
+                    <Text style={styles.yourPlanButtonText}>YOUR PLAN</Text>
+                  </View>
+                ) : plan.key === 'ten_pack' && hasActivePack ? (
                   // Owning a pack already — this button reflects that
                   // instead of offering a fresh purchase. Buying a second
                   // pack stays possible, just not from here: the normal
