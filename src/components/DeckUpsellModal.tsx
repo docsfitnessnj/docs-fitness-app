@@ -27,7 +27,7 @@ export function DeckUpsellModal({ visible, onDismiss }: Props) {
           </ExternalLinkPressable>
 
           <Pressable onPress={onDismiss} hitSlop={8} style={styles.dismissLink} testID="deck-upsell-dismiss">
-            <Text style={styles.dismissLinkText}>NO THANKS</Text>
+            <Text style={styles.dismissLinkText}>NOT YET</Text>
           </Pressable>
         </View>
       </View>

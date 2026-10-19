@@ -40,7 +40,7 @@ export function MyWorkoutsScreen({ visible, onClose }: Props) {
   if (error) {
     return (
       <View style={styles.container}>
-        <ModalHeader title="MY WORKOUTS" onBack={onClose} backTestID="close-my-workouts" />
+        <ModalHeader title="MY COMPLETED WORKOUTS" onBack={onClose} backTestID="close-my-workouts" />
         <BackendErrorNotice message={error} />
       </View>
     );
@@ -84,7 +84,7 @@ export function MyWorkoutsScreen({ visible, onClose }: Props) {
 
   return (
     <View style={styles.container}>
-      <ModalHeader title="MY WORKOUTS" onBack={onClose} backTestID="close-my-workouts" />
+      <ModalHeader title="MY COMPLETED WORKOUTS" onBack={onClose} backTestID="close-my-workouts" />
 
       <ScrollView contentContainerStyle={styles.list}>
         {allEntries.length === 0 ? (

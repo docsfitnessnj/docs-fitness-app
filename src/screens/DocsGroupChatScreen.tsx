@@ -441,18 +441,28 @@ function Composer({
   const [sending, setSending] = useState(false);
   const [inputContentHeight, setInputContentHeight] = useState(MIN_INPUT_HEIGHT);
   const [gifPickerOpen, setGifPickerOpen] = useState(false);
+  // A tap in the grid only stages a GIF here -- same "pick, then review,
+  // then actually send" shape as a photo/video (media, above) and as the
+  // comment composer's own GIF flow (PostDetailModal.tsx), which already
+  // separates picking a GIF from posting it via its own SEND button. A tap
+  // in a real chat app often just means "let me look at it," so the grid
+  // never sends on its own; only this panel's SEND button does.
+  const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
   const focusRing = useFocusRing();
   const { pick } = useMediaPicker((picked) => {
     setMedia(picked);
     onDismissSendError();
   });
 
-  // GIFs send immediately on tap -- unlike a picked photo/video, there's no
-  // attach-then-review step. The current draft text is left untouched (the
-  // GIF goes out as its own message), matching the chat-app convention
-  // this mirrors (Slack/Discord/iMessage all send a picked GIF instantly).
-  const handleSendGif = (url: string) => {
+  const closeGifFlow = () => {
     setGifPickerOpen(false);
+    setSelectedGifUrl(null);
+  };
+
+  const handleSendSelectedGif = () => {
+    if (!selectedGifUrl) return;
+    const url = selectedGifUrl;
+    closeGifFlow();
     void onSend('', { uri: url, type: 'gif' });
   };
 
@@ -517,13 +527,27 @@ function Composer({
           </AppPressable>
         </View>
       )}
-      {gifPickerOpen && <GifPicker onClose={() => setGifPickerOpen(false)} onSelect={(gif) => handleSendGif(gif.sendUrl)} />}
+      {gifPickerOpen &&
+        (selectedGifUrl ? (
+          <View style={styles.gifSelectedPanel} testID="group-chat-gif-selected">
+            <AppPressable onPress={() => setSelectedGifUrl(null)} hitSlop={8} style={styles.gifBackRow} testID="group-chat-gif-back">
+              <Ionicons name="chevron-back" size={16} color={colors.textMuted} />
+              <Text style={styles.gifBackText}>BACK TO GIFS</Text>
+            </AppPressable>
+            <Image source={{ uri: selectedGifUrl }} style={styles.gifSelectedImage} resizeMode="contain" />
+            <AppPressable style={styles.gifSelectedSend} onPress={handleSendSelectedGif} testID="group-chat-send-gif">
+              <Text style={styles.gifSelectedSendText}>SEND</Text>
+            </AppPressable>
+          </View>
+        ) : (
+          <GifPicker onClose={closeGifFlow} onSelect={(gif) => setSelectedGifUrl(gif.sendUrl)} />
+        ))}
       <View style={styles.composerRow}>
         <AppPressable onPress={pick} hitSlop={8} style={styles.composerAttach} testID="group-chat-attach-photo">
           <Ionicons name="camera-outline" size={20} color={colors.green} />
         </AppPressable>
         <AppPressable
-          onPress={() => setGifPickerOpen((v) => !v)}
+          onPress={() => (gifPickerOpen ? closeGifFlow() : setGifPickerOpen(true))}
           hitSlop={8}
           style={styles.composerAttach}
           testID="group-chat-attach-gif"
@@ -1208,6 +1232,48 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 0.4,
+  },
+  gifSelectedPanel: {
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+    marginBottom: 10,
+    padding: 10,
+    alignItems: 'center',
+  },
+  gifBackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 2,
+    marginBottom: 8,
+  },
+  gifBackText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  gifSelectedImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: 10,
+    backgroundColor: colors.background,
+  },
+  gifSelectedSend: {
+    marginTop: 10,
+    alignSelf: 'stretch',
+    backgroundColor: colors.gold,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  gifSelectedSendText: {
+    color: colors.white,
+    fontFamily: fonts.labelBold,
+    fontSize: 14,
+    letterSpacing: 0.5,
   },
   // One rounded container only — no nested visible box inside it. The
   // TextInput's own height is computed exactly from its content (see the

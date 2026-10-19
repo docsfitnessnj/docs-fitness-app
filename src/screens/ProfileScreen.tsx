@@ -8,6 +8,7 @@ import { Avatar } from '../components/Avatar';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { ProfileBadgeCase } from '../components/ProfileBadgeCase';
 import { ProfilePhotoCropModal } from '../components/ProfilePhotoCropModal';
+import { MembershipTier, useMembership } from '../context/MembershipContext';
 import { HowTrain, useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
 import { useActionCompletion } from '../lib/useActionCompletion';
@@ -19,10 +20,57 @@ type Props = {
   onClose: () => void;
 };
 
+// Mirrors how SettingsScreen states each tier, but spelled out on its own
+// (this line has no "IN PERSON" section heading around it for context, so
+// in_person_unlimited needs the clarifier inline).
+const MANAGEABLE_TIERS: MembershipTier[] = [
+  'trial',
+  'online_paid',
+  'founding_50',
+  'in_person_unlimited',
+  'ten_pack',
+  'drop_in',
+];
+
+function membershipTierLabel(tier: MembershipTier): string {
+  switch (tier) {
+    case 'trial':
+      return 'ONLINE TRIAL';
+    case 'online_paid':
+      return 'ONLINE MEMBER';
+    case 'founding_50':
+      return 'THE FOUNDING 50';
+    case 'in_person_unlimited':
+      return 'MONTHLY UNLIMITED (IN-PERSON)';
+    case 'drop_in':
+      return 'DROP IN';
+    default:
+      return '';
+  }
+}
+
+// Own profile only — this screen is never used to view another member's
+// profile (it's mounted once in App.tsx with no member id), so a plan
+// line here is automatically private to the signed-in member.
+function useMembershipLine(): string {
+  const { tier, hasActivePack, tenPackClassesRemaining } = useMembership();
+  const parts: string[] = [];
+  if (tier === 'ten_pack') {
+    parts.push(`10 CLASS PACK — ${tenPackClassesRemaining ?? 0} CLASSES LEFT`);
+  } else if (MANAGEABLE_TIERS.includes(tier)) {
+    parts.push(membershipTierLabel(tier));
+  }
+  if (hasActivePack && tier !== 'ten_pack') {
+    parts.push(`10 CLASS PACK — ${tenPackClassesRemaining ?? 0} CLASSES LEFT`);
+  }
+  return parts.join('   ·   ');
+}
+
 export function ProfileScreen({ visible, onClose }: Props) {
   const { photoUri, name, instagramHandle, favoriteQuote, howTrain, loading, error, updateProfile, setHowTrain } =
     useProfile();
   const displayName = useDisplayName();
+  const membershipLine = useMembershipLine();
 
   const [draftPhotoUri, setDraftPhotoUri] = useState(photoUri);
   const [draftName, setDraftName] = useState(name);
@@ -151,6 +199,12 @@ export function ProfileScreen({ visible, onClose }: Props) {
             </View>
           </AppPressable>
           <Text style={styles.photoHint}>Tap to choose and crop a photo</Text>
+
+          {membershipLine ? (
+            <Text style={styles.membershipLine} testID="profile-membership-line">
+              {membershipLine}
+            </Text>
+          ) : null}
 
           <Text nativeID="profile-name-label" style={styles.label}>NAME</Text>
           <TextInput
@@ -291,6 +345,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 10,
     marginBottom: 24,
+  },
+  membershipLine: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 11,
+    letterSpacing: 1,
+    textAlign: 'center',
+    marginBottom: 20,
   },
   label: {
     alignSelf: 'flex-start',
