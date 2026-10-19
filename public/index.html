@@ -18,6 +18,28 @@
     <link rel="icon" type="image/png" sizes="64x64" href="favicon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
 
+    <!-- Installable home screen app. manifest.json's own start_url/scope
+         ("./") are relative to the manifest's URL, not this page's, so they
+         resolve to the GitHub Pages base path (/docs-fitness-app/)
+         correctly without hardcoding it here — same reason the icon hrefs
+         throughout this file are plain relative paths, not absolute ones.
+         The icon itself (icon-192.png / icon-512.png / apple-touch-icon.png
+         above) is the existing circular Doc's badge on the Augusta green
+         background (#076652) as an INTERIM home screen icon — the real app
+         icon design is a separate, already-tracked decision; nothing new
+         was drawn here. -->
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#076652" />
+
+    <!-- iOS has no real manifest support — Add to Home Screen reads these
+         instead. apple-mobile-web-app-capable is the one that actually
+         switches Safari into standalone mode (no address bar/chrome) on
+         launch; the other two are the iOS-only equivalents of
+         theme-color/short_name above. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="DOC'S" />
+
     <!-- Open Graph — the rich preview card shown by Messages, WhatsApp,
          Instagram DMs, Slack, and most email clients when this link is
          shared. og:image/og:url must be fully-qualified absolute URLs per

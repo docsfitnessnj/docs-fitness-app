@@ -21,6 +21,10 @@ import { formatEtTime } from '../lib/challengeSchedule';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { colors, fonts } from '../theme';
 
+// Free text ("2x24", "16/20 kg", pounds) — no format validation, just a
+// sane ceiling so the leaderboard row never has to wrap onto a second line.
+const KETTLEBELL_SIZE_MAX_LENGTH = 40;
+
 type Entry = LeaderboardEntry;
 
 function ChallengeHero({ current }: { current: CurrentChallenge }) {
@@ -176,7 +180,7 @@ function EntryForm({
         )}
       </View>
 
-      <Text nativeID="cowkiller-kettlebell-label" style={styles.label}>KETTLEBELL SIZE (KG)</Text>
+      <Text nativeID="cowkiller-kettlebell-label" style={styles.label}>KETTLEBELL SIZE</Text>
       <TextInput
         style={styles.input}
         value={kettlebell}
@@ -186,8 +190,9 @@ function EntryForm({
         autoCapitalize="none"
         autoCorrect={false}
         spellCheck={false}
+        maxLength={KETTLEBELL_SIZE_MAX_LENGTH}
         nativeID="cowkiller-kettlebell-input"
-        aria-label="Kettlebell size in kilograms"
+        aria-label="Kettlebell size"
       />
 
       <Pressable style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]} disabled={!canSubmit} onPress={submit}>
@@ -222,8 +227,8 @@ function LeaderboardRow({ entry, isTimeScoring }: { entry: Entry; isTimeScoring:
         </View>
         <Text style={styles.rowMeta}>
           {isTimeScoring
-            ? `${entry.kettlebell} KG KB · ${entry.tag}`
-            : `${entry.rounds} rounds${entry.reps ? ` + ${entry.reps} reps` : ''} · ${entry.kettlebell} KG KB · ${entry.tag}`}
+            ? `${entry.kettlebell} KB · ${entry.tag}`
+            : `${entry.rounds} rounds${entry.reps ? ` + ${entry.reps} reps` : ''} · ${entry.kettlebell} KB · ${entry.tag}`}
         </Text>
       </View>
       <Text style={styles.score}>{primaryScore}</Text>

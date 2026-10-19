@@ -1,0 +1,26 @@
+{
+  "name": "DOC'S FITNESS",
+  "short_name": "DOC'S",
+  "description": "Kettlebell workouts. Class booking. Weekly challenge. All in one app.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#076652",
+  "background_color": "#076652",
+  "lang": "en-US",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -31,11 +31,14 @@ export type CompletedWorkout = {
 
 export const EMPTY_WORKOUT_LOG: WorkoutLog = { rounds: '', time: '', kettlebell: '', notes: '', media: null };
 
+// Kettlebell size is free text ("2x24", "16/20", "24kg", plain pounds —
+// never reliably just a number), so nothing here appends a unit of its
+// own on top of whatever was actually typed.
 export function formatLogSummary(log: WorkoutLog): string {
   const parts = [
     log.rounds.trim() && `Rounds: ${log.rounds.trim()}`,
     log.time.trim() && `Time: ${log.time.trim()}`,
-    log.kettlebell.trim() && `KB: ${log.kettlebell.trim()} kg`,
+    log.kettlebell.trim() && `KB: ${log.kettlebell.trim()}`,
   ].filter(Boolean) as string[];
   const summary = parts.join(' · ');
   if (log.notes.trim()) {
@@ -49,7 +52,7 @@ export function formatLogSummary(log: WorkoutLog): string {
 // are optional and a post can be subject + notes only.
 export function formatResultsLine(log: WorkoutLog): string | undefined {
   const parts = [
-    log.kettlebell.trim() && `${log.kettlebell.trim()} KG`,
+    log.kettlebell.trim() && log.kettlebell.trim().toUpperCase(),
     log.rounds.trim() && `${log.rounds.trim().toUpperCase()} ROUNDS`,
     log.time.trim() && log.time.trim().toUpperCase(),
   ].filter(Boolean) as string[];
@@ -86,7 +89,9 @@ type Row = {
   workout_timestamp: number;
   rounds: string;
   time_taken: string;
-  kettlebell_kg: number | null;
+  // Free text (migration_021) — "2x24", "16/20", "24kg", or pounds, stored
+  // and displayed exactly as typed. Never parsed as a number.
+  kettlebell_kg: string | null;
   notes: string;
   media_url: string | null;
   media_type: 'image' | 'video' | null;
@@ -103,7 +108,7 @@ function rowToCompletedWorkout(row: Row): CompletedWorkout {
     log: {
       rounds: row.rounds,
       time: row.time_taken,
-      kettlebell: row.kettlebell_kg != null ? String(row.kettlebell_kg) : '',
+      kettlebell: row.kettlebell_kg ?? '',
       notes: row.notes,
       media: row.media_url ? { uri: row.media_url, type: row.media_type ?? 'image' } : null,
     },
@@ -173,7 +178,7 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
       const patch = {
         rounds: log.rounds,
         time_taken: log.time,
-        kettlebell_kg: log.kettlebell ? Number(log.kettlebell) || null : null,
+        kettlebell_kg: log.kettlebell.trim() || null,
         notes: log.notes,
         media_url: log.media?.uri ?? null,
         media_type: log.media?.type ?? null,
@@ -248,7 +253,7 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
           workout_timestamp: timestamp,
           rounds: log.rounds,
           time_taken: log.time,
-          kettlebell_kg: log.kettlebell ? Number(log.kettlebell) || null : null,
+          kettlebell_kg: log.kettlebell.trim() || null,
           notes: log.notes,
           media_url: log.media?.uri ?? null,
           media_type: log.media?.type ?? null,

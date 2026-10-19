@@ -15,6 +15,10 @@ import { openMovementVault } from '../lib/movementVaultModal';
 import { useActionCompletion } from '../lib/useActionCompletion';
 import { colors, fonts } from '../theme';
 
+// Free text ("2x24", "16/20 kg", pounds) — no format validation, just a
+// sane ceiling.
+const KETTLEBELL_SIZE_MAX_LENGTH = 40;
+
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -161,7 +165,7 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             </View>
           </View>
 
-          <Text nativeID="log-results-kettlebell-label" style={styles.label}>KETTLEBELL SIZE (KG)</Text>
+          <Text nativeID="log-results-kettlebell-label" style={styles.label}>KETTLEBELL SIZE</Text>
           <TextInput
             style={styles.input}
             value={log.kettlebell}
@@ -171,8 +175,9 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             autoCapitalize="none"
             autoCorrect={false}
             spellCheck={false}
+            maxLength={KETTLEBELL_SIZE_MAX_LENGTH}
             nativeID="log-results-kettlebell-input"
-            aria-label="Kettlebell size in kilograms"
+            aria-label="Kettlebell size"
           />
 
           <Text nativeID="log-results-notes-label" style={styles.label}>NOTES</Text>

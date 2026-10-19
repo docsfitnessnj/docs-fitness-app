@@ -97,7 +97,9 @@ function tagFromHowTrain(howTrain: string | null | undefined): ChallengeTag {
 type ChallengeEntryRow = {
   id: string;
   challenge_title: string;
-  kettlebell_kg: number;
+  // Free text (migration_021) — "2x24", "16/20", "24kg", or pounds, stored
+  // and displayed exactly as typed. Never parsed as a number.
+  kettlebell_kg: string;
   rounds: string;
   reps: string | null;
   time_taken: string;
@@ -111,7 +113,7 @@ function rowToEntry(row: ChallengeEntryRow): ChallengeEntry {
     id: row.id,
     author: profile?.display_name?.trim() || 'Member',
     challengeTitle: row.challenge_title,
-    kettlebell: String(row.kettlebell_kg),
+    kettlebell: row.kettlebell_kg,
     rounds: row.rounds,
     reps: row.reps ?? undefined,
     time: row.time_taken,
@@ -166,7 +168,7 @@ export function ChallengeProvider({ children }: { children: React.ReactNode }) {
           .insert({
             user_id: user.id,
             challenge_title: entry.challengeTitle,
-            kettlebell_kg: Number(entry.kettlebell) || 0,
+            kettlebell_kg: entry.kettlebell,
             rounds: entry.rounds,
             reps: entry.reps ?? null,
             time_taken: entry.time,
