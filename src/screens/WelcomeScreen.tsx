@@ -67,7 +67,7 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
       )}
       <View style={[styles.content, isDesktop && styles.contentDesktop]}>
         <View style={[styles.brandMark, isDesktop && styles.brandMarkDesktop]}>
-          <DocsBadge variant="white" size={isLargeDesktop ? 220 : isDesktop ? 190 : 140} />
+          <DocsBadge variant="white" size={isLargeDesktop ? 220 : isDesktop ? 190 : 92} />
         </View>
         <Text style={[styles.title, isDesktop && styles.titleDesktop, isLargeDesktop && styles.titleLargeDesktop]}>
           DOC'S FITNESS
@@ -220,8 +220,8 @@ const styles = StyleSheet.create({
   title: {
     color: colors.text,
     fontFamily: fonts.headline,
-    fontSize: 46,
-    lineHeight: 48,
+    fontSize: 38,
+    lineHeight: 40,
     letterSpacing: 1,
     textAlign: 'center',
     marginBottom: 10,
