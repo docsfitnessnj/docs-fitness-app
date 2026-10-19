@@ -22,7 +22,7 @@ import {
   foundingSpotsLeftLabel,
 } from '../data/plans';
 import { showAlert } from '../lib/alert';
-import { openBillingPortal, startOnlineCheckout } from '../lib/stripeCheckout';
+import { openBillingPortal, startInPersonCheckout, startOnlineCheckout } from '../lib/stripeCheckout';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -71,7 +71,7 @@ function priceDifferenceLine(currentTier: MembershipTier, nextPrice: number): st
 }
 
 export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: Props) {
-  const { tier, daysLeftInTrial, tenPackClassesRemaining, selectInPersonPlan } = useMembership();
+  const { tier, daysLeftInTrial, tenPackClassesRemaining } = useMembership();
   const founding50 = useFoundingFifty();
   const subscription = useSubscription();
   const [checkoutPendingKey, setCheckoutPendingKey] = useState<string | null>(null);
@@ -119,13 +119,39 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
     if (error) showAlert("Couldn't Open Billing", error);
   };
 
-  const chooseInPerson = (plan: InPersonPlanCard) => {
+  // DROP IN isn't a plan to switch to from here — it's a $25 charge per
+  // class, paid at the moment of booking (see useClassBooking's drop-in
+  // gate), including the first-class-free path which skips payment
+  // entirely. This card is priced reference only; it sends a member to the
+  // class schedule instead of starting a checkout with nothing to book yet.
+  const chooseDropIn = () => {
     showAlert(
-      `Confirm Switch To ${plan.name}?`,
-      `${plan.price}${plan.cadence} — this is a preview, no charge yet.${priceDifferenceLine(tier, priceNumber(plan.price))}`,
+      'Drop In Is Paid Per Class',
+      "There's no plan to switch to for Drop In — pick a class on the schedule and pay $25 right there. Your first class at Doc's Fitness is free.",
+      [{ text: 'Got It' }]
+    );
+  };
+
+  const chooseInPerson = (plan: InPersonPlanCard) => {
+    if (plan.key === 'drop_in') {
+      chooseDropIn();
+      return;
+    }
+    const checkoutPlan = plan.key === 'monthly_unlimited' ? 'in_person_monthly' : 'ten_pack';
+    showAlert(
+      `Start Checkout For ${plan.name}?`,
+      `You'll go to Stripe to ${plan.key === 'monthly_unlimited' ? 'start' : 'buy'} ${plan.name} — ${plan.price}${plan.cadence}.${priceDifferenceLine(tier, priceNumber(plan.price))}`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Confirm', onPress: () => selectInPersonPlan(plan.key) },
+        {
+          text: 'Continue',
+          onPress: async () => {
+            setCheckoutPendingKey(plan.key);
+            const { error } = await startInPersonCheckout(checkoutPlan);
+            setCheckoutPendingKey(null);
+            if (error) showAlert("Couldn't Start Checkout", error);
+          },
+        },
       ]
     );
   };
@@ -305,9 +331,14 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
                 <Pressable
                   style={styles.selectButton}
                   onPress={() => chooseInPerson(plan)}
+                  disabled={checkoutPendingKey !== null}
                   testID={`select-in-person-${plan.key}`}
                 >
-                  <Text style={styles.selectButtonText}>CHOOSE {plan.name}</Text>
+                  {checkoutPendingKey === plan.key ? (
+                    <ActivityIndicator color={colors.white} />
+                  ) : (
+                    <Text style={styles.selectButtonText}>CHOOSE {plan.name}</Text>
+                  )}
                 </Pressable>
               </View>
             </View>

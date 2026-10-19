@@ -3,6 +3,8 @@ import { planLabel, useMembership } from '../context/MembershipContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { ClassRow } from '../data/schedule';
 import { showAlert } from './alert';
+import { clearPendingDropInBooking, savePendingDropInBooking } from './pendingDropInBooking';
+import { startInPersonCheckout } from './stripeCheckout';
 
 // Tiers that book a class instantly, no payment gate — Doc's own account
 // and the unlimited in-person plan.
@@ -44,9 +46,24 @@ export function useClassBooking() {
       { text: 'Not Now', style: 'cancel' },
       {
         text: `PAY $${DROP_IN_PRICE} AND BOOK`,
-        onPress: () => {
-          bookClass(row, dateKey, weekdayName);
-          showAlert("YOU'RE IN", `${row.className} · ${weekdayName} · ${row.time}`, [{ text: 'DONE' }]);
+        onPress: async () => {
+          // Real $25 Stripe Checkout — a full-page redirect, so the
+          // booking itself can't be finalized here. These details are
+          // picked back up by useCheckoutRedirect the moment the webhook
+          // confirms the payment; "YOU'RE IN" shows then, not now.
+          savePendingDropInBooking({
+            dateKey,
+            classId: row.id,
+            className: row.className,
+            classType: row.classType,
+            time: row.time,
+            dayLabel: weekdayName,
+          });
+          const { error } = await startInPersonCheckout('drop_in');
+          if (error) {
+            clearPendingDropInBooking();
+            showAlert("Couldn't Start Checkout", error);
+          }
         },
       },
     ]);

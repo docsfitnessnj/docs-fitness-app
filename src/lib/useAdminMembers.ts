@@ -27,15 +27,19 @@ export type AdminMember = {
 };
 
 // The 7 sections Member Manager groups the roster into, in the exact order
-// Doc wants them shown, each carrying its own header copy. The three
-// in-person groups are flagged `simulated` since there's no real in-person
-// billing yet (see profiles.in_person_plan / MembershipContext).
+// Doc wants them shown, each carrying its own header copy. Monthly
+// Unlimited and 10 Class Pack are both real, Stripe-backed plans as of
+// round two (see profiles.in_person_plan / the stripe-webhook Edge
+// Function) — only DROP IN AND GUESTS stays flagged `simulated`: Drop In
+// is a real $25-per-class charge, but never a persistent plan a member is
+// grouped under here (see MembershipContext — 'drop_in' is only ever the
+// account's actual tier during Doc's own dev-preview).
 export const MEMBER_GROUPS: { key: MemberGroupKey; title: string; simulated?: boolean }[] = [
   { key: 'founding', title: 'MONTHLY (ONLINE) FOUNDING 50' },
   { key: 'monthly_online', title: 'MONTHLY (ONLINE)' },
   { key: 'annual_online', title: 'ANNUAL (ONLINE)' },
-  { key: 'monthly_unlimited', title: 'MONTHLY UNLIMITED (IN PERSON)', simulated: true },
-  { key: 'ten_pack', title: '10 CLASS PACK (IN PERSON)', simulated: true },
+  { key: 'monthly_unlimited', title: 'MONTHLY UNLIMITED (IN PERSON)' },
+  { key: 'ten_pack', title: '10 CLASS PACK (IN PERSON)' },
   { key: 'drop_in', title: 'DROP IN AND GUESTS', simulated: true },
   { key: 'free', title: 'FREE ACCOUNTS' },
 ];
@@ -64,10 +68,13 @@ function formatDate(iso: string | null): string {
 
 // The real subscriptions table is the only truth for online plan + status —
 // never any simulated/local flag (see supabase/setup.sql's admin_list_members
-// and SubscriptionContext). In-person plan grouping still comes from the
-// simulated `in_person_plan` column since there's no real in-person billing
-// yet. A member only ever lands in exactly one group, so the FOUNDING tag is
-// tied 1:1 to `group === 'founding'` rather than the historical
+// and SubscriptionContext). In-person plan grouping comes from
+// profiles.in_person_plan, which the Stripe webhook now keeps in sync for
+// real (Monthly Unlimited while that subscription is active, 10 Class Pack
+// the moment a pack is purchased) — see enforce_in_person_plan_service_role_only()
+// in setup.sql, which locks the column to the webhook's service-role key
+// alone. A member only ever lands in exactly one group, so the FOUNDING tag
+// is tied 1:1 to `group === 'founding'` rather than the historical
 // founding_fifty_members row alone — a founding member whose subscription
 // has fully ended moves to FREE ACCOUNTS like any other lapsed member.
 function mapRow(row: Row): AdminMember {

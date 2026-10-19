@@ -1,31 +1,47 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { useBadges } from '../context/BadgeContext';
+import { useClassPack } from '../context/ClassPackContext';
+import { useClassSignUp } from '../context/ClassSignUpContext';
 import { useFoundingFifty } from '../context/FoundingFiftyContext';
 import { useMembership } from '../context/MembershipContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { useSubscription } from '../context/SubscriptionContext';
 import { clearCheckoutRedirectPending, markCheckoutConfirming } from './checkoutRedirectGate';
+import { clearPendingDropInBooking, loadPendingDropInBooking } from './pendingDropInBooking';
+import { supabase } from './supabaseClient';
 
 const POLL_INTERVAL_MS = 1500;
 const MAX_POLL_ATTEMPTS = 8;
+
+type OneTimePurchase = { plan: 'ten_pack' | 'drop_in' } | null;
 
 // After Stripe Checkout (or the billing portal) redirects back to this app
 // (?checkout=success|cancel|return in the URL), reopen the Memberships
 // screen so the member isn't just dropped on whatever tab they happened to
 // be on — "Cancel returns them to the memberships screen unchanged" per the
 // round's brief, and success/return do the same. On success specifically,
-// poll the real subscription row for a few seconds until the stripe-webhook
-// has actually landed, then fire the purchase celebration exactly once —
-// never optimistically before that's confirmed, since the webhook and the
-// browser redirect race each other independently.
+// poll for a few seconds until the webhook has actually landed, then fire
+// the purchase celebration exactly once — never optimistically before
+// that's confirmed, since the webhook and the browser redirect race each
+// other independently. Two different real things can be the thing that
+// confirms: the `subscriptions` row (online plans, and in-person Monthly
+// Unlimited — both real Stripe subscriptions), or an `in_person_purchases`
+// row keyed by this checkout's own Session id (10 Class Pack or Drop In —
+// one-time payments, not subscriptions).
 export function useCheckoutRedirect(onOpenMemberships: () => void) {
   const membership = useMembership();
   const subscription = useSubscription();
+  const classPack = useClassPack();
+  const classSignUp = useClassSignUp();
   const founding50 = useFoundingFifty();
   const badges = useBadges();
   const displayName = useDisplayName();
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  const [oneTimePurchase, setOneTimePurchase] = useState<OneTimePurchase>(null);
+  // The Checkout Session id from the URL — not state, since it's read once
+  // at mount and never needs to trigger a re-render on its own.
+  const sessionIdRef = useRef<string | null>(null);
 
   // Reads the URL exactly once, right after mount.
   useEffect(() => {
@@ -34,6 +50,7 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
     const checkout = params.get('checkout');
     if (!checkout) return;
 
+    sessionIdRef.current = params.get('session_id');
     // Strip the query string immediately so a later refresh doesn't replay
     // this (especially re-firing the celebration).
     window.history.replaceState({}, '', window.location.pathname + window.location.hash);
@@ -50,18 +67,25 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
     } else {
       // Cancelled, or returning from the billing portal — no purchase
       // happened and no celebration is coming, so nothing should keep the
-      // tour blocked.
+      // tour blocked. A cancelled Drop In checkout also means the pending
+      // booking it was about to finalize never happened — drop it rather
+      // than leaving it to wrongly finalize on some later, unrelated
+      // successful checkout.
+      clearPendingDropInBooking();
       clearCheckoutRedirectPending();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Ticks a refetch while awaiting — intentionally not watching
-  // subscription's own fields here (that's the effect below); this one just
-  // keeps asking the database again for up to ~12 seconds.
+  // Ticks a refetch while awaiting — re-checks the subscription row (for
+  // online plans and in-person Monthly Unlimited) AND, if this checkout's
+  // session id is known, whether its one-time purchase has been confirmed
+  // (10 Class Pack or Drop In) — for up to ~12 seconds. Exactly one of the
+  // two will ever actually resolve, depending on what was purchased.
   useEffect(() => {
     if (!awaitingConfirmation) return;
     let attempts = 0;
+    let cancelled = false;
     const interval = setInterval(() => {
       attempts += 1;
       if (attempts > MAX_POLL_ATTEMPTS) {
@@ -71,32 +95,83 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
         // Memberships screen with no celebration rather than a scary error;
         // their real status shows correctly the next time this data loads.
         // No celebration is coming this session, so the tour is no longer
-        // blocked on it.
+        // blocked on it, and any pending Drop In booking is dropped rather
+        // than finalizing it without ever having confirmed the charge.
+        clearPendingDropInBooking();
         clearCheckoutRedirectPending();
         setAwaitingConfirmation(false);
         return;
       }
       subscription.refetch();
+      const sessionId = sessionIdRef.current;
+      if (sessionId) {
+        supabase
+          .from('in_person_purchases')
+          .select('plan')
+          .eq('id', sessionId)
+          .maybeSingle()
+          .then(({ data }) => {
+            if (cancelled) return;
+            if (data?.plan === 'ten_pack' || data?.plan === 'drop_in') {
+              setOneTimePurchase({ plan: data.plan });
+            }
+          });
+      }
     }, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [awaitingConfirmation]);
 
-  // Reacts the moment the real subscription state actually confirms.
-  // Deliberately does NOT clear the checkout-redirect-pending flag here —
-  // the purchase celebration (confetti + welcome modal) is about to render
-  // via justPurchased below, and the tour must stay blocked through that
-  // whole span. PurchaseCelebrationOverlay clears the flag itself, right
-  // before its own explicit tour.start() call once GET STARTED is tapped.
+  // Reacts the moment the real SUBSCRIPTION state confirms — online
+  // monthly/annual/founding, or in-person Monthly Unlimited. Deliberately
+  // does NOT clear the checkout-redirect-pending flag here — the purchase
+  // celebration (confetti + welcome modal) is about to render via
+  // justPurchased below, and the tour must stay blocked through that whole
+  // span. PurchaseCelebrationOverlay clears the flag itself, right before
+  // its own explicit tour.start() call once GET STARTED is tapped.
   useEffect(() => {
     if (!awaitingConfirmation || subscription.loading) return;
     const confirmed = subscription.status === 'trialing' || subscription.status === 'active';
     if (!confirmed) return;
-    membership.notifyOnlineCheckoutSuccess();
+    membership.notifyCheckoutSuccess();
     if (subscription.plan === 'founding') {
       badges.grantFoundingFifty(displayName);
       founding50.refetch();
     }
     setAwaitingConfirmation(false);
   }, [awaitingConfirmation, subscription.loading, subscription.status, subscription.plan, membership, badges, founding50, displayName]);
+
+  // Reacts the moment a ONE-TIME in-person purchase confirms. 10 Class Pack
+  // just needs the real credits re-fetched (the webhook already granted
+  // them); Drop In finalizes the booking that was put on hold before the
+  // redirect to Stripe — the very first time it's actually created, never
+  // before this lands.
+  useEffect(() => {
+    if (!awaitingConfirmation || !oneTimePurchase) return;
+    if (oneTimePurchase.plan === 'ten_pack') {
+      classPack.refetch();
+    } else {
+      const pending = loadPendingDropInBooking();
+      if (pending) {
+        classSignUp.signUp({
+          dateKey: pending.dateKey,
+          classId: pending.classId,
+          className: pending.className,
+          classType: pending.classType,
+          time: pending.time,
+          dayLabel: pending.dayLabel,
+          memberName: displayName,
+          planType: 'Drop In',
+          firstClass: false,
+        });
+        clearPendingDropInBooking();
+      }
+    }
+    membership.notifyCheckoutSuccess();
+    setAwaitingConfirmation(false);
+    setOneTimePurchase(null);
+  }, [awaitingConfirmation, oneTimePurchase, classPack, classSignUp, displayName, membership]);
 }

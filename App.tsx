@@ -25,6 +25,7 @@ import {
 } from '@expo-google-fonts/public-sans';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { ClassPackProvider } from './src/context/ClassPackContext';
 import { MembershipProvider, useMembership } from './src/context/MembershipContext';
 import { SubscriptionProvider } from './src/context/SubscriptionContext';
 import { CommunityProvider } from './src/context/CommunityContext';
@@ -63,7 +64,7 @@ import {
   markCheckoutRedirecting,
   useCheckoutGatePhase,
 } from './src/lib/checkoutRedirectGate';
-import { startOnlineCheckout } from './src/lib/stripeCheckout';
+import { startInPersonCheckout, startOnlineCheckout } from './src/lib/stripeCheckout';
 import { useLocalImportOnFirstSignIn } from './src/lib/localImport';
 import { useWeeklyUpgradeNudge } from './src/lib/upgradeNudge';
 import { useKeyboardVisible } from './src/lib/useKeyboardVisible';
@@ -283,7 +284,7 @@ type OnboardingFlowProps = {
 // BOATHOUSE goes straight to plan selection. Every path captures an email
 // on the way through — there's no anonymous/browse-without-an-account exit.
 function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
-  const { selectInPersonPlan, enterFreeTier, setNewsletterOptIn } = useMembership();
+  const { enterFreeTier, setNewsletterOptIn } = useMembership();
   const { signUp, signInWithPassword, sendPasswordReset } = useAuth();
   const { setHowTrain } = useProfile();
   const [intent, setIntent] = useState<EntryIntent>(null);
@@ -416,8 +417,23 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
       // tapped — no callback props needed here either.
       return <PricingScreen onBack={() => setStep('onlineStart')} />;
     case 'inPersonPlans':
+      // Monthly Unlimited / 10 Class Pack now start real Stripe Checkout
+      // (decided server-side in create-checkout, same as the online
+      // plans). Drop In has no checkout to start yet — no class has been
+      // chosen — so it just lands the member on the free tier, exactly
+      // like the About page's BOOK YOUR CLASS door; they pay per class
+      // later, from the booking flow itself.
       return (
-        <InPersonPlansScreen onBack={() => setStep('howDoYouTrain')} onSelectPlan={(plan) => selectInPersonPlan(plan)} />
+        <InPersonPlansScreen
+          onBack={() => setStep('howDoYouTrain')}
+          onSelectPlan={async (plan) => {
+            if (plan === 'drop_in') {
+              enterFreeTier();
+              return;
+            }
+            return startInPersonCheckout(plan === 'monthly_unlimited' ? 'in_person_monthly' : 'ten_pack');
+          }}
+        />
       );
     default:
       return (
@@ -982,6 +998,7 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
 
   return (
     <SubscriptionProvider>
+      <ClassPackProvider>
       <MembershipProvider key={resetKey}>
         <CommunityProvider>
           <WorkoutLogProvider>
@@ -1043,6 +1060,7 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
           </WorkoutLogProvider>
         </CommunityProvider>
       </MembershipProvider>
+      </ClassPackProvider>
     </SubscriptionProvider>
   );
 }

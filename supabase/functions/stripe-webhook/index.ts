@@ -31,6 +31,25 @@ async function upsertSubscription(
     },
     { onConflict: 'user_id' }
   );
+
+  // Monthly Unlimited (IN PERSON) also mirrors onto profiles.in_person_plan
+  // — the column has_group_chat_access() and Member Manager's roster key
+  // off directly — kept in sync here so EVERY path that touches an
+  // in-person-monthly subscription (checkout completing, created/updated,
+  // a failed invoice re-fetching it) lands in the same place: real access
+  // only while the subscription is actually active, revoked the moment it
+  // isn't (past_due, canceled, unpaid, incomplete...).
+  if (plan === 'in_person_monthly') {
+    if (subscription.status === 'active') {
+      await admin.from('profiles').update({ in_person_plan: 'monthly_unlimited' }).eq('id', userId);
+    } else {
+      await admin
+        .from('profiles')
+        .update({ in_person_plan: null })
+        .eq('id', userId)
+        .eq('in_person_plan', 'monthly_unlimited');
+    }
+  }
 }
 
 // Fallback path for events whose subscription object doesn't carry our own
@@ -100,7 +119,11 @@ Deno.serve(async (req) => {
         const session = event.data.object;
         const userId: string | null = session.client_reference_id ?? session.metadata?.supabase_user_id ?? null;
         const plan: string | undefined = session.metadata?.plan;
-        if (userId && session.subscription) {
+        if (!userId) break;
+
+        if (session.subscription) {
+          // Online monthly/annual/founding, or in-person Monthly Unlimited
+          // — all real Stripe subscriptions, handled identically.
           const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
           await upsertSubscription(admin, userId, session.customer as string, subscription, plan);
 
@@ -114,6 +137,40 @@ Deno.serve(async (req) => {
               // whole webhook over it.
               console.error('stripe-webhook: could not record founding 50 claim for', userId, claimError);
             }
+          }
+        } else if (session.mode === 'payment' && (plan === 'ten_pack' || plan === 'drop_in')) {
+          // 10 Class Pack or Drop In — a one-time payment, confirmed right
+          // here. in_person_purchases is what the client polls (by this
+          // Checkout Session id) to know the purchase actually went
+          // through before it finalizes a booking or shows the purchase
+          // celebration — never optimistically before this lands.
+          const { error: purchaseError } = await admin.from('in_person_purchases').insert({
+            id: session.id,
+            user_id: userId,
+            plan,
+            amount_cents: session.amount_total ?? null,
+          });
+          if (purchaseError) {
+            // Top-level event-id dedupe (above) already catches a true
+            // redelivery — this is just the same rare-race/log-don't-fail
+            // treatment as the founding 50 claim above.
+            console.error('stripe-webhook: could not record in-person purchase for', userId, purchaseError);
+          }
+
+          if (plan === 'ten_pack') {
+            const purchasedAt = new Date();
+            const expiresAt = new Date(purchasedAt);
+            expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+            const { error: packError } = await admin.from('class_packs').insert({
+              user_id: userId,
+              purchased_at: purchasedAt.toISOString(),
+              expires_at: expiresAt.toISOString(),
+              stripe_checkout_session_id: session.id,
+            });
+            if (packError) {
+              console.error('stripe-webhook: could not grant class pack for', userId, packError);
+            }
+            await admin.from('profiles').update({ in_person_plan: 'ten_pack' }).eq('id', userId);
           }
         }
         break;
@@ -133,10 +190,24 @@ Deno.serve(async (req) => {
 
       case 'customer.subscription.deleted': {
         const subscription = event.data.object;
-        await admin
+        const { data: canceledRow } = await admin
           .from('subscriptions')
           .update({ status: 'canceled', updated_at: new Date().toISOString() })
-          .eq('stripe_subscription_id', subscription.id);
+          .eq('stripe_subscription_id', subscription.id)
+          .select('user_id, plan')
+          .maybeSingle();
+        // in-person Monthly Unlimited going away for real (not just
+        // cancel-at-period-end, which keeps status 'active' until the
+        // period actually ends) — revoke the access that column grants.
+        // Guarded on the current value so this can never clobber a
+        // different plan set in between.
+        if (canceledRow?.plan === 'in_person_monthly') {
+          await admin
+            .from('profiles')
+            .update({ in_person_plan: null })
+            .eq('id', canceledRow.user_id)
+            .eq('in_person_plan', 'monthly_unlimited');
+        }
         break;
       }
 

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { InPersonPlan } from '../context/MembershipContext';
 import { PlanSectionHeader } from '../components/PlanSectionHeader';
@@ -10,15 +10,46 @@ import { colors, fonts } from '../theme';
 
 type Props = {
   onBack: () => void;
-  onSelectPlan: (plan: InPersonPlan) => void;
+  // Monthly Unlimited / 10 Class Pack: starts real Stripe Checkout and
+  // resolves with an error to show, if any, once that attempt finishes.
+  // Drop In: there's nothing to check out yet (no class chosen) — this
+  // just lets the member into the app on the free tier, the same as the
+  // About page's BOOK YOUR CLASS door; they pay $25 per class later, from
+  // the booking flow itself.
+  onSelectPlan: (plan: InPersonPlan) => Promise<{ error: string | null } | void>;
 };
 
 export default function InPersonPlansScreen({ onBack, onSelectPlan }: Props) {
+  const [pendingKey, setPendingKey] = useState<InPersonPlan | null>(null);
+
   const confirmPlan = (plan: InPersonPlanCard) => {
-    showAlert(`Confirm ${plan.name}?`, `${plan.price}${plan.cadence} — this is a preview, no charge yet.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Confirm', onPress: () => onSelectPlan(plan.key) },
-    ]);
+    if (plan.key === 'drop_in') {
+      showAlert(
+        'Drop In Is Paid Per Class',
+        "No charge now — you'll pay $25 right from the class schedule when you book, and your first class at Doc's Fitness is free.",
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Continue', onPress: () => onSelectPlan(plan.key) },
+        ]
+      );
+      return;
+    }
+    showAlert(
+      `Start Checkout For ${plan.name}?`,
+      `You'll go to Stripe to ${plan.key === 'monthly_unlimited' ? 'start' : 'buy'} ${plan.name} — ${plan.price}${plan.cadence}.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          onPress: async () => {
+            setPendingKey(plan.key);
+            const result = await onSelectPlan(plan.key);
+            setPendingKey(null);
+            if (result?.error) showAlert("Couldn't Start Checkout", result.error);
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -64,9 +95,14 @@ export default function InPersonPlansScreen({ onBack, onSelectPlan }: Props) {
               <Pressable
                 style={styles.selectButton}
                 onPress={() => confirmPlan(plan)}
+                disabled={pendingKey !== null}
                 testID={`select-plan-${plan.key}`}
               >
-                <Text style={styles.selectButtonText}>CHOOSE {plan.name}</Text>
+                {pendingKey === plan.key ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.selectButtonText}>CHOOSE {plan.name}</Text>
+                )}
               </Pressable>
             </View>
           </View>
