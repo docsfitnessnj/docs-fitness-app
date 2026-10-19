@@ -43,6 +43,7 @@ import { ContentLibraryProvider } from './src/context/ContentLibraryContext';
 import { GroupChatUnreadProvider } from './src/context/GroupChatUnreadContext';
 import { TourProvider, useTour } from './src/context/TourContext';
 import { AppTopBar } from './src/components/AppTopBar';
+import { SafeAreaBottomFill } from './src/components/SafeAreaBottomFill';
 import { SearchModal } from './src/components/SearchModal';
 import { TrialExpiryModal } from './src/components/TrialExpiryModal';
 import { AlertHost } from './src/components/AlertHost';
@@ -551,6 +552,9 @@ function MainApp({
           onOpenGroupChat={activeTab === 'Community' ? onOpenGroupChat : undefined}
         />
         <RootNavigator tabBarHidden={sidebarOpen || keyboardVisible || groupChatOpen} />
+        {!(sidebarOpen || keyboardVisible || groupChatOpen) && (
+          <SafeAreaBottomFill nativeID="tab-bar-safe-area-fill" backgroundColor={colors.card} />
+        )}
         <TabBarTourMarker />
       </View>
       <ScreenOverlay visible={searchOpen}>

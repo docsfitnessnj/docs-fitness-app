@@ -3,10 +3,16 @@ import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { AppPressable } from './AppPressable';
-import { DocsBadge } from './brand/DocsBadge';
+import { KettlewaveMark } from './brand/KettlewaveMark';
 import { UnreadCountBadge } from './UnreadCountBadge';
 import { useGroupChatUnread } from '../context/GroupChatUnreadContext';
 import { colors, fonts } from '../theme';
+
+// Roughly the combined height of the "DOC'S FITNESS" title line plus the
+// (optional) subtitle line beneath it, so the mark reads as proportionate
+// to the whole wordmark block it sits beside — not just the title's own
+// single line — on every tab, whether or not that tab has a subtitle.
+const TOP_BAR_MARK_HEIGHT = 34;
 
 type Props = {
   subtitle?: string;
@@ -29,10 +35,12 @@ export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupCh
 
         <View style={styles.titleWrap}>
           <View style={styles.titleRow}>
-            <DocsBadge variant="white" size={22} />
-            <Text style={styles.title}>DOC'S FITNESS</Text>
+            <KettlewaveMark height={TOP_BAR_MARK_HEIGHT} />
+            <View>
+              <Text style={styles.title}>DOC'S FITNESS</Text>
+              {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+            </View>
           </View>
-          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
 
         <View style={styles.rightGroup}>
