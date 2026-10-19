@@ -369,7 +369,9 @@ create table if not exists public.wod_completions (
   workout_timestamp bigint not null default 0,
   rounds text not null default '',
   time_taken text not null default '',
-  kettlebell_kg numeric,
+  -- Free text, not a number (migration_021) — "2x24", "16/20", "24kg" and
+  -- plain pounds are all real, routine ways to write a kettlebell size.
+  kettlebell_kg text,
   notes text not null default '',
   media_url text,
   media_type text check (media_type in ('image', 'video')),
@@ -425,7 +427,8 @@ create table if not exists public.challenge_entries (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
   challenge_title text not null,
-  kettlebell_kg numeric not null,
+  -- Free text, not a number (migration_021) — see wod_completions above.
+  kettlebell_kg text not null,
   rounds text not null default '',
   reps text,
   time_taken text not null default '',

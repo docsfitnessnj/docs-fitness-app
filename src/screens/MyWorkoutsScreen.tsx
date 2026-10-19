@@ -75,7 +75,7 @@ export function MyWorkoutsScreen({ visible, onClose }: Props) {
       date: formatEntryDate(e.createdAt),
       timestamp: e.createdAt,
       title: e.challengeTitle,
-      results: `${e.time} · ${e.rounds} rounds · ${e.kettlebell} KG KB`,
+      results: `${e.time} · ${e.rounds} rounds · ${e.kettlebell} KB`,
     }));
 
   const allEntries = [...wodEntries, ...deckEntries, ...challengeEntriesForMe].sort(

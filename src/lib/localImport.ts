@@ -34,7 +34,7 @@ async function importLocalDataForUser(userId: string): Promise<void> {
       workout_timestamp: meta.timestamp,
       rounds: log?.rounds ?? '',
       time_taken: log?.time ?? '',
-      kettlebell_kg: log?.kettlebell ? Number(log.kettlebell) || null : null,
+      kettlebell_kg: log?.kettlebell?.trim() || null,
       notes: log?.notes ?? '',
       media_url: log?.media?.uri ?? null,
       media_type: log?.media?.type ?? null,
