@@ -271,6 +271,23 @@
            comment above the inline script for why. */
         transform: translateY(var(--app-offset-top, 0px));
       }
+      /* Extends a fixed-height bottom bar/composer's own background through
+         the home-indicator safe area, all the way to the physical bottom
+         edge of the screen, in an installed/standalone iPhone PWA.
+         env(safe-area-inset-bottom) is the one reliable source for this on
+         web -- react-native-web's useSafeAreaInsets() always reports 0
+         (there's no OS bridge feeding it), so the JS-side height/padding
+         math these bars already do can't account for it. These elements
+         carry no RN-authored height of their own (see SafeAreaBottomFill),
+         so this is the only rule that sets one: 0px, invisible, in ordinary
+         browser chrome (including regular Safari, where env() also
+         resolves to 0 since the browser's own chrome already occupies that
+         space), and the real inset in standalone mode. */
+      #tab-bar-safe-area-fill,
+      #group-chat-composer-safe-area-fill,
+      #doc-thread-composer-safe-area-fill {
+        height: env(safe-area-inset-bottom, 0px);
+      }
     </style>
   </head>
 

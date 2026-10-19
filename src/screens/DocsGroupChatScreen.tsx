@@ -23,6 +23,7 @@ import { GifPicker } from '../components/GifPicker';
 import { MediaViewer } from '../components/MediaViewer';
 import { ModalHeader } from '../components/ModalHeader';
 import { PostAuthorBadges } from '../components/PostAuthorBadges';
+import { SafeAreaBottomFill } from '../components/SafeAreaBottomFill';
 import { REACTION_EMOJIS } from '../context/CommunityContext';
 import { useMembership } from '../context/MembershipContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
@@ -822,6 +823,16 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
             onSend={chat.sendMessage}
             onDismissSendError={chat.clearSendError}
           />
+          {/* insets.bottom above is always 0 on web (react-native-web has no
+              OS bridge feeding it) -- this covers the real home-indicator
+              gap in an installed, standalone iPhone PWA via a CSS
+              env(safe-area-inset-bottom) rule, same fix as the tab bar and
+              DocThreadView's composer. Skipped while the keyboard is up,
+              same as insets.bottom itself: the keyboard already occupies
+              that space. */}
+          {!keyboardVisible && (
+            <SafeAreaBottomFill nativeID="group-chat-composer-safe-area-fill" backgroundColor={colors.background} />
+          )}
         </View>
       </View>
 

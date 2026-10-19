@@ -13,6 +13,7 @@ import {
 } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MediaViewer } from './MediaViewer';
+import { SafeAreaBottomFill } from './SafeAreaBottomFill';
 import { DocMessage, SendMessageInput, VoiceNote } from '../context/DocsInboxContext';
 import { MediaAttachment } from '../lib/media';
 import { useMediaPicker } from '../lib/useMediaPicker';
@@ -347,6 +348,15 @@ export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyS
           </View>
         )}
       </View>
+      {/* inputAreaBottomPadding's insets.bottom is always 0 on web (no OS
+          bridge feeds react-native-web's useSafeAreaInsets) -- this covers
+          the real home-indicator gap in an installed, standalone iPhone PWA
+          via a CSS env(safe-area-inset-bottom) rule, same fix as the tab
+          bar and the group chat composer. Skipped while the keyboard is
+          up, same as insets.bottom itself. */}
+      {!keyboardVisible && (
+        <SafeAreaBottomFill nativeID="doc-thread-composer-safe-area-fill" backgroundColor={colors.background} />
+      )}
 
       <MediaViewer media={viewerMedia} onClose={() => setViewerMedia(null)} filenameHint="docs-fitness-message" />
     </KeyboardAvoidingView>

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { StoryViewer } from './StoryViewer';
 import { StoryLockedModal } from './StoryLockedModal';
-import { DocsBadge } from './brand/DocsBadge';
+import { KettlewaveMark } from './brand/KettlewaveMark';
 import { useMembership } from '../context/MembershipContext';
 import { useStories } from '../context/StoriesContext';
 import { useTour } from '../context/TourContext';
@@ -12,6 +12,12 @@ const RING_SIZE = 64;
 const AVATAR_SIZE = RING_SIZE - 10;
 const COMPACT_RING_SIZE = 46;
 const COMPACT_AVATAR_SIZE = COMPACT_RING_SIZE - 8;
+
+// Fills the white avatar circle generously while still leaving comfortable
+// breathing room on every side -- the mark itself is a compact kettlebell
+// shape (not edge-to-edge like the full badge), so this can run noticeably
+// higher than DocsBadge's own inset ratio without crowding the circle.
+const MARK_FILL_RATIO = 0.72;
 
 type Props = {
   // Slim ring-only rendering for the inline slot on the Community date strip
@@ -50,7 +56,7 @@ export function StoryRow({ compact = false }: Props) {
           <View
             style={[styles.avatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }]}
           >
-            <DocsBadge variant="white" size={avatarSize} />
+            <KettlewaveMark height={avatarSize * MARK_FILL_RATIO} />
           </View>
           {!compact && hasUnviewed && (
             <View style={styles.newTag}>
