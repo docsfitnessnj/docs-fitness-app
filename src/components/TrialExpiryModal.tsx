@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { TRIAL_WARNING_THRESHOLD, useMembership } from '../context/MembershipContext';
 import { showAlert } from '../lib/alert';
+import { claimInterruption, releaseInterruption, useInterruptionOwner } from '../lib/interruptionGate';
 import { openBillingPortal } from '../lib/stripeCheckout';
 import { colors, fonts } from '../theme';
 
@@ -23,12 +24,40 @@ const INCLUDED = [
 export function TrialExpiryModal() {
   const { tier, daysLeftInTrial, trialWarningDismissed, dismissTrialWarning } = useMembership();
   const [opening, setOpening] = useState(false);
+  const owner = useInterruptionOwner();
 
-  const visible =
+  const eligible =
     tier === 'trial' &&
     daysLeftInTrial !== null &&
     daysLeftInTrial <= TRIAL_WARNING_THRESHOLD &&
     !trialWarningDismissed;
+
+  // Claims the shared interruption slot (interruptionGate.ts) the moment
+  // this becomes eligible and nothing else already holds it, and keeps
+  // re-attempting whenever ownership frees up (the tour finishing, say) for
+  // as long as it stays eligible — unlike the upgrade nudge, this one has
+  // no "skip silently for the rest of the session" rule of its own: a
+  // card about to be charged is real information the member still needs
+  // once whatever pre-empted it is done, not a marketing nudge to shelve.
+  // Never shows WHILE something else owns the slot, never shows AT THE
+  // SAME TIME as anything else — that's the one rule this round actually
+  // adds here.
+  useEffect(() => {
+    if (!eligible) {
+      releaseInterruption('trialExpiry');
+      return;
+    }
+    if (owner === null) {
+      claimInterruption('trialExpiry');
+    }
+  }, [eligible, owner]);
+
+  // Releases on unmount too, for hygiene — this component is mounted for
+  // the whole signed-in session in practice, but never leave the slot
+  // claimed by something that's gone.
+  useEffect(() => () => releaseInterruption('trialExpiry'), []);
+
+  const visible = eligible && owner === 'trialExpiry';
 
   const managePlan = async () => {
     setOpening(true);
