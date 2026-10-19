@@ -13,15 +13,15 @@ const AVATAR_SIZE = RING_SIZE - 10;
 const COMPACT_RING_SIZE = 46;
 const COMPACT_AVATAR_SIZE = COMPACT_RING_SIZE - 8;
 
-// Fills the white avatar circle generously while still leaving comfortable
-// breathing room on every side -- the mark itself is a compact kettlebell
-// shape (not edge-to-edge like the full badge), so this can run noticeably
-// higher than DocsBadge's own inset ratio without crowding the circle.
-const MARK_FILL_RATIO = 0.72;
+// Fills the white avatar circle confidently while still leaving a small
+// margin so the mark never touches the ring -- the mark itself is a
+// compact kettlebell shape (not edge-to-edge like the full badge), so this
+// can run noticeably higher than DocsBadge's own inset ratio.
+const MARK_FILL_RATIO = 0.88;
 
 type Props = {
   // Slim ring-only rendering for the inline slot on the Community date strip
-  // — drops the "Doc" label and the "NEW" pill; the gold vs. hairline ring
+  // — drops the "Doc" label and the "NEW" pill; the gold vs. green ring
   // color alone still signals unviewed vs. viewed.
   compact?: boolean;
 };
@@ -102,8 +102,10 @@ const styles = StyleSheet.create({
   ringUnviewed: {
     borderColor: colors.gold,
   },
+  // Augusta green, not a neutral gray -- "watched" still reads as a
+  // deliberate brand-colored state, not a disabled/greyed-out one.
   ringViewed: {
-    borderColor: colors.hairline,
+    borderColor: colors.green,
   },
   avatar: {
     width: AVATAR_SIZE,
