@@ -177,6 +177,8 @@ function DeckOfWods() {
     shouldOfferUpsell,
     recordUpsellShown,
     reshuffleBrowseOrder,
+    writeError,
+    clearWriteError,
   } = useDeckProgress();
   const [mode, setMode] = useState<Mode>('shuffle');
   const [selectedCard, setSelectedCard] = useState<DeckCardData | null>(null);
@@ -201,6 +203,11 @@ function DeckOfWods() {
 
   return (
     <View>
+      {writeError && (
+        <Pressable onPress={clearWriteError} testID="deck-write-error">
+          <Text style={styles.writeErrorText}>{writeError}</Text>
+        </Pressable>
+      )}
       <ModeToggle mode={mode} onChange={setMode} />
       <ProgressLine completed={completedCount} total={totalCount} />
 
@@ -232,6 +239,12 @@ const CARD_MARGIN = 6;
 const CARD_WIDTH = `${100 / 4 - 4}%`;
 
 const styles = StyleSheet.create({
+  writeErrorText: {
+    color: colors.scoreboardRed,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    marginBottom: 10,
+  },
   modeRow: {
     flexDirection: 'row',
     gap: 8,

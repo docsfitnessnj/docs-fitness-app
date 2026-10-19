@@ -403,6 +403,24 @@ create policy "members manage only their own deck completions"
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
 
+-- One row per member: the Browse Deck grid's current card order, so a
+-- reshuffled grid with completed cards frozen in place looks the same on
+-- every device a member signs into (migration_020).
+create table if not exists public.deck_browse_order (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  card_order jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.deck_browse_order enable row level security;
+
+drop policy if exists "members manage only their own deck browse order" on public.deck_browse_order;
+create policy "members manage only their own deck browse order"
+  on public.deck_browse_order for all
+  to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
 create table if not exists public.challenge_entries (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
