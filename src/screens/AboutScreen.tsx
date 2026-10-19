@@ -98,7 +98,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
   const Scroller = variant === 'inApp' ? ScrollView : WebScrollScreen;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, variant === 'inApp' && styles.containerInApp]}>
       {variant === 'inApp' && onBack && (
         <ModalHeader title="ABOUT DOC'S FITNESS" onBack={onBack} backTestID="close-about" />
       )}
@@ -294,6 +294,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  // 'inApp' only: clears ModalHeader's own back/title row, which has no
+  // background of its own — matches colors.background underneath it, so
+  // there's no color seam like the one below.
+  containerInApp: {
     paddingTop: 60,
   },
   // Passed through to WebScrollScreen — a real ScrollView on native, a
@@ -308,6 +313,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     alignItems: 'center',
     paddingHorizontal: 24,
+    // Was previously carried as `container`'s own paddingTop (60), which
+    // rendered in colors.background (#FBFBF9, a hair off pure white) above
+    // this hero's colors.white (#FFFFFF) -- a visible seam/band on a real
+    // iPhone screen, and extra distance before the badge. Living on hero
+    // itself instead means that space is painted the hero's own white, so
+    // the page background runs clean all the way to the top with no seam.
+    paddingTop: 40,
     paddingBottom: 28,
   },
   heroDesktop: {
