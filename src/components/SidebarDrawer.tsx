@@ -244,7 +244,7 @@ export function SidebarDrawer({
           </View>
 
           <View style={styles.badgeWrap}>
-            <DocsBadge variant="white" size={104} />
+            <DocsBadge variant="light" size={120} />
           </View>
 
           <View>

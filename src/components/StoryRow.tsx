@@ -50,7 +50,7 @@ export function StoryRow({ compact = false }: Props) {
           <View
             style={[styles.avatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }]}
           >
-            <DocsBadge variant="white" size={avatarSize} />
+            <DocsBadge variant="white" size={avatarSize - 4} />
           </View>
           {!compact && hasUnviewed && (
             <View style={styles.newTag}>

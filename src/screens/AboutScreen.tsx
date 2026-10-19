@@ -98,7 +98,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
   const Scroller = variant === 'inApp' ? ScrollView : WebScrollScreen;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, variant === 'inApp' && styles.containerInApp]}>
       {variant === 'inApp' && onBack && (
         <ModalHeader title="ABOUT DOC'S FITNESS" onBack={onBack} backTestID="close-about" />
       )}
@@ -294,6 +294,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  // In app, the ModalHeader sits at the top and needs room under the status
+  // bar. On the public About page there is no header, so the hero itself
+  // carries the top spacing on a white background (no off white band).
+  containerInApp: {
     paddingTop: 60,
   },
   // Passed through to WebScrollScreen — a real ScrollView on native, a
@@ -308,6 +313,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     alignItems: 'center',
     paddingHorizontal: 24,
+    paddingTop: 28,
     paddingBottom: 28,
   },
   heroDesktop: {
