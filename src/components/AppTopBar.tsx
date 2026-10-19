@@ -8,11 +8,14 @@ import { UnreadCountBadge } from './UnreadCountBadge';
 import { useGroupChatUnread } from '../context/GroupChatUnreadContext';
 import { colors, fonts } from '../theme';
 
-// Roughly the combined height of the "DOC'S FITNESS" title line plus the
-// (optional) subtitle line beneath it, so the mark reads as proportionate
-// to the whole wordmark block it sits beside — not just the title's own
-// single line — on every tab, whether or not that tab has a subtitle.
-const TOP_BAR_MARK_HEIGHT = 34;
+// Matches the "DOC'S FITNESS" title's own cap height, not the title plus
+// subtitle block -- Bebas Neue is a tall condensed all-caps face with
+// almost no descenders, so with the title's lineHeight pulled in to match
+// its fontSize (stripping the font's default leading), fontSize itself is
+// a close read of cap height. Fixed and independent of subtitle text, so
+// it never resizes between tabs.
+const TITLE_FONT_SIZE = 20;
+const TOP_BAR_MARK_HEIGHT = TITLE_FONT_SIZE;
 
 type Props = {
   subtitle?: string;
@@ -36,19 +39,29 @@ export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupCh
         <View style={styles.titleWrap}>
           <View style={styles.titleRow}>
             <KettlewaveMark height={TOP_BAR_MARK_HEIGHT} />
-            <View>
-              <Text style={styles.title}>DOC'S FITNESS</Text>
-              {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-            </View>
+            <Text style={styles.title}>DOC'S FITNESS</Text>
           </View>
+          {/* A sibling of titleRow (not nested inside it) so its own width —
+              which varies a lot by tab ("COMMUNITY" vs "WEEKLY CHALLENGE")
+              — can never influence titleRow's width and shift the mark +
+              wordmark lockup itself; titleWrap's alignItems:'center' centers
+              each of them independently. */}
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
 
         <View style={styles.rightGroup}>
-          {onOpenGroupChat && (
+          {onOpenGroupChat ? (
             <AppPressable onPress={onOpenGroupChat} hitSlop={8} style={styles.iconButton} testID="open-group-chat">
               <Ionicons name="chatbubbles-outline" size={22} color={colors.text} />
               <UnreadCountBadge count={unreadCount} style={styles.groupChatBadge} />
             </AppPressable>
+          ) : (
+            // A same-sized, invisible stand-in for the group-chat icon that
+            // only the Community tab actually shows. Without this, the
+            // right side is narrower on every other tab, titleWrap's
+            // centered content shifts to fill that extra space, and the
+            // mark + wordmark lockup visibly moves tab to tab.
+            <View style={styles.iconButton} />
           )}
           <AppPressable onPress={onOpenSearch} hitSlop={8} style={styles.iconButton} testID="open-search">
             <Ionicons name="search-outline" size={22} color={colors.text} />
@@ -94,7 +107,12 @@ const styles = StyleSheet.create({
   title: {
     color: colors.text,
     fontFamily: fonts.headline,
-    fontSize: 20,
+    fontSize: TITLE_FONT_SIZE,
+    // Pulled in to match fontSize exactly -- the browser/RN default
+    // leading (~1.2-1.4x) would otherwise pad the text's own box well
+    // past its visual cap height, throwing off alignment against the
+    // mark next to it.
+    lineHeight: TITLE_FONT_SIZE,
     letterSpacing: 0.8,
   },
   subtitle: {
@@ -103,6 +121,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.5,
     marginTop: 1,
+    textAlign: 'center',
   },
   rightGroup: {
     flexDirection: 'row',
