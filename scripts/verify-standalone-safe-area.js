@@ -421,6 +421,35 @@ async function hitTestsNth(page, selector, index) {
   );
 }
 
+// Round 10's own regression guard: the tab bar's bottom density. Finds
+// the first tab's own label text node (the deepest element actually
+// containing "COMMUNITY", not an ancestor box inflated by react-
+// navigation's own flex-stretch slack -- see tabBarHeight.ts) and returns
+// the gap between its rendered bottom edge and the physical viewport
+// bottom. This is the number a person actually looks at ("how much empty
+// space is below the label"), independent of how that space happens to
+// be built out of the tab bar's own padding vs. the safe-area fill.
+async function tabLabelBaselineGap(page) {
+  return page.evaluate(() => {
+    const firstTab = document.querySelector('[role="tab"]');
+    if (!firstTab) return null;
+    const walker = document.createTreeWalker(firstTab, NodeFilter.SHOW_ELEMENT);
+    let node;
+    let labelEl = null;
+    while ((node = walker.nextNode())) {
+      if (node.textContent && node.textContent.trim().length > 0 && node.children.length === 0) labelEl = node;
+    }
+    if (!labelEl) return null;
+    const rect = labelEl.getBoundingClientRect();
+    // scrollHeight vs. rendered height: if the row ever gets compressed
+    // below what the label actually needs, the label is the first thing
+    // to visibly clip -- this catches that directly, independent of the
+    // baseline-gap number possibly still looking "right" by coincidence.
+    const clipped = labelEl.scrollHeight > Math.ceil(rect.height) + 1;
+    return { gap: window.innerHeight - rect.bottom, clipped };
+  });
+}
+
 async function run() {
   const browser = await chromium.launch();
   const results = [];
@@ -733,6 +762,46 @@ async function run() {
     record('[buried-control] group chat send button receives its own tap, not the composer fill behind it', sendButton.found && sendButton.visible && sendButton.ok, JSON.stringify(sendButton));
 
     await context.close();
+  }
+
+  // --- Round 10's own regression guard: the tab bar's bottom density.
+  // Native iOS apps (Skool, Instagram) sit their tab labels ~10-15px
+  // above the home indicator zone; this app previously left 70-80px of
+  // dead white space there (a 10px flex-stretch slack baked into
+  // TAB_BAR_CONTENT_HEIGHT -- see tabBarHeight.ts). Checks the gap
+  // between the first tab's own label and the physical viewport bottom
+  // in both baseline (ordinary browser chrome) and forced-inset
+  // (standalone-simulation) conditions, and that the label is never
+  // clipped by a too-short row.
+  {
+    const TAB_LABEL_TOLERANCE = 5;
+    const BASELINE_TAB_LABEL_GAP = 12;
+    const FORCED_TAB_LABEL_GAP = FORCED_BOTTOM + 12;
+
+    for (const forced of [false, true]) {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await seedSignedInSession(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      if (forced) {
+        await page.addStyleTag({ content: FORCE_INSET_CSS });
+        await page.waitForTimeout(200);
+      }
+
+      const result = await tabLabelBaselineGap(page);
+      const label = forced ? 'forced-inset' : 'baseline';
+      const expected = forced ? FORCED_TAB_LABEL_GAP : BASELINE_TAB_LABEL_GAP;
+      record(
+        `[tab-bar-density/${label}] tab label sits within ${TAB_LABEL_TOLERANCE}px of the expected ${expected}px gap above the physical bottom edge`,
+        result !== null && Math.abs(result.gap - expected) <= TAB_LABEL_TOLERANCE,
+        JSON.stringify({ ...result, expected })
+      );
+      record(`[tab-bar-density/${label}] tab label is not clipped by a too-short row`, result !== null && !result.clipped, JSON.stringify(result));
+
+      await context.close();
+    }
   }
 
   // --- Round 8's own regression guard: #root must equal the viewport
