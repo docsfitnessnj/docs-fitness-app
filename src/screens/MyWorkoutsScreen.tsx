@@ -114,10 +114,12 @@ export function MyWorkoutsScreen({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // No paddingTop here -- ScreenOverlay's own fill (topBasePadding={60})
+  // provides it as a single additive source with the real top inset. See
+  // AGENTS.md's "Web safe-area insets always report zero" writeup.
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingTop: 60,
   },
   list: {
     paddingHorizontal: 20,

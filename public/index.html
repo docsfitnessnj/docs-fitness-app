@@ -197,14 +197,45 @@
         // Keep re-measuring for a bit after load in case the browser's
         // own chrome (or visualViewport's reading of it) hasn't settled
         // yet when the checks above run — see "Round 4" above.
+        //
+        // Round 6 (this one — standalone launch settles slower than this
+        // burst's old 1.5s window): member reports from the installed
+        // standalone app showed a real dead zone below the tab bar (a
+        // white gap, then the bare page background peeking through at the
+        // very bottom) that this simulator's headless timing never
+        // reproduced -- consistent with the standalone launch transition
+        // (no browser chrome to collapse, but the OS's own app-switcher/
+        // launch animation still settling) taking longer on a real device
+        // than this burst's fixed window, after which nothing left on the
+        // page ever fires another resize/visualViewport event to correct
+        // the now-permanently-stale value. Two independent changes make
+        // this self-correct instead of silently giving up: the burst now
+        // keeps re-checking for up to 4s (instead of 1.5s) AND exits early
+        // once the reading has been identical for 10 consecutive frames
+        // (genuinely settled, not just one lucky stable tick); and a
+        // ResizeObserver on <html> re-measures on ANY future layout-size
+        // change for the lifetime of the page, with no fixed end time at
+        // all -- a true catch-all for a settle that finishes later than
+        // even this longer burst, or a standalone viewport change (e.g.
+        // rotating, or the OS's own UI reclaiming space) that doesn't
+        // reliably fire a plain 'resize' event.
         var settleStart = Date.now();
+        var lastHeight = null;
+        var stableFrames = 0;
         function settle() {
+          var vv = window.visualViewport;
+          var h = (vv && vv.height) || window.innerHeight;
           syncViewport();
-          if (Date.now() - settleStart < 1500) {
+          stableFrames = h === lastHeight ? stableFrames + 1 : 0;
+          lastHeight = h;
+          if (stableFrames < 10 && Date.now() - settleStart < 4000) {
             requestAnimationFrame(settle);
           }
         }
         requestAnimationFrame(settle);
+        if (window.ResizeObserver) {
+          new ResizeObserver(syncViewport).observe(document.documentElement);
+        }
       })();
     </script>
     <style id="expo-reset">
@@ -300,6 +331,54 @@
       #safe-area-top-fill {
         height: env(safe-area-inset-top, 0px);
       }
+      /* ScreenOverlay's own fill, for the ~18 secondary full-screen
+         layouts (Profile, Memberships, Settings, the hamburger drawer,
+         etc.) that were each originally built with a flat `paddingTop: 60`
+         of their own (clearing a hidden tab bar's worth of chrome in
+         ordinary browser chrome, long before SafeAreaTopFill existed).
+         Rather than keep that 60 on each of those ~18 screens AND stack a
+         plain env()-only fill in front of it (the exact "roughly double"
+         top-offset regression this round fixes), the 60 is folded into
+         THIS one shared choke point instead -- a single additive source of
+         both the flat breathing-room value and the real inset. See
+         ScreenOverlay.tsx's `topBasePadding` prop and AGENTS.md. */
+      #screen-overlay-safe-top-60 {
+        height: calc(60px + env(safe-area-inset-top, 0px));
+      }
+      /* The remaining full-screen layouts below each already carried their
+         own flat paddingTop (the ordinary-browser-chrome breathing-room
+         value, predating SafeAreaTopFill) on their own root container --
+         rather than ALSO render a separate SafeAreaTopFill sibling there
+         (stacking two independent top offsets in standalone mode), each
+         rule below adds the real inset directly onto that screen's own
+         existing padding via `calc()`, the same additive technique as
+         #welcome-back-safe-top further down. One rule per distinct
+         baseline value; several screens share 60. See AGENTS.md's "Web
+         safe-area insets always report zero" writeup. */
+      #story-viewer-safe-top {
+        padding-top: calc(50px + env(safe-area-inset-top, 0px)) !important;
+      }
+      #create-post-safe-top {
+        padding-top: calc(16px + env(safe-area-inset-top, 0px)) !important;
+      }
+      #media-viewer-safe-top {
+        padding-top: calc(56px + env(safe-area-inset-top, 0px)) !important;
+      }
+      #invite-friend-safe-top {
+        padding-top: calc(48px + env(safe-area-inset-top, 0px)) !important;
+      }
+      #story-locked-safe-top,
+      #post-detail-safe-top,
+      #log-results-safe-top,
+      #sign-in-safe-top,
+      #pricing-safe-top,
+      #in-person-plans-safe-top,
+      #how-do-you-train-safe-top,
+      #forgot-password-safe-top,
+      #online-start-safe-top,
+      #set-new-password-safe-top {
+        padding-top: calc(60px + env(safe-area-inset-top, 0px)) !important;
+      }
       /* WelcomeScreen's BACK control floats over its centered hero
          (position: absolute) rather than sitting in normal flow like every
          other screen's back button, so a SafeAreaTopFill sibling can't push
@@ -311,16 +390,28 @@
       #welcome-back-safe-top {
         top: calc(60px + env(safe-area-inset-top, 0px)) !important;
       }
-      /* Pins WelcomeScreen's root to a real minimum height equal to the
-         same JS-measured, self-correcting --app-height value #root itself
-         uses (see the Round 3/4 comment above), instead of letting its
-         flex:1 chain collapse to its own content's shrink-wrapped size in
-         the pre-signup "natural document scroll" mode -- see the comment
-         on WelcomeScreen's `container` style for the full why. min-height
+      /* Pins WelcomeScreen's (and, same reasoning, AboutScreen onboarding
+         variant's) root to a real minimum height equal to the same
+         JS-measured, self-correcting --app-height value #root itself uses
+         (see the Round 3/4 comment above), instead of letting its flex:1
+         chain collapse to its own content's shrink-wrapped size in the
+         pre-signup "natural document scroll" mode -- see the comment on
+         WelcomeScreen's `container` style for the full why. AboutScreen
+         (the real first-thing-a-member-sees "WELCOME TO DOC'S FITNESS"
+         screen -- confusingly, a *different* component than
+         WelcomeScreen.tsx, which is actually the sign-up form) had the
+         exact same hole and had never gotten this fix: confirmed via a
+         direct #root height measurement that it was collapsing to a
+         fraction of the real viewport height in standalone mode, which a
+         real device read as a huge empty band up top and dead space below
+         -- easy to miss from a plain screenshot since overflow:visible
+         still paints the (overflowing) content in roughly the right place
+         even while the ancestor chain's own boxes are wrong. min-height
          (not height) so the page can still grow taller and scroll when a
          validation message or the keyboard needs more room than one
          screen's worth. */
-      #welcome-screen-root {
+      #welcome-screen-root,
+      #about-screen-root {
         min-height: var(--app-height, 100dvh);
       }
     </style>

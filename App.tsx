@@ -557,10 +557,10 @@ function MainApp({
         )}
         <TabBarTourMarker />
       </View>
-      <ScreenOverlay visible={searchOpen}>
+      <ScreenOverlay visible={searchOpen} topBasePadding={60}>
         <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={sidebarOpen} fullBleed topFillColor={colors.green}>
+      <ScreenOverlay visible={sidebarOpen} fullBleed topFillColor={colors.green} topBasePadding={60}>
         <SidebarDrawer
           visible={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
@@ -585,7 +585,7 @@ function MainApp({
           the menu list, not the tab bar underneath. Their other entry points
           (e.g. desktop Messages, the schedule strip link) leave sidebarOpen
           false and keep the original non-fullBleed behavior. */}
-      <ScreenOverlay visible={messagesOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={messagesOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <MessagesScreen
           visible={messagesOpen}
           onClose={() => {
@@ -616,27 +616,27 @@ function MainApp({
           <DocsGroupChatScreen visible={groupChatOpen} onClose={onCloseGroupChat} />
         </ScreenErrorBoundary>
       </ScreenOverlay>
-      <ScreenOverlay visible={profileOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={profileOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <ProfileScreen visible={profileOpen} onClose={() => setProfileOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={membershipsOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={membershipsOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <MembershipsScreen
           visible={membershipsOpen}
           onClose={() => setMembershipsOpen(false)}
           onlyFullAccess={membershipsMode === 'unlock'}
         />
       </ScreenOverlay>
-      <ScreenOverlay visible={myWorkoutsOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={myWorkoutsOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <MyWorkoutsScreen visible={myWorkoutsOpen} onClose={() => setMyWorkoutsOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={closeFriendsOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={closeFriendsOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <CloseFriendsScreen visible={closeFriendsOpen} onClose={() => setCloseFriendsOpen(false)} />
       </ScreenOverlay>
       <InviteFriendModal visible={inviteOpen} onClose={() => setInviteOpen(false)} />
-      <ScreenOverlay visible={adminRosterOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={adminRosterOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <AdminRosterScreen visible={adminRosterOpen} onClose={() => setAdminRosterOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={settingsOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={settingsOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <SettingsScreen
           visible={settingsOpen}
           onClose={() => setSettingsOpen(false)}
@@ -646,29 +646,29 @@ function MainApp({
           }}
         />
       </ScreenOverlay>
-      <ScreenOverlay visible={trophyCaseOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={trophyCaseOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <TrophyCaseScreen
           visible={trophyCaseOpen}
           onClose={() => setTrophyCaseOpen(false)}
           onVerifyJoker={openMessagesForJokerVerification}
         />
       </ScreenOverlay>
-      <ScreenOverlay visible={memberManagerOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={memberManagerOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <MemberManagerScreen visible={memberManagerOpen} onClose={() => setMemberManagerOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={foundingFiftyAdminOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={foundingFiftyAdminOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <FoundingFiftyAdminScreen visible={foundingFiftyAdminOpen} onClose={() => setFoundingFiftyAdminOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={contentLibraryOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={contentLibraryOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <ContentLibraryScreen visible={contentLibraryOpen} onClose={() => setContentLibraryOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={docsInboxOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={docsInboxOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <DocsInboxScreen visible={docsInboxOpen} onClose={() => setDocsInboxOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={scheduleOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={scheduleOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <FullScheduleScreen visible={scheduleOpen} onClose={() => setScheduleOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={movementVaultOpen} fullBleed={sidebarOpen}>
+      <ScreenOverlay visible={movementVaultOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <MovementVaultScreen
           visible={movementVaultOpen}
           onClose={() => setMovementVaultOpen(false)}

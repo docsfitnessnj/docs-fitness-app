@@ -5,7 +5,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { Avatar } from './Avatar';
 import { MediaAttachmentPicker } from './MediaAttachmentPicker';
-import { SafeAreaTopFill } from './SafeAreaTopFill';
 import { Post, useCommunity } from '../context/CommunityContext';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { MediaAttachment } from '../lib/media';
@@ -89,8 +88,7 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
 
   return (
     <AppModal visible={visible} animationType="slide" onRequestClose={handleClose}>
-      <View style={styles.composeContainer}>
-        <SafeAreaTopFill backgroundColor={colors.background} />
+      <View style={styles.composeContainer} nativeID="create-post-safe-top">
         <View style={styles.composeHeader}>
           <AppPressable onPress={handleClose} hitSlop={8} testID="compose-close" aria-label="Close">
             <Ionicons name="close" size={26} color={colors.text} />
@@ -177,6 +175,10 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // paddingTop here is the ordinary-browser-chrome value; index.html's
+  // #create-post-safe-top rule adds the real env(safe-area-inset-top) on
+  // top of it in standalone mode -- a single additive source. See
+  // AGENTS.md's "Web safe-area insets always report zero" writeup.
   composeContainer: {
     flex: 1,
     backgroundColor: colors.background,

@@ -18,7 +18,6 @@ import {
 } from '../data/plans';
 import { showAlert } from '../lib/alert';
 import { startOnlineCheckout } from '../lib/stripeCheckout';
-import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -52,8 +51,7 @@ export default function PricingScreen({ onBack }: Props) {
   };
 
   return (
-    <View style={styles.container}>
-      <SafeAreaTopFill backgroundColor={colors.background} />
+    <View style={styles.container} nativeID="pricing-safe-top">
       <Pressable onPress={onBack} hitSlop={8} style={styles.backButton}>
         <Ionicons name="chevron-back" size={20} color={colors.text} />
         <Text style={styles.backText}>BACK</Text>
@@ -145,6 +143,9 @@ export default function PricingScreen({ onBack }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // paddingTop here is the ordinary-browser-chrome value; index.html's
+  // #pricing-safe-top rule adds the real env(safe-area-inset-top) on top
+  // of it in standalone mode -- a single additive source. See AGENTS.md.
   container: {
     flex: 1,
     backgroundColor: colors.background,

@@ -30,7 +30,7 @@ export default function SetNewPasswordScreen({ onSave }: Props) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} nativeID="set-new-password-safe-top">
       <View style={styles.content}>
         <Text style={styles.title}>SET NEW PASSWORD</Text>
         <Text style={styles.subtext}>Choose a new password for your account.</Text>
@@ -84,6 +84,11 @@ export default function SetNewPasswordScreen({ onSave }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // paddingTop here is the ordinary-browser-chrome value; index.html's
+  // #set-new-password-safe-top rule adds the real env(safe-area-inset-top)
+  // on top of it in standalone mode -- this screen never had a
+  // SafeAreaTopFill of its own. See AGENTS.md's "Web safe-area insets
+  // always report zero" writeup.
   container: {
     flex: 1,
     backgroundColor: colors.background,

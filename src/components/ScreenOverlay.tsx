@@ -18,6 +18,18 @@ type Props = {
   // hamburger drawer, whose own root is colors.green; passing that here
   // keeps the fill from painting a mismatched strip above it.
   topFillColor?: string;
+  // Most screens this wraps were built pre-SafeAreaTopFill with a flat
+  // `paddingTop: 60` of their own (clearing a hidden tab bar's worth of
+  // chrome in ordinary browser chrome) -- see AGENTS.md's "Web safe-area
+  // insets always report zero" writeup. Folding that same 60 into THIS
+  // fill via a dedicated id/CSS rule, and deleting it from each of those
+  // screens' own styles, keeps the real env(safe-area-inset-top) and the
+  // flat breathing-room value as a SINGLE additive source instead of two
+  // independently-sized boxes stacking in standalone mode (the "roughly
+  // double" top-offset regression). Omit this for a screen that already
+  // manages its own top spacing correctly (DOC'S GROUP CHAT) -- passing
+  // it there would reintroduce the exact bug this is fixing.
+  topBasePadding?: 60;
 };
 
 // A full-bleed secondary screen (Profile, My Workouts, Close Friends, the
@@ -26,7 +38,7 @@ type Props = {
 // underneath — the user can jump straight to another tab without first
 // backing out. Only truly transient overlays (the story viewer, the deck
 // card detail popup) are allowed to cover the whole screen.
-export function ScreenOverlay({ visible, children, fullBleed = false, topFillColor = colors.background }: Props) {
+export function ScreenOverlay({ visible, children, fullBleed = false, topFillColor = colors.background, topBasePadding }: Props) {
   const tabBarHeight = useTabBarHeight();
   if (!visible) return null;
 
@@ -37,7 +49,10 @@ export function ScreenOverlay({ visible, children, fullBleed = false, topFillCol
         { bottom: fullBleed ? 0 : tabBarHeight, zIndex: 500, backgroundColor: colors.background },
       ]}
     >
-      <SafeAreaTopFill backgroundColor={topFillColor} />
+      <SafeAreaTopFill
+        nativeID={topBasePadding === 60 ? 'screen-overlay-safe-top-60' : undefined}
+        backgroundColor={topFillColor}
+      />
       {children}
     </View>
   );

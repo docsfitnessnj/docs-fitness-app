@@ -1,7 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -12,8 +11,7 @@ type Props = {
 
 export default function HowDoYouTrainScreen({ onBack, onTrainOnline, onTrainAtBoathouse }: Props) {
   return (
-    <View style={styles.container}>
-      <SafeAreaTopFill backgroundColor={colors.background} />
+    <View style={styles.container} nativeID="how-do-you-train-safe-top">
       <Pressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="how-do-you-train-back">
         <Ionicons name="chevron-back" size={20} color={colors.text} />
         <Text style={styles.backText}>BACK</Text>
@@ -41,6 +39,10 @@ export default function HowDoYouTrainScreen({ onBack, onTrainOnline, onTrainAtBo
 }
 
 const styles = StyleSheet.create({
+  // paddingTop here is the ordinary-browser-chrome value; index.html's
+  // #how-do-you-train-safe-top rule adds the real env(safe-area-inset-top)
+  // on top of it in standalone mode -- a single additive source. See
+  // AGENTS.md's "Web safe-area insets always report zero" writeup.
   container: {
     flex: 1,
     backgroundColor: colors.background,
