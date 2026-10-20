@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -12,6 +13,7 @@ type Props = {
 export default function HowDoYouTrainScreen({ onBack, onTrainOnline, onTrainAtBoathouse }: Props) {
   return (
     <View style={styles.container}>
+      <SafeAreaTopFill backgroundColor={colors.background} />
       <Pressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="how-do-you-train-back">
         <Ionicons name="chevron-back" size={20} color={colors.text} />
         <Text style={styles.backText}>BACK</Text>

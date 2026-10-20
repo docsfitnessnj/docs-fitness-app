@@ -6,6 +6,7 @@ import { PlanSectionHeader } from '../components/PlanSectionHeader';
 import { WebScrollScreen } from '../components/WebScrollScreen';
 import { IN_PERSON_PLANS, IN_PERSON_SECTION_HEADER, InPersonPlanCard } from '../data/plans';
 import { showAlert } from '../lib/alert';
+import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -54,6 +55,7 @@ export default function InPersonPlansScreen({ onBack, onSelectPlan }: Props) {
 
   return (
     <View style={styles.container}>
+      <SafeAreaTopFill backgroundColor={colors.background} />
       <Pressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="in-person-plans-back">
         <Ionicons name="chevron-back" size={20} color={colors.text} />
         <Text style={styles.backText}>BACK</Text>

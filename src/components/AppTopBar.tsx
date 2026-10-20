@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { AppPressable } from './AppPressable';
 import { KettlewaveMark } from './brand/KettlewaveMark';
+import { SafeAreaTopFill } from './SafeAreaTopFill';
 import { UnreadCountBadge } from './UnreadCountBadge';
 import { useGroupChatUnread } from '../context/GroupChatUnreadContext';
 import { colors, fonts } from '../theme';
@@ -31,6 +32,13 @@ export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupCh
   const { unreadCount } = useGroupChatUnread();
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
+      {/* SafeAreaView's own `edges={['top']}` inset is correct on native
+          but, like useSafeAreaInsets(), resolves to a literal 0 on web (it
+          renders inline `padding: 0px` there -- confirmed by inspecting
+          the DOM, not assumed) -- so this bar sits flush against the
+          status bar in an installed standalone iPhone PWA despite the
+          SafeAreaView wrapper. Same fix as everywhere else. */}
+      <SafeAreaTopFill backgroundColor={colors.card} />
       <View style={styles.bar}>
         <AppPressable onPress={onOpenSidebar} hitSlop={8} style={styles.iconButton} testID="open-sidebar">
           <Ionicons name="menu-outline" size={24} color={colors.text} />

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppPressable } from '../components/AppPressable';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts } from '../theme';
 
@@ -31,6 +32,7 @@ export default function ForgotPasswordScreen({ onBack, onSendReset }: Props) {
 
   return (
     <View style={styles.container}>
+      <SafeAreaTopFill backgroundColor={colors.background} />
       <AppPressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="forgot-password-back">
         <Ionicons name="chevron-back" size={20} color={colors.text} />
         <Text style={styles.backText}>BACK</Text>

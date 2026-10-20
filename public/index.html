@@ -288,6 +288,41 @@
       #doc-thread-composer-safe-area-fill {
         height: env(safe-area-inset-bottom, 0px);
       }
+      /* Top-edge counterpart: covers the status bar / notch / Dynamic
+         Island area, in an installed, standalone iPhone PWA, on any
+         full-screen layout that doesn't render the main app top bar (that
+         one already handles this correctly via SafeAreaView). Same
+         reasoning as the bottom-fill rule above -- 0px, invisible, in
+         ordinary browser chrome (the URL bar already occupies that space
+         there), the real inset in standalone mode. One shared id: every
+         SafeAreaTopFill instance wants the exact same height, so there's
+         no need for a new id (and a new rule here) per screen. */
+      #safe-area-top-fill {
+        height: env(safe-area-inset-top, 0px);
+      }
+      /* WelcomeScreen's BACK control floats over its centered hero
+         (position: absolute) rather than sitting in normal flow like every
+         other screen's back button, so a SafeAreaTopFill sibling can't push
+         it down the way it pushes normal-flow content. `!important` is
+         needed to beat the inline `top: 60` (its regular-browser-chrome
+         value) RN's style prop compiles to -- additive with that value, not
+         a replacement, so standalone mode gets 60px of the same visual
+         breathing room on top of the real inset, never less than before. */
+      #welcome-back-safe-top {
+        top: calc(60px + env(safe-area-inset-top, 0px)) !important;
+      }
+      /* Pins WelcomeScreen's root to a real minimum height equal to the
+         same JS-measured, self-correcting --app-height value #root itself
+         uses (see the Round 3/4 comment above), instead of letting its
+         flex:1 chain collapse to its own content's shrink-wrapped size in
+         the pre-signup "natural document scroll" mode -- see the comment
+         on WelcomeScreen's `container` style for the full why. min-height
+         (not height) so the page can still grow taller and scroll when a
+         validation message or the keyboard needs more room than one
+         screen's worth. */
+      #welcome-screen-root {
+        min-height: var(--app-height, 100dvh);
+      }
     </style>
   </head>
 
