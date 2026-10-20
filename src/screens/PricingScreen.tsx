@@ -18,6 +18,7 @@ import {
 } from '../data/plans';
 import { showAlert } from '../lib/alert';
 import { startOnlineCheckout } from '../lib/stripeCheckout';
+import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -52,6 +53,7 @@ export default function PricingScreen({ onBack }: Props) {
 
   return (
     <View style={styles.container}>
+      <SafeAreaTopFill backgroundColor={colors.background} />
       <Pressable onPress={onBack} hitSlop={8} style={styles.backButton}>
         <Ionicons name="chevron-back" size={20} color={colors.text} />
         <Text style={styles.backText}>BACK</Text>

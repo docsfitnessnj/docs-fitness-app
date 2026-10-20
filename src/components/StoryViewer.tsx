@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
+import { SafeAreaTopFill } from './SafeAreaTopFill';
 import { StoryItem, useStories } from '../context/StoriesContext';
 import { colors, fonts } from '../theme';
 
@@ -83,6 +84,10 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
         style={[styles.container, { backgroundColor: current.placeholderColor, transform: [{ translateY: dragY }] }]}
         {...panResponder.panHandlers}
       >
+        {/* Matches the active story's own placeholderColor -- the only
+            background this screen has -- so the fill reads as part of the
+            same full-bleed color instead of a mismatched strip. */}
+        <SafeAreaTopFill backgroundColor={current.placeholderColor} />
         <View style={styles.progressRow}>
           {stories.map((story, i) => (
             <View key={story.id} style={styles.progressTrack}>

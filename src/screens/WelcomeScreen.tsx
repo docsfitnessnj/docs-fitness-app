@@ -13,6 +13,7 @@ import { AppPressable } from '../components/AppPressable';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { DocsHorizontalLockup } from '../components/brand/DocsHorizontalLockup';
 import { PasswordInput } from '../components/PasswordInput';
+import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
 
@@ -57,10 +58,12 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
   return (
     <KeyboardAvoidingView
       style={styles.container}
+      nativeID="welcome-screen-root"
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <SafeAreaTopFill backgroundColor={colors.background} />
       {onBack && (
-        <AppPressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="welcome-back">
+        <AppPressable onPress={onBack} hitSlop={8} style={styles.backButton} nativeID="welcome-back-safe-top" testID="welcome-back">
           <Ionicons name="chevron-back" size={20} color={colors.text} />
           <Text style={styles.backText}>BACK</Text>
         </AppPressable>
@@ -178,10 +181,33 @@ export default function WelcomeScreen({ onContinue, onGoToSignIn, onBack }: Prop
 }
 
 const styles = StyleSheet.create({
+  // `flex: 1` alone isn't a reliable height here: this screen renders
+  // inside App.tsx's pre-signup "natural document scroll" mode (html/body/
+  // #root left height:auto so the real page can scroll -- see
+  // useWebDocumentScroll.ts), where a flex:1 chain has no definite
+  // ancestor height to resolve against and can collapse to its own
+  // content's shrink-wrapped size instead of stretching to fill the
+  // screen. That's invisible in ordinary mobile Safari, where the URL bar
+  // chrome shaves the effective viewport down close to this short form's
+  // natural height anyway, but in standalone mode (no browser chrome, the
+  // full physical screen is available) the gap becomes real: `content`'s
+  // centering centers within that too-short box instead of the actual
+  // screen, reading as the badge jammed near the top with dead space below
+  // it. index.html's `#welcome-screen-root` CSS rule pins a real
+  // `min-height` to `--app-height` (the same JS-measured, self-correcting
+  // viewport value #root itself uses) so centering has the right height to
+  // work with regardless of that ancestor chain's own sizing.
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
+  // Floats over the centered hero (position: absolute) so its presence or
+  // absence never shifts that centering — the one screen here where the
+  // back control isn't a normal-flow first child. `top: 60` is the
+  // regular-browser-chrome value; index.html adds a CSS override
+  // (`#welcome-back-safe-top`) that pushes it further down by the real
+  // env(safe-area-inset-top) in standalone mode, same additive approach as
+  // every SafeAreaTopFill/SafeAreaBottomFill usage elsewhere.
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',

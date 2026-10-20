@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppPressable } from '../components/AppPressable';
 import { Ionicons } from '@expo/vector-icons';
+import { DocsBadge } from '../components/brand/DocsBadge';
 import { PasswordInput } from '../components/PasswordInput';
+import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts } from '../theme';
 
@@ -36,12 +38,16 @@ export default function SignInScreen({ onBack, onForgotPassword, initialEmail, o
 
   return (
     <View style={styles.container}>
+      <SafeAreaTopFill backgroundColor={colors.background} />
       <AppPressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="sign-in-back">
         <Ionicons name="chevron-back" size={20} color={colors.text} />
         <Text style={styles.backText}>BACK</Text>
       </AppPressable>
 
       <View style={styles.content}>
+        <View style={styles.brandMark}>
+          <DocsBadge variant="white" size={96} />
+        </View>
         <Text style={styles.title}>SIGN IN</Text>
         <Text style={styles.subtext}>Welcome back to Doc's Fitness.</Text>
 
@@ -124,6 +130,12 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'center',
+  },
+  // Same treatment as WelcomeScreen's own badge -- centered above the
+  // heading, same size (96px), same spacing below it.
+  brandMark: {
+    alignItems: 'center',
+    marginBottom: 8,
   },
   title: {
     color: colors.text,

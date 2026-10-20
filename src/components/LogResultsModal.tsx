@@ -5,6 +5,7 @@ import { AppPressable } from './AppPressable';
 import { AppModal } from './AppModal';
 import { MediaAttachmentPicker } from './MediaAttachmentPicker';
 import { ModalHeader } from './ModalHeader';
+import { SafeAreaTopFill } from './SafeAreaTopFill';
 import { TappableMovementText } from './movement/TappableMovementText';
 import { useCommunity } from '../context/CommunityContext';
 import { useDisplayName } from '../context/ProfileContext';
@@ -93,6 +94,7 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
   return (
     <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
+        <SafeAreaTopFill backgroundColor={colors.background} />
         <ModalHeader title="LOG RESULTS" onBack={onClose} backTestID="close-log-results" />
 
         <ScrollView contentContainerStyle={styles.body}>

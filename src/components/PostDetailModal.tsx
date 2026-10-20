@@ -8,6 +8,7 @@ import { GifPicker } from './GifPicker';
 import { MediaViewer } from './MediaViewer';
 import { ModalHeader } from './ModalHeader';
 import { PostAuthorBadges } from './PostAuthorBadges';
+import { SafeAreaTopFill } from './SafeAreaTopFill';
 import { Comment, Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
@@ -100,6 +101,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
   return (
     <AppModal visible animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
+        <SafeAreaTopFill backgroundColor={colors.background} />
         <ModalHeader title="POST" onBack={onClose} backTestID="close-post-detail" />
 
         <ScrollView contentContainerStyle={styles.body}>

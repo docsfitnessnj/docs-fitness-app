@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { Avatar } from './Avatar';
 import { MediaAttachmentPicker } from './MediaAttachmentPicker';
+import { SafeAreaTopFill } from './SafeAreaTopFill';
 import { Post, useCommunity } from '../context/CommunityContext';
 import { useDisplayName, useProfile } from '../context/ProfileContext';
 import { MediaAttachment } from '../lib/media';
@@ -89,6 +90,7 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
   return (
     <AppModal visible={visible} animationType="slide" onRequestClose={handleClose}>
       <View style={styles.composeContainer}>
+        <SafeAreaTopFill backgroundColor={colors.background} />
         <View style={styles.composeHeader}>
           <AppPressable onPress={handleClose} hitSlop={8} testID="compose-close" aria-label="Close">
             <Ionicons name="close" size={26} color={colors.text} />

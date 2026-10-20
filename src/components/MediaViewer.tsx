@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { AppModal } from './AppModal';
 import { AppPressable } from './AppPressable';
+import { SafeAreaTopFill } from './SafeAreaTopFill';
 import { ViewableMedia } from '../lib/media';
 import {
   canShareFilesOfType,
@@ -157,6 +158,7 @@ export function MediaViewer({ media, onClose, filenameHint = 'docs-fitness-media
         onTouchEnd={onTouchEnd}
         testID="media-viewer"
       >
+        <SafeAreaTopFill backgroundColor="rgba(10,15,13,0.97)" />
         <View style={styles.topBar}>
           <AppPressable
             onPress={handleClose}

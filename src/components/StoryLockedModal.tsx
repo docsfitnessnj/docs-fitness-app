@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { AppModal } from './AppModal';
 import { ModalHeader } from './ModalHeader';
 import { JoinBoathouseLock } from './JoinBoathouseLock';
+import { SafeAreaTopFill } from './SafeAreaTopFill';
 import { colors } from '../theme';
 
 type Props = {
@@ -17,6 +18,7 @@ export function StoryLockedModal({ visible, onClose }: Props) {
   return (
     <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
+        <SafeAreaTopFill backgroundColor={colors.background} />
         <ModalHeader title="DOC'S DAILY STORY" onBack={onClose} backTestID="close-story-locked" />
         <JoinBoathouseLock subtext="Doc's Daily Story is for members." onUnlock={onClose} />
       </View>

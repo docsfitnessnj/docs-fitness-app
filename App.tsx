@@ -560,7 +560,7 @@ function MainApp({
       <ScreenOverlay visible={searchOpen}>
         <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
       </ScreenOverlay>
-      <ScreenOverlay visible={sidebarOpen} fullBleed>
+      <ScreenOverlay visible={sidebarOpen} fullBleed topFillColor={colors.green}>
         <SidebarDrawer
           visible={sidebarOpen}
           onClose={() => setSidebarOpen(false)}

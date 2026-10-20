@@ -5,6 +5,7 @@ import { DocsBadge } from '../components/brand/DocsBadge';
 import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { InviteFriendModal } from '../components/InviteFriendModal';
 import { ModalHeader } from '../components/ModalHeader';
+import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { WebScrollScreen } from '../components/WebScrollScreen';
 import { FOUNDING_FIFTY_PRICE } from '../context/FoundingFiftyContext';
 import { FOUNDING_FIFTY_BANNER, FOUNDING_VALUE_LINE, ONLINE_PLANS, foundingDeadlineLabel, foundingSpotsLeftLabel } from '../data/plans';
@@ -99,6 +100,13 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
 
   return (
     <View style={[styles.container, variant === 'inApp' && styles.containerInApp]}>
+      {/* 'onboarding': white, matching the hero right below it (the very
+          first visible thing on this variant) -- the same reasoning as the
+          hero's own paddingTop fix a few rounds back: a mismatched color
+          here would reopen that exact gray-band bug, just triggered by the
+          real top inset instead of a hardcoded padding value. 'inApp':
+          colors.background, matching ModalHeader's own transparency. */}
+      <SafeAreaTopFill backgroundColor={variant === 'inApp' ? colors.background : colors.white} />
       {variant === 'inApp' && onBack && (
         <ModalHeader title="ABOUT DOC'S FITNESS" onBack={onBack} backTestID="close-about" />
       )}
