@@ -312,10 +312,12 @@ function MenuRow({ row }: { row: Row }) {
 }
 
 const styles = StyleSheet.create({
+  // No paddingTop here -- ScreenOverlay's own fill (topBasePadding={60})
+  // provides it as a single additive source with the real top inset. See
+  // AGENTS.md's "Web safe-area insets always report zero" writeup.
   root: {
     flex: 1,
     backgroundColor: colors.green,
-    paddingTop: 60,
   },
   scroll: {
     flex: 1,

@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
-import { SafeAreaTopFill } from './SafeAreaTopFill';
 import { StoryItem, useStories } from '../context/StoriesContext';
 import { colors, fonts } from '../theme';
 
@@ -82,12 +81,9 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
     <AppModal visible transparent animationType="fade" onRequestClose={onClose}>
       <Animated.View
         style={[styles.container, { backgroundColor: current.placeholderColor, transform: [{ translateY: dragY }] }]}
+        nativeID="story-viewer-safe-top"
         {...panResponder.panHandlers}
       >
-        {/* Matches the active story's own placeholderColor -- the only
-            background this screen has -- so the fill reads as part of the
-            same full-bleed color instead of a mismatched strip. */}
-        <SafeAreaTopFill backgroundColor={current.placeholderColor} />
         <View style={styles.progressRow}>
           {stories.map((story, i) => (
             <View key={story.id} style={styles.progressTrack}>
@@ -136,6 +132,10 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // paddingTop here is the ordinary-browser-chrome value; index.html's
+  // #story-viewer-safe-top rule adds the real env(safe-area-inset-top) on
+  // top of it in standalone mode -- a single additive source, not a
+  // separate SafeAreaTopFill stacked alongside it. See AGENTS.md.
   container: {
     flex: 1,
     paddingTop: 50,

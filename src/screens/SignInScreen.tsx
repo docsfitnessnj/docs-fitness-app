@@ -4,7 +4,6 @@ import { AppPressable } from '../components/AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { PasswordInput } from '../components/PasswordInput';
-import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts } from '../theme';
 
@@ -37,8 +36,7 @@ export default function SignInScreen({ onBack, onForgotPassword, initialEmail, o
   };
 
   return (
-    <View style={styles.container}>
-      <SafeAreaTopFill backgroundColor={colors.background} />
+    <View style={styles.container} nativeID="sign-in-safe-top">
       <AppPressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="sign-in-back">
         <Ionicons name="chevron-back" size={20} color={colors.text} />
         <Text style={styles.backText}>BACK</Text>
@@ -109,6 +107,9 @@ export default function SignInScreen({ onBack, onForgotPassword, initialEmail, o
 }
 
 const styles = StyleSheet.create({
+  // paddingTop here is the ordinary-browser-chrome value; index.html's
+  // #sign-in-safe-top rule adds the real env(safe-area-inset-top) on top
+  // of it in standalone mode -- a single additive source. See AGENTS.md.
   container: {
     flex: 1,
     backgroundColor: colors.background,

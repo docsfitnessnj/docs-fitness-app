@@ -14,7 +14,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { AppModal } from './AppModal';
 import { AppPressable } from './AppPressable';
-import { SafeAreaTopFill } from './SafeAreaTopFill';
 import { ViewableMedia } from '../lib/media';
 import {
   canShareFilesOfType,
@@ -158,8 +157,7 @@ export function MediaViewer({ media, onClose, filenameHint = 'docs-fitness-media
         onTouchEnd={onTouchEnd}
         testID="media-viewer"
       >
-        <SafeAreaTopFill backgroundColor="rgba(10,15,13,0.97)" />
-        <View style={styles.topBar}>
+        <View style={styles.topBar} nativeID="media-viewer-safe-top">
           <AppPressable
             onPress={handleClose}
             hitSlop={10}
@@ -612,6 +610,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(10,15,13,0.97)',
   },
+  // paddingTop here is the ordinary-browser-chrome value; index.html's
+  // #media-viewer-safe-top rule adds the real env(safe-area-inset-top) on
+  // top of it in standalone mode -- a single additive source, not a
+  // separate SafeAreaTopFill stacked before it. See AGENTS.md.
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',

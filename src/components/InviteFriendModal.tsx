@@ -56,7 +56,7 @@ export function InviteFriendModal({ visible, onClose }: Props) {
 
   return (
     <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
+      <View style={styles.container} nativeID="invite-friend-safe-top">
         <ModalHeader title="INVITE A FRIEND" onBack={onClose} backTestID="close-invite-friend" />
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -119,6 +119,10 @@ export function InviteFriendModal({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // paddingTop here is the ordinary-browser-chrome value; index.html's
+  // #invite-friend-safe-top rule adds the real env(safe-area-inset-top) on
+  // top of it in standalone mode -- this screen never had a SafeAreaTopFill
+  // of its own (see AGENTS.md's "Web safe-area insets always report zero").
   container: {
     flex: 1,
     backgroundColor: colors.background,

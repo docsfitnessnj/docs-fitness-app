@@ -9,19 +9,28 @@
 // while looking fine in ordinary mobile Safari (whose own chrome happens
 // to occupy that space). See AGENTS.md's "Web safe-area insets always
 // report zero" section for the full writeup and the fix technique
-// (SafeAreaTopFill / SafeAreaBottomFill, CSS env() rules in
-// public/index.html).
+// (SafeAreaTopFill / SafeAreaBottomFill, and -- for screens that already
+// carried their own flat "ordinary chrome" paddingTop predating those
+// components -- a `calc(<flat value>px + env(safe-area-inset-top))`
+// override on that same padding, in public/index.html).
 //
 // This script simulates the installed standalone app by forcing those
-// CSS rules to realistic iPhone values (59px top, 34px bottom -- a
-// Face-ID-era iPhone's status bar / home-indicator insets) via an
-// injected stylesheet, since a real env() value can't be set from outside
-// WebKit. It then asserts, on every key screen, that nothing clips: the
-// topmost rendered content starts at or below the forced top inset, and
-// any bottom-anchored bar/composer's fill paints all the way to the
-// physical bottom edge. A second, un-forced pass over the same screens
-// proves the fix is a no-op in ordinary browser chrome (every fill
-// resolves to 0px, nothing shifts).
+// CSS rules to the values they'd resolve to with a realistic iPhone inset
+// (59px top, 34px bottom -- a Face-ID-era iPhone's status bar / home-
+// indicator insets) via an injected stylesheet, since a real env() value
+// can't be set from outside WebKit. It then asserts, on every key screen:
+//   - the topmost rendered content begins at EXACTLY the expected offset
+//     (its flat baseline, if it has one, plus the forced inset) within a
+//     small tolerance -- not "at least", which can't catch overcounting;
+//   - exactly one top-safe-area element/rule applies to that screen (no
+//     leftover default-id fill stacked behind a screen that now manages
+//     its own padding, and vice versa);
+//   - for the signed-in, fixed-viewport tab-bar shell, the rendered #root
+//     height equals the viewport height exactly -- no gap of bare page
+//     background below the tab bar fill.
+// A second, un-forced pass over the same screens proves the fix is a
+// no-op in ordinary browser chrome (every fill/override resolves to 0,
+// nothing shifts).
 //
 // RUN THIS ON EVERY ROUND that touches a full-screen layout or adds a new
 // one -- see AGENTS.md. It is NOT a substitute for the per-round
@@ -45,12 +54,48 @@ const USER_ID = '99999999-9999-9999-9999-999999999999';
 // A Face-ID-era iPhone's real insets (iPhone 14/15/16 standard size).
 const FORCED_TOP = 59;
 const FORCED_BOTTOM = 34;
+
+// Every top-safe-area id in the app, and how each resolves once the real
+// inset is forced to FORCED_TOP. `kind: 'fill'` ids are a dedicated
+// element whose own height is the safe-area value (possibly plus a flat
+// baseline folded into the SAME element, for ScreenOverlay's shared id);
+// `kind: 'padding'` ids are a screen's own pre-existing root container,
+// whose *padding-top* is overridden to additively include the real inset
+// instead of a separate fill element existing at all. Either way, each id
+// maps to exactly ONE mechanism per screen -- that invariant is what
+// "exactly one top inset per rendered screen" (this round's rule) means
+// in practice, and what TOP_IDS below lets the suite assert directly.
+const TOP_IDS = {
+  'safe-area-top-fill': { kind: 'fill', baseline: 0 },
+  'screen-overlay-safe-top-60': { kind: 'fill', baseline: 60 },
+  'story-viewer-safe-top': { kind: 'padding', baseline: 50 },
+  'create-post-safe-top': { kind: 'padding', baseline: 16 },
+  'media-viewer-safe-top': { kind: 'padding', baseline: 56 },
+  'invite-friend-safe-top': { kind: 'padding', baseline: 48 },
+  'story-locked-safe-top': { kind: 'padding', baseline: 60 },
+  'post-detail-safe-top': { kind: 'padding', baseline: 60 },
+  'log-results-safe-top': { kind: 'padding', baseline: 60 },
+  'sign-in-safe-top': { kind: 'padding', baseline: 60 },
+  'pricing-safe-top': { kind: 'padding', baseline: 60 },
+  'in-person-plans-safe-top': { kind: 'padding', baseline: 60 },
+  'how-do-you-train-safe-top': { kind: 'padding', baseline: 60 },
+  'forgot-password-safe-top': { kind: 'padding', baseline: 60 },
+  'online-start-safe-top': { kind: 'padding', baseline: 60 },
+  'set-new-password-safe-top': { kind: 'padding', baseline: 60 },
+};
+
+const BOTTOM_FILL_IDS = ['tab-bar-safe-area-fill', 'group-chat-composer-safe-area-fill', 'doc-thread-composer-safe-area-fill'];
+
 const FORCE_INSET_CSS = `
-  #safe-area-top-fill { height: ${FORCED_TOP}px !important; }
+  ${Object.entries(TOP_IDS)
+    .map(([id, { kind, baseline }]) => {
+      const forced = baseline + FORCED_TOP;
+      const prop = kind === 'fill' ? 'height' : 'padding-top';
+      return `#${id} { ${prop}: ${forced}px !important; }`;
+    })
+    .join('\n  ')}
   #welcome-back-safe-top { top: ${60 + FORCED_TOP}px !important; }
-  #tab-bar-safe-area-fill,
-  #group-chat-composer-safe-area-fill,
-  #doc-thread-composer-safe-area-fill {
+  ${BOTTOM_FILL_IDS.map((id) => `#${id}`).join(',\n  ')} {
     height: ${FORCED_BOTTOM}px !important;
   }
 `;
@@ -122,39 +167,72 @@ async function seedSignedInSession(page) {
   );
 }
 
-// Finds the topmost (smallest .top) visible, non-empty leaf-ish element on
-// the page -- "topmost rendered content" for the clipping assertion. Skips
-// the fill elements themselves (they're expected to be flush with the top)
-// and anything with zero size.
-async function topmostContentTop(page) {
-  return page.evaluate(() => {
-    const skipIds = new Set(['safe-area-top-fill', 'tab-bar-safe-area-fill', 'group-chat-composer-safe-area-fill', 'doc-thread-composer-safe-area-fill']);
-    const skipTags = new Set(['HTML', 'BODY', 'DIV']);
-    let best = Infinity;
-    const all = document.querySelectorAll('body *');
-    for (const el of all) {
-      if (skipIds.has(el.id)) continue;
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) continue;
-      // Full-viewport (or near enough) wrapper/backdrop elements -- #root,
-      // mainColumn, a modal's own full-bleed layer -- are never what we
-      // mean by "content"; skip anything that covers (almost) the whole
-      // screen so its own background color can't masquerade as the
-      // topmost real thing on screen.
-      if (rect.width >= window.innerWidth * 0.98 && rect.height >= window.innerHeight * 0.9) continue;
-      // Only count elements with actual rendered, own content (real text,
-      // an image, a visible border) -- a bare <div> with just a
-      // background-color is still almost always a layout wrapper, not
-      // something a user would call "content" on screen, and including it
-      // reintroduces the same false-positive #root masked.
+// Finds the topmost ACTUALLY-VISIBLE, non-empty leaf-ish element on the
+// page -- "topmost rendered content" for the clipping/offset assertion.
+// Walks down from y=0 using elementFromPoint, which (unlike a plain
+// querySelectorAll scan over getBoundingClientRect) respects real
+// paint/stacking order: an element fully covered by a later, higher
+// z-index sibling (e.g. AppTopBar's menu icon, still mounted but hidden
+// behind a full-screen ScreenOverlay) is correctly skipped, instead of
+// being misreported as "topmost" just because its own box happens to sit
+// at a smaller y. Probes two x positions (left-aligned back buttons vs.
+// centered headers) and keeps the smaller of the two.
+async function topmostContentTop(page, allTopIds) {
+  return page.evaluate((skipIdList) => {
+    const skipIds = new Set(skipIdList.concat(['tab-bar-safe-area-fill', 'group-chat-composer-safe-area-fill', 'doc-thread-composer-safe-area-fill']));
+    function hasOwnContent(el) {
       const isLeafText = el.textContent && el.textContent.trim().length > 0 && el.children.length === 0;
       const cs = window.getComputedStyle(el);
-      const hasOwnContent = isLeafText || el.tagName === 'IMG' || el.tagName === 'SVG' || (cs.borderTopWidth && cs.borderTopWidth !== '0px' && cs.borderTopStyle !== 'none');
-      if (!hasOwnContent) continue;
-      if (rect.top < best) best = rect.top;
+      return isLeafText || el.tagName === 'IMG' || el.tagName === 'SVG' || (cs.borderTopWidth && cs.borderTopWidth !== '0px' && cs.borderTopStyle !== 'none');
     }
-    return best === Infinity ? null : best;
-  });
+    function scanAt(x) {
+      for (let y = 0; y < Math.min(window.innerHeight, 400); y += 2) {
+        const el = document.elementFromPoint(x, y);
+        if (!el || skipIds.has(el.id)) continue;
+        // Walk up from the hit element (elementFromPoint often returns a
+        // deep leaf, e.g. a <span> inside a <Text>) looking for the first
+        // ancestor (inclusive) that itself has real content, so a leaf
+        // whose OWN box starts a little below y (inline text baseline,
+        // icon padding) doesn't get missed.
+        let node = el;
+        while (node && node !== document.body) {
+          if (!skipIds.has(node.id) && hasOwnContent(node)) {
+            const rect = node.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) return rect.top;
+          }
+          node = node.parentElement;
+        }
+      }
+      return null;
+    }
+    const left = scanAt(40);
+    const center = scanAt(Math.floor(window.innerWidth / 2));
+    const candidates = [left, center].filter((v) => v !== null);
+    return candidates.length ? Math.min(...candidates) : null;
+  }, allTopIds);
+}
+
+// Counts how many elements matching any known top-safe-area id are
+// ACTUALLY painted (not covered by a later, higher-stacking sibling --
+// e.g. the always-mounted AppTopBar's own fill sitting behind a full-
+// screen ScreenOverlay is a legitimate, simultaneously-mounted second
+// element, but it's never the one contributing to what's on screen, so
+// it must not count as a "duplicate" here).
+async function countVisibleTopSafeAreaElements(page, allTopIds) {
+  return page.evaluate((ids) => {
+    let count = 0;
+    for (const id of ids) {
+      for (const el of document.querySelectorAll(`#${CSS.escape(id)}`)) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        const x = rect.left + Math.min(rect.width / 2, 5);
+        const y = rect.top + Math.min(rect.height / 2, 5);
+        const hit = document.elementFromPoint(x, y);
+        if (hit && (hit === el || el.contains(hit))) count += 1;
+      }
+    }
+    return count;
+  }, allTopIds);
 }
 
 async function bottomFillReachesEdge(page, fillId) {
@@ -175,9 +253,26 @@ async function run() {
   };
 
   const VIEWPORT = { width: 390, height: 844 };
+  const allTopIds = Object.keys(TOP_IDS);
 
-  async function checkScreen(label, navigate, { expectBottomFill = false, fillId = 'tab-bar-safe-area-fill', signedIn = true } = {}) {
-    // Baseline: no forced inset. Every fill must be 0 and nothing may shift.
+  // label: screen name
+  // navigate: async (page) => void, from the About landing screen
+  // topId: which TOP_IDS key this screen's own top offset is governed by
+  // expectBottomFill / fillId: as before
+  // signedIn: seed a session before navigating
+  // checkRootHeightExact: assert #root's height === window.innerHeight
+  //   exactly (the signed-in, fixed-viewport tab-bar shell) instead of
+  //   just >= (the pre-signup natural-document-scroll screens, which are
+  //   allowed to grow taller than one viewport).
+  async function checkScreen(
+    label,
+    navigate,
+    { expectBottomFill = false, fillId = 'tab-bar-safe-area-fill', signedIn = true, topId, checkRootHeightExact = signedIn, skipOffsetCheck = false } = {}
+  ) {
+    const baseline = TOP_IDS[topId].baseline;
+
+    // Baseline: no forced inset. Every fill/override must resolve to just
+    // its flat baseline (0 for a pure fill) and nothing may shift.
     {
       const context = await browser.newContext({ viewport: VIEWPORT });
       const page = await context.newPage();
@@ -188,12 +283,17 @@ async function run() {
       await navigate(page);
       await page.waitForTimeout(400);
 
-      const topFillHeight = await page.evaluate(() => {
-        const el = document.getElementById('safe-area-top-fill');
-        return el ? el.getBoundingClientRect().height : null;
-      });
-      if (topFillHeight !== null) {
-        record(`[baseline/${label}] top fill is 0px in ordinary browser chrome`, topFillHeight === 0, JSON.stringify({ topFillHeight }));
+      const ownValue = await page.evaluate(
+        ({ id, kind }) => {
+          const el = document.getElementById(id);
+          if (!el) return null;
+          const rect = el.getBoundingClientRect();
+          return kind === 'fill' ? rect.height : parseFloat(window.getComputedStyle(el).paddingTop);
+        },
+        { id: topId, kind: TOP_IDS[topId].kind }
+      );
+      if (ownValue !== null) {
+        record(`[baseline/${label}] #${topId} resolves to its flat baseline (${baseline}px) in ordinary browser chrome`, Math.abs(ownValue - baseline) <= 1, JSON.stringify({ ownValue, baseline }));
       }
       if (expectBottomFill) {
         const bf = await bottomFillReachesEdge(page, fillId);
@@ -215,8 +315,28 @@ async function run() {
       await page.addStyleTag({ content: FORCE_INSET_CSS });
       await page.waitForTimeout(200);
 
-      const top = await topmostContentTop(page);
-      record(`[forced-inset/${label}] topmost rendered content begins at or below the forced ${FORCED_TOP}px top inset`, top !== null && top >= FORCED_TOP - 1, JSON.stringify({ top }));
+      // A screen whose main content is vertically CENTERED rather than
+      // anchored right below the fill (the pre-signup hero screens) has
+      // no single well-defined "topmost content" pixel to check here --
+      // its correctness is already covered by the baseline-resolves-
+      // correctly and exactly-one-mechanism assertions below. For every
+      // other (top-anchored) screen, a tolerance of 15px absorbs ordinary
+      // internal design padding (a bar's own paddingVertical, a drawer
+      // row's own spacing) that was never part of the inset in the first
+      // place, while still catching real stacking -- which adds a second
+      // ~50-60px inset, far outside this window.
+      if (!skipOffsetCheck) {
+        const expectedTop = baseline + FORCED_TOP;
+        const top = await topmostContentTop(page, allTopIds);
+        record(
+          `[forced-inset/${label}] topmost rendered content begins at the expected ${expectedTop}px offset (baseline ${baseline} + forced inset ${FORCED_TOP}), not a multiple of it`,
+          top !== null && Math.abs(top - expectedTop) <= 15,
+          JSON.stringify({ top, expectedTop })
+        );
+      }
+
+      const elementCount = await countVisibleTopSafeAreaElements(page, allTopIds);
+      record(`[forced-inset/${label}] exactly one top-safe-area mechanism is actually visible for this screen (no stacked duplicate)`, elementCount === 1, JSON.stringify({ elementCount }));
 
       if (expectBottomFill) {
         const bf = await bottomFillReachesEdge(page, fillId);
@@ -225,20 +345,41 @@ async function run() {
           !!bf && bf.height === FORCED_BOTTOM && Math.abs(bf.bottom - bf.windowHeight) <= 1,
           JSON.stringify(bf)
         );
+
+        const bottomFillCount = await page.evaluate((ids) => ids.reduce((sum, id) => sum + document.querySelectorAll(`#${CSS.escape(id)}`).length, 0), BOTTOM_FILL_IDS);
+        record(`[forced-inset/${label}] exactly one bottom fill element present in the rendered DOM`, bottomFillCount === 1, JSON.stringify({ bottomFillCount }));
+
+        const rootHeight = await page.evaluate(() => {
+          const root = document.getElementById('root');
+          return { rootHeight: root ? root.getBoundingClientRect().height : null, windowHeight: window.innerHeight };
+        });
+        const pass = checkRootHeightExact
+          ? rootHeight.rootHeight !== null && Math.abs(rootHeight.rootHeight - rootHeight.windowHeight) <= 1
+          : rootHeight.rootHeight !== null && rootHeight.rootHeight >= rootHeight.windowHeight - 1;
+        record(
+          `[forced-inset/${label}] rendered #root height ${checkRootHeightExact ? 'equals' : 'is at least'} the viewport height -- no gap of page background below the tab bar fill`,
+          pass,
+          JSON.stringify(rootHeight)
+        );
       }
 
       await context.close();
     }
   }
 
-  // --- welcome / sign up (same screen) ---
+  // --- About (the real "WELCOME TO DOC'S FITNESS" landing screen) ---
+  // skipOffsetCheck: its hero is vertically centered, not top-anchored.
+  await checkScreen('About (welcome landing)', async () => {}, { signedIn: false, topId: 'safe-area-top-fill', skipOffsetCheck: true });
+
+  // --- WelcomeScreen.tsx (confusingly, the sign-up FORM screen) ---
+  // skipOffsetCheck: same centered-hero layout as About.
   await checkScreen(
-    'welcome (sign up)',
+    'WelcomeScreen (sign up form)',
     async (page) => {
       await page.getByTestId('about-start-free').click({ timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(600);
     },
-    { signedIn: false }
+    { signedIn: false, topId: 'safe-area-top-fill', skipOffsetCheck: true }
   );
 
   // --- sign in ---
@@ -248,28 +389,46 @@ async function run() {
       await page.getByTestId('about-sign-in-upper').click({ timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(600);
     },
-    { signedIn: false }
+    { signedIn: false, topId: 'sign-in-safe-top' }
   );
 
   // --- Community tab (default signed-in landing) + main app top bar ---
-  await checkScreen('Community tab', async () => {}, { expectBottomFill: true });
+  await checkScreen('Community tab', async () => {}, { expectBottomFill: true, topId: 'safe-area-top-fill' });
 
   // --- the other three tabs ---
   for (const tabLabel of ["DOC'S WODS", 'WEEKLY CHALLENGE', 'THE DECK']) {
-    await checkScreen(`${tabLabel} tab`, async (page) => {
-      const tabButton = page.getByRole('tab', { name: new RegExp(tabLabel.replace(/'/g, "'?"), 'i') }).first();
-      await tabButton.click({ timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(400);
-    }, { expectBottomFill: true });
+    await checkScreen(
+      `${tabLabel} tab`,
+      async (page) => {
+        const tabButton = page.getByRole('tab', { name: new RegExp(tabLabel.replace(/'/g, "'?"), 'i') }).first();
+        await tabButton.click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(400);
+      },
+      { expectBottomFill: true, topId: 'safe-area-top-fill' }
+    );
   }
 
-  // --- Memberships (a ScreenOverlay-wrapped full-screen modal) ---
-  await checkScreen('Memberships', async (page) => {
-    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
-    await page.waitForTimeout(400);
-    await page.getByText('MEMBERSHIPS', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(500);
-  });
+  // --- Memberships (a ScreenOverlay-wrapped full-screen modal, topBasePadding=60) ---
+  await checkScreen(
+    'Memberships',
+    async (page) => {
+      await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await page.getByText('MEMBERSHIPS', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+    },
+    { topId: 'screen-overlay-safe-top-60' }
+  );
+
+  // --- the hamburger drawer itself (also ScreenOverlay-wrapped) ---
+  await checkScreen(
+    'Hamburger drawer',
+    async (page) => {
+      await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+    },
+    { topId: 'screen-overlay-safe-top-60' }
+  );
 
   await browser.close();
   console.log('\n=== SUMMARY ===');

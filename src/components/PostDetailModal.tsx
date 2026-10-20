@@ -8,7 +8,6 @@ import { GifPicker } from './GifPicker';
 import { MediaViewer } from './MediaViewer';
 import { ModalHeader } from './ModalHeader';
 import { PostAuthorBadges } from './PostAuthorBadges';
-import { SafeAreaTopFill } from './SafeAreaTopFill';
 import { Comment, Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
@@ -100,8 +99,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
 
   return (
     <AppModal visible animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
-        <SafeAreaTopFill backgroundColor={colors.background} />
+      <View style={styles.container} nativeID="post-detail-safe-top">
         <ModalHeader title="POST" onBack={onClose} backTestID="close-post-detail" />
 
         <ScrollView contentContainerStyle={styles.body}>
@@ -325,6 +323,10 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // paddingTop here is the ordinary-browser-chrome value; index.html's
+  // #post-detail-safe-top rule adds the real env(safe-area-inset-top) on
+  // top of it in standalone mode -- a single additive source. See
+  // AGENTS.md's "Web safe-area insets always report zero" writeup.
   container: {
     flex: 1,
     backgroundColor: colors.background,

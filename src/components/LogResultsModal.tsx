@@ -5,7 +5,6 @@ import { AppPressable } from './AppPressable';
 import { AppModal } from './AppModal';
 import { MediaAttachmentPicker } from './MediaAttachmentPicker';
 import { ModalHeader } from './ModalHeader';
-import { SafeAreaTopFill } from './SafeAreaTopFill';
 import { TappableMovementText } from './movement/TappableMovementText';
 import { useCommunity } from '../context/CommunityContext';
 import { useDisplayName } from '../context/ProfileContext';
@@ -93,8 +92,7 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
 
   return (
     <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
-        <SafeAreaTopFill backgroundColor={colors.background} />
+      <View style={styles.container} nativeID="log-results-safe-top">
         <ModalHeader title="LOG RESULTS" onBack={onClose} backTestID="close-log-results" />
 
         <ScrollView contentContainerStyle={styles.body}>
@@ -241,6 +239,10 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
 }
 
 const styles = StyleSheet.create({
+  // paddingTop here is the ordinary-browser-chrome value; index.html's
+  // #log-results-safe-top rule adds the real env(safe-area-inset-top) on
+  // top of it in standalone mode -- a single additive source. See
+  // AGENTS.md's "Web safe-area insets always report zero" writeup.
   container: {
     flex: 1,
     backgroundColor: colors.background,

@@ -99,7 +99,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
   const Scroller = variant === 'inApp' ? ScrollView : WebScrollScreen;
 
   return (
-    <View style={[styles.container, variant === 'inApp' && styles.containerInApp]}>
+    <View style={[styles.container, variant === 'inApp' && styles.containerInApp]} nativeID="about-screen-root">
       {/* 'onboarding': white, matching the hero right below it (the very
           first visible thing on this variant) -- the same reasoning as the
           hero's own paddingTop fix a few rounds back: a mismatched color

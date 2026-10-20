@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppPressable } from '../components/AppPressable';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts } from '../theme';
 
@@ -31,8 +30,7 @@ export default function ForgotPasswordScreen({ onBack, onSendReset }: Props) {
   };
 
   return (
-    <View style={styles.container}>
-      <SafeAreaTopFill backgroundColor={colors.background} />
+    <View style={styles.container} nativeID="forgot-password-safe-top">
       <AppPressable onPress={onBack} hitSlop={8} style={styles.backButton} testID="forgot-password-back">
         <Ionicons name="chevron-back" size={20} color={colors.text} />
         <Text style={styles.backText}>BACK</Text>
@@ -94,6 +92,10 @@ export default function ForgotPasswordScreen({ onBack, onSendReset }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // paddingTop here is the ordinary-browser-chrome value; index.html's
+  // #forgot-password-safe-top rule adds the real env(safe-area-inset-top)
+  // on top of it in standalone mode -- a single additive source. See
+  // AGENTS.md's "Web safe-area insets always report zero" writeup.
   container: {
     flex: 1,
     backgroundColor: colors.background,
