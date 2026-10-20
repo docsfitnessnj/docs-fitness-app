@@ -97,82 +97,54 @@
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element
 
          Extended past the stock reset to fix the app's full-screen height
-         on iOS, in two rounds:
+         on iOS. Rounds 1-2 (plain `height: 100%`, then `height: 100dvh`)
+         and rounds 3-4-6 (a JS-measured `--app-height` custom property,
+         written from `visualViewport.height`/`window.innerHeight` on
+         every resize/orientationchange/visualViewport event, plus an
+         increasingly elaborate initial-settle burst chasing a ~45px
+         shortfall that kept reappearing specifically in the installed
+         standalone app) are gone as of round 8 below — none of that JS
+         ever fully closed the gap on a real device, which is exactly the
+         bug it was trying to fix.
 
-         Round 1 (plain `height: 100%`): on iOS Safari, `100%` resolves
-         against a snapshot of the viewport taken when the page loads and
-         doesn't reliably re-run when Safari's chrome shows or hides, so
-         the page could end up TALLER than the actual visible content —
-         extra space below the real content that read as a white gap and
-         made the page scrollable past its content.
+         Round 8 (this one — plain `100dvh`, no JS at all): the dynamic
+         viewport height unit is a *browser-native* equivalent of what
+         rounds 3-4-6 were trying to hand-roll in JS — it's defined to
+         always equal the real, current visual viewport (tracking Safari's
+         collapsing/expanding toolbar in browser chrome; equal to the full
+         physical screen in standalone, where there's no toolbar to
+         collapse), updated by the browser engine itself with no
+         JS-measurement round-trip, no settle timing to race, and nothing
+         to go stale. Supported since iOS Safari 15.4 (this app's whole
+         target audience). The fallback chain below (`100%`, then `100vh`,
+         then `100dvh`) means a browser that doesn't understand the
+         `100dvh` line simply never applies it (an unsupported unit makes
+         the whole declaration invalid, not a fallback to a default) and
+         keeps the previous line instead — `100vh` on anything pre-15.4,
+         `100%` if neither viewport unit is understood at all. `#welcome-
+         screen-root`/`#about-screen-root`'s `min-height` further down
+         uses the same plain `100dvh` — see their own comment.
 
-         Round 2 (`height: 100dvh`): fixed the above by tracking the
-         *current* browser-chrome state instead of a load-time snapshot,
-         but this app also turns off page-level scrolling (`body {
-         overflow: hidden }`, below) since only inner ScrollViews are
-         meant to scroll — so the outer document never receives the
-         scroll gesture that normally makes a toolbar (especially the
-         heavier top+bottom chrome some in-app browsers like Messages'
-         and Instagram's add) collapse. On a browser where `dvh` then
-         stays pinned to that chrome-heavy "small viewport" permanently,
-         `html`/`body`/`#root` end up genuinely, permanently shorter than
-         the physical screen — not a clipped child, an actually-short
-         `<html>` element — so the remaining space renders as the bare
-         browser canvas below it: unstyled, un-scrollable, and outside
-         the app's DOM entirely.
-
-         Round 3 (JS-measured `--app-height`): stopped depending on any
-         single CSS viewport unit's specific browser behavior. The inline
-         script measures the real height the browser reports via
-         `visualViewport.height` / `window.innerHeight` and writes it to
-         the `--app-height` custom property on every resize, orientation
-         change, and visualViewport change — this is confirmed correct by
-         a full ancestor-chain measurement (html through every nested
-         container down to the ScrollView) that found every element's
-         bottom edge lands exactly on the viewport edge, with no
-         unaccounted-for shortfall.
-
-         Round 4 (this one — initial-measurement timing): the app was
-         still reported short on a real iPhone after round 3, which a
-         resize/orientationchange/visualViewport-resize listener alone
-         can't explain if nothing on the device ever resizes. The
-         remaining plausible gap is *before* any of those events fire:
-         on some in-app browsers `visualViewport.height` (or the chrome
-         reservation behind `window.innerHeight`) may not be settled yet
-         at the moment this synchronous inline script first runs — before
-         fonts/images have loaded and before the browser's own chrome has
-         finished laying itself out — so the very first `--app-height`
-         value can be a smaller, transient reading that then never
-         corrects itself, because no resize ever happens on that device
-         to re-trigger the listeners. Re-running the same measurement a
-         few more times right after load (`load`, `pageshow` — the event
-         that fires on Safari's back/forward-cache restores, which a
-         plain `load` listener misses — and a short burst of
-         `requestAnimationFrame` re-checks over the first ~1.5s) means
-         the value keeps self-correcting for a couple of seconds even
-         with zero user interaction, without depending on anything ever
-         resizing at all.
-
-         Round 5 (--app-offset-top, for the on-screen keyboard): getting
-         the height right (rounds 1-4) isn't enough once a screen has a
-         focused text input. Opening the keyboard shrinks
-         visualViewport.height as expected (--app-height tracks that
-         correctly), but iOS Safari separately auto-scrolls — pans the
-         *visual* viewport down within the *layout* viewport — to keep the
-         focused input clear of the keyboard, changing
-         visualViewport.offsetTop. WebKit deliberately positions
-         `position: fixed` elements against the layout viewport, not the
-         visual one (that's the whole reason the VisualViewport API
-         exists), so a fixed, correctly-*sized* #root still sits at the
-         layout viewport's untouched origin while the pan moves the
-         visible slice somewhere else entirely — the app scrolls up out of
-         view and what's left on screen is blank browser canvas above the
-         keyboard. --app-offset-top mirrors visualViewport.offsetTop, and
-         the signed-in layout (see useWebDocumentScroll.ts's `locked`
-         branch, which also switches #root to `position: fixed` so it
-         isn't clipped by html/body's fixed-height overflow:hidden box)
-         translates #root by that amount, sliding it back under the
-         panned visual viewport instead of leaving it behind. -->
+         Round 5 (--app-offset-top, for the on-screen keyboard) is the one
+         thing here that genuinely can't be expressed as a CSS unit, and
+         stays as JS: opening the keyboard shrinks the visual viewport's
+         height (which `100dvh` already tracks correctly on its own), but
+         iOS Safari separately auto-scrolls — pans the *visual* viewport
+         down within the *layout* viewport — to keep the focused input
+         clear of the keyboard, changing visualViewport.offsetTop. WebKit
+         deliberately positions `position: fixed` elements against the
+         layout viewport, not the visual one (that's the whole reason the
+         VisualViewport API exists), so a fixed, correctly-*sized* #root
+         still sits at the layout viewport's untouched origin while the
+         pan moves the visible slice somewhere else entirely — the app
+         scrolls up out of view and what's left on screen is blank browser
+         canvas above the keyboard. --app-offset-top mirrors
+         visualViewport.offsetTop, and the signed-in layout (see
+         useWebDocumentScroll.ts's `locked` branch, which also switches
+         #root to `position: fixed` so it isn't clipped by html/body's
+         fixed-height overflow:hidden box) translates #root by that
+         amount, sliding it back under the panned visual viewport instead
+         of leaving it behind. -->
     <script>
       (function () {
         // Round 7 (this one — the real double-counting source): this
@@ -209,67 +181,32 @@
             document.documentElement.style.setProperty('--real-safe-bottom', getComputedStyle(bottom).height);
           }
         }
-        function syncViewport() {
+        // --app-height is gone (see "Round 8" above) -- #root's own
+        // height is now plain CSS (100dvh), tracked by the browser engine
+        // with no JS involved at all. The only thing still measured here
+        // is --app-offset-top (Round 5, the keyboard-pan compensation,
+        // which genuinely has no CSS-only equivalent) and
+        // --real-safe-top/--real-safe-bottom (Round 7, the safe-area
+        // probe). Both still need to react to resize/visualViewport
+        // changes, so the listeners stay -- there's just nothing left for
+        // them to do with height.
+        function syncOffsetAndInsets() {
           var vv = window.visualViewport;
-          var h = (vv && vv.height) || window.innerHeight;
-          document.documentElement.style.setProperty('--app-height', h + 'px');
           document.documentElement.style.setProperty('--app-offset-top', (vv ? vv.offsetTop : 0) + 'px');
           syncSafeAreaInsets();
         }
-        syncViewport();
-        window.addEventListener('resize', syncViewport);
-        window.addEventListener('orientationchange', syncViewport);
-        window.addEventListener('load', syncViewport);
-        window.addEventListener('pageshow', syncViewport);
+        syncOffsetAndInsets();
+        window.addEventListener('resize', syncOffsetAndInsets);
+        window.addEventListener('orientationchange', syncOffsetAndInsets);
+        window.addEventListener('load', syncOffsetAndInsets);
+        window.addEventListener('pageshow', syncOffsetAndInsets);
         if (window.visualViewport) {
-          // 'resize' catches height changes (keyboard open/close, chrome
-          // collapse); 'scroll' catches offsetTop changing on its own,
-          // which happens when iOS pans to reveal a focused input without
-          // the visible height necessarily changing at the same instant.
-          window.visualViewport.addEventListener('resize', syncViewport);
-          window.visualViewport.addEventListener('scroll', syncViewport);
-        }
-        // Keep re-measuring for a bit after load in case the browser's
-        // own chrome (or visualViewport's reading of it) hasn't settled
-        // yet when the checks above run — see "Round 4" above.
-        //
-        // Round 6 (this one — standalone launch settles slower than this
-        // burst's old 1.5s window): member reports from the installed
-        // standalone app showed a real dead zone below the tab bar (a
-        // white gap, then the bare page background peeking through at the
-        // very bottom) that this simulator's headless timing never
-        // reproduced -- consistent with the standalone launch transition
-        // (no browser chrome to collapse, but the OS's own app-switcher/
-        // launch animation still settling) taking longer on a real device
-        // than this burst's fixed window, after which nothing left on the
-        // page ever fires another resize/visualViewport event to correct
-        // the now-permanently-stale value. Two independent changes make
-        // this self-correct instead of silently giving up: the burst now
-        // keeps re-checking for up to 4s (instead of 1.5s) AND exits early
-        // once the reading has been identical for 10 consecutive frames
-        // (genuinely settled, not just one lucky stable tick); and a
-        // ResizeObserver on <html> re-measures on ANY future layout-size
-        // change for the lifetime of the page, with no fixed end time at
-        // all -- a true catch-all for a settle that finishes later than
-        // even this longer burst, or a standalone viewport change (e.g.
-        // rotating, or the OS's own UI reclaiming space) that doesn't
-        // reliably fire a plain 'resize' event.
-        var settleStart = Date.now();
-        var lastHeight = null;
-        var stableFrames = 0;
-        function settle() {
-          var vv = window.visualViewport;
-          var h = (vv && vv.height) || window.innerHeight;
-          syncViewport();
-          stableFrames = h === lastHeight ? stableFrames + 1 : 0;
-          lastHeight = h;
-          if (stableFrames < 10 && Date.now() - settleStart < 4000) {
-            requestAnimationFrame(settle);
-          }
-        }
-        requestAnimationFrame(settle);
-        if (window.ResizeObserver) {
-          new ResizeObserver(syncViewport).observe(document.documentElement);
+          // 'resize' catches the keyboard opening/closing; 'scroll'
+          // catches offsetTop changing on its own, which happens when iOS
+          // pans to reveal a focused input without the visible height
+          // necessarily changing at the same instant.
+          window.visualViewport.addEventListener('resize', syncOffsetAndInsets);
+          window.visualViewport.addEventListener('scroll', syncOffsetAndInsets);
         }
       })();
     </script>
@@ -311,12 +248,13 @@
         outline: none;
       }
       /* These styles make the body full-height, tracking Safari's
-         collapsing/expanding toolbar instead of a one-time snapshot. */
+         collapsing/expanding toolbar instead of a one-time snapshot --
+         see "Round 8" above the inline script for the fallback chain. */
       html,
       body {
         height: 100%;
+        height: 100vh;
         height: 100dvh;
-        height: var(--app-height, 100dvh);
         background-color: #FBFBF9;
         overscroll-behavior-y: none;
       }
@@ -328,8 +266,8 @@
       #root {
         display: flex;
         height: 100%;
+        height: 100vh;
         height: 100dvh;
-        height: var(--app-height, 100dvh);
         flex: 1;
         background-color: #FBFBF9;
         /* Harmless (0px) unless useWebDocumentScroll.ts's `locked` branch
@@ -449,17 +387,16 @@
         top: calc(60px + var(--real-safe-top, 0px)) !important;
       }
       /* Pins WelcomeScreen's (and, same reasoning, AboutScreen onboarding
-         variant's) root to a real minimum height equal to the same
-         JS-measured, self-correcting --app-height value #root itself uses
-         (see the Round 3/4 comment above), instead of letting its flex:1
-         chain collapse to its own content's shrink-wrapped size in the
-         pre-signup "natural document scroll" mode -- see the comment on
-         WelcomeScreen's `container` style for the full why. AboutScreen
-         (the real first-thing-a-member-sees "WELCOME TO DOC'S FITNESS"
-         screen -- confusingly, a *different* component than
-         WelcomeScreen.tsx, which is actually the sign-up form) had the
-         exact same hole and had never gotten this fix: confirmed via a
-         direct #root height measurement that it was collapsing to a
+         variant's) root to a real minimum height equal to the same plain
+         `100dvh` #root itself now uses (see "Round 8" above), instead of
+         letting its flex:1 chain collapse to its own content's shrink-
+         wrapped size in the pre-signup "natural document scroll" mode --
+         see the comment on WelcomeScreen's `container` style for the full
+         why. AboutScreen (the real first-thing-a-member-sees "WELCOME TO
+         DOC'S FITNESS" screen -- confusingly, a *different* component
+         than WelcomeScreen.tsx, which is actually the sign-up form) had
+         the exact same hole and had never gotten this fix: confirmed via
+         a direct #root height measurement that it was collapsing to a
          fraction of the real viewport height in standalone mode, which a
          real device read as a huge empty band up top and dead space below
          -- easy to miss from a plain screenshot since overflow:visible
@@ -470,7 +407,8 @@
          screen's worth. */
       #welcome-screen-root,
       #about-screen-root {
-        min-height: var(--app-height, 100dvh);
+        min-height: 100vh;
+        min-height: 100dvh;
       }
     </style>
   </head>
