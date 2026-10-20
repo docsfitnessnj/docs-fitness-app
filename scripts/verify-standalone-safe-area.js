@@ -109,6 +109,15 @@ const ALL_TOP_IDS = Object.keys(TOP_BASELINES);
 
 const BOTTOM_FILL_IDS = ['tab-bar-safe-area-fill', 'group-chat-composer-safe-area-fill', 'doc-thread-composer-safe-area-fill'];
 
+// Every hidden, position:fixed/zIndex:-1 probe this app itself creates,
+// unconditionally, on every page load -- the safe-area probes (Round 7)
+// and DebugOverlay.web.tsx's own 100dvh/100vh probes (this round). All
+// three share that exact CSS signature with react-native-safe-area-
+// context's own (neutralized) web measurement probe, which is the whole
+// point of auditNoUnsanctionedProbe() below -- so every one WE add here
+// must be allowlisted by id, or it reads as a false "unsanctioned" hit.
+const SANCTIONED_PROBE_IDS = ['safe-area-probe-top', 'safe-area-probe-bottom', 'debug-probe-100dvh', 'debug-probe-100vh'];
+
 async function setupMocks(page) {
   await page.route('**/auth/v1/token*', (route) =>
     route.fulfill({
@@ -247,17 +256,17 @@ function auditBuiltOutputEnvConsumers(record) {
 // gets created. If AppSafeAreaProvider is ever removed or bypassed, this
 // is what would catch it regardless of the grep above.
 async function auditNoUnsanctionedProbe(page) {
-  return page.evaluate(() => {
+  return page.evaluate((sanctionedIds) => {
     const suspects = [];
     document.querySelectorAll('body > div').forEach((el) => {
-      if (el.id === 'safe-area-probe-top' || el.id === 'safe-area-probe-bottom') return;
+      if (sanctionedIds.includes(el.id)) return;
       const cs = getComputedStyle(el);
       if (cs.position === 'fixed' && cs.zIndex === '-1') {
         suspects.push({ id: el.id || '(no id)', style: el.getAttribute('style') });
       }
     });
     return suspects;
-  });
+  }, SANCTIONED_PROBE_IDS);
 }
 
 // Finds the topmost ACTUALLY-VISIBLE, non-empty leaf-ish element on the
@@ -306,8 +315,31 @@ async function topmostContentTop(page, allTopIds) {
 // screen ScreenOverlay is a legitimate, simultaneously-mounted second
 // element, but it's never the one contributing to what's on screen, so
 // it must not count as a "duplicate" here).
+//
+// This is a PAINT-stacking check, not an interactivity check -- but since
+// Round 9 every fill carries pointer-events:none (see AGENTS.md), the
+// browser's own hit-testing (elementFromPoint) now unconditionally skips
+// these elements, which would make every count read 0 regardless of
+// actual stacking. So each candidate element's pointer-events is flipped
+// to 'auto' for the duration of this synchronous evaluate() call only
+// (restored before it returns, so nothing the rest of the suite or a real
+// user sees ever observes the change) -- purely a measurement technique
+// for this test, not a reversal of the production fix.
 async function countVisibleTopSafeAreaElements(page, allTopIds) {
   return page.evaluate((ids) => {
+    // react-native-web compiles pointerEvents="none" to a stylesheet rule
+    // with !important (`.r-xxxxx { pointer-events: none !important; }`),
+    // so a plain el.style.pointerEvents assignment (no !important) can't
+    // override it -- only an inline style that ALSO carries !important
+    // can beat a stylesheet !important rule, regardless of selector
+    // specificity. setProperty(..., 'important') is that.
+    const touched = [];
+    for (const id of ids) {
+      for (const el of document.querySelectorAll(`#${CSS.escape(id)}`)) {
+        touched.push({ el, prev: el.style.getPropertyValue('pointer-events'), prevPriority: el.style.getPropertyPriority('pointer-events') });
+        el.style.setProperty('pointer-events', 'auto', 'important');
+      }
+    }
     let count = 0;
     for (const id of ids) {
       for (const el of document.querySelectorAll(`#${CSS.escape(id)}`)) {
@@ -319,6 +351,10 @@ async function countVisibleTopSafeAreaElements(page, allTopIds) {
         if (hit && (hit === el || el.contains(hit))) count += 1;
       }
     }
+    touched.forEach(({ el, prev, prevPriority }) => {
+      if (prev) el.style.setProperty('pointer-events', prev, prevPriority);
+      else el.style.removeProperty('pointer-events');
+    });
     return count;
   }, allTopIds);
 }
@@ -330,6 +366,59 @@ async function bottomFillReachesEdge(page, fillId) {
     const rect = el.getBoundingClientRect();
     return { height: rect.height, bottom: rect.bottom, windowHeight: window.innerHeight };
   }, fillId);
+}
+
+// Round 9's own regression guard: a buried-control check. A fill or
+// overlay is paint, not a control (see pointerEvents="none" on
+// SafeAreaTopFill/SafeAreaBottomFill) -- but this proves it at the one
+// point that actually matters: what does the browser's own hit-testing
+// return at the control's visual center, with real insets forced. Finds
+// the control via its CSS selector, reads its geometry, and asserts the
+// element elementFromPoint actually returns there is the control itself
+// or one of its own descendants (an icon/label inside a Pressable) --
+// never a sibling fill/overlay that happens to paint on top of it. This
+// is what would have caught the real-device bug this round fixes (the
+// story viewer's X silently swallowed by a tap zone) before a real device
+// had to find it, and now guards every future screen's controls the same
+// way.
+async function hitTestsControl(page, selector) {
+  return page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return { found: false };
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return { found: true, visible: false };
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    const ok = !!hit && (hit === el || el.contains(hit));
+    return {
+      found: true,
+      visible: true,
+      ok,
+      hit: hit ? hit.tagName + (hit.id ? `#${hit.id}` : '') + (hit.getAttribute && hit.getAttribute('data-testid') ? `[data-testid=${hit.getAttribute('data-testid')}]` : '') : null,
+    };
+  }, selector);
+}
+
+// Same check as hitTestsControl, but for the Nth match of a selector that
+// matches several controls at once (the tab bar's four tabs all share
+// role="tab", so they aren't individually addressable by a unique CSS
+// selector the way a testID-bearing control is).
+async function hitTestsNth(page, selector, index) {
+  return page.evaluate(
+    ({ sel, idx }) => {
+      const el = document.querySelectorAll(sel)[idx];
+      if (!el) return { found: false };
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return { found: true, visible: false };
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      const ok = !!hit && (hit === el || el.contains(hit));
+      return { found: true, visible: true, ok, hit: hit ? hit.tagName + (hit.id ? `#${hit.id}` : '') : null };
+    },
+    { sel: selector, idx: index }
+  );
 }
 
 async function run() {
@@ -466,10 +555,30 @@ async function run() {
         // is the "gray strip" this round's bug report described directly:
         // not just "is there a gap" (the height check above) but "what
         // color is painted at the very edge."
-        const bottomEdgeColor = await page.evaluate(() => {
+        //
+        // Same pointer-events caveat as countVisibleTopSafeAreaElements
+        // (react-native-web's pointerEvents="none" compiles to a
+        // stylesheet rule with !important, so only an inline override
+        // that ALSO carries !important can beat it): flipped to 'auto'
+        // for this synchronous call only and restored before returning --
+        // a measurement technique, not a reversal of the fix.
+        const bottomEdgeColor = await page.evaluate((ids) => {
+          const touched = [];
+          for (const id of ids) {
+            const el = document.getElementById(id);
+            if (el) {
+              touched.push({ el, prev: el.style.getPropertyValue('pointer-events'), prevPriority: el.style.getPropertyPriority('pointer-events') });
+              el.style.setProperty('pointer-events', 'auto', 'important');
+            }
+          }
           const el = document.elementFromPoint(Math.floor(window.innerWidth / 2), window.innerHeight - 1);
-          return el ? getComputedStyle(el).backgroundColor : null;
-        });
+          const color = el ? getComputedStyle(el).backgroundColor : null;
+          touched.forEach(({ el, prev, prevPriority }) => {
+            if (prev) el.style.setProperty('pointer-events', prev, prevPriority);
+            else el.style.removeProperty('pointer-events');
+          });
+          return color;
+        }, BOTTOM_FILL_IDS);
         record(
           `[forced-inset/${label}] bottommost painted pixel is the fill's own expected color (${bottomFillColor})`,
           bottomEdgeColor === bottomFillColor,
@@ -573,6 +682,58 @@ async function run() {
       checkRootHeightExact: true,
     }
   );
+
+  // --- Round 9's own regression guard: buried controls. Forces the real
+  // insets, then hit-tests three real controls' visual centers and
+  // asserts the element the browser's own hit-testing actually returns is
+  // the control (or a descendant of it) -- never a fill/overlay that
+  // happens to paint on top. See hitTestsControl()/hitTestsNth() above.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.addStyleTag({ content: FORCE_INSET_CSS });
+    await page.waitForTimeout(200);
+
+    // The tab bar's four tabs.
+    const tabCount = await page.evaluate(() => document.querySelectorAll('[role="tab"]').length);
+    record('[buried-control] tab bar has exactly 4 tabs to check', tabCount === 4, JSON.stringify({ tabCount }));
+    for (let i = 0; i < tabCount; i += 1) {
+      const result = await hitTestsNth(page, '[role="tab"]', i);
+      record(`[buried-control] tab bar tab #${i + 1} receives its own tap, not a fill/overlay`, result.found && result.visible && result.ok, JSON.stringify(result));
+    }
+
+    // The story viewer's X.
+    await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const storyClose = await hitTestsControl(page, '[data-testid="story-close"]');
+    record('[buried-control] story viewer close (X) receives its own tap, not the fill/tap-zones behind it', storyClose.found && storyClose.visible && storyClose.ok, JSON.stringify(storyClose));
+    const storyBack = await page.evaluate(() => !!document.querySelector('[data-testid="story-back"]'));
+    record('[buried-control] story viewer has no back button', !storyBack, JSON.stringify({ storyBack }));
+
+    await context.close();
+  }
+
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-group-chat').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.addStyleTag({ content: FORCE_INSET_CSS });
+    await page.waitForTimeout(200);
+
+    const sendButton = await hitTestsControl(page, '[data-testid="group-chat-send"]');
+    record('[buried-control] group chat send button receives its own tap, not the composer fill behind it', sendButton.found && sendButton.visible && sendButton.ok, JSON.stringify(sendButton));
+
+    await context.close();
+  }
 
   // --- Round 8's own regression guard: #root must equal the viewport
   // height EXACTLY, checked immediately on load and again after a 5s

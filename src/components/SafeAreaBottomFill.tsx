@@ -19,9 +19,13 @@ type Props = {
 // any numeric style here, so it's 0 (invisible) in ordinary browser chrome
 // and doesn't exist at all on native, where this component renders null and
 // the real native insets.bottom already does the right thing.
+//
+// pointerEvents="none": this is paint, not a control -- see the matching
+// comment on SafeAreaTopFill for why that matters (a real installed-app
+// bug traced to a fill swallowing a control's tap).
 export function SafeAreaBottomFill({ nativeID, backgroundColor }: Props) {
   if (Platform.OS !== 'web') return null;
-  return <View nativeID={nativeID} style={[styles.fill, { backgroundColor }]} />;
+  return <View nativeID={nativeID} style={[styles.fill, { backgroundColor }]} pointerEvents="none" />;
 }
 
 const styles = StyleSheet.create({

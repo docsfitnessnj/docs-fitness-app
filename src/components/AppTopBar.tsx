@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,10 +26,33 @@ type Props = {
   // undefined and the icon simply doesn't render. Opens the same DOC'S
   // GROUP CHAT screen as the hamburger drawer row and the desktop sidebar.
   onOpenGroupChat?: () => void;
+  // Web-only hidden diagnostic tool (see DebugOverlay.web.tsx). Undefined
+  // on native, where the wordmark press handler below simply no-ops.
+  onOpenDebugOverlay?: () => void;
 };
 
-export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupChat }: Props) {
+// 5 taps on the wordmark within 2s opens the debug overlay -- deliberately
+// not a visible button or gesture hint anywhere, so there's no trace of it
+// in normal use. A ref (not state) for the timestamps: this is pure
+// bookkeeping for a gesture detector, not something that should ever
+// trigger its own re-render.
+const DEBUG_TAP_COUNT = 5;
+const DEBUG_TAP_WINDOW_MS = 2000;
+
+export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupChat, onOpenDebugOverlay }: Props) {
   const { unreadCount } = useGroupChatUnread();
+  const tapTimestamps = useRef<number[]>([]);
+
+  const handleWordmarkPress = () => {
+    if (!onOpenDebugOverlay) return;
+    const now = Date.now();
+    tapTimestamps.current = [...tapTimestamps.current.filter((t) => now - t < DEBUG_TAP_WINDOW_MS), now];
+    if (tapTimestamps.current.length >= DEBUG_TAP_COUNT) {
+      tapTimestamps.current = [];
+      onOpenDebugOverlay();
+    }
+  };
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       {/* SafeAreaView's own `edges={['top']}` inset is correct on native.
@@ -52,10 +75,10 @@ export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupCh
         </AppPressable>
 
         <View style={styles.titleWrap}>
-          <View style={styles.titleRow}>
+          <AppPressable onPress={handleWordmarkPress} style={styles.titleRow} testID="app-wordmark">
             <KettlewaveMark height={TOP_BAR_MARK_HEIGHT} />
             <Text style={styles.title}>DOC'S FITNESS</Text>
-          </View>
+          </AppPressable>
           {/* A sibling of titleRow (not nested inside it) so its own width —
               which varies a lot by tab ("COMMUNITY" vs "WEEKLY CHALLENGE")
               — can never influence titleRow's width and shift the mark +

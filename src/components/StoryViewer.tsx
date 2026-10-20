@@ -103,10 +103,12 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
         </View>
 
         <View style={styles.headerRow}>
-          <Pressable onPress={onClose} hitSlop={10} style={styles.backButton} testID="story-back">
-            <Ionicons name="chevron-back" size={22} color={colors.white} />
-            <Text style={styles.backButtonText}>BACK</Text>
-          </Pressable>
+          {/* A same-sized invisible stand-in for the close button, matching
+              AppTopBar's own placeholder pattern -- keeps "DOC" visually
+              centered now that the left side has no back control (the left
+              tap zone already handles "previous", so a dedicated BACK
+              button was redundant -- see AGENTS.md). */}
+          <View style={styles.closeButtonSlot} />
           <Text style={styles.headerText}>DOC</Text>
           <Pressable onPress={onClose} hitSlop={10} style={styles.closeButtonSlot} testID="story-close">
             <Ionicons name="close" size={22} color={colors.white} />
@@ -163,6 +165,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     marginBottom: 16,
+    // Guarantees the close button (and anything else in this row) wins
+    // hit-testing over tapZones below, regardless of whether their boxes
+    // spatially overlap -- tapZones' own `top` is a flat value that
+    // doesn't account for a real safe-area inset pushing this row lower,
+    // so on an installed standalone iPhone the two COULD genuinely
+    // overlap. This was the real mechanism behind a real-device bug
+    // report ("the X doesn't respond to taps, but the left/right tap
+    // zones do") -- tapZoneLeft/Right are large, pointerEvents:'auto'
+    // Pressables that, without this, paint on top of this row simply by
+    // being later in the DOM. See AGENTS.md.
+    zIndex: 10,
   },
   headerText: {
     flex: 1,
@@ -172,21 +185,15 @@ const styles = StyleSheet.create({
     fontSize: 18,
     letterSpacing: 1,
   },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minWidth: 60,
-  },
-  backButtonText: {
-    color: colors.white,
-    fontFamily: fonts.labelSemiBold,
-    fontSize: 13,
-    letterSpacing: 0.5,
-    marginLeft: 2,
-  },
+  // Also the close button's own box -- at least 44x44, the minimum
+  // comfortable touch target, not just hitSlop padding around a much
+  // smaller icon. Reused unstyled (no Pressable) as the left-side
+  // placeholder that keeps "DOC" visually centered.
   closeButtonSlot: {
-    minWidth: 60,
-    alignItems: 'flex-end',
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   mediaArea: {
     flex: 1,
