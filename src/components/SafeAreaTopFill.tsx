@@ -22,9 +22,15 @@ type Props = {
 // ordinary browser chrome -- including regular Safari, where the URL bar
 // already occupies that space -- and doesn't exist at all on native, where
 // this component renders null.
+//
+// pointerEvents="none": this is paint, not a control. A real installed-app
+// bug (Doc's Stories' X/back buttons not responding to taps) was traced to
+// a fill sitting above a control in hit-testing order and swallowing its
+// tap -- see AGENTS.md and StoryViewer.tsx. Every fill in the app must be
+// unable to intercept a tap, now or on any future screen that adds one.
 export function SafeAreaTopFill({ nativeID = 'safe-area-top-fill', backgroundColor }: Props) {
   if (Platform.OS !== 'web') return null;
-  return <View nativeID={nativeID} style={[styles.fill, { backgroundColor }]} />;
+  return <View nativeID={nativeID} style={[styles.fill, { backgroundColor }]} pointerEvents="none" />;
 }
 
 const styles = StyleSheet.create({
