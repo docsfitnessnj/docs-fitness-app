@@ -175,11 +175,46 @@
          panned visual viewport instead of leaving it behind. -->
     <script>
       (function () {
+        // Round 7 (this one — the real double-counting source): this
+        // app's own fills were never the only thing on the page reading
+        // env(safe-area-inset-*). react-native-safe-area-context's own
+        // web implementation does too — it appends a hidden probe div to
+        // document.body sized by env(safe-area-inset-*), measures it, and
+        // feeds the real pixel values through useSafeAreaInsets() /
+        // <SafeAreaView> live. That's invisible in every desktop/mobile
+        // BROWSER test (no notch, so it measures 0 — indistinguishable
+        // from "doesn't do anything"), but very real in an installed
+        // standalone iPhone PWA, where it was quietly adding the real
+        // inset a second time on top of this app's own fills: AppTopBar's
+        // <SafeAreaView edges={['top']}>, the tab bar's own
+        // `Math.max(insets.bottom, 6)`/useTabBarHeight, DocThreadView's
+        // and DocsGroupChatScreen's composer padding. See
+        // AppSafeAreaProvider.tsx, which now pins that library's own
+        // context to zero on web permanently, and AGENTS.md.
+        //
+        // With that neutralized, exactly ONE thing on the page may read
+        // env(safe-area-inset-*) at all: this probe, right here. It
+        // writes the real measured pixel values to --real-safe-top /
+        // --real-safe-bottom on <html>, and every one of this app's own
+        // fills/overrides below consumes ONLY those two variables — never
+        // env() directly — so there is structurally one source of truth
+        // to audit instead of an env() rule on every screen.
+        function syncSafeAreaInsets() {
+          var top = document.getElementById('safe-area-probe-top');
+          var bottom = document.getElementById('safe-area-probe-bottom');
+          if (top) {
+            document.documentElement.style.setProperty('--real-safe-top', getComputedStyle(top).height);
+          }
+          if (bottom) {
+            document.documentElement.style.setProperty('--real-safe-bottom', getComputedStyle(bottom).height);
+          }
+        }
         function syncViewport() {
           var vv = window.visualViewport;
           var h = (vv && vv.height) || window.innerHeight;
           document.documentElement.style.setProperty('--app-height', h + 'px');
           document.documentElement.style.setProperty('--app-offset-top', (vv ? vv.offsetTop : 0) + 'px');
+          syncSafeAreaInsets();
         }
         syncViewport();
         window.addEventListener('resize', syncViewport);
@@ -302,22 +337,44 @@
            comment above the inline script for why. */
         transform: translateY(var(--app-offset-top, 0px));
       }
+      /* The probes themselves -- sized by the REAL env() value (0 in
+         ordinary browser chrome, the real inset in standalone), measured
+         once by syncSafeAreaInsets() into --real-safe-top/--real-safe-
+         bottom. Nothing else in this file, and nothing in React's render
+         tree (AppSafeAreaProvider pins useSafeAreaInsets()/<SafeAreaView>
+         to zero on web), may read env(safe-area-inset-*) at all -- this
+         is it, the one sanctioned consumer. */
+      #safe-area-probe-top,
+      #safe-area-probe-bottom {
+        position: fixed;
+        left: 0;
+        width: 0;
+        z-index: -1;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      #safe-area-probe-top {
+        top: 0;
+        height: env(safe-area-inset-top, 0px);
+      }
+      #safe-area-probe-bottom {
+        bottom: 0;
+        height: env(safe-area-inset-bottom, 0px);
+      }
       /* Extends a fixed-height bottom bar/composer's own background through
          the home-indicator safe area, all the way to the physical bottom
-         edge of the screen, in an installed/standalone iPhone PWA.
-         env(safe-area-inset-bottom) is the one reliable source for this on
-         web -- react-native-web's useSafeAreaInsets() always reports 0
-         (there's no OS bridge feeding it), so the JS-side height/padding
-         math these bars already do can't account for it. These elements
-         carry no RN-authored height of their own (see SafeAreaBottomFill),
-         so this is the only rule that sets one: 0px, invisible, in ordinary
-         browser chrome (including regular Safari, where env() also
-         resolves to 0 since the browser's own chrome already occupies that
-         space), and the real inset in standalone mode. */
+         edge of the screen, in an installed/standalone iPhone PWA. These
+         elements carry no RN-authored height of their own (see
+         SafeAreaBottomFill), so this is the only rule that sets one: 0px,
+         invisible, in ordinary browser chrome (including regular Safari,
+         where the real inset is also 0 since the browser's own chrome
+         already occupies that space), and the real measured inset in
+         standalone mode -- read from --real-safe-bottom (see the probe
+         above), never env() directly. */
       #tab-bar-safe-area-fill,
       #group-chat-composer-safe-area-fill,
       #doc-thread-composer-safe-area-fill {
-        height: env(safe-area-inset-bottom, 0px);
+        height: var(--real-safe-bottom, 0px);
       }
       /* Top-edge counterpart: covers the status bar / notch / Dynamic
          Island area, in an installed, standalone iPhone PWA, on any
@@ -325,11 +382,12 @@
          one already handles this correctly via SafeAreaView). Same
          reasoning as the bottom-fill rule above -- 0px, invisible, in
          ordinary browser chrome (the URL bar already occupies that space
-         there), the real inset in standalone mode. One shared id: every
-         SafeAreaTopFill instance wants the exact same height, so there's
-         no need for a new id (and a new rule here) per screen. */
+         there), the real measured inset (--real-safe-top) in standalone
+         mode. One shared id: every SafeAreaTopFill instance wants the
+         exact same height, so there's no need for a new id (and a new
+         rule here) per screen. */
       #safe-area-top-fill {
-        height: env(safe-area-inset-top, 0px);
+        height: var(--real-safe-top, 0px);
       }
       /* ScreenOverlay's own fill, for the ~18 secondary full-screen
          layouts (Profile, Memberships, Settings, the hamburger drawer,
@@ -343,7 +401,7 @@
          both the flat breathing-room value and the real inset. See
          ScreenOverlay.tsx's `topBasePadding` prop and AGENTS.md. */
       #screen-overlay-safe-top-60 {
-        height: calc(60px + env(safe-area-inset-top, 0px));
+        height: calc(60px + var(--real-safe-top, 0px));
       }
       /* The remaining full-screen layouts below each already carried their
          own flat paddingTop (the ordinary-browser-chrome breathing-room
@@ -356,16 +414,16 @@
          baseline value; several screens share 60. See AGENTS.md's "Web
          safe-area insets always report zero" writeup. */
       #story-viewer-safe-top {
-        padding-top: calc(50px + env(safe-area-inset-top, 0px)) !important;
+        padding-top: calc(50px + var(--real-safe-top, 0px)) !important;
       }
       #create-post-safe-top {
-        padding-top: calc(16px + env(safe-area-inset-top, 0px)) !important;
+        padding-top: calc(16px + var(--real-safe-top, 0px)) !important;
       }
       #media-viewer-safe-top {
-        padding-top: calc(56px + env(safe-area-inset-top, 0px)) !important;
+        padding-top: calc(56px + var(--real-safe-top, 0px)) !important;
       }
       #invite-friend-safe-top {
-        padding-top: calc(48px + env(safe-area-inset-top, 0px)) !important;
+        padding-top: calc(48px + var(--real-safe-top, 0px)) !important;
       }
       #story-locked-safe-top,
       #post-detail-safe-top,
@@ -377,7 +435,7 @@
       #forgot-password-safe-top,
       #online-start-safe-top,
       #set-new-password-safe-top {
-        padding-top: calc(60px + env(safe-area-inset-top, 0px)) !important;
+        padding-top: calc(60px + var(--real-safe-top, 0px)) !important;
       }
       /* WelcomeScreen's BACK control floats over its centered hero
          (position: absolute) rather than sitting in normal flow like every
@@ -388,7 +446,7 @@
          a replacement, so standalone mode gets 60px of the same visual
          breathing room on top of the real inset, never less than before. */
       #welcome-back-safe-top {
-        top: calc(60px + env(safe-area-inset-top, 0px)) !important;
+        top: calc(60px + var(--real-safe-top, 0px)) !important;
       }
       /* Pins WelcomeScreen's (and, same reasoning, AboutScreen onboarding
          variant's) root to a real minimum height equal to the same
@@ -422,6 +480,16 @@
     <noscript>
       You need to enable JavaScript to run this app.
     </noscript>
+    <!-- The ONE sanctioned reader of env(safe-area-inset-*) on this page
+         (see the inline script's Round 7 comment above and AGENTS.md).
+         Hidden (zero size, not in the layout flow, never painted), sized
+         entirely by #safe-area-probe-css below so a real env() value can
+         still reach them even though they carry no RN-authored style of
+         their own. syncSafeAreaInsets() reads their resolved pixel height
+         and writes it to --real-safe-top / --real-safe-bottom, which is
+         the only thing any fill elsewhere in the app is allowed to read. -->
+    <div id="safe-area-probe-top"></div>
+    <div id="safe-area-probe-bottom"></div>
     <!-- The root element for your Expo app. -->
     <div id="root"></div>
   </body>

@@ -32,12 +32,19 @@ export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupCh
   const { unreadCount } = useGroupChatUnread();
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      {/* SafeAreaView's own `edges={['top']}` inset is correct on native
-          but, like useSafeAreaInsets(), resolves to a literal 0 on web (it
-          renders inline `padding: 0px` there -- confirmed by inspecting
-          the DOM, not assumed) -- so this bar sits flush against the
-          status bar in an installed standalone iPhone PWA despite the
-          SafeAreaView wrapper. Same fix as everywhere else. */}
+      {/* SafeAreaView's own `edges={['top']}` inset is correct on native.
+          On web it is NOT inert -- react-native-safe-area-context's web
+          implementation actively measures the real env(safe-area-inset-
+          top) via a hidden probe and feeds it through here live, which a
+          desktop/mobile BROWSER test can't distinguish from "does
+          nothing" (no notch there, so it measures 0 either way) but which
+          was quietly adding the real inset a SECOND time, on top of
+          SafeAreaTopFill below, in an installed standalone iPhone PWA --
+          the actual cause of the "roughly double" top offset bug.
+          AppSafeAreaProvider (see App.tsx) now pins useSafeAreaInsets()/
+          SafeAreaView to zero on web permanently, so this edge really is
+          inert here, by construction -- SafeAreaTopFill is the one actual
+          source of the real inset. See AGENTS.md. */}
       <SafeAreaTopFill backgroundColor={colors.card} />
       <View style={styles.bar}>
         <AppPressable onPress={onOpenSidebar} hitSlop={8} style={styles.iconButton} testID="open-sidebar">

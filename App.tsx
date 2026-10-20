@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } fro
 import { Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppSafeAreaProvider } from './src/components/AppSafeAreaProvider';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as SplashScreen from 'expo-splash-screen';
@@ -932,11 +933,11 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
+    <AppSafeAreaProvider>
       <AuthProvider>
         <AuthGatedProviders resetKey={resetKey} onLayoutRootView={onLayoutRootView} />
       </AuthProvider>
-    </SafeAreaProvider>
+    </AppSafeAreaProvider>
   );
 }
 
