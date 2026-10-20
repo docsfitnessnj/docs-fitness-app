@@ -109,6 +109,15 @@ const ALL_TOP_IDS = Object.keys(TOP_BASELINES);
 
 const BOTTOM_FILL_IDS = ['tab-bar-safe-area-fill', 'group-chat-composer-safe-area-fill', 'doc-thread-composer-safe-area-fill'];
 
+// Every hidden, position:fixed/zIndex:-1 probe this app itself creates,
+// unconditionally, on every page load -- the safe-area probes (Round 7)
+// and DebugOverlay.web.tsx's own 100dvh/100vh probes (this round). All
+// three share that exact CSS signature with react-native-safe-area-
+// context's own (neutralized) web measurement probe, which is the whole
+// point of auditNoUnsanctionedProbe() below -- so every one WE add here
+// must be allowlisted by id, or it reads as a false "unsanctioned" hit.
+const SANCTIONED_PROBE_IDS = ['safe-area-probe-top', 'safe-area-probe-bottom', 'debug-probe-100dvh', 'debug-probe-100vh'];
+
 async function setupMocks(page) {
   await page.route('**/auth/v1/token*', (route) =>
     route.fulfill({
@@ -247,17 +256,17 @@ function auditBuiltOutputEnvConsumers(record) {
 // gets created. If AppSafeAreaProvider is ever removed or bypassed, this
 // is what would catch it regardless of the grep above.
 async function auditNoUnsanctionedProbe(page) {
-  return page.evaluate(() => {
+  return page.evaluate((sanctionedIds) => {
     const suspects = [];
     document.querySelectorAll('body > div').forEach((el) => {
-      if (el.id === 'safe-area-probe-top' || el.id === 'safe-area-probe-bottom') return;
+      if (sanctionedIds.includes(el.id)) return;
       const cs = getComputedStyle(el);
       if (cs.position === 'fixed' && cs.zIndex === '-1') {
         suspects.push({ id: el.id || '(no id)', style: el.getAttribute('style') });
       }
     });
     return suspects;
-  });
+  }, SANCTIONED_PROBE_IDS);
 }
 
 // Finds the topmost ACTUALLY-VISIBLE, non-empty leaf-ish element on the

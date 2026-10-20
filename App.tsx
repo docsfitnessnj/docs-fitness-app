@@ -44,6 +44,7 @@ import { ContentLibraryProvider } from './src/context/ContentLibraryContext';
 import { GroupChatUnreadProvider } from './src/context/GroupChatUnreadContext';
 import { TourProvider, useTour } from './src/context/TourContext';
 import { AppTopBar } from './src/components/AppTopBar';
+import { DebugOverlay } from './src/components/DebugOverlay';
 import { SafeAreaBottomFill } from './src/components/SafeAreaBottomFill';
 import { SearchModal } from './src/components/SearchModal';
 import { TrialExpiryModal } from './src/components/TrialExpiryModal';
@@ -516,6 +517,12 @@ function MainApp({
   const [movementVaultOpen, setMovementVaultOpen, movementVaultInitialId, movementVaultReturnLabel] =
     useMovementVaultModalState();
   const [activeTab, setActiveTab] = useState('Community');
+  // Hidden, web-only diagnostic tool -- see DebugOverlay.web.tsx and the
+  // 5-tap gesture on the wordmark in AppTopBar.tsx. No UI affordance
+  // anywhere hints this exists; it's purely a debugging aid for real-
+  // device geometry reports (see AGENTS.md's safe-area writeup) that
+  // Playwright can't reproduce (no real home indicator/notch).
+  const [debugOverlayOpen, setDebugOverlayOpen] = useState(false);
 
   // Reopens Memberships (and, on a real success, polls for the webhook then
   // celebrates) after Stripe Checkout / the billing portal redirects back.
@@ -551,6 +558,7 @@ function MainApp({
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenSearch={() => setSearchOpen(true)}
           onOpenGroupChat={activeTab === 'Community' ? onOpenGroupChat : undefined}
+          onOpenDebugOverlay={Platform.OS === 'web' ? () => setDebugOverlayOpen(true) : undefined}
         />
         <RootNavigator tabBarHidden={sidebarOpen || keyboardVisible || groupChatOpen} />
         {!(sidebarOpen || keyboardVisible || groupChatOpen) && (
@@ -558,6 +566,7 @@ function MainApp({
         )}
         <TabBarTourMarker />
       </View>
+      <DebugOverlay visible={debugOverlayOpen} onClose={() => setDebugOverlayOpen(false)} />
       <ScreenOverlay visible={searchOpen} topBasePadding={60}>
         <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
       </ScreenOverlay>

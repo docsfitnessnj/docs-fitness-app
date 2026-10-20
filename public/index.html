@@ -299,6 +299,34 @@
         bottom: 0;
         height: env(safe-area-inset-bottom, 0px);
       }
+      /* The hidden debug overlay's own probes (see DebugOverlay.web.tsx --
+         tap the "DOC'S FITNESS" wordmark 5x within 2s to open it). Same
+         zero-footprint technique as the safe-area probes above: these two
+         exist unconditionally (whether or not the overlay is ever opened)
+         so they're always settled and ready to read, never created/torn
+         down on demand. They resolve the two viewport-height CSS units to
+         real pixel values so the overlay can show, on a real device,
+         whether 100vh/100dvh themselves already disagree with
+         window.innerHeight/visualViewport.height -- which would mean the
+         remaining bottom-band bug (PR 143's 100dvh fix didn't fully close
+         it on a real iPhone) is in how the browser resolves the unit
+         itself, not in anything this app's own code measures or writes. */
+      #debug-probe-100dvh,
+      #debug-probe-100vh {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 0;
+        z-index: -1;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      #debug-probe-100dvh {
+        height: 100dvh;
+      }
+      #debug-probe-100vh {
+        height: 100vh;
+      }
       /* Extends a fixed-height bottom bar/composer's own background through
          the home-indicator safe area, all the way to the physical bottom
          edge of the screen, in an installed/standalone iPhone PWA. These
@@ -428,6 +456,9 @@
          the only thing any fill elsewhere in the app is allowed to read. -->
     <div id="safe-area-probe-top"></div>
     <div id="safe-area-probe-bottom"></div>
+    <!-- DebugOverlay.web.tsx's own probes -- see the CSS comment above. -->
+    <div id="debug-probe-100dvh"></div>
+    <div id="debug-probe-100vh"></div>
     <!-- The root element for your Expo app. -->
     <div id="root"></div>
   </body>
