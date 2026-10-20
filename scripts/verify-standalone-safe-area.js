@@ -347,7 +347,19 @@ async function run() {
   async function checkScreen(
     label,
     navigate,
-    { expectBottomFill = false, fillId = 'tab-bar-safe-area-fill', signedIn = true, topId, checkRootHeightExact = signedIn, skipOffsetCheck = false } = {}
+    {
+      expectBottomFill = false,
+      fillId = 'tab-bar-safe-area-fill',
+      // The tab bar's own fill is colors.card (white) -- but a composer
+      // fill (group chat, Boathouse schedule thread) intentionally
+      // matches colors.background instead, by design, not a bug. Each
+      // screen's own expected color is passed here rather than assumed.
+      bottomFillColor = 'rgb(255, 255, 255)',
+      signedIn = true,
+      topId,
+      checkRootHeightExact = signedIn,
+      skipOffsetCheck = false,
+    } = {}
   ) {
     const baseline = TOP_BASELINES[topId];
 
@@ -445,6 +457,24 @@ async function run() {
           pass,
           JSON.stringify(rootHeight)
         );
+
+        // The bottommost ROW of the page (the physical edge) must be
+        // painted by the tab bar's own fill (colors.card, white) -- never
+        // by html/body's own background-color backstop (colors.background,
+        // #FBFBF9), which would mean #root fell short of the real
+        // viewport and the bare page is showing through underneath. This
+        // is the "gray strip" this round's bug report described directly:
+        // not just "is there a gap" (the height check above) but "what
+        // color is painted at the very edge."
+        const bottomEdgeColor = await page.evaluate(() => {
+          const el = document.elementFromPoint(Math.floor(window.innerWidth / 2), window.innerHeight - 1);
+          return el ? getComputedStyle(el).backgroundColor : null;
+        });
+        record(
+          `[forced-inset/${label}] bottommost painted pixel is the fill's own expected color (${bottomFillColor})`,
+          bottomEdgeColor === bottomFillColor,
+          JSON.stringify({ bottomEdgeColor, expected: bottomFillColor })
+        );
       }
 
       await context.close();
@@ -532,8 +562,62 @@ async function run() {
       await page.getByTestId('open-group-chat').click({ timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(600);
     },
-    { topId: 'safe-area-top-fill' }
+    {
+      topId: 'safe-area-top-fill',
+      expectBottomFill: true,
+      fillId: 'group-chat-composer-safe-area-fill',
+      // Deliberately colors.background here, not colors.card -- the
+      // composer's own fill is designed to blend into the page, unlike
+      // the tab bar's white. Not a bug; see the comment on `bottomFillColor`.
+      bottomFillColor: 'rgb(251, 251, 249)',
+      checkRootHeightExact: true,
+    }
   );
+
+  // --- Round 8's own regression guard: #root must equal the viewport
+  // height EXACTLY, checked immediately on load and again after a 5s
+  // delay. The prior JS-measured --app-height mechanism's settle burst
+  // only ran for up to 4s and then gave up -- a late resettle landing
+  // just after that window is exactly the kind of bug a load-only check
+  // would miss. Now that sizing is plain `100dvh` (no JS, nothing to
+  // settle), both reads should be identical and exact; this check exists
+  // to catch a regression back to JS-measured sizing, not because dvh
+  // itself is expected to drift. Checked at both the forced inset and the
+  // zero-inset baseline, since the shell's own sizing has nothing to do
+  // with the safe-area variables.
+  for (const forced of [false, true]) {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (forced) await page.addStyleTag({ content: FORCE_INSET_CSS });
+
+    const label = forced ? 'forced-inset' : 'baseline';
+    const measure = () =>
+      page.evaluate(() => {
+        const root = document.getElementById('root');
+        return { rootHeight: root ? root.getBoundingClientRect().height : null, windowHeight: window.innerHeight };
+      });
+
+    const immediate = await measure();
+    record(
+      `[${label}/Community tab, settle guard] #root height equals the viewport height exactly, checked immediately`,
+      immediate.rootHeight !== null && Math.abs(immediate.rootHeight - immediate.windowHeight) <= 1,
+      JSON.stringify(immediate)
+    );
+
+    await page.waitForTimeout(5000);
+    const afterDelay = await measure();
+    record(
+      `[${label}/Community tab, settle guard] #root height equals the viewport height exactly, checked again after a 5s delay`,
+      afterDelay.rootHeight !== null && Math.abs(afterDelay.rootHeight - afterDelay.windowHeight) <= 1,
+      JSON.stringify(afterDelay)
+    );
+
+    await context.close();
+  }
 
   await browser.close();
   console.log('\n=== SUMMARY ===');

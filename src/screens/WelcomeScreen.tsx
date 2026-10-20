@@ -194,9 +194,9 @@ const styles = StyleSheet.create({
   // centering centers within that too-short box instead of the actual
   // screen, reading as the badge jammed near the top with dead space below
   // it. index.html's `#welcome-screen-root` CSS rule pins a real
-  // `min-height` to `--app-height` (the same JS-measured, self-correcting
-  // viewport value #root itself uses) so centering has the right height to
-  // work with regardless of that ancestor chain's own sizing.
+  // `min-height` to `100dvh` (the same plain, browser-native unit #root
+  // itself uses) so centering has the right height to work with
+  // regardless of that ancestor chain's own sizing.
   container: {
     flex: 1,
     backgroundColor: colors.background,
