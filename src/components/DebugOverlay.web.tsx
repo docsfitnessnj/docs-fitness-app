@@ -28,6 +28,24 @@ type KeyboardSnapshot = {
   composerId: string | null;
   composerRect: Rect;
   composerTransform: string | null;
+  // Round 15: the closed-loop measurement's own inputs/output, captured
+  // alongside the legacy --keyboard-inset formula value above purely as a
+  // point of comparison -- see public/index.html's applyComposerKeyboardRise().
+  visualBottom: number | null;
+  composerNaturalBottom: number | null;
+  appliedTranslateY: number | null;
+} | null;
+
+// Written continuously (not just on a big-shrink event) by
+// applyComposerKeyboardRise() into window.__keyboardRiseState -- the LIVE
+// counterpart to the historical KeyboardSnapshot above, so the KEYBOARD
+// TEST input's once-a-second refresh shows the mechanism actually working
+// while the keyboard is open, not just a reconstruction after the fact.
+type KeyboardRiseState = {
+  composerId: string | null;
+  visualBottom: number;
+  naturalBottom: number | null;
+  appliedTranslateY: number;
 } | null;
 
 type Snapshot = {
@@ -55,6 +73,7 @@ type Snapshot = {
   displayModeStandalone: boolean;
   rnDimensionsHeight: number;
   lastKeyboardSnapshot: KeyboardSnapshot;
+  keyboardRiseState: KeyboardRiseState;
 };
 
 function rectOf(el: Element | null): Rect {
@@ -94,6 +113,7 @@ function take(rnWindowHeight: number): Snapshot {
     displayModeStandalone: window.matchMedia('(display-mode: standalone)').matches,
     rnDimensionsHeight: rnWindowHeight,
     lastKeyboardSnapshot: (window as any).__lastKeyboardSnapshot || null,
+    keyboardRiseState: (window as any).__keyboardRiseState || null,
   };
 }
 
@@ -119,17 +139,29 @@ function snapshotToText(s: Snapshot, rnHookHeight: number): string {
     `matchMedia(display-mode: standalone): ${s.displayModeStandalone}`,
     `Dimensions.get('window').height: ${s.rnDimensionsHeight}`,
     `useWindowDimensions().height: ${rnHookHeight}`,
+    '--- KEYBOARD RISE STATE (live) ---',
+    s.keyboardRiseState
+      ? [
+          `composer: ${s.keyboardRiseState.composerId ?? '(none mounted)'}`,
+          `visual viewport bottom edge: ${s.keyboardRiseState.visualBottom}`,
+          `composer natural (untranslated) bottom: ${s.keyboardRiseState.naturalBottom ?? '?'}`,
+          `applied translateY: ${s.keyboardRiseState.appliedTranslateY}px`,
+        ].join('\n')
+      : '(not measured yet)',
     '--- LAST KEYBOARD SNAPSHOT ---',
     s.lastKeyboardSnapshot
       ? [
           `captured at: ${s.lastKeyboardSnapshot.timestamp}`,
           `innerHeight: ${s.lastKeyboardSnapshot.innerHeight}`,
           `visualViewport.height / offsetTop: ${s.lastKeyboardSnapshot.vvHeight} / ${s.lastKeyboardSnapshot.vvOffsetTop}`,
-          `--keyboard-inset at capture: ${s.lastKeyboardSnapshot.keyboardInset}`,
+          `--keyboard-inset at capture (legacy formula, comparison only): ${s.lastKeyboardSnapshot.keyboardInset}`,
           `100lvh probe at capture: ${s.lastKeyboardSnapshot.lvhPx ?? '?'}px`,
           `composer: ${s.lastKeyboardSnapshot.composerId ?? '(none mounted)'}`,
           fmtRect('composer rect', s.lastKeyboardSnapshot.composerRect),
           `composer transform: ${s.lastKeyboardSnapshot.composerTransform ?? '(none)'}`,
+          `visual viewport bottom edge at capture: ${s.lastKeyboardSnapshot.visualBottom ?? '?'}`,
+          `composer natural bottom at capture: ${s.lastKeyboardSnapshot.composerNaturalBottom ?? '?'}`,
+          `applied translateY at capture: ${s.lastKeyboardSnapshot.appliedTranslateY ?? '?'}px`,
         ].join('\n')
       : '(none recorded yet -- open a bottom-anchored composer, focus it, and bring up the keyboard)',
   ].join('\n');

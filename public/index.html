@@ -278,6 +278,79 @@
           syncSafeAreaInsets();
         }
 
+        // Round 15: --keyboard-inset above is no longer what positions the
+        // three bottom-anchored composers -- a real installed-standalone
+        // iPhone's own LAST KEYBOARD SNAPSHOT (Round 14) caught it reading
+        // 0px with the keyboard genuinely covering 62px of the composer.
+        // Reconstructing the capture: innerHeight and visualViewport.height
+        // had both collapsed to the same 471 (the keyboard shrinks the
+        // LAYOUT viewport too in this condition, not just the visual one,
+        // contrary to this file's own "Round 8" assumption above that only
+        // the toolbar does that), with offsetTop panned to 341 -- but the
+        // --keyboard-inset formula's fullHeight read back window.innerHeight
+        // (471) instead of the 100lvh probe's still-correct 874, because
+        // its `matchMedia('(display-mode: standalone)').matches` branch,
+        // evaluated fresh inside this resize handler, did not reliably
+        // select the standalone branch at that exact instant. That left
+        // fullHeight - vv.height - offsetTop = 471 - 471 - 341 = -341,
+        // clamped to the observed 0 -- a wrong answer that happened to look
+        // like a plausible one. The formula's real flaw isn't the specific
+        // number wrong on one device; it's that it has to correctly PREDICT
+        // "how tall should the shell be right now" from a live media-query
+        // match before it can compute a correct answer at all.
+        //
+        // The fix below measures instead of predicting: on every event that
+        // could change where the keyboard's covering edge or the composer
+        // itself sits, read the composer's own current (untranslated)
+        // bottom edge and the visual viewport's own bottom edge in the same
+        // layout-viewport coordinate space, and translate the composer by
+        // exactly the difference so its bottom always lands exactly on the
+        // visual viewport's bottom. This is immune to whether iOS shrinks
+        // innerHeight, pans offsetTop, or both, and immune to which media
+        // query matches when, because it never asks "how tall is the full
+        // shell" at all -- only "where are these two edges right now."
+        // --keyboard-inset itself is left exactly as it was (still read by
+        // CreatePostModal's defensive scroll padding, still a useful
+        // point of comparison in the snapshot below) -- only the three
+        // composers stop trusting it.
+        var KEYBOARD_RISE_COMPOSER_IDS = ['group-chat-composer-keyboard-rise', 'doc-thread-composer-keyboard-rise', 'post-detail-composer-keyboard-rise'];
+        var lastComposerRiseResult = null;
+        function applyComposerKeyboardRise() {
+          var vv = window.visualViewport;
+          if (!vv) return;
+          var visualBottom = vv.offsetTop + vv.height;
+          var found = null;
+          for (var i = 0; i < KEYBOARD_RISE_COMPOSER_IDS.length; i++) {
+            var el = document.getElementById(KEYBOARD_RISE_COMPOSER_IDS[i]);
+            if (!el) continue;
+            // Clear whatever translateY this function itself applied last
+            // time before measuring, so the rect read below is always the
+            // composer's own natural, untranslated position -- never a
+            // stale rise compounding on top of a new one.
+            el.style.transform = 'none';
+            var naturalBottom = el.getBoundingClientRect().bottom;
+            // Only ever rises (negative translateY); never pushes the
+            // composer down past its own natural position, which is what
+            // a positive result here would mean (the visual viewport's
+            // bottom sitting below the composer's natural bottom -- not a
+            // keyboard-covering condition at all).
+            var translateY = Math.min(0, visualBottom - naturalBottom);
+            el.style.transform = translateY === 0 ? 'none' : 'translateY(' + translateY + 'px)';
+            found = { composerId: KEYBOARD_RISE_COMPOSER_IDS[i], visualBottom: visualBottom, naturalBottom: naturalBottom, appliedTranslateY: translateY };
+            break; // the three ids are mutually exclusive full-screen contexts -- only one is ever mounted at once.
+          }
+          lastComposerRiseResult = found || { composerId: null, visualBottom: visualBottom, naturalBottom: null, appliedTranslateY: 0 };
+          // Live, continuously-updated state (distinct from the historical,
+          // only-captured-on-a-big-shrink window.__lastKeyboardSnapshot
+          // below) -- DebugOverlay.web.tsx's own once-a-second poll reads
+          // this directly so the mechanism's current inputs/output are
+          // visible even while the keyboard is open and the overlay itself
+          // can't be reached (it still can't -- opening it dismisses focus
+          // -- but this makes the KEYBOARD TEST input's own live readout
+          // meaningful rather than just the raw CSS variables).
+          window.__keyboardRiseState = lastComposerRiseResult;
+        }
+
         // Round 14: a "last keyboard snapshot", for exactly the gap this
         // round's own debug-overlay upgrade is meant to close -- a real
         // installed-iPhone keyboard event is gone by the time anyone can
@@ -307,7 +380,9 @@
         // the first place).
         var lastVisualViewportHeight = window.visualViewport ? window.visualViewport.height : null;
         var KEYBOARD_SNAPSHOT_SHRINK_THRESHOLD = 100;
-        var KEYBOARD_RISE_COMPOSER_IDS = ['group-chat-composer-keyboard-rise', 'doc-thread-composer-keyboard-rise', 'post-detail-composer-keyboard-rise'];
+        // KEYBOARD_RISE_COMPOSER_IDS is declared once, above, alongside
+        // applyComposerKeyboardRise() (Round 15) -- reused here rather than
+        // redeclared, since this function needs to walk the exact same ids.
         function captureLastKeyboardSnapshot() {
           var vv = window.visualViewport;
           if (!vv) return;
@@ -325,11 +400,22 @@
             }
           }
           var lvhProbe = document.getElementById('debug-probe-100lvh');
+          // Round 15: pulled from lastComposerRiseResult (set by
+          // applyComposerKeyboardRise(), which onVisualViewportResize
+          // always calls immediately before this) rather than recomputed
+          // independently here -- the snapshot must show exactly what the
+          // production mechanism actually used and applied, never a
+          // second, potentially-disagreeing measurement of the same thing.
+          var rise = lastComposerRiseResult;
           window.__lastKeyboardSnapshot = {
             timestamp: new Date().toISOString(),
             innerHeight: window.innerHeight,
             vvHeight: Math.round(vv.height),
             vvOffsetTop: Math.round(vv.offsetTop),
+            // Kept purely as a point of comparison against the
+            // measurement-based fields below -- this is the OLD formula's
+            // own answer (still computed, still driving CreatePostModal's
+            // defensive padding), not what positions the composer anymore.
             // Read back from the CSS variable (already recomputed by the
             // syncOffsetAndInsets() call this always runs after -- see
             // onVisualViewportResize) rather than recalculated here a
@@ -340,12 +426,16 @@
             composerId: composerId,
             composerRect: composerRect,
             composerTransform: composerTransform,
+            visualBottom: rise ? Math.round(rise.visualBottom) : null,
+            composerNaturalBottom: rise && rise.naturalBottom != null ? Math.round(rise.naturalBottom) : null,
+            appliedTranslateY: rise ? Math.round(rise.appliedTranslateY) : null,
           };
         }
         function onVisualViewportResize() {
           var vv = window.visualViewport;
           var previousHeight = lastVisualViewportHeight;
           syncOffsetAndInsets();
+          applyComposerKeyboardRise();
           if (vv) {
             if (previousHeight !== null && previousHeight - vv.height > KEYBOARD_SNAPSHOT_SHRINK_THRESHOLD) {
               captureLastKeyboardSnapshot();
@@ -353,21 +443,43 @@
             lastVisualViewportHeight = vv.height;
           }
         }
+        function onVisualViewportScroll() {
+          syncOffsetAndInsets();
+          applyComposerKeyboardRise();
+        }
+        function syncAllViewportState() {
+          syncOffsetAndInsets();
+          applyComposerKeyboardRise();
+        }
 
-        syncOffsetAndInsets();
-        window.addEventListener('resize', syncOffsetAndInsets);
-        window.addEventListener('orientationchange', syncOffsetAndInsets);
-        window.addEventListener('load', syncOffsetAndInsets);
-        window.addEventListener('pageshow', syncOffsetAndInsets);
+        syncAllViewportState();
+        window.addEventListener('resize', syncAllViewportState);
+        window.addEventListener('orientationchange', syncAllViewportState);
+        window.addEventListener('load', syncAllViewportState);
+        window.addEventListener('pageshow', syncAllViewportState);
         if (window.visualViewport) {
           // 'resize' catches the keyboard opening/closing (and is also the
           // one event the last-keyboard-snapshot capture above watches);
           // 'scroll' catches offsetTop changing on its own, which happens
           // when iOS pans to reveal a focused input without the visible
-          // height necessarily changing at the same instant.
+          // height necessarily changing at the same instant. Both re-run
+          // applyComposerKeyboardRise() too -- either one can change the
+          // visual viewport's own bottom edge, which is the only thing the
+          // closed-loop measurement cares about.
           window.visualViewport.addEventListener('resize', onVisualViewportResize);
-          window.visualViewport.addEventListener('scroll', syncOffsetAndInsets);
+          window.visualViewport.addEventListener('scroll', onVisualViewportScroll);
         }
+        // Round 15: a composer that mounts (or gains focus) after the
+        // keyboard is already open -- e.g. opening group chat with the
+        // keyboard still up from a prior screen, or tapping straight into
+        // the composer without a separate visualViewport event firing
+        // first -- needs its own trigger independent of visualViewport's
+        // events, which only fire on an actual geometry change. 'focusin'
+        // bubbles from any focused element, so this re-measures on every
+        // focus change app-wide; each call is just three getElementById
+        // lookups plus a rect read, cheap enough not to need narrowing to
+        // the composer inputs specifically.
+        document.addEventListener('focusin', applyComposerKeyboardRise, true);
 
         // Viewport lock, belt-and-suspenders round. The viewport meta's
         // maximum-scale=1/user-scalable=no is the primary lock (reliable
@@ -591,21 +703,24 @@
       #doc-thread-composer-safe-area-fill {
         height: var(--real-safe-bottom, 0px);
       }
-      /* The keyboard-regression fix (see the inline script's "Round 12"
-         comment on --keyboard-inset for the full why). Each bottom-
-         anchored composer rises by exactly the amount of itself the
-         keyboard is covering that visualViewport's own pan didn't already
-         reveal -- 0px (no-op) whenever the keyboard is closed, since
-         --keyboard-inset itself is 0 then, which is also what returns the
-         composer to its normal position (right on top of its own safe-area
-         fill above) the instant the keyboard closes. transform, not a
-         layout property, so this never affects any sibling's position or
-         triggers reflow. */
-      #group-chat-composer-keyboard-rise,
-      #doc-thread-composer-keyboard-rise,
-      #post-detail-composer-keyboard-rise {
-        transform: translateY(calc(-1 * var(--keyboard-inset, 0px)));
-      }
+      /* Round 15: these three ids used to be positioned by a CSS rule
+         reading --keyboard-inset (`transform: translateY(calc(-1 *
+         var(--keyboard-inset, 0px)))`) -- removed. A real installed-
+         standalone iPhone's own LAST KEYBOARD SNAPSHOT caught that formula
+         computing 0px while the keyboard genuinely covered 62px of the
+         composer, because its fullHeight term depends on a
+         `matchMedia('(display-mode: standalone)')` check that didn't
+         reliably select the standalone branch at the exact instant the
+         resize handler ran. applyComposerKeyboardRise() in the inline
+         script above now sets each composer's `transform` directly as an
+         inline style instead -- measured fresh every time from the
+         composer's own current rect and the visual viewport's own current
+         edges, never predicted from a formula -- which an inline style
+         always wins over any stylesheet rule anyway, so there is no
+         conflicting rule left here at all. See the inline script's "Round
+         15" comment for the full mechanism. --keyboard-inset itself is
+         UNCHANGED and still drives #create-post-scroll-content's padding
+         below -- only these three ids stopped reading it. */
       /* CreatePostModal's title/body inputs are plain in-flow content
          inside its own ScrollView, not a fixed bottom bar -- the browser's
          native focus-scroll-into-view already keeps the focused one clear
