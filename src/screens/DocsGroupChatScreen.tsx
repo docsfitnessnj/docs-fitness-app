@@ -815,7 +815,7 @@ export function DocsGroupChatScreen({ visible, onClose }: Props) {
             "Community" — there's nothing behind this full-bleed overlay —
             but still an odd bare strip) showed through. Same fix DocThreadView
             already uses for the MESSAGE DOC DIRECTLY composer. */}
-        <View style={{ paddingBottom: keyboardVisible ? 0 : insets.bottom }}>
+        <View nativeID="group-chat-composer-keyboard-rise" style={{ paddingBottom: keyboardVisible ? 0 : insets.bottom }}>
           <Composer
             muted={chat.muted}
             sendError={chat.sendError}

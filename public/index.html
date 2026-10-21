@@ -9,8 +9,20 @@
          target) even though some accessibility settings can override it in
          ordinary browser Safari -- see the gesturestart/change/end
          handlers and touch-action CSS below for the belt-and-suspenders
-         fallback, and AGENTS.md's "Viewport lock" writeup. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover" />
+         fallback, and AGENTS.md's "Viewport lock" writeup.
+
+         interactive-widget=resizes-content: the CSS Viewport spec's own
+         declarative fix for the exact keyboard regression --keyboard-inset
+         below works around in JS -- where supported, it makes 100dvh (and
+         window.visualViewport) shrink for the on-screen keyboard the same
+         way it already does for Safari's collapsing toolbar, which would
+         make bottom-anchored content naturally end up above the keyboard
+         with no compensation needed. An unrecognized viewport-meta value is
+         simply ignored by a browser that doesn't understand it (same as
+         every other key here), so this is safe to declare unconditionally.
+         The --keyboard-inset JS path stays regardless, as its own fallback
+         -- see the inline script's "Round 12" comment. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>%WEB_TITLE%</title>
     <meta
       name="description"
@@ -210,10 +222,35 @@
         // --viewport-scale is purely so that's checkable (by this file's
         // own debug overlay, or a test) rather than invisible. No visible
         // UI ever reacts to this value.
+        //
+        // Round 12's own addition: --keyboard-inset, fixing a regression
+        // Round 8 introduced. #root's height is plain 100dvh now (no JS),
+        // which is correct for Safari's collapsing/expanding TOOLBAR but
+        // -- confirmed by a real device -- does NOT shrink for the
+        // on-screen KEYBOARD the way the old JS-measured --app-height
+        // (gone since Round 8) used to. The keyboard instead only shrinks
+        // visualViewport.height and pans its offsetTop, exactly like
+        // Round 5's --app-offset-top already accounts for at the #root
+        // level -- but a bottom-anchored composer (group chat, comment,
+        // Message Doc, any future one) sits at the bottom of the FULL,
+        // un-shrunk #root, which is now geometrically behind the
+        // keyboard, with nothing of its own compensating for that.
+        // --keyboard-inset is exactly the gap between the two: how much
+        // of #root's own full height the keyboard is covering that
+        // visualViewport's pan didn't already reveal. A bottom-anchored
+        // composer reads this (see the #*-keyboard-rise rules below) and
+        // rises by that amount via transform -- never a JS height on the
+        // shell itself, which stays plain 100dvh exactly as Round 8 left
+        // it. Clamped to 0 so ordinary toolbar collapse/expand (which
+        // 100dvh already handles on its own) never produces a negative
+        // rise.
         function syncOffsetAndInsets() {
           var vv = window.visualViewport;
-          document.documentElement.style.setProperty('--app-offset-top', (vv ? vv.offsetTop : 0) + 'px');
+          var offsetTop = vv ? vv.offsetTop : 0;
+          document.documentElement.style.setProperty('--app-offset-top', offsetTop + 'px');
           document.documentElement.style.setProperty('--viewport-scale', String(vv ? vv.scale : 1));
+          var keyboardInset = vv ? Math.max(0, window.innerHeight - vv.height - offsetTop) : 0;
+          document.documentElement.style.setProperty('--keyboard-inset', keyboardInset + 'px');
           syncSafeAreaInsets();
         }
         syncOffsetAndInsets();
@@ -392,17 +429,24 @@
       }
       /* The hidden debug overlay's own probes (see DebugOverlay.web.tsx --
          tap the "DOC'S FITNESS" wordmark 5x within 2s to open it). Same
-         zero-footprint technique as the safe-area probes above: these two
+         zero-footprint technique as the safe-area probes above: these
          exist unconditionally (whether or not the overlay is ever opened)
          so they're always settled and ready to read, never created/torn
-         down on demand. They resolve the two viewport-height CSS units to
+         down on demand. They resolve all four viewport-height CSS units to
          real pixel values so the overlay can show, on a real device,
-         whether 100vh/100dvh themselves already disagree with
-         window.innerHeight/visualViewport.height -- which would mean the
-         remaining bottom-band bug (PR 143's 100dvh fix didn't fully close
-         it on a real iPhone) is in how the browser resolves the unit
-         itself, not in anything this app's own code measures or writes. */
+         whether any of them already disagree with
+         window.innerHeight/visualViewport.height -- which would mean a
+         remaining bottom-band discrepancy is in how the browser resolves
+         the unit itself, not in anything this app's own code measures or
+         writes. dvh/svh/lvh (small/large/dynamic viewport height) can
+         legitimately differ only while Safari's own toolbar is
+         collapsing/expanding -- svh is pinned to the toolbar-EXPANDED
+         (shortest) case, lvh to toolbar-COLLAPSED (tallest), dvh tracks
+         whichever is live; all three, and plain vh, should read identical
+         in standalone mode, where there's no toolbar to collapse. */
       #debug-probe-100dvh,
+      #debug-probe-100svh,
+      #debug-probe-100lvh,
       #debug-probe-100vh {
         position: fixed;
         left: 0;
@@ -414,6 +458,12 @@
       }
       #debug-probe-100dvh {
         height: 100dvh;
+      }
+      #debug-probe-100svh {
+        height: 100svh;
+      }
+      #debug-probe-100lvh {
+        height: 100lvh;
       }
       #debug-probe-100vh {
         height: 100vh;
@@ -432,6 +482,31 @@
       #group-chat-composer-safe-area-fill,
       #doc-thread-composer-safe-area-fill {
         height: var(--real-safe-bottom, 0px);
+      }
+      /* The keyboard-regression fix (see the inline script's "Round 12"
+         comment on --keyboard-inset for the full why). Each bottom-
+         anchored composer rises by exactly the amount of itself the
+         keyboard is covering that visualViewport's own pan didn't already
+         reveal -- 0px (no-op) whenever the keyboard is closed, since
+         --keyboard-inset itself is 0 then, which is also what returns the
+         composer to its normal position (right on top of its own safe-area
+         fill above) the instant the keyboard closes. transform, not a
+         layout property, so this never affects any sibling's position or
+         triggers reflow. */
+      #group-chat-composer-keyboard-rise,
+      #doc-thread-composer-keyboard-rise,
+      #post-detail-composer-keyboard-rise {
+        transform: translateY(calc(-1 * var(--keyboard-inset, 0px)));
+      }
+      /* CreatePostModal's title/body inputs are plain in-flow content
+         inside its own ScrollView, not a fixed bottom bar -- the browser's
+         native focus-scroll-into-view already keeps the focused one clear
+         of the keyboard. This is a defensive no-op-when-closed floor on
+         the scroll content's own bottom padding, insurance for a very tall
+         body entry leaving no room to scroll the last line above the
+         keyboard, not a fix for a confirmed bug the way the rule above is. */
+      #create-post-scroll-content {
+        padding-bottom: var(--keyboard-inset, 0px);
       }
       /* Top-edge counterpart: covers the status bar / notch / Dynamic
          Island area, in an installed, standalone iPhone PWA, on any
@@ -549,6 +624,8 @@
     <div id="safe-area-probe-bottom"></div>
     <!-- DebugOverlay.web.tsx's own probes -- see the CSS comment above. -->
     <div id="debug-probe-100dvh"></div>
+    <div id="debug-probe-100svh"></div>
+    <div id="debug-probe-100lvh"></div>
     <div id="debug-probe-100vh"></div>
     <!-- The root element for your Expo app. -->
     <div id="root"></div>
