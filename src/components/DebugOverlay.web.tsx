@@ -34,6 +34,11 @@ type KeyboardSnapshot = {
   visualBottom: number | null;
   composerNaturalBottom: number | null;
   appliedTranslateY: number | null;
+  // Round 16: the actually-DELIVERED value, read back from --composer-rise
+  // -- separate from appliedTranslateY (what the measurement computed) so
+  // a future snapshot can show the two disagreeing if a delivery bug like
+  // Round 16's own one ever recurs.
+  composerRiseVar: string | null;
 } | null;
 
 // Written continuously (not just on a big-shrink event) by
@@ -46,6 +51,7 @@ type KeyboardRiseState = {
   visualBottom: number;
   naturalBottom: number | null;
   appliedTranslateY: number;
+  composerRiseVar: string;
 } | null;
 
 type Snapshot = {
@@ -145,7 +151,8 @@ function snapshotToText(s: Snapshot, rnHookHeight: number): string {
           `composer: ${s.keyboardRiseState.composerId ?? '(none mounted)'}`,
           `visual viewport bottom edge: ${s.keyboardRiseState.visualBottom}`,
           `composer natural (untranslated) bottom: ${s.keyboardRiseState.naturalBottom ?? '?'}`,
-          `applied translateY: ${s.keyboardRiseState.appliedTranslateY}px`,
+          `measured rise (applied translateY): ${s.keyboardRiseState.appliedTranslateY}px`,
+          `delivered --composer-rise (read back from the DOM): ${s.keyboardRiseState.composerRiseVar}`,
         ].join('\n')
       : '(not measured yet)',
     '--- LAST KEYBOARD SNAPSHOT ---',
@@ -161,7 +168,8 @@ function snapshotToText(s: Snapshot, rnHookHeight: number): string {
           `composer transform: ${s.lastKeyboardSnapshot.composerTransform ?? '(none)'}`,
           `visual viewport bottom edge at capture: ${s.lastKeyboardSnapshot.visualBottom ?? '?'}`,
           `composer natural bottom at capture: ${s.lastKeyboardSnapshot.composerNaturalBottom ?? '?'}`,
-          `applied translateY at capture: ${s.lastKeyboardSnapshot.appliedTranslateY ?? '?'}px`,
+          `measured rise at capture: ${s.lastKeyboardSnapshot.appliedTranslateY ?? '?'}px`,
+          `delivered --composer-rise at capture: ${s.lastKeyboardSnapshot.composerRiseVar ?? '?'}`,
         ].join('\n')
       : '(none recorded yet -- open a bottom-anchored composer, focus it, and bring up the keyboard)',
   ].join('\n');
