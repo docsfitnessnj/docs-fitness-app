@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View, useWindowDimensions, Dimensions } from 'react-native';
+import { StyleSheet, Text, TextInput, View, useWindowDimensions, Dimensions } from 'react-native';
 import { createPortal } from 'react-dom';
 import { AppPressable } from './AppPressable';
 import { colors, fonts } from '../theme';
@@ -10,6 +10,25 @@ type Props = {
 };
 
 type Rect = { top: number; bottom: number; height: number } | null;
+
+// Written by public/index.html's captureLastKeyboardSnapshot() into
+// window.__lastKeyboardSnapshot the instant a real keyboard open is
+// detected (visualViewport.height shrinking by more than 100px) -- see its
+// own comment for why this lives as a plain window global rather than
+// component state: it must survive this screen's own open/close and any
+// in-session navigation that happens between the real keyboard event and
+// whenever someone next opens this overlay to read it.
+type KeyboardSnapshot = {
+  timestamp: string;
+  innerHeight: number;
+  vvHeight: number;
+  vvOffsetTop: number;
+  keyboardInset: string;
+  lvhPx: number | null;
+  composerId: string | null;
+  composerRect: Rect;
+  composerTransform: string | null;
+} | null;
 
 type Snapshot = {
   innerHeight: number;
@@ -35,6 +54,7 @@ type Snapshot = {
   navigatorStandalone: boolean | null;
   displayModeStandalone: boolean;
   rnDimensionsHeight: number;
+  lastKeyboardSnapshot: KeyboardSnapshot;
 };
 
 function rectOf(el: Element | null): Rect {
@@ -73,6 +93,7 @@ function take(rnWindowHeight: number): Snapshot {
     navigatorStandalone: typeof (navigator as any).standalone === 'boolean' ? (navigator as any).standalone : null,
     displayModeStandalone: window.matchMedia('(display-mode: standalone)').matches,
     rnDimensionsHeight: rnWindowHeight,
+    lastKeyboardSnapshot: (window as any).__lastKeyboardSnapshot || null,
   };
 }
 
@@ -98,6 +119,19 @@ function snapshotToText(s: Snapshot, rnHookHeight: number): string {
     `matchMedia(display-mode: standalone): ${s.displayModeStandalone}`,
     `Dimensions.get('window').height: ${s.rnDimensionsHeight}`,
     `useWindowDimensions().height: ${rnHookHeight}`,
+    '--- LAST KEYBOARD SNAPSHOT ---',
+    s.lastKeyboardSnapshot
+      ? [
+          `captured at: ${s.lastKeyboardSnapshot.timestamp}`,
+          `innerHeight: ${s.lastKeyboardSnapshot.innerHeight}`,
+          `visualViewport.height / offsetTop: ${s.lastKeyboardSnapshot.vvHeight} / ${s.lastKeyboardSnapshot.vvOffsetTop}`,
+          `--keyboard-inset at capture: ${s.lastKeyboardSnapshot.keyboardInset}`,
+          `100lvh probe at capture: ${s.lastKeyboardSnapshot.lvhPx ?? '?'}px`,
+          `composer: ${s.lastKeyboardSnapshot.composerId ?? '(none mounted)'}`,
+          fmtRect('composer rect', s.lastKeyboardSnapshot.composerRect),
+          `composer transform: ${s.lastKeyboardSnapshot.composerTransform ?? '(none)'}`,
+        ].join('\n')
+      : '(none recorded yet -- open a bottom-anchored composer, focus it, and bring up the keyboard)',
   ].join('\n');
 }
 
@@ -166,6 +200,15 @@ export function DebugOverlay({ visible, onClose }: Props) {
           <AppPressable onPress={onClose} hitSlop={8} style={styles.closeButton} testID="debug-overlay-close">
             <Text style={styles.closeButtonText}>CLOSE</Text>
           </AppPressable>
+        </View>
+        <View style={styles.keyboardTestRow}>
+          <Text style={styles.keyboardTestLabel}>KEYBOARD TEST</Text>
+          <TextInput
+            testID="debug-overlay-keyboard-test-input"
+            style={styles.keyboardTestInput}
+            placeholder="Tap here to bring up the keyboard"
+            placeholderTextColor={colors.textMuted}
+          />
         </View>
         <View style={styles.scroll} testID="debug-overlay-content">
           {snapshot ? (
@@ -243,8 +286,34 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelSemiBold,
     fontSize: 12,
   },
+  keyboardTestRow: {
+    marginBottom: 8,
+  },
+  keyboardTestLabel: {
+    color: colors.white,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 11,
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  keyboardTestInput: {
+    // iOS Safari auto-zooms the whole page when a focused input's font
+    // size resolves under 16px (see AGENTS.md's "iOS input zoom" section)
+    // -- this field exists specifically to summon the real keyboard, so it
+    // must obey the same rule as every member-facing TextInput.
+    fontSize: 16,
+    color: colors.white,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
   scroll: {
-    maxHeight: '55vh' as any,
+    // Trimmed from 55vh to make room for the new KEYBOARD TEST row above,
+    // which sits outside this scroll container (always visible, not
+    // scrolled away) so it's never more than one tap away while reading
+    // the live numbers below it.
+    maxHeight: '45vh' as any,
     overflow: 'scroll' as any,
   },
   monoText: {

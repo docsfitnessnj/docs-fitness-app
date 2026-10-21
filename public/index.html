@@ -277,17 +277,95 @@
           document.documentElement.style.setProperty('--keyboard-inset', keyboardInset + 'px');
           syncSafeAreaInsets();
         }
+
+        // Round 14: a "last keyboard snapshot", for exactly the gap this
+        // round's own debug-overlay upgrade is meant to close -- a real
+        // installed-iPhone keyboard event is gone by the time anyone can
+        // open the overlay and read it (opening it takes 5 deliberate taps
+        // on the wordmark, which itself dismisses focus/the keyboard). This
+        // captures the numbers automatically, the instant a real keyboard
+        // open is detected, into a plain `window` global -- not component
+        // state, not a CSS variable (this is a composite object, not a
+        // single value) -- so it survives this app's own in-session SPA
+        // navigation (closing the chat, switching tabs, anything short of
+        // an actual page reload) with no extra wiring: DebugOverlay.web.tsx
+        // just reads window.__lastKeyboardSnapshot whenever it happens to
+        // be opened next, exactly like it already reads --keyboard-inset
+        // via getComputedStyle.
+        //
+        // "A keyboard opened" is detected the same way --keyboard-inset
+        // itself is computed: visualViewport.height shrinking by more than
+        // 100px (an arbitrary but generous floor -- far bigger than any
+        // orientation/toolbar jitter, comfortably smaller than any real
+        // software keyboard, which is always a few hundred px tall). Only
+        // visualViewport's OWN 'resize' event is checked against this
+        // threshold (see onVisualViewportResize below) -- not every call to
+        // syncOffsetAndInsets() (window resize/orientationchange/load/
+        // pageshow also call it, but a keyboard specifically shrinks the
+        // VISUAL viewport, not the layout one, which is the whole reason
+        // --keyboard-inset reads vv.height instead of window.innerHeight in
+        // the first place).
+        var lastVisualViewportHeight = window.visualViewport ? window.visualViewport.height : null;
+        var KEYBOARD_SNAPSHOT_SHRINK_THRESHOLD = 100;
+        var KEYBOARD_RISE_COMPOSER_IDS = ['group-chat-composer-keyboard-rise', 'doc-thread-composer-keyboard-rise', 'post-detail-composer-keyboard-rise'];
+        function captureLastKeyboardSnapshot() {
+          var vv = window.visualViewport;
+          if (!vv) return;
+          var composerId = null;
+          var composerRect = null;
+          var composerTransform = null;
+          for (var i = 0; i < KEYBOARD_RISE_COMPOSER_IDS.length; i++) {
+            var el = document.getElementById(KEYBOARD_RISE_COMPOSER_IDS[i]);
+            if (el) {
+              var rect = el.getBoundingClientRect();
+              composerId = KEYBOARD_RISE_COMPOSER_IDS[i];
+              composerRect = { top: Math.round(rect.top), bottom: Math.round(rect.bottom), height: Math.round(rect.height) };
+              composerTransform = getComputedStyle(el).transform;
+              break;
+            }
+          }
+          var lvhProbe = document.getElementById('debug-probe-100lvh');
+          window.__lastKeyboardSnapshot = {
+            timestamp: new Date().toISOString(),
+            innerHeight: window.innerHeight,
+            vvHeight: Math.round(vv.height),
+            vvOffsetTop: Math.round(vv.offsetTop),
+            // Read back from the CSS variable (already recomputed by the
+            // syncOffsetAndInsets() call this always runs after -- see
+            // onVisualViewportResize) rather than recalculated here a
+            // second time, so the snapshot can never disagree with the one
+            // number every other consumer in this file also reads.
+            keyboardInset: getComputedStyle(document.documentElement).getPropertyValue('--keyboard-inset').trim() || '(unset)',
+            lvhPx: lvhProbe ? Math.round(parseFloat(getComputedStyle(lvhProbe).height)) : null,
+            composerId: composerId,
+            composerRect: composerRect,
+            composerTransform: composerTransform,
+          };
+        }
+        function onVisualViewportResize() {
+          var vv = window.visualViewport;
+          var previousHeight = lastVisualViewportHeight;
+          syncOffsetAndInsets();
+          if (vv) {
+            if (previousHeight !== null && previousHeight - vv.height > KEYBOARD_SNAPSHOT_SHRINK_THRESHOLD) {
+              captureLastKeyboardSnapshot();
+            }
+            lastVisualViewportHeight = vv.height;
+          }
+        }
+
         syncOffsetAndInsets();
         window.addEventListener('resize', syncOffsetAndInsets);
         window.addEventListener('orientationchange', syncOffsetAndInsets);
         window.addEventListener('load', syncOffsetAndInsets);
         window.addEventListener('pageshow', syncOffsetAndInsets);
         if (window.visualViewport) {
-          // 'resize' catches the keyboard opening/closing; 'scroll'
-          // catches offsetTop changing on its own, which happens when iOS
-          // pans to reveal a focused input without the visible height
-          // necessarily changing at the same instant.
-          window.visualViewport.addEventListener('resize', syncOffsetAndInsets);
+          // 'resize' catches the keyboard opening/closing (and is also the
+          // one event the last-keyboard-snapshot capture above watches);
+          // 'scroll' catches offsetTop changing on its own, which happens
+          // when iOS pans to reveal a focused input without the visible
+          // height necessarily changing at the same instant.
+          window.visualViewport.addEventListener('resize', onVisualViewportResize);
           window.visualViewport.addEventListener('scroll', syncOffsetAndInsets);
         }
 

@@ -430,6 +430,40 @@ async function checkKeyboardRise(page, nativeID, label, record) {
   );
 }
 
+// Round 14's own regression guard: the keyboard-inset-based "last keyboard
+// snapshot" (see public/index.html's captureLastKeyboardSnapshot(), fired
+// from visualViewport's own 'resize' listener whenever its height shrinks
+// by more than 100px -- the same signal --keyboard-inset itself already
+// reacts to). There is no way to summon a REAL on-screen keyboard in
+// headless Chromium, so this uses the same "force what the real mechanism
+// would produce" technique as FORCE_INSET_CSS and the Round 13
+// standalone-lvh check above -- but for a read-only Web API property
+// rather than a CSS custom property. VisualViewport's own `height`
+// accessor is an ordinary, configurable WebIDL attribute (not
+// [LegacyUnforgeable]), so shadowing it with an own, configurable property
+// is a legitimate way to force its value, not a workaround for a
+// locked-down one. Dispatching a real 'resize' event on visualViewport
+// itself afterward means the exact same production listener that would
+// run for a real keyboard open runs here, completely unmodified, reading
+// the forced value through the exact same vv.height property access it
+// always uses -- this is not a second, parallel test-only code path.
+async function forceVisualViewportShrink(page, deltaPx) {
+  return page.evaluate((delta) => {
+    var vv = window.visualViewport;
+    if (!vv) return null;
+    var original = vv.height;
+    var forced = Math.max(0, original - delta);
+    Object.defineProperty(vv, 'height', {
+      get: function () {
+        return forced;
+      },
+      configurable: true,
+    });
+    vv.dispatchEvent(new Event('resize'));
+    return { original: original, forced: forced };
+  }, deltaPx);
+}
+
 // Round 13 investigated forcing real display-mode: standalone via
 // Chromium's CDP Emulation.setEmulatedMedia ({ features: [{ name:
 // 'display-mode', value: 'standalone' }] }) the way this file already
@@ -1265,9 +1299,27 @@ async function run() {
     record('[debug-overlay] opens after 5 taps on the wordmark within 2s', contentCount === 1, JSON.stringify({ contentCount }));
 
     const text = contentCount === 1 ? await page.getByTestId('debug-overlay-content').innerText() : '';
-    const mustContain = ['visualViewport.height', 'scale', '100svh', '100lvh', '100dvh', '100vh', '--keyboard-inset', 'window.scrollY', '--real-safe-top', 'tab bar'];
+    const mustContain = ['visualViewport.height', 'scale', '100svh', '100lvh', '100dvh', '100vh', '--keyboard-inset', 'window.scrollY', '--real-safe-top', 'tab bar', 'LAST KEYBOARD SNAPSHOT'];
     const missing = mustContain.filter((s) => !text.includes(s));
     record('[debug-overlay] reports every field this round added', missing.length === 0, JSON.stringify({ missing, textLength: text.length }));
+
+    // Round 14: the new KEYBOARD TEST input. Its label sits outside
+    // debug-overlay-content (a sibling of the scroll block, always
+    // visible rather than scrolled away), so it's checked against the
+    // panel as a whole rather than folded into the mustContain list above.
+    const keyboardTestLabelCount = await page.getByText('KEYBOARD TEST').count();
+    record('[debug-overlay] panel shows the new KEYBOARD TEST row', keyboardTestLabelCount > 0, JSON.stringify({ keyboardTestLabelCount }));
+
+    await page.getByTestId('debug-overlay-keyboard-test-input').click({ timeout: 5000 }).catch(() => {});
+    const focusedTestId = await page.evaluate(() => {
+      const el = document.activeElement;
+      return el ? el.getAttribute('data-testid') : null;
+    });
+    record(
+      '[debug-overlay] tapping the KEYBOARD TEST input actually focuses it (summons the real iOS keyboard on a device)',
+      focusedTestId === 'debug-overlay-keyboard-test-input',
+      JSON.stringify({ focusedTestId })
+    );
 
     await page.getByTestId('debug-overlay-close').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(300);
@@ -1277,6 +1329,74 @@ async function run() {
     const after = await page.screenshot();
     record('[debug-overlay] page is byte-identical before the gesture and after closing (zero visual change for members)', Buffer.compare(before, after) === 0, JSON.stringify({ beforeBytes: before.length, afterBytes: after.length }));
 
+    await context.close();
+  }
+
+  // --- Round 14's own regression guard: the "last keyboard snapshot"
+  // mechanism end to end. This is the real flow the round's own
+  // instructions described -- open the group chat, bring up the keyboard,
+  // dismiss it, navigate elsewhere, THEN open the debug overlay and read
+  // what was captured -- proving window.__lastKeyboardSnapshot is a true
+  // standing record, not something that only works while the composer
+  // that triggered it is still mounted.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    await page.getByTestId('open-group-chat').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const beforeShrink = await page.evaluate(() => window.__lastKeyboardSnapshot || null);
+    record('[keyboard-snapshot] no snapshot recorded before any large visualViewport shrink', beforeShrink === null, JSON.stringify({ beforeShrink }));
+
+    const forced = await forceVisualViewportShrink(page, 300);
+    await page.waitForTimeout(300);
+
+    const snapshot = await page.evaluate(() => window.__lastKeyboardSnapshot || null);
+    record(
+      '[keyboard-snapshot] a visualViewport resize shrinking by more than 100px records a snapshot with the real, matching numbers',
+      !!snapshot && typeof snapshot.timestamp === 'string' && forced !== null && snapshot.vvHeight === forced.forced,
+      JSON.stringify({ snapshot, forced })
+    );
+    record(
+      '[keyboard-snapshot] the snapshot identifies the mounted keyboard-rise composer (group chat) with its rect and transform',
+      !!snapshot && snapshot.composerId === 'group-chat-composer-keyboard-rise' && !!snapshot.composerRect && typeof snapshot.composerTransform === 'string',
+      JSON.stringify(snapshot)
+    );
+
+    // Dismiss the keyboard (the real mechanism's own inverse: visualViewport
+    // grows back) and navigate away from group chat entirely before
+    // opening the overlay, so the read below genuinely exercises
+    // persistence across navigation, not just "still on the same screen."
+    await page.evaluate(() => {
+      const vv = window.visualViewport;
+      if (vv) {
+        delete vv.height;
+        vv.dispatchEvent(new Event('resize'));
+      }
+    });
+    await page.waitForTimeout(200);
+    await page.getByTestId('close-group-chat').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    const wordmark = page.getByTestId('app-wordmark');
+    for (let i = 0; i < 5; i++) {
+      await wordmark.click({ timeout: 5000 });
+    }
+    await page.waitForTimeout(500);
+
+    const panelText = await page.getByTestId('debug-overlay-content').innerText().catch(() => '');
+    record(
+      '[keyboard-snapshot] the debug overlay, opened after navigating away, still shows the earlier snapshot (survives in-session navigation)',
+      panelText.includes('LAST KEYBOARD SNAPSHOT') && panelText.includes('group-chat-composer-keyboard-rise'),
+      JSON.stringify({ panelTextLength: panelText.length })
+    );
+
+    await page.getByTestId('debug-overlay-close').click({ timeout: 5000 }).catch(() => {});
     await context.close();
   }
 
