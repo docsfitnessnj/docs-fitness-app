@@ -145,7 +145,11 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.text,
     fontFamily: fonts.body,
-    fontSize: 14,
+    // 16px, not the originally-smaller size this matched the search icon
+    // to -- iOS Safari auto-zooms the whole page on focusing any input
+    // under 16px, which no amount of viewport-meta locking can override.
+    // See AGENTS.md's "iOS input zoom" writeup.
+    fontSize: 16,
     padding: 0,
   },
   closeButton: {

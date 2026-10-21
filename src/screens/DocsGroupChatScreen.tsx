@@ -419,8 +419,8 @@ function PinnedPromptEditor({
 // internally — measured directly off the (unpadded) TextInput's own content
 // box, same pattern as DocThreadView's MESSAGE DOC DIRECTLY composer, which
 // already gets this right. Desktop uses its own larger line height.
-const MIN_INPUT_HEIGHT = 20;
-const MAX_INPUT_HEIGHT = 100; // 5 lines at 20px
+const MIN_INPUT_HEIGHT = 21;
+const MAX_INPUT_HEIGHT = 105; // 5 lines at 21px
 const MIN_INPUT_HEIGHT_DESKTOP = 23;
 const MAX_INPUT_HEIGHT_DESKTOP = 115; // 5 lines at 23px
 
@@ -1130,8 +1130,10 @@ const styles = StyleSheet.create({
   promptInput: {
     color: colors.text,
     fontFamily: fonts.bodyMedium,
-    fontSize: 14,
-    lineHeight: 19,
+    // 16px -- iOS Safari auto-zooms the page on focusing any input under
+    // 16px. See AGENTS.md's "iOS input zoom" writeup.
+    fontSize: 16,
+    lineHeight: 21,
     marginTop: 8,
     minHeight: 40,
   },
@@ -1310,8 +1312,13 @@ const styles = StyleSheet.create({
   composerInput: {
     color: colors.text,
     fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 20,
+    // 16px, not 15 -- iOS Safari auto-zooms the page on focusing any
+    // input under 16px. lineHeight stays in lockstep with
+    // MIN_INPUT_HEIGHT/MAX_INPUT_HEIGHT above, which derive the
+    // composer's one-line/five-line sizing straight from this number.
+    // See AGENTS.md's "iOS input zoom" writeup.
+    fontSize: 16,
+    lineHeight: 21,
   },
   composerInputDesktop: {
     fontSize: 17,
