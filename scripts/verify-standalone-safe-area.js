@@ -449,7 +449,7 @@ async function resetVisualViewport(page) {
   });
 }
 
-async function checkKeyboardRise(page, nativeID, label, record) {
+async function checkKeyboardRise(page, nativeID, label, record, inputSelector) {
   // The exact numbers the real device's LAST KEYBOARD SNAPSHOT captured
   // with the keyboard open: visualViewport.height 471, .offsetTop 341 --
   // reused here verbatim rather than a round-number stand-in, so this
@@ -474,6 +474,38 @@ async function checkKeyboardRise(page, nativeID, label, record) {
     risen !== null && Math.abs(risen - EXPECTED_VISUAL_BOTTOM) <= 1,
     JSON.stringify({ before, risen, EXPECTED_VISUAL_BOTTOM })
   );
+
+  // Round 16's own regression guard: the exact failure mode a real device
+  // exposed. The MEASUREMENT above was already confirmed correct on a real
+  // device (visual bottom 471, natural bottom 874, applied translateY
+  // -403) -- but the composer was back under the keyboard moments later,
+  // because the rise used to be delivered as `el.style.transform`, an
+  // inline style on the exact React-rendered node that DocsGroupChatScreen
+  // / DocThreadView rewrite on every keystroke (the composer's own
+  // auto-grow height state). Typing is the real trigger, so this types
+  // into the composer's own input -- forcing the same React re-render a
+  // real keystroke does -- and asserts the composer's rendered bottom is
+  // STILL on the stubbed visual bottom edge afterward. Round 16's fix
+  // (delivering the rise via a stylesheet rule reading --composer-rise,
+  // never touching the composer node's own style) should make this pass
+  // unconditionally; the old inline-style delivery would have failed it.
+  if (inputSelector) {
+    await page
+      .locator(inputSelector)
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    await page
+      .locator(inputSelector)
+      .type('Hello there, this is a typing test!', { delay: 15 })
+      .catch(() => {});
+    await page.waitForTimeout(300);
+    const afterTyping = await rectBottom();
+    record(
+      `[keyboard-rise/${label}] composer's bottom STAYS on the stubbed visual bottom edge after typing forces a React re-render (the real failure mode)`,
+      afterTyping !== null && Math.abs(afterTyping - EXPECTED_VISUAL_BOTTOM) <= 1,
+      JSON.stringify({ afterTyping, EXPECTED_VISUAL_BOTTOM })
+    );
+  }
 
   await resetVisualViewport(page);
   await page.waitForTimeout(150);
@@ -1225,7 +1257,7 @@ async function run() {
 
     await page.getByTestId('open-group-chat').click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(600);
-    await checkKeyboardRise(page, 'group-chat-composer-keyboard-rise', 'group chat', record);
+    await checkKeyboardRise(page, 'group-chat-composer-keyboard-rise', 'group chat', record, '[data-testid="group-chat-input"]');
 
     await context.close();
   }
@@ -1242,7 +1274,7 @@ async function run() {
     await page.waitForTimeout(400);
     await page.getByTestId('sidebar-message').click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(600);
-    await checkKeyboardRise(page, 'doc-thread-composer-keyboard-rise', 'Message Doc', record);
+    await checkKeyboardRise(page, 'doc-thread-composer-keyboard-rise', 'Message Doc', record, '#message-draft-input');
 
     await context.close();
   }

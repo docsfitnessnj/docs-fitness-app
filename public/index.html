@@ -299,10 +299,10 @@
         // "how tall should the shell be right now" from a live media-query
         // match before it can compute a correct answer at all.
         //
-        // The fix below measures instead of predicting: on every event that
-        // could change where the keyboard's covering edge or the composer
-        // itself sits, read the composer's own current (untranslated)
-        // bottom edge and the visual viewport's own bottom edge in the same
+        // The fix measures instead of predicting: on every event that could
+        // change where the keyboard's covering edge or the composer itself
+        // sits, read the composer's own current (untranslated) bottom edge
+        // and the visual viewport's own bottom edge in the same
         // layout-viewport coordinate space, and translate the composer by
         // exactly the difference so its bottom always lands exactly on the
         // visual viewport's bottom. This is immune to whether iOS shrinks
@@ -313,33 +313,68 @@
         // CreatePostModal's defensive scroll padding, still a useful
         // point of comparison in the snapshot below) -- only the three
         // composers stop trusting it.
+        //
+        // Round 16: the MEASUREMENT above was confirmed correct by a real
+        // device's own KEYBOARD RISE STATE (visual bottom 471, natural
+        // bottom 874, applied translateY -403 -- exactly 874-471=403) --
+        // but a screenshot moments later showed the composer back under
+        // the keyboard anyway. The bug was in DELIVERY, not measurement:
+        // this function used to write the result as `el.style.transform`
+        // directly on the React-rendered composer View. DocsGroupChatScreen
+        // and DocThreadView both re-render that exact node on every
+        // keystroke (the composer's own auto-grow height state), and
+        // React/react-native-web's own diffing reapplies that node's style
+        // prop on every such re-render -- wiping whatever transform this
+        // function had set out-of-band, moments after it was correctly
+        // applied. (Checked both render paths directly: neither ever puts
+        // its own `transform` in that View's style prop, so the slot was
+        // never fought over on purpose -- it was simply being reset to
+        // nothing by the ordinary act of re-rendering.)
+        //
+        // The fix: stop writing to the element's own inline style at all.
+        // --composer-rise, a single document-root CSS custom property (one
+        // shared variable, like --keyboard-inset -- only one of the three
+        // mutually-exclusive composers is ever mounted at a time), is set
+        // instead, and a stylesheet rule below (keyed to the three ids,
+        // same shape as the Round 12 rule Round 15 removed) reads it. React
+        // re-rendering the composer node can still rewrite that node's OWN
+        // style attribute every keystroke -- but it has no reason to ever
+        // touch :root's style, and the stylesheet rule itself lives in this
+        // file's <style> block, immune to React entirely. The measurement
+        // step needs one small change to match: naturalBottom must be read
+        // with --composer-rise temporarily zeroed (not the element's own
+        // style cleared), since the rule -- not an inline style -- is what
+        // would otherwise still be translating the rect being measured.
         var KEYBOARD_RISE_COMPOSER_IDS = ['group-chat-composer-keyboard-rise', 'doc-thread-composer-keyboard-rise', 'post-detail-composer-keyboard-rise'];
         var lastComposerRiseResult = null;
         function applyComposerKeyboardRise() {
           var vv = window.visualViewport;
           if (!vv) return;
           var visualBottom = vv.offsetTop + vv.height;
+          document.documentElement.style.setProperty('--composer-rise', '0px');
           var found = null;
           for (var i = 0; i < KEYBOARD_RISE_COMPOSER_IDS.length; i++) {
             var el = document.getElementById(KEYBOARD_RISE_COMPOSER_IDS[i]);
             if (!el) continue;
-            // Clear whatever translateY this function itself applied last
-            // time before measuring, so the rect read below is always the
-            // composer's own natural, untranslated position -- never a
-            // stale rise compounding on top of a new one.
-            el.style.transform = 'none';
             var naturalBottom = el.getBoundingClientRect().bottom;
-            // Only ever rises (negative translateY); never pushes the
-            // composer down past its own natural position, which is what
-            // a positive result here would mean (the visual viewport's
-            // bottom sitting below the composer's natural bottom -- not a
+            // Only ever rises (positive --composer-rise); never pushes the
+            // composer down past its own natural position, which is what a
+            // negative result here would mean (the visual viewport's bottom
+            // sitting below the composer's natural bottom -- not a
             // keyboard-covering condition at all).
-            var translateY = Math.min(0, visualBottom - naturalBottom);
-            el.style.transform = translateY === 0 ? 'none' : 'translateY(' + translateY + 'px)';
-            found = { composerId: KEYBOARD_RISE_COMPOSER_IDS[i], visualBottom: visualBottom, naturalBottom: naturalBottom, appliedTranslateY: translateY };
+            var riseAmount = Math.max(0, naturalBottom - visualBottom);
+            found = { composerId: KEYBOARD_RISE_COMPOSER_IDS[i], visualBottom: visualBottom, naturalBottom: naturalBottom, appliedTranslateY: -riseAmount };
             break; // the three ids are mutually exclusive full-screen contexts -- only one is ever mounted at once.
           }
           lastComposerRiseResult = found || { composerId: null, visualBottom: visualBottom, naturalBottom: null, appliedTranslateY: 0 };
+          document.documentElement.style.setProperty('--composer-rise', -lastComposerRiseResult.appliedTranslateY + 'px');
+          // Read back what was actually set (not just the number this
+          // function computed) so window.__keyboardRiseState -- and the
+          // debug overlay that reports it -- show the real delivered value,
+          // the same "read back the live DOM, never trust what you meant to
+          // write" discipline every other CSS-var consumer in this file
+          // already follows.
+          lastComposerRiseResult.composerRiseVar = getComputedStyle(document.documentElement).getPropertyValue('--composer-rise').trim();
           // Live, continuously-updated state (distinct from the historical,
           // only-captured-on-a-big-shrink window.__lastKeyboardSnapshot
           // below) -- DebugOverlay.web.tsx's own once-a-second poll reads
@@ -349,6 +384,54 @@
           // -- but this makes the KEYBOARD TEST input's own live readout
           // meaningful rather than just the raw CSS variables).
           window.__keyboardRiseState = lastComposerRiseResult;
+          if (lastComposerRiseResult.composerId && lastComposerRiseResult.appliedTranslateY !== 0) {
+            startComposerRiseGuard();
+          } else {
+            stopComposerRiseGuard();
+          }
+        }
+
+        // Round 16's self-healing guard. The CSS-variable delivery above
+        // fixes the one clobber path a real device actually found, but a
+        // light standing check costs little and catches any future one
+        // this round didn't imagine -- a content-growth layout shift mid-
+        // keystroke, a browser quirk, anything that leaves the composer's
+        // rendered bottom disagreeing with the visual viewport's own bottom
+        // while the keyboard is still open. Runs only while a rise is
+        // actually applied (started/stopped from applyComposerKeyboardRise
+        // itself above) -- a flat 250ms poll, not a requestAnimationFrame
+        // loop, since this only needs to catch drift a person could
+        // perceive, not match frame timing. On drift beyond 2px (a tight
+        // tolerance -- real work should land exactly on the edge; a couple
+        // of px absorbs only sub-pixel layout rounding) it re-runs the full
+        // measurement rather than nudging by the delta, so a single
+        // correction can never itself drift further from a stale
+        // visualBottom reading.
+        var composerRiseGuardInterval = null;
+        function startComposerRiseGuard() {
+          if (composerRiseGuardInterval) return;
+          composerRiseGuardInterval = setInterval(function () {
+            var state = lastComposerRiseResult;
+            if (!state || !state.composerId || state.appliedTranslateY === 0) {
+              stopComposerRiseGuard();
+              return;
+            }
+            var el = document.getElementById(state.composerId);
+            if (!el) {
+              stopComposerRiseGuard();
+              return;
+            }
+            var currentBottom = el.getBoundingClientRect().bottom;
+            if (Math.abs(currentBottom - state.visualBottom) > 2) {
+              applyComposerKeyboardRise();
+            }
+          }, 250);
+        }
+        function stopComposerRiseGuard() {
+          if (composerRiseGuardInterval) {
+            clearInterval(composerRiseGuardInterval);
+            composerRiseGuardInterval = null;
+          }
         }
 
         // Round 14: a "last keyboard snapshot", for exactly the gap this
@@ -429,6 +512,13 @@
             visualBottom: rise ? Math.round(rise.visualBottom) : null,
             composerNaturalBottom: rise && rise.naturalBottom != null ? Math.round(rise.naturalBottom) : null,
             appliedTranslateY: rise ? Math.round(rise.appliedTranslateY) : null,
+            // Round 16: the actually-delivered value, read back from the
+            // CSS variable the stylesheet rule reads -- separate from
+            // appliedTranslateY (what the measurement computed) so a future
+            // snapshot can show the two disagreeing if a delivery bug like
+            // this round's ever recurs, instead of only ever showing what
+            // the code intended to do.
+            composerRiseVar: rise && rise.composerRiseVar != null ? rise.composerRiseVar : null,
           };
         }
         function onVisualViewportResize() {
@@ -703,24 +793,41 @@
       #doc-thread-composer-safe-area-fill {
         height: var(--real-safe-bottom, 0px);
       }
-      /* Round 15: these three ids used to be positioned by a CSS rule
-         reading --keyboard-inset (`transform: translateY(calc(-1 *
-         var(--keyboard-inset, 0px)))`) -- removed. A real installed-
-         standalone iPhone's own LAST KEYBOARD SNAPSHOT caught that formula
-         computing 0px while the keyboard genuinely covered 62px of the
-         composer, because its fullHeight term depends on a
-         `matchMedia('(display-mode: standalone)')` check that didn't
-         reliably select the standalone branch at the exact instant the
-         resize handler ran. applyComposerKeyboardRise() in the inline
-         script above now sets each composer's `transform` directly as an
-         inline style instead -- measured fresh every time from the
-         composer's own current rect and the visual viewport's own current
-         edges, never predicted from a formula -- which an inline style
-         always wins over any stylesheet rule anyway, so there is no
-         conflicting rule left here at all. See the inline script's "Round
-         15" comment for the full mechanism. --keyboard-inset itself is
-         UNCHANGED and still drives #create-post-scroll-content's padding
-         below -- only these three ids stopped reading it. */
+      /* Round 15 removed the old --keyboard-inset-reading rule here
+         (`transform: translateY(calc(-1 * var(--keyboard-inset, 0px)))`)
+         after a real device caught that formula computing 0px with the
+         keyboard genuinely covering 62px of the composer, and replaced it
+         with applyComposerKeyboardRise() setting `el.style.transform`
+         directly as an inline style -- a measured value, not a predicted
+         one. That measurement was correct (confirmed by a later real
+         device capture), but the DELIVERY wasn't: DocsGroupChatScreen and
+         DocThreadView both re-render this exact View on every keystroke
+         (the composer's own auto-grow height state), and that re-render
+         reapplies the node's style prop, wiping whatever transform had
+         been set out-of-band moments earlier -- a screenshot showed the
+         composer back under the keyboard shortly after a correct rise had
+         been measured and applied.
+         Round 16's fix: stop writing to the element's own inline style.
+         --composer-rise (one shared document-root variable -- only one of
+         the three mutually-exclusive composers is ever mounted at a time,
+         same convention as --keyboard-inset) is set instead, and THIS rule
+         reads it. React re-rendering the composer node can still rewrite
+         that node's own style attribute every keystroke, same as always --
+         but it has no reason to ever touch :root's style, and this rule
+         lives here, in the stylesheet, immune to React entirely. See the
+         inline script's "Round 16" comment for the measurement-side change
+         this required (naturalBottom is now read with --composer-rise
+         temporarily zeroed, not the element's own style cleared) and the
+         self-healing guard that runs while a rise is applied, as a backstop
+         against any future clobber path this round didn't imagine.
+         --keyboard-inset itself is UNCHANGED and still drives
+         #create-post-scroll-content's padding below -- only these three ids
+         ever stopped reading it, back in Round 15. */
+      #group-chat-composer-keyboard-rise,
+      #doc-thread-composer-keyboard-rise,
+      #post-detail-composer-keyboard-rise {
+        transform: translateY(calc(-1 * var(--composer-rise, 0px)));
+      }
       /* CreatePostModal's title/body inputs are plain in-flow content
          inside its own ScrollView, not a fixed bottom bar -- the browser's
          native focus-scroll-into-view already keeps the focused one clear
