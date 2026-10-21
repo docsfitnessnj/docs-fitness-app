@@ -395,36 +395,91 @@ async function auditInputFontSizes(page, label, record, expectAtLeast = 1) {
   );
 }
 
-// Round 12's own regression guard: the keyboard-inset fix. Forces
-// --keyboard-inset directly (the same single-source-of-truth technique as
-// FORCE_INSET_CSS for the safe-area variables) on a bottom-anchored
-// composer's own nativeID and asserts its rendered top moves up by
-// EXACTLY that amount, then that it returns to its original position when
-// the var goes back to 0 -- "closes" the keyboard without actually
-// needing one, which Playwright can't simulate.
+// Round 15's own regression guard, replacing Round 12's. The composers
+// used to be positioned by a CSS rule reading --keyboard-inset -- removed
+// after a real installed-standalone iPhone's own LAST KEYBOARD SNAPSHOT
+// caught that formula computing 0px while the keyboard genuinely covered
+// 62px of the composer (its fullHeight term depends on a `matchMedia`
+// check that didn't reliably select the standalone branch at the exact
+// instant the resize handler ran -- see AGENTS.md and the inline script's
+// own "Round 15" comment). applyComposerKeyboardRise() now measures
+// instead of predicting: the composer's own current bottom edge vs. the
+// visual viewport's own current bottom edge, translating by the exact
+// difference. There's still no way to summon a real keyboard in headless
+// Chromium, so this stubs visualViewport.height and .offsetTop directly --
+// not a CSS variable this time, but the two live Web API properties the
+// production mechanism actually reads -- to the EXACT numbers (471, 341)
+// the real device's own snapshot captured, and dispatches a real 'resize'
+// event, exercising the unmodified production listener end to end.
+async function forceVisualViewport(page, { height, offsetTop }) {
+  return page.evaluate(
+    (forced) => {
+      const vv = window.visualViewport;
+      if (!vv) return false;
+      if (typeof forced.height === 'number') {
+        Object.defineProperty(vv, 'height', {
+          get: function () {
+            return forced.height;
+          },
+          configurable: true,
+        });
+      }
+      if (typeof forced.offsetTop === 'number') {
+        Object.defineProperty(vv, 'offsetTop', {
+          get: function () {
+            return forced.offsetTop;
+          },
+          configurable: true,
+        });
+      }
+      vv.dispatchEvent(new Event('resize'));
+      return true;
+    },
+    { height, offsetTop }
+  );
+}
+
+async function resetVisualViewport(page) {
+  return page.evaluate(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    delete vv.height;
+    delete vv.offsetTop;
+    vv.dispatchEvent(new Event('resize'));
+  });
+}
+
 async function checkKeyboardRise(page, nativeID, label, record) {
-  const FORCED_KEYBOARD_INSET = 300;
-  const rectTop = () =>
+  // The exact numbers the real device's LAST KEYBOARD SNAPSHOT captured
+  // with the keyboard open: visualViewport.height 471, .offsetTop 341 --
+  // reused here verbatim rather than a round-number stand-in, so this
+  // check is anchored to the actual failure, not a value chosen to make
+  // the math convenient.
+  const FORCED_VV_HEIGHT = 471;
+  const FORCED_VV_OFFSET_TOP = 341;
+  const EXPECTED_VISUAL_BOTTOM = FORCED_VV_HEIGHT + FORCED_VV_OFFSET_TOP;
+
+  const rectBottom = () =>
     page.evaluate((id) => {
       const el = document.getElementById(id);
-      return el ? el.getBoundingClientRect().top : null;
+      return el ? el.getBoundingClientRect().bottom : null;
     }, nativeID);
 
-  const before = await rectTop();
-  await page.addStyleTag({ content: `html { --keyboard-inset: ${FORCED_KEYBOARD_INSET}px !important; }` });
+  const before = await rectBottom();
+  await forceVisualViewport(page, { height: FORCED_VV_HEIGHT, offsetTop: FORCED_VV_OFFSET_TOP });
   await page.waitForTimeout(150);
-  const risen = await rectTop();
+  const risen = await rectBottom();
   record(
-    `[keyboard-inset/${label}] composer rises by exactly the forced --keyboard-inset amount`,
-    before !== null && risen !== null && Math.abs(before - risen - FORCED_KEYBOARD_INSET) <= 1,
-    JSON.stringify({ before, risen, FORCED_KEYBOARD_INSET })
+    `[keyboard-rise/${label}] composer's bottom lands exactly on the stubbed visual viewport bottom edge (offsetTop ${FORCED_VV_OFFSET_TOP} + height ${FORCED_VV_HEIGHT} = ${EXPECTED_VISUAL_BOTTOM})`,
+    risen !== null && Math.abs(risen - EXPECTED_VISUAL_BOTTOM) <= 1,
+    JSON.stringify({ before, risen, EXPECTED_VISUAL_BOTTOM })
   );
 
-  await page.addStyleTag({ content: `html { --keyboard-inset: 0px !important; }` });
+  await resetVisualViewport(page);
   await page.waitForTimeout(150);
-  const closed = await rectTop();
+  const closed = await rectBottom();
   record(
-    `[keyboard-inset/${label}] composer returns to its original position once --keyboard-inset is 0 (same as the keyboard closing)`,
+    `[keyboard-rise/${label}] composer returns to its original bottom once the visualViewport stub resets (same as the keyboard closing)`,
     before !== null && closed !== null && Math.abs(before - closed) <= 1,
     JSON.stringify({ before, closed })
   );
