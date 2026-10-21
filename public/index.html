@@ -3,7 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
+    <!-- maximum-scale=1, user-scalable=no: locks pinch/double-tap zoom out
+         entirely, matching Skool/native-app behavior. iOS Safari respects
+         this most reliably in home-screen standalone mode (our actual
+         target) even though some accessibility settings can override it in
+         ordinary browser Safari -- see the gesturestart/change/end
+         handlers and touch-action CSS below for the belt-and-suspenders
+         fallback, and AGENTS.md's "Viewport lock" writeup. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover" />
     <title>%WEB_TITLE%</title>
     <meta
       name="description"
@@ -190,9 +197,23 @@
         // probe). Both still need to react to resize/visualViewport
         // changes, so the listeners stay -- there's just nothing left for
         // them to do with height.
+        // Round 11's own addition: window.visualViewport.scale. The
+        // viewport meta lock and the gesturestart/change/end
+        // preventDefault below (see further down) are meant to stop a
+        // scale change from ever happening at all, but some iOS versions
+        // can still land away from scale 1 despite both. There's nothing
+        // to "recover" here beyond what this function already does on
+        // every call: --app-offset-top and --real-safe-top/bottom are
+        // read fresh from the live DOM/visualViewport every time, never
+        // cached, so a scale change that slips through self-corrects on
+        // its own next event once scale returns to 1 -- exposing it as
+        // --viewport-scale is purely so that's checkable (by this file's
+        // own debug overlay, or a test) rather than invisible. No visible
+        // UI ever reacts to this value.
         function syncOffsetAndInsets() {
           var vv = window.visualViewport;
           document.documentElement.style.setProperty('--app-offset-top', (vv ? vv.offsetTop : 0) + 'px');
+          document.documentElement.style.setProperty('--viewport-scale', String(vv ? vv.scale : 1));
           syncSafeAreaInsets();
         }
         syncOffsetAndInsets();
@@ -208,6 +229,58 @@
           window.visualViewport.addEventListener('resize', syncOffsetAndInsets);
           window.visualViewport.addEventListener('scroll', syncOffsetAndInsets);
         }
+
+        // Viewport lock, belt-and-suspenders round. The viewport meta's
+        // maximum-scale=1/user-scalable=no is the primary lock (reliable
+        // in home-screen standalone mode, our actual target) but ordinary
+        // Safari can ignore user-scalable for accessibility, and a real
+        // device check found pinch-zooming the standalone app scales the
+        // whole layout, unglues the fixed top bar and tab bar from the
+        // viewport, wrecks the bottom safe-area spacing, and can leave the
+        // page subtly zoomed afterward -- exactly what Skool and other
+        // native-feeling apps never allow. Two independent fallbacks:
+        //
+        // 1. gesturestart/gesturechange/gestureend are WebKit's own
+        //    (non-standard, Safari-only) events for a two-finger pinch or
+        //    rotate -- preventDefault on all three stops iOS from ever
+        //    starting that native PAGE-zoom gesture at all, regardless of
+        //    what the viewport meta says. { passive: false } is required
+        //    for preventDefault to actually take effect. This is
+        //    orthogonal to the two screens that DO use a two-finger pinch
+        //    for their own in-app purpose (MediaViewer.tsx's photo
+        //    pinch-zoom, ProfilePhotoCropModal.tsx's crop pinch-zoom):
+        //    both read raw touch events (onTouchStart/PanResponder) via
+        //    the standard Touch Events API, a completely separate event
+        //    family from these WebKit gesture events, so suppressing the
+        //    browser's own page-zoom here doesn't touch them -- if
+        //    anything it helps, by guaranteeing the browser never races
+        //    their own handler for ownership of a two-finger touch.
+        //    Verified both still work after this change.
+        // 2. If a scale change ever does slip through anyway on some iOS
+        //    version, see syncOffsetAndInsets above (--viewport-scale) --
+        //    there is no separate recovery step needed because nothing
+        //    here was caching a scale-dependent value in the first place.
+        document.addEventListener(
+          'gesturestart',
+          function (e) {
+            e.preventDefault();
+          },
+          { passive: false }
+        );
+        document.addEventListener(
+          'gesturechange',
+          function (e) {
+            e.preventDefault();
+          },
+          { passive: false }
+        );
+        document.addEventListener(
+          'gestureend',
+          function (e) {
+            e.preventDefault();
+          },
+          { passive: false }
+        );
       })();
     </script>
     <style id="expo-reset">
@@ -257,6 +330,24 @@
         height: 100dvh;
         background-color: #FBFBF9;
         overscroll-behavior-y: none;
+        /* Belt-and-suspenders alongside the viewport meta's
+           maximum-scale=1/user-scalable=no and the gesturestart/change/end
+           handlers above: "pan-x pan-y" permits ordinary single-finger
+           scrolling/panning in both directions but deliberately leaves out
+           "pinch-zoom", the one named value that lets the browser claim a
+           two-finger touch for its own native zoom -- so that gesture
+           falls straight through to this app's own touch handlers
+           instead (MediaViewer's photo pinch-zoom, ProfilePhotoCropModal's
+           crop pinch-zoom, both already untouched by this, and the story
+           viewer's swipe-to-close, which is single-finger). Also removes
+           the double-tap-to-zoom gesture, same as the viewport meta.
+           ProfilePhotoCropModal additionally sets body.style.touchAction =
+           'none' directly (a plain inline style, which always wins over
+           this stylesheet rule regardless of specificity) only while its
+           own crop frame is open, and restores whatever was here
+           afterward -- see its own comment for why that screen needs
+           total touch exclusivity, not just pinch-zoom excluded. */
+        touch-action: pan-x pan-y;
       }
       /* These styles disable body scrolling if you are using <ScrollView> */
       body {

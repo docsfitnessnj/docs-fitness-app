@@ -68,6 +68,10 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const BASE = process.env.BASE_URL || 'http://localhost:8090/docs-fitness-app';
+// Optional: set to a directory to save the sign-in/group-chat screenshots
+// this round's instructions explicitly asked for. Omitted by default so
+// routine runs of this permanent suite don't write files into the repo.
+const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR || null;
 const DIST_DIR = process.env.DIST_DIR || path.join(__dirname, '..', 'dist');
 const PROJECT_REF = 'qooezwnskaqvmquydijg';
 const USER_ID = '99999999-9999-9999-9999-999999999999';
@@ -245,6 +249,77 @@ function auditBuiltOutputEnvConsumers(record) {
     'built output: env(safe-area-inset is declared as CSS nowhere except the two sanctioned probe rules in index.html',
     offenders.length === 0,
     offenders.length ? JSON.stringify(offenders) : `${codeDeclarations.length} sanctioned declaration(s) found, 0 unsanctioned`
+  );
+}
+
+// Round 11's own audit: the viewport lock. Static, like the env() audit
+// above -- the viewport meta and the gesturestart/change/end handlers are
+// both plain, uncompiled text straight out of public/index.html's own
+// <head>, present verbatim in the built output (expo export keeps this
+// file close to as-authored; it isn't run through the JS bundler), so a
+// grep is a direct, reliable check rather than a behavioral proxy.
+function auditViewportLock(record) {
+  if (!fs.existsSync(DIST_DIR)) {
+    record('[audit] production build output exists for the viewport-lock check', false, 'run `npx expo export -p web` first');
+    return;
+  }
+  const indexPath = path.join(DIST_DIR, 'index.html');
+  if (!fs.existsSync(indexPath)) {
+    record('[audit] dist/index.html exists', false, `not found at ${indexPath}`);
+    return;
+  }
+  const html = fs.readFileSync(indexPath, 'utf8');
+  const viewportMatch = html.match(/<meta\s+name="viewport"\s+content="([^"]*)"/);
+  const viewportContent = viewportMatch ? viewportMatch[1] : null;
+  record(
+    'built output: viewport meta contains maximum-scale=1',
+    !!viewportContent && /maximum-scale=1\b/.test(viewportContent),
+    JSON.stringify({ viewportContent })
+  );
+  record(
+    'built output: viewport meta contains user-scalable=no',
+    !!viewportContent && /user-scalable=no\b/.test(viewportContent),
+    JSON.stringify({ viewportContent })
+  );
+  record(
+    'built output: gesturestart/gesturechange/gestureend handlers are present (pinch-zoom belt-and-suspenders)',
+    ['gesturestart', 'gesturechange', 'gestureend'].every((name) => html.includes(`'${name}'`)),
+    JSON.stringify({
+      hasStart: html.includes("'gesturestart'"),
+      hasChange: html.includes("'gesturechange'"),
+      hasEnd: html.includes("'gestureend'"),
+    })
+  );
+  record('built output: touch-action is restricted on the app shell (no native pinch-zoom claim)', /touch-action:\s*pan-x pan-y/.test(html), JSON.stringify({ found: /touch-action:\s*pan-x pan-y/.test(html) }));
+}
+
+// Walks every visible <input>/<textarea> on the current page and asserts
+// each one's COMPUTED font-size (not just its authored style -- catches
+// anything inherited, overridden, or otherwise resolved differently than
+// the source implies) is at least 16px, the threshold below which iOS
+// Safari auto-zooms the whole page on focus regardless of the viewport
+// lock. expectAtLeast guards against a false "0 offenders" pass on a
+// screen that silently failed to render any inputs at all (e.g. a broken
+// selector/navigation step), the same false-negative shape as
+// countVisibleTopSafeAreaElements's own "found but not actually there"
+// trap elsewhere in this file.
+async function auditInputFontSizes(page, label, record, expectAtLeast = 1) {
+  const fields = await page.evaluate(() => {
+    return Array.from(document.querySelectorAll('input, textarea'))
+      .filter((el) => {
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      })
+      .map((el) => ({
+        id: el.id || el.getAttribute('data-testid') || el.getAttribute('aria-label') || el.tagName,
+        fontSize: parseFloat(getComputedStyle(el).fontSize),
+      }));
+  });
+  const offenders = fields.filter((f) => !(f.fontSize >= 16));
+  record(
+    `[input-zoom/${label}] every visible text input has a computed font-size >= 16px (no silent iOS zoom trigger)`,
+    fields.length >= expectAtLeast && offenders.length === 0,
+    JSON.stringify({ fieldCount: fields.length, offenders })
   );
 }
 
@@ -459,6 +534,7 @@ async function run() {
   };
 
   auditBuiltOutputEnvConsumers(record);
+  auditViewportLock(record);
 
   const VIEWPORT = { width: 390, height: 844 };
 
@@ -802,6 +878,127 @@ async function run() {
 
       await context.close();
     }
+  }
+
+  // --- Round 11's own regression guard: the viewport lock. Confirms the
+  // font-size audit on the screens the round explicitly targeted (sign
+  // in, the composers, group chat), and that normal scrolling and the
+  // story viewer's own tap zones -- the things pinch-prevention and the
+  // touch-action restriction must NOT break -- still work. (Pinch itself
+  // can't be simulated by Playwright; see the viewport-meta/gesture-
+  // handler static audit above instead, and AGENTS.md.)
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    // Sign in.
+    await page.getByTestId('about-sign-in-upper').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await auditInputFontSizes(page, 'sign in', record, 2);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'sign-in.png') }).catch(() => {});
+
+    await context.close();
+  }
+
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    // Create-post composer (Community tab).
+    await page.getByText('LOG IT. POST IT.', { exact: false }).first().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await auditInputFontSizes(page, 'create post composer', record, 2);
+    await page.getByTestId('compose-close').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+
+    // Search.
+    await page.getByTestId('open-search').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await auditInputFontSizes(page, 'search', record, 1);
+    await page.getByText('CANCEL', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+
+    // Group chat composer.
+    await page.getByTestId('open-group-chat').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await auditInputFontSizes(page, 'group chat', record, 1);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'group-chat-composer.png') }).catch(() => {});
+
+    await context.close();
+  }
+
+  // Ordinary scrolling still works after the touch-action restriction --
+  // targets the Community tab's own scroll container specifically (the
+  // signed-in app's <body> is overflow:hidden by design; every screen's
+  // own internal ScrollView is what actually scrolls, so a document-level
+  // scrollTop check would silently read 0 either way and prove nothing).
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    const before = await page.evaluate(() => {
+      function findScrollable(el) {
+        while (el && el !== document.body) {
+          const cs = getComputedStyle(el);
+          if (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 4) return el;
+          el = el.parentElement;
+        }
+        return null;
+      }
+      const el = findScrollable(document.elementFromPoint(Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2)));
+      if (el) el.setAttribute('data-scroll-probe', '1');
+      return el ? el.scrollTop : null;
+    });
+    await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
+    await page.mouse.wheel(0, 600);
+    await page.waitForTimeout(300);
+    const after = await page.evaluate(() => {
+      const el = document.querySelector('[data-scroll-probe="1"]');
+      return el ? el.scrollTop : null;
+    });
+    record(
+      '[viewport-lock] ordinary scrolling still moves the Community tab\'s own scroll container after the touch-action restriction',
+      before !== null && after !== null && after > before,
+      JSON.stringify({ before, after })
+    );
+
+    await context.close();
+  }
+
+  // Story viewer's tap zones -- the gesture that most directly overlaps
+  // with "things touch-action could plausibly break" (a full-bleed,
+  // touch-driven left/right region, plus the viewer's own swipe-down-to-
+  // close PanResponder). Reuses the same hitTestsControl technique as the
+  // buried-control section above, forced insets included.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.addStyleTag({ content: FORCE_INSET_CSS });
+    await page.waitForTimeout(200);
+
+    await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const left = await hitTestsControl(page, '[data-testid="story-tap-left"]');
+    record('[viewport-lock] story viewer left tap zone still receives its own tap', left.found && left.visible && left.ok, JSON.stringify(left));
+    const right = await hitTestsControl(page, '[data-testid="story-tap-right"]');
+    record('[viewport-lock] story viewer right tap zone still receives its own tap', right.found && right.visible && right.ok, JSON.stringify(right));
+
+    await context.close();
   }
 
   // --- Round 8's own regression guard: #root must equal the viewport
