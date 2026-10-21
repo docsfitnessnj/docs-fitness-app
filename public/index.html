@@ -11,18 +11,16 @@
          handlers and touch-action CSS below for the belt-and-suspenders
          fallback, and AGENTS.md's "Viewport lock" writeup.
 
-         interactive-widget=resizes-content: the CSS Viewport spec's own
-         declarative fix for the exact keyboard regression --keyboard-inset
-         below works around in JS -- where supported, it makes 100dvh (and
-         window.visualViewport) shrink for the on-screen keyboard the same
-         way it already does for Safari's collapsing toolbar, which would
-         make bottom-anchored content naturally end up above the keyboard
-         with no compensation needed. An unrecognized viewport-meta value is
-         simply ignored by a browser that doesn't understand it (same as
-         every other key here), so this is safe to declare unconditionally.
-         The --keyboard-inset JS path stays regardless, as its own fallback
-         -- see the inline script's "Round 12" comment. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover, interactive-widget=resizes-content" />
+         Round 13 deliberately does NOT declare interactive-widget=
+         resizes-content (added in Round 12, removed here). On an iOS
+         version that honors it, the OS's own viewport resize AND the JS
+         --keyboard-inset rise below would both fire for the same keyboard
+         open/close and fight each other -- exactly the "screen shrinking
+         repeatedly while typing" a real device reported. One mechanism
+         only: --keyboard-inset (see the inline script's "Round 12"/
+         "Round 13" comments), not a declarative/JS pair racing each
+         other. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover" />
     <title>%WEB_TITLE%</title>
     <meta
       name="description"
@@ -224,32 +222,58 @@
         // UI ever reacts to this value.
         //
         // Round 12's own addition: --keyboard-inset, fixing a regression
-        // Round 8 introduced. #root's height is plain 100dvh now (no JS),
-        // which is correct for Safari's collapsing/expanding TOOLBAR but
-        // -- confirmed by a real device -- does NOT shrink for the
-        // on-screen KEYBOARD the way the old JS-measured --app-height
-        // (gone since Round 8) used to. The keyboard instead only shrinks
-        // visualViewport.height and pans its offsetTop, exactly like
-        // Round 5's --app-offset-top already accounts for at the #root
-        // level -- but a bottom-anchored composer (group chat, comment,
-        // Message Doc, any future one) sits at the bottom of the FULL,
-        // un-shrunk #root, which is now geometrically behind the
-        // keyboard, with nothing of its own compensating for that.
-        // --keyboard-inset is exactly the gap between the two: how much
-        // of #root's own full height the keyboard is covering that
-        // visualViewport's pan didn't already reveal. A bottom-anchored
-        // composer reads this (see the #*-keyboard-rise rules below) and
-        // rises by that amount via transform -- never a JS height on the
-        // shell itself, which stays plain 100dvh exactly as Round 8 left
-        // it. Clamped to 0 so ordinary toolbar collapse/expand (which
-        // 100dvh already handles on its own) never produces a negative
-        // rise.
+        // Round 8 introduced. #root's height is plain 100dvh (ordinary
+        // browser tabs) or 100lvh (standalone -- see Round 13's @media
+        // (display-mode: standalone) block below) now, no JS, which is
+        // correct for Safari's collapsing/expanding TOOLBAR but -- a real
+        // device confirmed -- does NOT shrink for the on-screen KEYBOARD
+        // the way the old JS-measured --app-height (gone since Round 8)
+        // used to. The keyboard instead only shrinks visualViewport.height
+        // and pans its offsetTop, exactly like Round 5's --app-offset-top
+        // already accounts for at the #root level -- but a bottom-anchored
+        // composer (group chat, comment, Message Doc, any future one)
+        // sits at the bottom of the FULL, un-shrunk #root, which is now
+        // geometrically behind the keyboard, with nothing of its own
+        // compensating for that. --keyboard-inset is exactly the gap
+        // between the two: how much of #root's own full height the
+        // keyboard is covering that visualViewport's pan didn't already
+        // reveal. A bottom-anchored composer reads this (see the
+        // #*-keyboard-rise rules below) and rises by that amount via
+        // transform -- never a JS height on the shell itself, which stays
+        // plain 100dvh/100lvh exactly as Round 8/13 left it. Clamped to 0
+        // so ordinary toolbar collapse/expand (which 100dvh already
+        // handles on its own) never produces a negative rise.
+        //
+        // Round 13's own fix to this formula: "#root's own full height"
+        // is NOT always window.innerHeight. A real device, measured via
+        // the debug overlay, showed window.innerHeight/visualViewport.
+        // height/100dvh all agreeing on 860px in standalone while 100lvh
+        // read 874px -- iOS reserves dynamic viewport space in standalone
+        // that never actually gets used there (no toolbar ever collapses
+        // when there's no toolbar at all), so 100dvh undershoots the true
+        // screen by that gap, and #root (now sized by 100lvh in
+        // standalone -- see below) is actually 874px tall, not 860. Using
+        // window.innerHeight (860) as "full height" here would under-rise
+        // every composer by that same 14px gap on top of the real keyboard
+        // height. In standalone, the full-height term is read from the
+        // same #debug-probe-100lvh element DebugOverlay.web.tsx's own
+        // report already uses (one measured value, two consumers, not a
+        // second independent measurement of the same thing) -- in
+        // ordinary browser tabs, where #root is still 100dvh and
+        // window.innerHeight already agrees with it, the formula is
+        // unchanged.
         function syncOffsetAndInsets() {
           var vv = window.visualViewport;
           var offsetTop = vv ? vv.offsetTop : 0;
           document.documentElement.style.setProperty('--app-offset-top', offsetTop + 'px');
           document.documentElement.style.setProperty('--viewport-scale', String(vv ? vv.scale : 1));
-          var keyboardInset = vv ? Math.max(0, window.innerHeight - vv.height - offsetTop) : 0;
+          var fullHeight = window.innerHeight;
+          if (window.matchMedia('(display-mode: standalone)').matches) {
+            var lvhProbe = document.getElementById('debug-probe-100lvh');
+            var lvhPx = lvhProbe ? parseFloat(getComputedStyle(lvhProbe).height) : NaN;
+            if (!isNaN(lvhPx)) fullHeight = lvhPx;
+          }
+          var keyboardInset = vv ? Math.max(0, fullHeight - vv.height - offsetTop) : 0;
           document.documentElement.style.setProperty('--keyboard-inset', keyboardInset + 'px');
           syncSafeAreaInsets();
         }
@@ -435,15 +459,21 @@
          down on demand. They resolve all four viewport-height CSS units to
          real pixel values so the overlay can show, on a real device,
          whether any of them already disagree with
-         window.innerHeight/visualViewport.height -- which would mean a
-         remaining bottom-band discrepancy is in how the browser resolves
-         the unit itself, not in anything this app's own code measures or
-         writes. dvh/svh/lvh (small/large/dynamic viewport height) can
-         legitimately differ only while Safari's own toolbar is
-         collapsing/expanding -- svh is pinned to the toolbar-EXPANDED
-         (shortest) case, lvh to toolbar-COLLAPSED (tallest), dvh tracks
-         whichever is live; all three, and plain vh, should read identical
-         in standalone mode, where there's no toolbar to collapse. */
+         window.innerHeight/visualViewport.height -- which is exactly how
+         Round 13's standalone-only 100dvh-undershoots-the-real-screen bug
+         (100lvh measured 874px, 100dvh/visualViewport.height/
+         window.innerHeight all agreed on a shorter 860px -- see the
+         @media (display-mode: standalone) block above and the inline
+         script's "Round 13" comment) was actually found: NOT the "should
+         all read identical in standalone, no toolbar to collapse"
+         assumption an earlier round made here -- that assumption was
+         simply wrong, which is the whole reason this diagnostic exists
+         rather than trusting the assumption. #debug-probe-100lvh is no
+         longer purely diagnostic as of Round 13 -- syncOffsetAndInsets()
+         also reads it directly as --keyboard-inset's own full-height term
+         in standalone (one measured value, two consumers), so it must
+         stay present and correctly computed even if the debug overlay
+         itself is ever removed. */
       #debug-probe-100dvh,
       #debug-probe-100svh,
       #debug-probe-100lvh,
@@ -603,6 +633,53 @@
       #about-screen-root {
         min-height: 100vh;
         min-height: 100dvh;
+      }
+      /* Round 13: in standalone mode, size the shell with 100lvh instead
+         of 100dvh -- measured directly via the debug overlay on a real
+         installed iPhone: 100lvh read 874px while 100dvh/
+         visualViewport.height/window.innerHeight all agreed on a shorter
+         860px, and #root/html/body/every fill ended exactly at 860,
+         leaving a 14px band of the page's own background color below
+         everything, down to the true physical screen edge. 100dvh is
+         DEFINED to track Safari's collapsing/expanding toolbar -- but
+         there is no toolbar at all in standalone (no address bar, no
+         chrome to collapse), so "dynamic" has nothing correct to track
+         there, and iOS was reserving that dynamic space without ever
+         using it. 100lvh (the large/full, toolbar-already-collapsed
+         viewport height) is the right unit for the one environment this
+         gap was actually reported in.
+         Ordinary browser tabs (no @media match here) are intentionally
+         UNTOUCHED -- the base html/body/#root/welcome/about rules above
+         keep their unmodified 100dvh fallback chains exactly as Round 8
+         left them, because there a real Safari toolbar genuinely does
+         come and go and 100dvh is the correct unit to track it with.
+         Same fallback-chain technique as those base rules (100%, then
+         100vh, then 100lvh -- an unsupported unit invalidates only that
+         one declaration, never the whole rule), and the SAME selectors as
+         their own base rules, placed after them so the cascade's own
+         source-order tiebreak (equal specificity, later wins) is what
+         applies the override -- not !important, not a separate
+         mechanism. See the inline script's "Round 13" comment for how
+         --keyboard-inset's own full-height term was updated to match
+         (100lvh here, not window.innerHeight, in standalone) so the
+         keyboard-rise math stays correct against this taller shell. */
+      @media (display-mode: standalone) {
+        html,
+        body {
+          height: 100%;
+          height: 100vh;
+          height: 100lvh;
+        }
+        #root {
+          height: 100%;
+          height: 100vh;
+          height: 100lvh;
+        }
+        #welcome-screen-root,
+        #about-screen-root {
+          min-height: 100vh;
+          min-height: 100lvh;
+        }
       }
     </style>
   </head>

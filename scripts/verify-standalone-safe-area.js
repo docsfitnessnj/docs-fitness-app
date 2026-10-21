@@ -298,6 +298,71 @@ function auditViewportLock(record) {
     })
   );
   record('built output: touch-action is restricted on the app shell (no native pinch-zoom claim)', /touch-action:\s*pan-x pan-y/.test(html), JSON.stringify({ found: /touch-action:\s*pan-x pan-y/.test(html) }));
+  // Round 13: interactive-widget=resizes-content (added in Round 12) was
+  // deliberately removed -- on an iOS version that honors it, the OS's
+  // own viewport resize and the JS --keyboard-inset rise would both fire
+  // for the same keyboard open/close and fight each other. One mechanism
+  // only (--keyboard-inset); this asserts the declarative one never
+  // creeps back into the actual meta content -- checked against
+  // viewportContent specifically (not the whole file), since this very
+  // file's own prose comments legitimately mention the string
+  // "interactive-widget" when explaining why it was removed.
+  record(
+    'built output: viewport meta does NOT declare interactive-widget (single keyboard mechanism only)',
+    !!viewportContent && !viewportContent.includes('interactive-widget'),
+    JSON.stringify({ viewportContent })
+  );
+
+  // Round 13's static half of the standalone-100lvh check (the behavioral
+  // half is checkStandaloneShellHeight below). Chromium's CDP
+  // Emulation.setEmulatedMedia does not honor "display-mode" as an
+  // overridable feature in this environment (confirmed: the same features
+  // array DOES work for prefers-color-scheme, so this is specific to
+  // display-mode, not a broken mechanism) -- so there is no reliable way
+  // to make the real @media (display-mode: standalone) block actually
+  // match from this suite. This extracts that block's own source text by
+  // brace-matching and asserts, statically: it exists; it sizes html,
+  // body, #root, and the welcome/about roots; every height/min-height
+  // declaration inside it ends the fallback chain at 100lvh; and --
+  // directly answering this round's own "verify no other rule still pins
+  // anything to 100dvh in standalone" -- the string 100dvh never appears
+  // inside it at all.
+  // The literal rule text (including its own opening brace) is searched
+  // for specifically, not just the bare phrase "@media (display-mode:
+  // standalone)" -- this file's own prose comments legitimately mention
+  // that phrase too (explaining the rule, same as the interactive-widget
+  // case above), and indexOf would otherwise match inside a comment and
+  // brace-match into a completely unrelated CSS rule.
+  var mediaStart = html.indexOf('@media (display-mode: standalone) {');
+  var mediaBlock = null;
+  if (mediaStart !== -1) {
+    var braceStart = html.indexOf('{', mediaStart);
+    if (braceStart !== -1) {
+      var depth = 0;
+      for (var i = braceStart; i < html.length; i++) {
+        if (html[i] === '{') depth++;
+        else if (html[i] === '}') {
+          depth--;
+          if (depth === 0) {
+            mediaBlock = html.slice(braceStart + 1, i);
+            break;
+          }
+        }
+      }
+    }
+  }
+  record('built output: an @media (display-mode: standalone) block exists', mediaBlock !== null, JSON.stringify({ found: mediaBlock !== null }));
+  if (mediaBlock !== null) {
+    var requiredSelectors = ['html', 'body', '#root', '#welcome-screen-root', '#about-screen-root'];
+    var missingSelectors = requiredSelectors.filter((sel) => !mediaBlock.includes(sel));
+    record('[standalone-lvh] the @media block sizes html/body/#root/welcome/about', missingSelectors.length === 0, JSON.stringify({ missingSelectors }));
+    record('[standalone-lvh] the @media block ends its fallback chain at 100lvh', mediaBlock.includes('100lvh'), JSON.stringify({ hasLvh: mediaBlock.includes('100lvh') }));
+    record(
+      '[standalone-lvh] nothing inside the @media block still pins height to 100dvh',
+      !mediaBlock.includes('100dvh'),
+      JSON.stringify({ foundDvh: mediaBlock.includes('100dvh') })
+    );
+  }
 }
 
 // Walks every visible <input>/<textarea> on the current page and asserts
@@ -364,6 +429,16 @@ async function checkKeyboardRise(page, nativeID, label, record) {
     JSON.stringify({ before, closed })
   );
 }
+
+// Round 13 investigated forcing real display-mode: standalone via
+// Chromium's CDP Emulation.setEmulatedMedia ({ features: [{ name:
+// 'display-mode', value: 'standalone' }] }) the way this file already
+// forces color scheme etc. -- confirmed NOT honored in this environment
+// (a direct sanity check: the identical call DOES flip
+// prefers-color-scheme, so this is specific to display-mode). See the
+// "[standalone-lvh]" checks below, which force the resulting CSS
+// declarations directly instead, and auditViewportLock's static check of
+// the real @media block's own source text.
 
 // STEP 2's behavioral proof, which a static grep alone can't provide: the
 // react-native-safe-area-context library builds its own env() string at
@@ -1079,6 +1154,87 @@ async function run() {
     await page.getByTestId('sidebar-message').click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(600);
     await checkKeyboardRise(page, 'doc-thread-composer-keyboard-rise', 'Message Doc', record);
+
+    await context.close();
+  }
+
+  // --- Round 13's own regression guard: the standalone-only 100lvh fix,
+  // behavioral half (the static half -- that the real @media
+  // (display-mode: standalone) block exists, sizes the right selectors,
+  // and never still pins anything to 100dvh -- is in auditViewportLock
+  // above). Chromium's CDP Emulation.setEmulatedMedia does not honor
+  // "display-mode" as an overridable feature in this environment --
+  // confirmed directly: the identical features-array call DOES work for
+  // prefers-color-scheme, so this is specific to display-mode, not a
+  // broken mechanism, and not something this suite can work around.
+  // Rather than skip the behavioral check entirely, this forces the EXACT
+  // same declarations the real @media block contains directly via
+  // addStyleTag with !important -- the same "force the thing the real
+  // mechanism would produce" technique FORCE_INSET_CSS already uses
+  // throughout this file for the safe-area variables -- and asserts
+  // #root's rendered height matches the resolved 100lvh probe value
+  // EXACTLY (not the shorter 100dvh value the bug shipped with), and that
+  // the bottommost physical pixel is the tab bar fill's own white, never
+  // the page's own background color sneaking through beneath it -- the
+  // literal 14px strip this round's real-device measurement found. This
+  // does not exercise display-mode DETECTION (the static check above
+  // does, as far as source inspection can) -- it exercises whether the
+  // declared CSS, once matched, actually produces the correct layout.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.addStyleTag({ content: FORCE_INSET_CSS });
+    await page.addStyleTag({ content: `html, body, #root { height: 100lvh !important; }` });
+    await page.waitForTimeout(200);
+
+    const measured = await page.evaluate(() => {
+      const lvhProbe = document.getElementById('debug-probe-100lvh');
+      const dvhProbe = document.getElementById('debug-probe-100dvh');
+      const root = document.getElementById('root');
+      const rootRect = root ? root.getBoundingClientRect() : null;
+      return {
+        lvhPx: lvhProbe ? Math.round(parseFloat(getComputedStyle(lvhProbe).height)) : null,
+        dvhPx: dvhProbe ? Math.round(parseFloat(getComputedStyle(dvhProbe).height)) : null,
+        rootHeight: rootRect ? Math.round(rootRect.height) : null,
+        windowHeight: window.innerHeight,
+      };
+    });
+    record(
+      '[standalone-lvh] #root height equals the resolved 100lvh probe value exactly when sized by the standalone rule (not the shorter 100dvh value)',
+      measured.lvhPx !== null && measured.rootHeight !== null && Math.abs(measured.rootHeight - measured.lvhPx) <= 1,
+      JSON.stringify(measured)
+    );
+
+    // Same pointer-events caveat as the other bottom-edge-color checks in
+    // this file: pointerEvents="none" fills are skipped by elementFromPoint
+    // unless temporarily (and reversibly) flipped to auto with matching
+    // !important priority.
+    const bottomEdgeColor = await page.evaluate((ids) => {
+      const touched = [];
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) {
+          touched.push({ el, prev: el.style.getPropertyValue('pointer-events'), prevPriority: el.style.getPropertyPriority('pointer-events') });
+          el.style.setProperty('pointer-events', 'auto', 'important');
+        }
+      }
+      const el = document.elementFromPoint(Math.floor(window.innerWidth / 2), window.innerHeight - 1);
+      const color = el ? getComputedStyle(el).backgroundColor : null;
+      touched.forEach(({ el, prev, prevPriority }) => {
+        if (prev) el.style.setProperty('pointer-events', prev, prevPriority);
+        else el.style.removeProperty('pointer-events');
+      });
+      return color;
+    }, BOTTOM_FILL_IDS);
+    record(
+      "[standalone-lvh] bottommost physical pixel is the tab bar fill's own white -- no page-background strip beneath it",
+      bottomEdgeColor === 'rgb(255, 255, 255)',
+      JSON.stringify({ bottomEdgeColor })
+    );
 
     await context.close();
   }
