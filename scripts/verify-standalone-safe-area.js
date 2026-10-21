@@ -120,7 +120,14 @@ const BOTTOM_FILL_IDS = ['tab-bar-safe-area-fill', 'group-chat-composer-safe-are
 // context's own (neutralized) web measurement probe, which is the whole
 // point of auditNoUnsanctionedProbe() below -- so every one WE add here
 // must be allowlisted by id, or it reads as a false "unsanctioned" hit.
-const SANCTIONED_PROBE_IDS = ['safe-area-probe-top', 'safe-area-probe-bottom', 'debug-probe-100dvh', 'debug-probe-100vh'];
+const SANCTIONED_PROBE_IDS = [
+  'safe-area-probe-top',
+  'safe-area-probe-bottom',
+  'debug-probe-100dvh',
+  'debug-probe-100svh',
+  'debug-probe-100lvh',
+  'debug-probe-100vh',
+];
 
 async function setupMocks(page) {
   await page.route('**/auth/v1/token*', (route) =>
@@ -320,6 +327,41 @@ async function auditInputFontSizes(page, label, record, expectAtLeast = 1) {
     `[input-zoom/${label}] every visible text input has a computed font-size >= 16px (no silent iOS zoom trigger)`,
     fields.length >= expectAtLeast && offenders.length === 0,
     JSON.stringify({ fieldCount: fields.length, offenders })
+  );
+}
+
+// Round 12's own regression guard: the keyboard-inset fix. Forces
+// --keyboard-inset directly (the same single-source-of-truth technique as
+// FORCE_INSET_CSS for the safe-area variables) on a bottom-anchored
+// composer's own nativeID and asserts its rendered top moves up by
+// EXACTLY that amount, then that it returns to its original position when
+// the var goes back to 0 -- "closes" the keyboard without actually
+// needing one, which Playwright can't simulate.
+async function checkKeyboardRise(page, nativeID, label, record) {
+  const FORCED_KEYBOARD_INSET = 300;
+  const rectTop = () =>
+    page.evaluate((id) => {
+      const el = document.getElementById(id);
+      return el ? el.getBoundingClientRect().top : null;
+    }, nativeID);
+
+  const before = await rectTop();
+  await page.addStyleTag({ content: `html { --keyboard-inset: ${FORCED_KEYBOARD_INSET}px !important; }` });
+  await page.waitForTimeout(150);
+  const risen = await rectTop();
+  record(
+    `[keyboard-inset/${label}] composer rises by exactly the forced --keyboard-inset amount`,
+    before !== null && risen !== null && Math.abs(before - risen - FORCED_KEYBOARD_INSET) <= 1,
+    JSON.stringify({ before, risen, FORCED_KEYBOARD_INSET })
+  );
+
+  await page.addStyleTag({ content: `html { --keyboard-inset: 0px !important; }` });
+  await page.waitForTimeout(150);
+  const closed = await rectTop();
+  record(
+    `[keyboard-inset/${label}] composer returns to its original position once --keyboard-inset is 0 (same as the keyboard closing)`,
+    before !== null && closed !== null && Math.abs(before - closed) <= 1,
+    JSON.stringify({ before, closed })
   );
 }
 
@@ -997,6 +1039,87 @@ async function run() {
     record('[viewport-lock] story viewer left tap zone still receives its own tap', left.found && left.visible && left.ok, JSON.stringify(left));
     const right = await hitTestsControl(page, '[data-testid="story-tap-right"]');
     record('[viewport-lock] story viewer right tap zone still receives its own tap', right.found && right.visible && right.ok, JSON.stringify(right));
+
+    await context.close();
+  }
+
+  // --- Round 12's own regression guard: the keyboard-inset fix. Group
+  // chat and Message Doc are both reachable with the existing mocks (no
+  // seeded post data needed); PostDetailModal's own comment composer uses
+  // the identical #post-detail-composer-keyboard-rise/--keyboard-inset
+  // mechanism (see index.html) but needs a real post to open, which the
+  // mocked empty community_posts table doesn't provide -- covered by code
+  // review rather than an automated check here, not by a different,
+  // untested technique.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    await page.getByTestId('open-group-chat').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await checkKeyboardRise(page, 'group-chat-composer-keyboard-rise', 'group chat', record);
+
+    await context.close();
+  }
+
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('sidebar-message').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await checkKeyboardRise(page, 'doc-thread-composer-keyboard-rise', 'Message Doc', record);
+
+    await context.close();
+  }
+
+  // --- Round 12's own regression guard: the hidden debug overlay. Five
+  // taps on the wordmark within 2s opens it; asserts every field this
+  // round added (visualViewport.scale, 100svh/100lvh, --keyboard-inset,
+  // window.scrollY) is actually present in its reported text, and that
+  // the page is visually identical before the gesture and after closing
+  // it again -- it must stay a true no-op for every member who never
+  // finds it.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    const before = await page.screenshot();
+    const wordmark = page.getByTestId('app-wordmark');
+    for (let i = 0; i < 5; i++) {
+      await wordmark.click({ timeout: 5000 });
+    }
+    await page.waitForTimeout(500);
+
+    const contentCount = await page.getByTestId('debug-overlay-content').count();
+    record('[debug-overlay] opens after 5 taps on the wordmark within 2s', contentCount === 1, JSON.stringify({ contentCount }));
+
+    const text = contentCount === 1 ? await page.getByTestId('debug-overlay-content').innerText() : '';
+    const mustContain = ['visualViewport.height', 'scale', '100svh', '100lvh', '100dvh', '100vh', '--keyboard-inset', 'window.scrollY', '--real-safe-top', 'tab bar'];
+    const missing = mustContain.filter((s) => !text.includes(s));
+    record('[debug-overlay] reports every field this round added', missing.length === 0, JSON.stringify({ missing, textLength: text.length }));
+
+    await page.getByTestId('debug-overlay-close').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const afterCloseCount = await page.getByTestId('debug-overlay-content').count();
+    record('[debug-overlay] closes and leaves no trace', afterCloseCount === 0, JSON.stringify({ afterCloseCount }));
+
+    const after = await page.screenshot();
+    record('[debug-overlay] page is byte-identical before the gesture and after closing (zero visual change for members)', Buffer.compare(before, after) === 0, JSON.stringify({ beforeBytes: before.length, afterBytes: after.length }));
 
     await context.close();
   }

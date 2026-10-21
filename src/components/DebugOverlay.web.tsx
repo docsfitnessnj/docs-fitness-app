@@ -16,10 +16,14 @@ type Snapshot = {
   innerWidth: number;
   vvHeight: number | null;
   vvOffsetTop: number | null;
+  vvScale: number | null;
   dvhPx: number | null;
+  svhPx: number | null;
+  lvhPx: number | null;
   vhPx: number | null;
   realSafeTop: string;
   realSafeBottom: string;
+  keyboardInset: string;
   rootRect: Rect;
   htmlRect: Rect;
   bodyRect: Rect;
@@ -27,6 +31,7 @@ type Snapshot = {
   tabBarFillRect: Rect;
   htmlScrollHeight: number;
   bodyScrollHeight: number;
+  scrollY: number;
   navigatorStandalone: boolean | null;
   displayModeStandalone: boolean;
   rnDimensionsHeight: number;
@@ -41,16 +46,22 @@ function rectOf(el: Element | null): Rect {
 function take(rnWindowHeight: number): Snapshot {
   const vv = window.visualViewport;
   const dvhProbe = document.getElementById('debug-probe-100dvh');
+  const svhProbe = document.getElementById('debug-probe-100svh');
+  const lvhProbe = document.getElementById('debug-probe-100lvh');
   const vhProbe = document.getElementById('debug-probe-100vh');
   return {
     innerHeight: window.innerHeight,
     innerWidth: window.innerWidth,
     vvHeight: vv ? Math.round(vv.height) : null,
     vvOffsetTop: vv ? Math.round(vv.offsetTop) : null,
+    vvScale: vv ? vv.scale : null,
     dvhPx: dvhProbe ? Math.round(parseFloat(getComputedStyle(dvhProbe).height)) : null,
+    svhPx: svhProbe ? Math.round(parseFloat(getComputedStyle(svhProbe).height)) : null,
+    lvhPx: lvhProbe ? Math.round(parseFloat(getComputedStyle(lvhProbe).height)) : null,
     vhPx: vhProbe ? Math.round(parseFloat(getComputedStyle(vhProbe).height)) : null,
     realSafeTop: getComputedStyle(document.documentElement).getPropertyValue('--real-safe-top').trim() || '(unset)',
     realSafeBottom: getComputedStyle(document.documentElement).getPropertyValue('--real-safe-bottom').trim() || '(unset)',
+    keyboardInset: getComputedStyle(document.documentElement).getPropertyValue('--keyboard-inset').trim() || '(unset)',
     rootRect: rectOf(document.getElementById('root')),
     htmlRect: rectOf(document.documentElement),
     bodyRect: rectOf(document.body),
@@ -58,6 +69,7 @@ function take(rnWindowHeight: number): Snapshot {
     tabBarFillRect: rectOf(document.getElementById('tab-bar-safe-area-fill')),
     htmlScrollHeight: document.documentElement.scrollHeight,
     bodyScrollHeight: document.body.scrollHeight,
+    scrollY: Math.round(window.scrollY),
     navigatorStandalone: typeof (navigator as any).standalone === 'boolean' ? (navigator as any).standalone : null,
     displayModeStandalone: window.matchMedia('(display-mode: standalone)').matches,
     rnDimensionsHeight: rnWindowHeight,
@@ -71,16 +83,17 @@ function fmtRect(label: string, r: Rect) {
 function snapshotToText(s: Snapshot, rnHookHeight: number): string {
   return [
     `window.innerHeight / innerWidth: ${s.innerHeight} / ${s.innerWidth}`,
-    `visualViewport.height / offsetTop: ${s.vvHeight ?? '(none)'} / ${s.vvOffsetTop ?? '(none)'}`,
-    `100dvh resolves to: ${s.dvhPx ?? '(probe missing)'}px`,
-    `100vh resolves to: ${s.vhPx ?? '(probe missing)'}px`,
+    `visualViewport.height / offsetTop / scale: ${s.vvHeight ?? '(none)'} / ${s.vvOffsetTop ?? '(none)'} / ${s.vvScale ?? '(none)'}`,
+    `100dvh / 100svh / 100lvh / 100vh resolve to: ${s.dvhPx ?? '?'} / ${s.svhPx ?? '?'} / ${s.lvhPx ?? '?'} / ${s.vhPx ?? '?'}px`,
     `--real-safe-top / --real-safe-bottom: ${s.realSafeTop} / ${s.realSafeBottom}`,
+    `--keyboard-inset: ${s.keyboardInset}`,
     fmtRect('#root', s.rootRect),
     fmtRect('html', s.htmlRect),
     fmtRect('body', s.bodyRect),
     fmtRect('tab bar (role=tablist)', s.tabBarRect),
     fmtRect('tab bar safe-area fill', s.tabBarFillRect),
     `html.scrollHeight / body.scrollHeight: ${s.htmlScrollHeight} / ${s.bodyScrollHeight}`,
+    `window.scrollY: ${s.scrollY}`,
     `navigator.standalone: ${s.navigatorStandalone === null ? '(not iOS Safari)' : s.navigatorStandalone}`,
     `matchMedia(display-mode: standalone): ${s.displayModeStandalone}`,
     `Dimensions.get('window').height: ${s.rnDimensionsHeight}`,

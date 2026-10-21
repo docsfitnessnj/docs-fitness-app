@@ -120,6 +120,14 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
           contentContainerStyle={styles.composeScrollContent}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Defensive keyboard-inset padding, not a fix for a confirmed
+              bug -- see index.html's #create-post-scroll-content rule and
+              AGENTS.md's "Keyboard regression" writeup. Title/body are
+              plain in-flow content here, not a bottom-pinned bar, so the
+              browser's own focus-scroll-into-view already keeps the
+              focused one clear of the keyboard; this is just insurance for
+              a very tall body entry leaving no scroll room left over. */}
+          <View nativeID="create-post-scroll-content">
           <View style={styles.composeIdentityRow}>
             <Avatar name={displayName} uri={photoUri} size={26} />
             <Text style={styles.composeIdentityLine}>
@@ -167,6 +175,7 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
 
           <View style={styles.composeToolbar}>
             <MediaAttachmentPicker media={media} onChange={setMedia} compact />
+          </View>
           </View>
         </ScrollView>
       </View>

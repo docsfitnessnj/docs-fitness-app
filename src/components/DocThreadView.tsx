@@ -262,7 +262,7 @@ export function DocThreadView({ messages, onSend, onUnsend, initialDraft, emptyS
         ))}
       </ScrollView>
 
-      <View style={[styles.bottomArea, { paddingBottom: inputAreaBottomPadding }]}>
+      <View nativeID="doc-thread-composer-keyboard-rise" style={[styles.bottomArea, { paddingBottom: inputAreaBottomPadding }]}>
         {photoPromptVisible && (
           <Text style={styles.photoHint} testID="verify-photo-prompt">
             ATTACH A PHOTO OF YOUR DECK

@@ -240,6 +240,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
           </View>
         </ScrollView>
 
+        <View nativeID="post-detail-composer-keyboard-rise">
         {editingComment && (
           <View style={styles.editingBar}>
             <Text style={styles.editingBarText}>Editing comment</Text>
@@ -310,6 +311,7 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
           <AppPressable onPress={submitComment} hitSlop={8} style={styles.commentSendButton} testID="post-detail-send-comment">
             <Ionicons name={editingComment ? 'checkmark' : 'send'} size={18} color={colors.green} />
           </AppPressable>
+        </View>
         </View>
       </View>
 
