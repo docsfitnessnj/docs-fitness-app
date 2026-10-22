@@ -395,22 +395,12 @@ async function auditInputFontSizes(page, label, record, expectAtLeast = 1) {
   );
 }
 
-// Round 15's own regression guard, replacing Round 12's. The composers
-// used to be positioned by a CSS rule reading --keyboard-inset -- removed
-// after a real installed-standalone iPhone's own LAST KEYBOARD SNAPSHOT
-// caught that formula computing 0px while the keyboard genuinely covered
-// 62px of the composer (its fullHeight term depends on a `matchMedia`
-// check that didn't reliably select the standalone branch at the exact
-// instant the resize handler ran -- see AGENTS.md and the inline script's
-// own "Round 15" comment). applyComposerKeyboardRise() now measures
-// instead of predicting: the composer's own current bottom edge vs. the
-// visual viewport's own current bottom edge, translating by the exact
-// difference. There's still no way to summon a real keyboard in headless
-// Chromium, so this stubs visualViewport.height and .offsetTop directly --
-// not a CSS variable this time, but the two live Web API properties the
-// production mechanism actually reads -- to the EXACT numbers (471, 341)
-// the real device's own snapshot captured, and dispatches a real 'resize'
-// event, exercising the unmodified production listener end to end.
+// Rounds 15 and 16 (full history in AGENTS.md) each stubbed
+// visualViewport.height/.offsetTop directly -- not a CSS variable, the two
+// live Web API properties the production mechanism actually reads -- to
+// drive per-composer checks. Round 17 keeps this exact technique (it's
+// still the right one) but drives a shell-level mechanism instead; see
+// forceStandaloneDisplayMode() and runKeyboardShellRegimeCheck() below.
 async function forceVisualViewport(page, { height, offsetTop }) {
   return page.evaluate(
     (forced) => {
@@ -449,46 +439,181 @@ async function resetVisualViewport(page) {
   });
 }
 
-async function checkKeyboardRise(page, nativeID, label, record, inputSelector) {
-  // The exact numbers the real device's LAST KEYBOARD SNAPSHOT captured
-  // with the keyboard open: visualViewport.height 471, .offsetTop 341 --
-  // reused here verbatim rather than a round-number stand-in, so this
-  // check is anchored to the actual failure, not a value chosen to make
-  // the math convenient.
-  const FORCED_VV_HEIGHT = 471;
-  const FORCED_VV_OFFSET_TOP = 341;
-  const EXPECTED_VISUAL_BOTTOM = FORCED_VV_HEIGHT + FORCED_VV_OFFSET_TOP;
+// window.innerHeight is stubbed the same way, for the same reason: three
+// real-device snapshots showed it taking genuinely different values
+// (874, 471, 725) for what looked like the same "keyboard open" moment on
+// the same device, which is the whole reason Round 17's production
+// mechanism never reads it at all. Stubbing it here anyway lets these
+// checks prove that directly, rather than just asserting it by omission.
+//
+// Unlike visualViewport.height (an accessor on VisualViewport.prototype,
+// so `delete`-ing an own override falls cleanly back to the real one),
+// window.innerHeight turned out to be an OWN property of `window` itself
+// in this Chromium -- confirmed directly: deleting an Object.defineProperty
+// override of it leaves window.innerHeight as `undefined` permanently,
+// not restored to the real value, because there's no prototype getter
+// left to fall back to. The real value is captured once, into
+// window.__realInnerHeight, before the first override, and resetInnerHeight
+// restores exactly that -- not a `delete`, which would silently corrupt
+// window.innerHeight (and anything that reads it, like --keyboard-inset's
+// own fullHeight term) for the rest of the page's life.
+async function forceInnerHeight(page, value) {
+  return page.evaluate((v) => {
+    if (typeof window.__realInnerHeight !== 'number') {
+      window.__realInnerHeight = window.innerHeight;
+    }
+    Object.defineProperty(window, 'innerHeight', {
+      get: function () {
+        return v;
+      },
+      configurable: true,
+    });
+  }, value);
+}
 
-  const rectBottom = () =>
-    page.evaluate((id) => {
-      const el = document.getElementById(id);
-      return el ? el.getBoundingClientRect().bottom : null;
-    }, nativeID);
+async function resetInnerHeight(page) {
+  return page.evaluate(() => {
+    if (typeof window.__realInnerHeight === 'number') {
+      var real = window.__realInnerHeight;
+      Object.defineProperty(window, 'innerHeight', {
+        get: function () {
+          return real;
+        },
+        configurable: true,
+      });
+    } else {
+      delete window.innerHeight;
+    }
+  });
+}
 
-  const before = await rectBottom();
-  await forceVisualViewport(page, { height: FORCED_VV_HEIGHT, offsetTop: FORCED_VV_OFFSET_TOP });
-  await page.waitForTimeout(150);
-  const risen = await rectBottom();
+// Round 17's testing technique for a production mechanism gated on
+// window.matchMedia('(display-mode: standalone)').matches: Round 13 found
+// Chromium's CDP Emulation.setEmulatedMedia doesn't honor display-mode in
+// this environment, and worked around it by forcing the resulting CSS
+// directly -- which only covers CSS-only mechanisms. This round's shell
+// resize is driven by JS that calls matchMedia() itself, so the more
+// direct fix is to override window.matchMedia in the page's own JS
+// context (via addInitScript, so it's in place before the app's inline
+// script ever runs) and answer "yes" for exactly the display-mode query,
+// passing every other query through to the real implementation unchanged.
+// This does NOT make the browser's own CSS engine start matching a real
+// @media (display-mode: standalone) block (that's a separate evaluation
+// path this override can't reach, which is exactly why index.html's own
+// shell-override rule is deliberately NOT nested inside that media query
+// -- see its own comment) -- but syncKeyboardShellMode() and
+// syncOffsetAndInsets() only ever ask JS's matchMedia(), so this exercises
+// their real, unmodified gating logic end to end, which the CSS-forcing
+// technique never could.
+async function forceStandaloneDisplayMode(page) {
+  await page.addInitScript(() => {
+    const realMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query) => {
+      if (typeof query === 'string' && query.indexOf('display-mode') !== -1 && query.indexOf('standalone') !== -1) {
+        return {
+          matches: true,
+          media: query,
+          onchange: null,
+          addListener: function () {},
+          removeListener: function () {},
+          addEventListener: function () {},
+          removeEventListener: function () {},
+          dispatchEvent: function () {
+            return false;
+          },
+        };
+      }
+      return realMatchMedia(query);
+    };
+  });
+}
+
+async function readKeyboardShellState(page) {
+  return page.evaluate(() => {
+    const html = document.documentElement;
+    const root = document.getElementById('root');
+    const rect = root ? root.getBoundingClientRect() : null;
+    return {
+      attr: html.getAttribute('data-keyboard-shell'),
+      shellHeightVar: getComputedStyle(html).getPropertyValue('--shell-keyboard-height').trim(),
+      translateVar: getComputedStyle(html).getPropertyValue('--app-offset-top').trim(),
+      rootRect: rect ? { top: Math.round(rect.top), bottom: Math.round(rect.bottom), height: Math.round(rect.height) } : null,
+    };
+  });
+}
+
+// The exact three real-device snapshots that motivated Round 17, captured
+// on the same iPhone, same day: innerHeight disagreed with itself across
+// identical-looking "keyboard open" moments, while visualViewport.height
+// read 471 in every one -- which is exactly why the production mechanism
+// only ever reads visualViewport.height/.offsetTop, never innerHeight.
+const KEYBOARD_SHELL_REGIMES = [
+  { name: 'Regime A', innerHeight: 471, vvHeight: 471, offsetTop: 341 },
+  { name: 'Regime B', innerHeight: 874, vvHeight: 471, offsetTop: 0 },
+  { name: 'Regime C', innerHeight: 725, vvHeight: 471, offsetTop: 149 },
+];
+
+// Round 17's own regression guard: drives one regime through the real,
+// unmodified production listener (forceStandaloneDisplayMode() must already
+// be active on this page) and asserts every hard requirement the escalation
+// asked for -- the shell resizes to exactly visualViewport.height ignoring
+// innerHeight entirely, the composer area sits fully inside the visual
+// viewport, it survives a forced React re-render (typing), and closing the
+// keyboard resets pixel-exact -- twice, to catch cumulative drift across a
+// second open/close cycle. composerRiseId is purely a measurement anchor
+// (the nativeID the composer row still carries from Rounds 15/16 -- no CSS
+// rule or JS reads it anymore, see AGENTS.md) -- this function never
+// touches it, only reads its rendered rect.
+async function runKeyboardShellRegimeCheck(page, regime, record, { composerRiseId, inputSelector }) {
+  const atRest = await readKeyboardShellState(page);
   record(
-    `[keyboard-rise/${label}] composer's bottom lands exactly on the stubbed visual viewport bottom edge (offsetTop ${FORCED_VV_OFFSET_TOP} + height ${FORCED_VV_HEIGHT} = ${EXPECTED_VISUAL_BOTTOM})`,
-    risen !== null && Math.abs(risen - EXPECTED_VISUAL_BOTTOM) <= 1,
-    JSON.stringify({ before, risen, EXPECTED_VISUAL_BOTTOM })
+    `[keyboard-shell/${regime.name}] at rest before the regime is applied: no data-keyboard-shell attribute`,
+    atRest.attr === null,
+    JSON.stringify(atRest)
   );
 
-  // Round 16's own regression guard: the exact failure mode a real device
-  // exposed. The MEASUREMENT above was already confirmed correct on a real
-  // device (visual bottom 471, natural bottom 874, applied translateY
-  // -403) -- but the composer was back under the keyboard moments later,
-  // because the rise used to be delivered as `el.style.transform`, an
-  // inline style on the exact React-rendered node that DocsGroupChatScreen
-  // / DocThreadView rewrite on every keystroke (the composer's own
-  // auto-grow height state). Typing is the real trigger, so this types
-  // into the composer's own input -- forcing the same React re-render a
-  // real keystroke does -- and asserts the composer's rendered bottom is
-  // STILL on the stubbed visual bottom edge afterward. Round 16's fix
-  // (delivering the rise via a stylesheet rule reading --composer-rise,
-  // never touching the composer node's own style) should make this pass
-  // unconditionally; the old inline-style delivery would have failed it.
+  await forceInnerHeight(page, regime.innerHeight);
+  await forceVisualViewport(page, { height: regime.vvHeight, offsetTop: regime.offsetTop });
+  await page.waitForTimeout(200);
+
+  const open = await readKeyboardShellState(page);
+  const expectedBottom = regime.offsetTop + regime.vvHeight;
+  record(
+    `[keyboard-shell/${regime.name}] shell mode flips to "open" and #root resizes to exactly visualViewport.height (${regime.vvHeight}), ignoring innerHeight (${regime.innerHeight}) entirely`,
+    open.attr === 'open' && open.shellHeightVar === regime.vvHeight + 'px' && !!open.rootRect && Math.abs(open.rootRect.height - regime.vvHeight) <= 1,
+    JSON.stringify({ open, regime })
+  );
+  record(
+    `[keyboard-shell/${regime.name}] #root's rendered box sits exactly on the visual viewport (top ${regime.offsetTop}, bottom ${expectedBottom})`,
+    !!open.rootRect && Math.abs(open.rootRect.top - regime.offsetTop) <= 1 && Math.abs(open.rootRect.bottom - expectedBottom) <= 1,
+    JSON.stringify({ open, regime })
+  );
+
+  const composerRect = await page.evaluate((id) => {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { top: Math.round(r.top), bottom: Math.round(r.bottom) };
+  }, composerRiseId);
+  record(
+    `[keyboard-shell/${regime.name}] the focused composer area sits fully inside the visual viewport`,
+    !!composerRect && composerRect.bottom <= expectedBottom + 2 && composerRect.top >= regime.offsetTop - 2,
+    JSON.stringify({ composerRect, regime, expectedBottom })
+  );
+  // Hard requirement 4: scrolling content behind the keyboard stays
+  // reachable, not cut off. #root's own height shrinking is a CSS change,
+  // not an overflow:hidden clip -- every flex sibling above the composer
+  // (the message history) reflows to the smaller box through ordinary
+  // flexbox, same as it already does the rest of the time. This asserts
+  // that reflow actually left positive room for that content between
+  // #root's own (shrunk) top and the composer's own top, rather than the
+  // composer somehow consuming the entire shrunk shell.
+  record(
+    `[keyboard-shell/${regime.name}] positive room remains above the composer for scrollable content (nothing crushed to zero height)`,
+    !!composerRect && !!open.rootRect && composerRect.top - open.rootRect.top > 20,
+    JSON.stringify({ composerRect, rootRect: open.rootRect })
+  );
+
   if (inputSelector) {
     await page
       .locator(inputSelector)
@@ -496,24 +621,41 @@ async function checkKeyboardRise(page, nativeID, label, record, inputSelector) {
       .catch(() => {});
     await page
       .locator(inputSelector)
-      .type('Hello there, this is a typing test!', { delay: 15 })
+      .type('Testing across keyboard regimes!', { delay: 15 })
       .catch(() => {});
     await page.waitForTimeout(300);
-    const afterTyping = await rectBottom();
+    const afterTyping = await readKeyboardShellState(page);
     record(
-      `[keyboard-rise/${label}] composer's bottom STAYS on the stubbed visual bottom edge after typing forces a React re-render (the real failure mode)`,
-      afterTyping !== null && Math.abs(afterTyping - EXPECTED_VISUAL_BOTTOM) <= 1,
-      JSON.stringify({ afterTyping, EXPECTED_VISUAL_BOTTOM })
+      `[keyboard-shell/${regime.name}] shell stays correctly sized after typing forces a React re-render (the exact failure mode Round 16's per-composer delivery hit)`,
+      afterTyping.attr === 'open' && afterTyping.shellHeightVar === regime.vvHeight + 'px' && !!afterTyping.rootRect && Math.abs(afterTyping.rootRect.bottom - expectedBottom) <= 1,
+      JSON.stringify({ afterTyping, regime })
     );
   }
 
+  await resetInnerHeight(page);
   await resetVisualViewport(page);
-  await page.waitForTimeout(150);
-  const closed = await rectBottom();
+  await page.waitForTimeout(200);
+  const closed = await readKeyboardShellState(page);
   record(
-    `[keyboard-rise/${label}] composer returns to its original bottom once the visualViewport stub resets (same as the keyboard closing)`,
-    before !== null && closed !== null && Math.abs(before - closed) <= 1,
-    JSON.stringify({ before, closed })
+    `[keyboard-shell/${regime.name}] closing the keyboard resets pixel-exact: no attribute, #root back to its original at-rest box`,
+    closed.attr === null && !!closed.rootRect && !!atRest.rootRect && Math.abs(closed.rootRect.top - atRest.rootRect.top) <= 1 && Math.abs(closed.rootRect.height - atRest.rootRect.height) <= 1,
+    JSON.stringify({ closed, atRest })
+  );
+
+  // A second open/close cycle, checked against the VERY FIRST at-rest
+  // reading (not just the immediately prior "closed" one) -- a drift that
+  // only shows up after two cycles would pass a single-cycle check.
+  await forceInnerHeight(page, regime.innerHeight);
+  await forceVisualViewport(page, { height: regime.vvHeight, offsetTop: regime.offsetTop });
+  await page.waitForTimeout(200);
+  await resetInnerHeight(page);
+  await resetVisualViewport(page);
+  await page.waitForTimeout(200);
+  const closedAgain = await readKeyboardShellState(page);
+  record(
+    `[keyboard-shell/${regime.name}] a second open/close cycle leaves no cumulative drift -- #root still matches the very first at-rest reading exactly`,
+    closedAgain.attr === null && !!closedAgain.rootRect && !!atRest.rootRect && Math.abs(closedAgain.rootRect.top - atRest.rootRect.top) <= 1 && Math.abs(closedAgain.rootRect.height - atRest.rootRect.height) <= 1,
+    JSON.stringify({ closedAgain, atRest })
   );
 }
 
@@ -1185,19 +1327,28 @@ async function run() {
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(900);
 
-    const before = await page.evaluate(() => {
-      function findScrollable(el) {
-        while (el && el !== document.body) {
-          const cs = getComputedStyle(el);
-          if (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 4) return el;
-          el = el.parentElement;
+    // The Community feed's own content can still be a beat behind
+    // 'networkidle' + a fixed wait (its own images/rows settling into
+    // enough height to actually overflow its container) -- retried a few
+    // times with a short pause rather than a single fixed-timing probe,
+    // so this doesn't flake on exactly how long that settling takes.
+    let before = null;
+    for (let attempt = 0; attempt < 5 && before === null; attempt++) {
+      if (attempt > 0) await page.waitForTimeout(400);
+      before = await page.evaluate(() => {
+        function findScrollable(el) {
+          while (el && el !== document.body) {
+            const cs = getComputedStyle(el);
+            if (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 4) return el;
+            el = el.parentElement;
+          }
+          return null;
         }
-        return null;
-      }
-      const el = findScrollable(document.elementFromPoint(Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2)));
-      if (el) el.setAttribute('data-scroll-probe', '1');
-      return el ? el.scrollTop : null;
-    });
+        const el = findScrollable(document.elementFromPoint(Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2)));
+        if (el) el.setAttribute('data-scroll-probe', '1');
+        return el ? el.scrollTop : null;
+      });
+    }
     await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
     await page.mouse.wheel(0, 600);
     await page.waitForTimeout(300);
@@ -1239,17 +1390,20 @@ async function run() {
     await context.close();
   }
 
-  // --- Round 12's own regression guard: the keyboard-inset fix. Group
-  // chat and Message Doc are both reachable with the existing mocks (no
-  // seeded post data needed); PostDetailModal's own comment composer uses
-  // the identical #post-detail-composer-keyboard-rise/--keyboard-inset
-  // mechanism (see index.html) but needs a real post to open, which the
-  // mocked empty community_posts table doesn't provide -- covered by code
-  // review rather than an automated check here, not by a different,
-  // untested technique.
+  // --- Round 17's own regression guard: the shell-level keyboard fix,
+  // driven through all three real-device regimes against group chat (the
+  // primary reported-broken screen), plus Regime A against Message Doc
+  // for cross-composer coverage. forceStandaloneDisplayMode() must run
+  // before page.goto() (it's an addInitScript) so the production
+  // mechanism's own matchMedia gate genuinely engages. PostDetailModal's
+  // own comment composer uses the identical shell mechanism (nothing
+  // composer-specific is left to differ) but needs a real post to open,
+  // which the mocked empty community_posts table doesn't provide --
+  // covered by code review rather than an automated check here.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
+    await forceStandaloneDisplayMode(page);
     await setupMocks(page);
     await seedSignedInSession(page);
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
@@ -1257,7 +1411,12 @@ async function run() {
 
     await page.getByTestId('open-group-chat').click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(600);
-    await checkKeyboardRise(page, 'group-chat-composer-keyboard-rise', 'group chat', record, '[data-testid="group-chat-input"]');
+    for (const regime of KEYBOARD_SHELL_REGIMES) {
+      await runKeyboardShellRegimeCheck(page, regime, record, {
+        composerRiseId: 'group-chat-composer-keyboard-rise',
+        inputSelector: '[data-testid="group-chat-input"]',
+      });
+    }
 
     await context.close();
   }
@@ -1265,6 +1424,7 @@ async function run() {
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
+    await forceStandaloneDisplayMode(page);
     await setupMocks(page);
     await seedSignedInSession(page);
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
@@ -1274,7 +1434,89 @@ async function run() {
     await page.waitForTimeout(400);
     await page.getByTestId('sidebar-message').click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(600);
-    await checkKeyboardRise(page, 'doc-thread-composer-keyboard-rise', 'Message Doc', record, '#message-draft-input');
+    await runKeyboardShellRegimeCheck(page, KEYBOARD_SHELL_REGIMES[0], record, {
+      composerRiseId: 'doc-thread-composer-keyboard-rise',
+      inputSelector: '#message-draft-input',
+    });
+
+    await context.close();
+  }
+
+  // --- The explicit search-screen reset-leak check the escalation asked
+  // for by name: "after dismissing the keyboard on the search screen the
+  // bottom tab bar is left chopped at the screen edge." Search's own input
+  // carries no keyboard-rise id at all -- it's plain in-flow content, not
+  // a bottom-anchored composer -- which is exactly the point: nothing here
+  // is supposed to be lifted, only the shell needs to correctly resize and
+  // then un-resize, and the tab bar (an ordinary flex sibling of whatever
+  // #root contains) needs to land back at the true physical bottom edge
+  // afterward, not left short by a leftover shell height or translate.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await forceStandaloneDisplayMode(page);
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    // The real bug report is from an installed standalone device, which
+    // always has a nonzero home-indicator inset -- force it the same way
+    // every other screen in this suite simulates standalone, so the tab
+    // bar's own safe-area fill has real work to do (at a true baseline
+    // inset of 0, the fill is a 0px no-op and could never usefully prove
+    // "reaches the edge" either way).
+    await page.addStyleTag({ content: FORCE_INSET_CSS });
+    await page.waitForTimeout(200);
+
+    const atRest = await readKeyboardShellState(page);
+
+    await page.getByTestId('open-search').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    await forceInnerHeight(page, 471);
+    await forceVisualViewport(page, { height: 471, offsetTop: 341 });
+    await page.waitForTimeout(200);
+
+    const open = await readKeyboardShellState(page);
+    record(
+      '[keyboard-shell/search-screen] opening the keyboard on the search screen (no composer id involved at all) still shrinks the shell correctly',
+      open.attr === 'open' && open.shellHeightVar === '471px',
+      JSON.stringify(open)
+    );
+
+    await resetInnerHeight(page);
+    await resetVisualViewport(page);
+    await page.waitForTimeout(200);
+    await page
+      .getByText('CANCEL', { exact: false })
+      .first()
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    await page.waitForTimeout(400);
+
+    const afterClose = await readKeyboardShellState(page);
+    record(
+      '[keyboard-shell/search-screen] closing the keyboard and the search overlay returns the shell to its exact at-rest box -- the confirmed "chopped tab bar" reset leak',
+      afterClose.attr === null &&
+        !!afterClose.rootRect &&
+        !!atRest.rootRect &&
+        Math.abs(afterClose.rootRect.top - atRest.rootRect.top) <= 1 &&
+        Math.abs(afterClose.rootRect.height - atRest.rootRect.height) <= 1,
+      JSON.stringify({ afterClose, atRest })
+    );
+
+    // The actual reported symptom: the tab bar's own safe-area fill (what
+    // extends its background through the home-indicator area to the true
+    // physical bottom edge -- see AGENTS.md's "Extends a fixed-height
+    // bottom bar" rule) must still reach exactly `--real-safe-bottom` past
+    // the tab bar's own box, same convention bottomFillReachesEdge()
+    // already checks for every other screen in this file.
+    const fill = await bottomFillReachesEdge(page, 'tab-bar-safe-area-fill');
+    record(
+      '[keyboard-shell/search-screen] the tab bar\'s own safe-area fill still reaches the true physical bottom edge afterward, not chopped off',
+      !!fill && fill.height === FORCED_BOTTOM && Math.abs(fill.bottom - fill.windowHeight) <= 1,
+      JSON.stringify(fill)
+    );
 
     await context.close();
   }
@@ -1425,10 +1667,15 @@ async function run() {
   // dismiss it, navigate elsewhere, THEN open the debug overlay and read
   // what was captured -- proving window.__lastKeyboardSnapshot is a true
   // standing record, not something that only works while the composer
-  // that triggered it is still mounted.
+  // that triggered it is still mounted. Round 17 updated the field
+  // assertions below to the shell-level state the snapshot now carries
+  // (shellMode/shellHeightVar/rootRect, not a composer id/rect/transform),
+  // and added forceStandaloneDisplayMode() so the production shell
+  // mechanism this snapshot now reports on actually engages.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
+    await forceStandaloneDisplayMode(page);
     await setupMocks(page);
     await seedSignedInSession(page);
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
@@ -1450,8 +1697,8 @@ async function run() {
       JSON.stringify({ snapshot, forced })
     );
     record(
-      '[keyboard-snapshot] the snapshot identifies the mounted keyboard-rise composer (group chat) with its rect and transform',
-      !!snapshot && snapshot.composerId === 'group-chat-composer-keyboard-rise' && !!snapshot.composerRect && typeof snapshot.composerTransform === 'string',
+      '[keyboard-snapshot] the snapshot captures the shell flipping to "open" with the matching height, since standalone is forced and the shrink is well past the threshold',
+      !!snapshot && snapshot.shellMode === 'keyboard' && snapshot.shellHeightVar === forced.forced + 'px' && !!snapshot.rootRect,
       JSON.stringify(snapshot)
     );
 
@@ -1479,7 +1726,7 @@ async function run() {
     const panelText = await page.getByTestId('debug-overlay-content').innerText().catch(() => '');
     record(
       '[keyboard-snapshot] the debug overlay, opened after navigating away, still shows the earlier snapshot (survives in-session navigation)',
-      panelText.includes('LAST KEYBOARD SNAPSHOT') && panelText.includes('group-chat-composer-keyboard-rise'),
+      panelText.includes('LAST KEYBOARD SNAPSHOT') && panelText.includes('shell mode at capture: keyboard'),
       JSON.stringify({ panelTextLength: panelText.length })
     );
 

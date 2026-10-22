@@ -237,12 +237,14 @@
         // compensating for that. --keyboard-inset is exactly the gap
         // between the two: how much of #root's own full height the
         // keyboard is covering that visualViewport's pan didn't already
-        // reveal. A bottom-anchored composer reads this (see the
-        // #*-keyboard-rise rules below) and rises by that amount via
-        // transform -- never a JS height on the shell itself, which stays
-        // plain 100dvh/100lvh exactly as Round 8/13 left it. Clamped to 0
-        // so ordinary toolbar collapse/expand (which 100dvh already
-        // handles on its own) never produces a negative rise.
+        // reveal. (This is the formula a bottom-anchored composer used to
+        // read directly, rising by that amount via transform -- Round 15
+        // stopped that, and Round 17 replaced the whole per-composer idea
+        // with a shell-level resize; see that round's own comment further
+        // down. --keyboard-inset itself is unchanged and still drives
+        // CreatePostModal's defensive scroll padding.) Clamped to 0 so
+        // ordinary toolbar collapse/expand (which 100dvh already handles
+        // on its own) never produces a negative rise.
         //
         // Round 13's own fix to this formula: "#root's own full height"
         // is NOT always window.innerHeight. A real device, measured via
@@ -278,254 +280,143 @@
           syncSafeAreaInsets();
         }
 
-        // Round 15: --keyboard-inset above is no longer what positions the
-        // three bottom-anchored composers -- a real installed-standalone
-        // iPhone's own LAST KEYBOARD SNAPSHOT (Round 14) caught it reading
-        // 0px with the keyboard genuinely covering 62px of the composer.
-        // Reconstructing the capture: innerHeight and visualViewport.height
-        // had both collapsed to the same 471 (the keyboard shrinks the
-        // LAYOUT viewport too in this condition, not just the visual one,
-        // contrary to this file's own "Round 8" assumption above that only
-        // the toolbar does that), with offsetTop panned to 341 -- but the
-        // --keyboard-inset formula's fullHeight read back window.innerHeight
-        // (471) instead of the 100lvh probe's still-correct 874, because
-        // its `matchMedia('(display-mode: standalone)').matches` branch,
-        // evaluated fresh inside this resize handler, did not reliably
-        // select the standalone branch at that exact instant. That left
-        // fullHeight - vv.height - offsetTop = 471 - 471 - 341 = -341,
-        // clamped to the observed 0 -- a wrong answer that happened to look
-        // like a plausible one. The formula's real flaw isn't the specific
-        // number wrong on one device; it's that it has to correctly PREDICT
-        // "how tall should the shell be right now" from a live media-query
-        // match before it can compute a correct answer at all.
+        // Round 17: Rounds 15/16 (history kept in AGENTS.md) tried per-
+        // composer fixes -- first a measured transform, then a CSS-
+        // variable-delivered one -- and both were eventually undone by
+        // real-device reports of hidden composers, because the real
+        // problem was never which three elements needed lifting. THREE
+        // real-device snapshots on the same iPhone, same day, showed the
+        // keyboard-open numbers landing in genuinely different shapes:
+        //   Regime A: innerHeight 874->471, visualViewport.height 471,
+        //             offsetTop 341.
+        //   Regime B: innerHeight STAYS 874, visualViewport.height 471,
+        //             offsetTop 0.
+        //   Regime C (different input): innerHeight 725, visualViewport.
+        //             height 471, offsetTop 149.
+        // innerHeight disagrees with itself across identical-looking
+        // keyboard-open moments on the SAME device -- it is not a
+        // reliable signal, full stop, which is exactly how Round 15's
+        // matchMedia-timing bug and Round 16's React-clobbered-transform
+        // bug both slipped through: each fix was correct for the capture
+        // that motivated it and wrong for a regime that capture didn't
+        // cover. visualViewport.height is the one number that read 471 in
+        // all three -- the keyboard's effect on what's actually VISIBLE is
+        // the one truly stable fact across every capture.
         //
-        // The fix measures instead of predicting: on every event that could
-        // change where the keyboard's covering edge or the composer itself
-        // sits, read the composer's own current (untranslated) bottom edge
-        // and the visual viewport's own bottom edge in the same
-        // layout-viewport coordinate space, and translate the composer by
-        // exactly the difference so its bottom always lands exactly on the
-        // visual viewport's bottom. This is immune to whether iOS shrinks
-        // innerHeight, pans offsetTop, or both, and immune to which media
-        // query matches when, because it never asks "how tall is the full
-        // shell" at all -- only "where are these two edges right now."
-        // --keyboard-inset itself is left exactly as it was (still read by
-        // CreatePostModal's defensive scroll padding, still a useful
-        // point of comparison in the snapshot below) -- only the three
-        // composers stop trusting it.
-        //
-        // Round 16: the MEASUREMENT above was confirmed correct by a real
-        // device's own KEYBOARD RISE STATE (visual bottom 471, natural
-        // bottom 874, applied translateY -403 -- exactly 874-471=403) --
-        // but a screenshot moments later showed the composer back under
-        // the keyboard anyway. The bug was in DELIVERY, not measurement:
-        // this function used to write the result as `el.style.transform`
-        // directly on the React-rendered composer View. DocsGroupChatScreen
-        // and DocThreadView both re-render that exact node on every
-        // keystroke (the composer's own auto-grow height state), and
-        // React/react-native-web's own diffing reapplies that node's style
-        // prop on every such re-render -- wiping whatever transform this
-        // function had set out-of-band, moments after it was correctly
-        // applied. (Checked both render paths directly: neither ever puts
-        // its own `transform` in that View's style prop, so the slot was
-        // never fought over on purpose -- it was simply being reset to
-        // nothing by the ordinary act of re-rendering.)
-        //
-        // The fix: stop writing to the element's own inline style at all.
-        // --composer-rise, a single document-root CSS custom property (one
-        // shared variable, like --keyboard-inset -- only one of the three
-        // mutually-exclusive composers is ever mounted at a time), is set
-        // instead, and a stylesheet rule below (keyed to the three ids,
-        // same shape as the Round 12 rule Round 15 removed) reads it. React
-        // re-rendering the composer node can still rewrite that node's OWN
-        // style attribute every keystroke -- but it has no reason to ever
-        // touch :root's style, and the stylesheet rule itself lives in this
-        // file's <style> block, immune to React entirely. The measurement
-        // step needs one small change to match: naturalBottom must be read
-        // with --composer-rise temporarily zeroed (not the element's own
-        // style cleared), since the rule -- not an inline style -- is what
-        // would otherwise still be translating the rect being measured.
-        var KEYBOARD_RISE_COMPOSER_IDS = ['group-chat-composer-keyboard-rise', 'doc-thread-composer-keyboard-rise', 'post-detail-composer-keyboard-rise'];
-        var lastComposerRiseResult = null;
-        function applyComposerKeyboardRise() {
+        // The fix stops special-casing composers entirely and resizes the
+        // SHELL instead -- exactly what ordinary browser Safari already
+        // does natively (the whole reason this class of bug never gets
+        // reported there): while the keyboard is open in standalone, #root
+        // itself is shrunk to visualViewport.height and translated by
+        // visualViewport.offsetTop (reusing --app-offset-top, Round 5's
+        // existing pan compensation -- the same number, no need for a
+        // second variable computing it a second way). Every bottom-
+        // anchored flex child -- composers, the tab bar, sheets, anything
+        // -- reflows to the shrunk shell's own bottom edge through
+        // ordinary CSS flexbox, the same way they already reflow to
+        // #root's normal height the rest of the time. No composer id is
+        // read, measured, or special-cased anywhere in this mechanism.
+        var KEYBOARD_SHELL_SHRINK_THRESHOLD = 100;
+        var keyboardShellMode = 'at-rest';
+        function syncKeyboardShellMode() {
           var vv = window.visualViewport;
           if (!vv) return;
-          var visualBottom = vv.offsetTop + vv.height;
-          document.documentElement.style.setProperty('--composer-rise', '0px');
-          var found = null;
-          for (var i = 0; i < KEYBOARD_RISE_COMPOSER_IDS.length; i++) {
-            var el = document.getElementById(KEYBOARD_RISE_COMPOSER_IDS[i]);
-            if (!el) continue;
-            var naturalBottom = el.getBoundingClientRect().bottom;
-            // Only ever rises (positive --composer-rise); never pushes the
-            // composer down past its own natural position, which is what a
-            // negative result here would mean (the visual viewport's bottom
-            // sitting below the composer's natural bottom -- not a
-            // keyboard-covering condition at all).
-            var riseAmount = Math.max(0, naturalBottom - visualBottom);
-            found = { composerId: KEYBOARD_RISE_COMPOSER_IDS[i], visualBottom: visualBottom, naturalBottom: naturalBottom, appliedTranslateY: -riseAmount };
-            break; // the three ids are mutually exclusive full-screen contexts -- only one is ever mounted at once.
+          var nextMode = 'at-rest';
+          // Standalone only -- in ordinary browser tabs the real layout
+          // viewport already resizes for the keyboard and bottom-anchored
+          // UI already reflows with zero help from this file (see
+          // AGENTS.md's "Round 17" writeup for why this round doesn't
+          // also try to fix something that isn't reported broken).
+          if (window.matchMedia('(display-mode: standalone)').matches) {
+            var lvhProbe = document.getElementById('debug-probe-100lvh');
+            var restHeight = lvhProbe ? parseFloat(getComputedStyle(lvhProbe).height) : NaN;
+            if (!isNaN(restHeight) && restHeight - vv.height > KEYBOARD_SHELL_SHRINK_THRESHOLD) {
+              nextMode = 'keyboard';
+            }
           }
-          lastComposerRiseResult = found || { composerId: null, visualBottom: visualBottom, naturalBottom: null, appliedTranslateY: 0 };
-          document.documentElement.style.setProperty('--composer-rise', -lastComposerRiseResult.appliedTranslateY + 'px');
-          // Read back what was actually set (not just the number this
-          // function computed) so window.__keyboardRiseState -- and the
-          // debug overlay that reports it -- show the real delivered value,
-          // the same "read back the live DOM, never trust what you meant to
-          // write" discipline every other CSS-var consumer in this file
-          // already follows.
-          lastComposerRiseResult.composerRiseVar = getComputedStyle(document.documentElement).getPropertyValue('--composer-rise').trim();
-          // Live, continuously-updated state (distinct from the historical,
-          // only-captured-on-a-big-shrink window.__lastKeyboardSnapshot
-          // below) -- DebugOverlay.web.tsx's own once-a-second poll reads
-          // this directly so the mechanism's current inputs/output are
-          // visible even while the keyboard is open and the overlay itself
-          // can't be reached (it still can't -- opening it dismisses focus
-          // -- but this makes the KEYBOARD TEST input's own live readout
-          // meaningful rather than just the raw CSS variables).
-          window.__keyboardRiseState = lastComposerRiseResult;
-          if (lastComposerRiseResult.composerId && lastComposerRiseResult.appliedTranslateY !== 0) {
-            startComposerRiseGuard();
+          if (nextMode === 'keyboard') {
+            document.documentElement.style.setProperty('--shell-keyboard-height', Math.round(vv.height) + 'px');
+            document.documentElement.setAttribute('data-keyboard-shell', 'open');
           } else {
-            stopComposerRiseGuard();
+            // Removing the attribute is what makes reset correctness
+            // structural rather than a cleanup step that has to run and
+            // has to get every property right: the instant this attribute
+            // is gone, the gated CSS rule below stops matching at all, and
+            // #root falls straight back to its plain at-rest height rule
+            // with nothing left over to reset by hand.
+            document.documentElement.removeAttribute('data-keyboard-shell');
+            document.documentElement.style.removeProperty('--shell-keyboard-height');
           }
+          keyboardShellMode = nextMode;
+          // Live debug state -- DebugOverlay.web.tsx's KEYBOARD SHELL STATE
+          // section reads this every second. Read back from the live DOM
+          // (never the local variables this function just computed), same
+          // "trust the DOM, not your own intent" discipline Round 16 learned
+          // the hard way -- but deliberately WITHOUT #root's own rect here:
+          // this function runs on a 250ms interval forever (see below) and
+          // on every focusin/focusout app-wide, and getBoundingClientRect()
+          // forces a synchronous layout reflow, which running that often,
+          // unconditionally, in every page including ordinary (non-
+          // standalone) browser tabs where this whole mechanism is a no-op,
+          // is real, measurable overhead for zero benefit -- getComputedStyle
+          // of a custom property, by contrast, needs only a style recalc,
+          // not a full layout. DebugOverlay.web.tsx's own take() already
+          // computes #root's rect itself (rectOf(document.getElementById(
+          // 'root'))), once a second, only while the overlay is actually
+          // open -- reused from there instead of duplicated into a value
+          // that would otherwise need recomputing here 4+ times a second
+          // for a reader that's usually not even looking.
+          window.__keyboardShellState = {
+            mode: keyboardShellMode,
+            shellHeightVar: getComputedStyle(document.documentElement).getPropertyValue('--shell-keyboard-height').trim() || '(unset)',
+            translateVar: getComputedStyle(document.documentElement).getPropertyValue('--app-offset-top').trim() || '0px',
+          };
         }
 
-        // Round 16's self-healing guard. The CSS-variable delivery above
-        // fixes the one clobber path a real device actually found, but a
-        // light standing check costs little and catches any future one
-        // this round didn't imagine -- a content-growth layout shift mid-
-        // keystroke, a browser quirk, anything that leaves the composer's
-        // rendered bottom disagreeing with the visual viewport's own bottom
-        // while the keyboard is still open. Runs only while a rise is
-        // actually applied (started/stopped from applyComposerKeyboardRise
-        // itself above) -- a flat 250ms poll, not a requestAnimationFrame
-        // loop, since this only needs to catch drift a person could
-        // perceive, not match frame timing. On drift beyond 2px (a tight
-        // tolerance -- real work should land exactly on the edge; a couple
-        // of px absorbs only sub-pixel layout rounding) it re-runs the full
-        // measurement rather than nudging by the delta, so a single
-        // correction can never itself drift further from a stale
-        // visualBottom reading.
-        var composerRiseGuardInterval = null;
-        function startComposerRiseGuard() {
-          if (composerRiseGuardInterval) return;
-          composerRiseGuardInterval = setInterval(function () {
-            var state = lastComposerRiseResult;
-            if (!state || !state.composerId || state.appliedTranslateY === 0) {
-              stopComposerRiseGuard();
-              return;
-            }
-            var el = document.getElementById(state.composerId);
-            if (!el) {
-              stopComposerRiseGuard();
-              return;
-            }
-            var currentBottom = el.getBoundingClientRect().bottom;
-            if (Math.abs(currentBottom - state.visualBottom) > 2) {
-              applyComposerKeyboardRise();
-            }
-          }, 250);
-        }
-        function stopComposerRiseGuard() {
-          if (composerRiseGuardInterval) {
-            clearInterval(composerRiseGuardInterval);
-            composerRiseGuardInterval = null;
-          }
-        }
-
-        // Round 14: a "last keyboard snapshot", for exactly the gap this
-        // round's own debug-overlay upgrade is meant to close -- a real
-        // installed-iPhone keyboard event is gone by the time anyone can
-        // open the overlay and read it (opening it takes 5 deliberate taps
-        // on the wordmark, which itself dismisses focus/the keyboard). This
-        // captures the numbers automatically, the instant a real keyboard
-        // open is detected, into a plain `window` global -- not component
-        // state, not a CSS variable (this is a composite object, not a
-        // single value) -- so it survives this app's own in-session SPA
-        // navigation (closing the chat, switching tabs, anything short of
-        // an actual page reload) with no extra wiring: DebugOverlay.web.tsx
-        // just reads window.__lastKeyboardSnapshot whenever it happens to
-        // be opened next, exactly like it already reads --keyboard-inset
-        // via getComputedStyle.
-        //
-        // "A keyboard opened" is detected the same way --keyboard-inset
-        // itself is computed: visualViewport.height shrinking by more than
-        // 100px (an arbitrary but generous floor -- far bigger than any
-        // orientation/toolbar jitter, comfortably smaller than any real
-        // software keyboard, which is always a few hundred px tall). Only
-        // visualViewport's OWN 'resize' event is checked against this
-        // threshold (see onVisualViewportResize below) -- not every call to
-        // syncOffsetAndInsets() (window resize/orientationchange/load/
-        // pageshow also call it, but a keyboard specifically shrinks the
-        // VISUAL viewport, not the layout one, which is the whole reason
-        // --keyboard-inset reads vv.height instead of window.innerHeight in
-        // the first place).
+        // A "last keyboard snapshot" of the shell-level state, for the same
+        // reason Round 14 introduced one: a real keyboard event is gone by
+        // the time the debug overlay can be opened to read it (5 taps,
+        // which itself dismisses focus). Captured into a plain window
+        // global -- survives in-session navigation with no extra wiring --
+        // the instant visualViewport's own resize reports its height
+        // shrinking by more than 100px, the same signal syncKeyboardShellMode
+        // itself reacts to.
         var lastVisualViewportHeight = window.visualViewport ? window.visualViewport.height : null;
         var KEYBOARD_SNAPSHOT_SHRINK_THRESHOLD = 100;
-        // KEYBOARD_RISE_COMPOSER_IDS is declared once, above, alongside
-        // applyComposerKeyboardRise() (Round 15) -- reused here rather than
-        // redeclared, since this function needs to walk the exact same ids.
         function captureLastKeyboardSnapshot() {
           var vv = window.visualViewport;
           if (!vv) return;
-          var composerId = null;
-          var composerRect = null;
-          var composerTransform = null;
-          for (var i = 0; i < KEYBOARD_RISE_COMPOSER_IDS.length; i++) {
-            var el = document.getElementById(KEYBOARD_RISE_COMPOSER_IDS[i]);
-            if (el) {
-              var rect = el.getBoundingClientRect();
-              composerId = KEYBOARD_RISE_COMPOSER_IDS[i];
-              composerRect = { top: Math.round(rect.top), bottom: Math.round(rect.bottom), height: Math.round(rect.height) };
-              composerTransform = getComputedStyle(el).transform;
-              break;
-            }
-          }
           var lvhProbe = document.getElementById('debug-probe-100lvh');
-          // Round 15: pulled from lastComposerRiseResult (set by
-          // applyComposerKeyboardRise(), which onVisualViewportResize
-          // always calls immediately before this) rather than recomputed
-          // independently here -- the snapshot must show exactly what the
-          // production mechanism actually used and applied, never a
-          // second, potentially-disagreeing measurement of the same thing.
-          var rise = lastComposerRiseResult;
+          var state = window.__keyboardShellState;
+          // Unlike the live state above, this only runs on an actual
+          // big-shrink resize event (rare), so reading #root's own rect
+          // here directly -- forcing one layout reflow for one real
+          // keyboard-open event -- is the one place that cost is actually
+          // worth paying, rather than every 250ms forever.
+          var root = document.getElementById('root');
+          var rootRect = root ? root.getBoundingClientRect() : null;
           window.__lastKeyboardSnapshot = {
             timestamp: new Date().toISOString(),
             innerHeight: window.innerHeight,
             vvHeight: Math.round(vv.height),
             vvOffsetTop: Math.round(vv.offsetTop),
-            // Kept purely as a point of comparison against the
-            // measurement-based fields below -- this is the OLD formula's
-            // own answer (still computed, still driving CreatePostModal's
-            // defensive padding), not what positions the composer anymore.
-            // Read back from the CSS variable (already recomputed by the
-            // syncOffsetAndInsets() call this always runs after -- see
-            // onVisualViewportResize) rather than recalculated here a
-            // second time, so the snapshot can never disagree with the one
-            // number every other consumer in this file also reads.
+            // Kept purely as a point of comparison -- this is the Round 12
+            // formula's own answer, still computed, still driving
+            // CreatePostModal's defensive padding, no longer anything to do
+            // with the shell mechanism above.
             keyboardInset: getComputedStyle(document.documentElement).getPropertyValue('--keyboard-inset').trim() || '(unset)',
             lvhPx: lvhProbe ? Math.round(parseFloat(getComputedStyle(lvhProbe).height)) : null,
-            composerId: composerId,
-            composerRect: composerRect,
-            composerTransform: composerTransform,
-            visualBottom: rise ? Math.round(rise.visualBottom) : null,
-            composerNaturalBottom: rise && rise.naturalBottom != null ? Math.round(rise.naturalBottom) : null,
-            appliedTranslateY: rise ? Math.round(rise.appliedTranslateY) : null,
-            // Round 16: the actually-delivered value, read back from the
-            // CSS variable the stylesheet rule reads -- separate from
-            // appliedTranslateY (what the measurement computed) so a future
-            // snapshot can show the two disagreeing if a delivery bug like
-            // this round's ever recurs, instead of only ever showing what
-            // the code intended to do.
-            composerRiseVar: rise && rise.composerRiseVar != null ? rise.composerRiseVar : null,
+            shellMode: state ? state.mode : keyboardShellMode,
+            shellHeightVar: state ? state.shellHeightVar : '(unset)',
+            translateVar: state ? state.translateVar : '0px',
+            rootRect: rootRect ? { top: Math.round(rootRect.top), bottom: Math.round(rootRect.bottom), height: Math.round(rootRect.height) } : null,
           };
         }
         function onVisualViewportResize() {
           var vv = window.visualViewport;
           var previousHeight = lastVisualViewportHeight;
           syncOffsetAndInsets();
-          applyComposerKeyboardRise();
+          syncKeyboardShellMode();
           if (vv) {
             if (previousHeight !== null && previousHeight - vv.height > KEYBOARD_SNAPSHOT_SHRINK_THRESHOLD) {
               captureLastKeyboardSnapshot();
@@ -535,11 +426,11 @@
         }
         function onVisualViewportScroll() {
           syncOffsetAndInsets();
-          applyComposerKeyboardRise();
+          syncKeyboardShellMode();
         }
         function syncAllViewportState() {
           syncOffsetAndInsets();
-          applyComposerKeyboardRise();
+          syncKeyboardShellMode();
         }
 
         syncAllViewportState();
@@ -547,29 +438,47 @@
         window.addEventListener('orientationchange', syncAllViewportState);
         window.addEventListener('load', syncAllViewportState);
         window.addEventListener('pageshow', syncAllViewportState);
+        // visibilitychange: a backstop for the app being backgrounded and
+        // resumed with stale shell state (the OS can tear down and resume
+        // the keyboard without this page ever seeing a clean visualViewport
+        // event pair for it).
+        document.addEventListener('visibilitychange', syncAllViewportState);
         if (window.visualViewport) {
           // 'resize' catches the keyboard opening/closing (and is also the
           // one event the last-keyboard-snapshot capture above watches);
           // 'scroll' catches offsetTop changing on its own, which happens
           // when iOS pans to reveal a focused input without the visible
-          // height necessarily changing at the same instant. Both re-run
-          // applyComposerKeyboardRise() too -- either one can change the
-          // visual viewport's own bottom edge, which is the only thing the
-          // closed-loop measurement cares about.
+          // height necessarily changing at the same instant.
           window.visualViewport.addEventListener('resize', onVisualViewportResize);
           window.visualViewport.addEventListener('scroll', onVisualViewportScroll);
         }
-        // Round 15: a composer that mounts (or gains focus) after the
-        // keyboard is already open -- e.g. opening group chat with the
-        // keyboard still up from a prior screen, or tapping straight into
-        // the composer without a separate visualViewport event firing
-        // first -- needs its own trigger independent of visualViewport's
-        // events, which only fire on an actual geometry change. 'focusin'
-        // bubbles from any focused element, so this re-measures on every
-        // focus change app-wide; each call is just three getElementById
-        // lookups plus a rect read, cheap enough not to need narrowing to
-        // the composer inputs specifically.
-        document.addEventListener('focusin', applyComposerKeyboardRise, true);
+        // focusin: an input gaining focus while the keyboard is already
+        // open (or about to open) needs its own trigger independent of a
+        // visualViewport event, which only fires on an actual geometry
+        // change. focusout: a backstop for keyboard-close paths where blur
+        // fires before iOS has actually resized the visual viewport back --
+        // the 50ms delay gives the OS a moment to do that resize first,
+        // rather than reading a stale vv.height synchronously in the same
+        // event-handling turn as the blur itself.
+        document.addEventListener('focusin', syncKeyboardShellMode, true);
+        document.addEventListener(
+          'focusout',
+          function () {
+            setTimeout(syncKeyboardShellMode, 50);
+          },
+          true
+        );
+        // The self-healing backstop: an always-on poll (not started/stopped
+        // based on current mode -- Round 16's start/stop guard was itself
+        // one more piece of state that could in principle drift, and this
+        // round's whole point is fewer moving parts) that catches anything
+        // none of the explicit triggers above imagined, including exactly
+        // the reported "tab bar left chopped on the search screen" reset
+        // leak: whatever causes a trigger to misfire or not fire at all,
+        // this never waits more than 250ms to notice and correct it. Flat
+        // interval, not requestAnimationFrame -- this only needs to catch
+        // drift a person could perceive, not match frame timing.
+        setInterval(syncKeyboardShellMode, 250);
 
         // Viewport lock, belt-and-suspenders round. The viewport meta's
         // maximum-scale=1/user-scalable=no is the primary lock (reliable
@@ -793,41 +702,25 @@
       #doc-thread-composer-safe-area-fill {
         height: var(--real-safe-bottom, 0px);
       }
-      /* Round 15 removed the old --keyboard-inset-reading rule here
-         (`transform: translateY(calc(-1 * var(--keyboard-inset, 0px)))`)
-         after a real device caught that formula computing 0px with the
-         keyboard genuinely covering 62px of the composer, and replaced it
-         with applyComposerKeyboardRise() setting `el.style.transform`
-         directly as an inline style -- a measured value, not a predicted
-         one. That measurement was correct (confirmed by a later real
-         device capture), but the DELIVERY wasn't: DocsGroupChatScreen and
-         DocThreadView both re-render this exact View on every keystroke
-         (the composer's own auto-grow height state), and that re-render
-         reapplies the node's style prop, wiping whatever transform had
-         been set out-of-band moments earlier -- a screenshot showed the
-         composer back under the keyboard shortly after a correct rise had
-         been measured and applied.
-         Round 16's fix: stop writing to the element's own inline style.
-         --composer-rise (one shared document-root variable -- only one of
-         the three mutually-exclusive composers is ever mounted at a time,
-         same convention as --keyboard-inset) is set instead, and THIS rule
-         reads it. React re-rendering the composer node can still rewrite
-         that node's own style attribute every keystroke, same as always --
-         but it has no reason to ever touch :root's style, and this rule
-         lives here, in the stylesheet, immune to React entirely. See the
-         inline script's "Round 16" comment for the measurement-side change
-         this required (naturalBottom is now read with --composer-rise
-         temporarily zeroed, not the element's own style cleared) and the
-         self-healing guard that runs while a rise is applied, as a backstop
-         against any future clobber path this round didn't imagine.
-         --keyboard-inset itself is UNCHANGED and still drives
-         #create-post-scroll-content's padding below -- only these three ids
-         ever stopped reading it, back in Round 15. */
-      #group-chat-composer-keyboard-rise,
-      #doc-thread-composer-keyboard-rise,
-      #post-detail-composer-keyboard-rise {
-        transform: translateY(calc(-1 * var(--composer-rise, 0px)));
-      }
+      /* Rounds 15 and 16 (full history in AGENTS.md) each tried a
+         per-composer fix here -- first a measured `transform` written as
+         an inline style, then the same measurement delivered through a
+         CSS variable instead, after React re-rendering the composer node
+         on every keystroke proved capable of wiping an inline style.
+         Round 17 removed this rule (and the measurement behind it)
+         entirely: three real-device snapshots on the same iPhone, same
+         day, showed the keyboard-open numbers landing in genuinely
+         different shapes (innerHeight sometimes shrinking, sometimes not;
+         offsetTop ranging from 0 to 341), which is exactly how a fix aimed
+         at "the composer" rather than "the shell" kept being right for
+         one capture and wrong for the next. The shell-level fix is further
+         down, right after the `@media (display-mode: standalone)` block --
+         it resizes #root itself to the keyboard-visible area, and every
+         bottom-anchored element (these three composer ids included)
+         reflows to it through ordinary flexbox, the same way they already
+         do the rest of the time. No per-composer rule is needed, or
+         exists, here anymore. --keyboard-inset itself is UNCHANGED and
+         still drives #create-post-scroll-content's padding below. */
       /* CreatePostModal's title/body inputs are plain in-flow content
          inside its own ScrollView, not a fixed bottom bar -- the browser's
          native focus-scroll-into-view already keeps the focused one clear
@@ -980,6 +873,31 @@
           min-height: 100vh;
           min-height: 100lvh;
         }
+      }
+      /* Round 17's shell-level keyboard fix (full writeup in the inline
+         script's own "Round 17" comment and in AGENTS.md). While
+         syncKeyboardShellMode() has decided the keyboard is open in
+         standalone, this overrides #root's height to exactly
+         visualViewport.height; #root's own pre-existing `transform:
+         translateY(var(--app-offset-top, 0px))` rule (Round 5, above)
+         keeps translating it by visualViewport.offsetTop without any
+         change needed here, since that's the same number either way.
+         Deliberately NOT nested inside `@media (display-mode:
+         standalone)` above: the JS already gates on that exact media
+         query before ever setting the `data-keyboard-shell` attribute or
+         `--shell-keyboard-height` below, and stacking a second CSS-level
+         media-query gate on top of a mechanism built specifically to stop
+         depending on live media-query timing (see Round 15's own history)
+         would be trusting the thing this round replaced. The attribute
+         selector on `html` is the single source of truth: the instant
+         syncKeyboardShellMode() removes the attribute (keyboard closed,
+         or not standalone, or anything else that resets it), this rule
+         stops matching and #root falls straight back to the plain 100lvh
+         rule two rules up, with nothing left over to clean up by hand --
+         this is what makes the reset structural rather than a step that
+         has to run and has to get every property right. */
+      html[data-keyboard-shell='open'] #root {
+        height: var(--shell-keyboard-height);
       }
     </style>
   </head>
