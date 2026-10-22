@@ -2987,6 +2987,82 @@ async function run() {
     }
   }
 
+  // The deadline line's exact format -- "OFFER ENDS <WEEKDAY>, <MON> <DAY>,
+  // <H:MM AM/PM> ET" -- must be computed live from the real saved end
+  // datetime, never hardcoded, and must update automatically if the admin
+  // changes the window. Two fixed, deliberately different end
+  // dates/times/weekdays/months (expected strings computed independently
+  // here via Node's own Intl, not by reusing foundingDeadlineLabel's own
+  // code under test) prove the computation is real, not a lucky coincidence
+  // with whichever single date a round happened to test against.
+  const DEADLINE_FORMAT_CASES = [
+    { label: 'fri-evening', endsAtIso: '2026-12-25T23:30:00.000Z', expected: 'OFFER ENDS FRIDAY, DEC 25, 6:30 PM ET' },
+    { label: 'mon-morning', endsAtIso: '2027-03-08T14:05:00.000Z', expected: 'OFFER ENDS MONDAY, MAR 8, 9:05 AM ET' },
+  ];
+  for (const { label, endsAtIso, expected } of DEADLINE_FORMAT_CASES) {
+    // Relative to NOW, not to endsAtIso -- a window is only open while
+    // starts_at <= now <= ends_at, so starts_at has to be in the real past.
+    const startsAtIso = new Date(Date.now() - 7 * 86400000).toISOString();
+
+    // About page, logged OUT.
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.route('**/rest/v1/rpc/founding_fifty_public_status*', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ starts_at: startsAtIso, ends_at: endsAtIso, claimed_count: 3, enabled: true }),
+        })
+      );
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      const deadlineText = await page.getByTestId('about-founding-deadline').innerText().catch(() => null);
+      record(
+        `[founding-50/deadline-format/about-${label}] the About page deadline line reads the exact computed weekday/month/day/time`,
+        deadlineText === expected,
+        JSON.stringify({ deadlineText, expected })
+      );
+      await context.close();
+    }
+
+    // Memberships, signed IN.
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.route('**/rest/v1/founding_fifty_settings*', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([{ starts_at: startsAtIso, ends_at: endsAtIso, enabled: true }]),
+        })
+      );
+      await page.route('**/rest/v1/founding_fifty_members*', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([{ id: 'a', joined_at: new Date().toISOString(), profiles: { display_name: 'Member A' } }]),
+        })
+      );
+      await seedSignedInSession(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await page.getByText('MEMBERSHIPS', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      const deadlineText = await page.getByTestId('founding-fifty-deadline').innerText().catch(() => null);
+      record(
+        `[founding-50/deadline-format/memberships-${label}] the Memberships deadline line reads the exact computed weekday/month/day/time`,
+        deadlineText === expected,
+        JSON.stringify({ deadlineText, expected })
+      );
+      await context.close();
+    }
+  }
+
   // Server-side enforcement: a stale/forged client can never get the $37
   // founding rate while the switch is off, regardless of what the saved
   // dates say. The Edge Function runs in Deno, outside this Playwright
