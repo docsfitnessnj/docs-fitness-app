@@ -24,19 +24,30 @@ type FoundingFiftyContextValue = {
   claimedCount: number;
   spotsRemaining: number;
   soldOut: boolean;
+  // The master switch (founding_fifty_settings.enabled — see
+  // migration_022.sql), independent of startsAt/endsAt. Defaults to false
+  // until the first fetch resolves, same "safe direction to be wrong in"
+  // convention as isLive below. OFF overrides the dates entirely — see
+  // isLive's own comment.
+  enabled: boolean;
   // The single source of truth every screen uses to decide whether to show
-  // founding pricing at all: only true between startsAt/endsAt (both set)
-  // and only while spots remain.
+  // founding pricing at all: only true while `enabled` is on, AND between
+  // startsAt/endsAt (both set), AND only while spots remain. `enabled`
+  // false takes the whole offer down regardless of what the dates say.
   isLive: boolean;
   // Admin-only write — takes plain Eastern-time wall-clock parts (as typed
   // into the FOUNDING 50 LAUNCH fields) and converts them to real UTC
   // instants before saving, the same way Weekly Challenge timing does, so
   // the window is correct for every member regardless of their own device's
-  // timezone. Pass nulls to clear the window entirely.
+  // timezone. Pass nulls to clear the window entirely. Never touches
+  // `enabled` — the dates and the switch are saved independently.
   setWindow: (
     start: { year: number; month: number; day: number; hour: number; minute: number } | null,
     end: { year: number; month: number; day: number; hour: number; minute: number } | null
   ) => Promise<{ error: string | null }>;
+  // Admin-only write for the master switch alone — never touches the saved
+  // dates, so toggling off then back on preserves them exactly.
+  setEnabled: (next: boolean) => Promise<{ error: string | null }>;
   // Re-reads the roster — used right after a real Stripe Checkout at the
   // founding price is confirmed, so this device's own "X of 50 claimed"
   // count updates immediately instead of waiting for a future reload. A
@@ -59,6 +70,9 @@ export function FoundingFiftyProvider({ children }: { children: React.ReactNode 
   const [loading, setLoading] = useState(true);
   const [startsAt, setStartsAt] = useState<number | null>(null);
   const [endsAt, setEndsAt] = useState<number | null>(null);
+  // Defaults to false (OFF) before the first fetch resolves — same reason
+  // the migration itself defaults the column to false: never assume armed.
+  const [enabled, setEnabledState] = useState(false);
   const [members, setMembers] = useState<FoundingFiftyMember[]>([]);
 
   const refetchMembers = async () => {
@@ -75,13 +89,14 @@ export function FoundingFiftyProvider({ children }: { children: React.ReactNode 
     setLoading(true);
 
     Promise.all([
-      supabase.from('founding_fifty_settings').select('starts_at, ends_at').eq('id', 1).maybeSingle(),
+      supabase.from('founding_fifty_settings').select('starts_at, ends_at, enabled').eq('id', 1).maybeSingle(),
       supabase.from('founding_fifty_members').select('id, joined_at, profiles(display_name)').order('joined_at', { ascending: true }),
     ]).then(([settingsRes, membersRes]) => {
       if (cancelled) return;
       if (!settingsRes.error && settingsRes.data) {
         setStartsAt(settingsRes.data.starts_at ? new Date(settingsRes.data.starts_at).getTime() : null);
         setEndsAt(settingsRes.data.ends_at ? new Date(settingsRes.data.ends_at).getTime() : null);
+        setEnabledState(!!settingsRes.data.enabled);
       }
       if (!membersRes.error) {
         setMembers(((membersRes.data as unknown as MemberRow[]) ?? []).map((row) => ({ name: nameOf(row), joinedAt: new Date(row.joined_at).getTime() })));
@@ -102,8 +117,9 @@ export function FoundingFiftyProvider({ children }: { children: React.ReactNode 
     const windowOpen = startsAt !== null && endsAt !== null && now >= startsAt && now < endsAt;
     // Defaults to false while still loading — the safe direction to be
     // wrong in for a moment is "don't offer a discount that isn't
-    // confirmed yet," not the reverse.
-    const isLive = !loading && windowOpen && !soldOut;
+    // confirmed yet," not the reverse. `enabled` gates everything else: OFF
+    // means never live, no matter what the dates/spots say.
+    const isLive = !loading && enabled && windowOpen && !soldOut;
 
     return {
       loading,
@@ -114,6 +130,7 @@ export function FoundingFiftyProvider({ children }: { children: React.ReactNode 
       claimedCount,
       spotsRemaining,
       soldOut,
+      enabled,
       isLive,
       setWindow: async (start, end) => {
         const startsAtIso = start ? etWallTimeToUTC(start.year, start.month, start.day, start.hour, start.minute).toISOString() : null;
@@ -133,10 +150,22 @@ export function FoundingFiftyProvider({ children }: { children: React.ReactNode 
         setEndsAt(endsAtIso ? new Date(endsAtIso).getTime() : null);
         return { error: null };
       },
+      setEnabled: async (next) => {
+        const { error } = await supabase.from('founding_fifty_settings').update({ enabled: next }).eq('id', 1);
+        if (error) {
+          return {
+            error: isBackendUnavailableError(error)
+              ? "Can't save the launch switch right now — the backend isn't reachable."
+              : error.message,
+          };
+        }
+        setEnabledState(next);
+        return { error: null };
+      },
       refetch: refetchMembers,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, startsAt, endsAt, members, user]);
+  }, [loading, startsAt, endsAt, enabled, members, user]);
 
   return <FoundingFiftyContext.Provider value={value}>{children}</FoundingFiftyContext.Provider>;
 }

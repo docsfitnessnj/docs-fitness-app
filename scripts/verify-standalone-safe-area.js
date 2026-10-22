@@ -2757,6 +2757,258 @@ async function run() {
     await context.close();
   }
 
+  // --- migration_022: THE FOUNDING 50 LAUNCH gets an explicit ON/OFF
+  // switch (founding_fifty_settings.enabled), independent of the saved
+  // start/end dates. OFF must disable the entire founding experience
+  // everywhere no matter what the dates say; ON behaves exactly as the
+  // dates/spots-remaining logic always has. Every scenario below uses the
+  // SAME currently-open date window (starts_at in the past, ends_at far in
+  // the future, well under 50 claimed) -- `enabled` is the only variable
+  // that changes between the OFF and ON checks, so a pass can't be
+  // accidentally explained by the dates alone.
+  const FOUNDING_WINDOW_LIVE_DATES = {
+    starts_at: new Date(Date.now() - 86400000).toISOString(),
+    ends_at: new Date(Date.now() + 30 * 86400000).toISOString(),
+  };
+
+  // Admin: the switch itself -- starts OFF (the migration's own default),
+  // flipping it writes through immediately with the same SAVED
+  // confirmation pattern the rest of admin uses, shows LIVE (gold) / OFF
+  // (gray) unmistakably, and never touches the saved dates either
+  // direction.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Admin',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: true,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+          },
+        ]),
+      })
+    );
+    // Stateful -- captures the PATCH payload and serves it back, so
+    // toggling the switch (and re-reading the dates) exercises a real
+    // round trip, not just an assumption that the write happened.
+    let foundingSettingsRow = { ...FOUNDING_WINDOW_LIVE_DATES, enabled: false };
+    await page.route('**/rest/v1/founding_fifty_settings*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'PATCH') {
+        let payload = {};
+        try {
+          payload = JSON.parse(req.postData() || '{}');
+        } catch {}
+        foundingSettingsRow = { ...foundingSettingsRow, ...payload };
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([foundingSettingsRow]) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([foundingSettingsRow]) });
+    });
+    await page.route('**/rest/v1/founding_fifty_members*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+    );
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('THE FOUNDING 50', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const initialLabel = await page.getByTestId('founding-fifty-enabled-label').innerText().catch(() => '');
+    record(
+      '[founding-50/admin] the switch starts OFF, matching the migration\'s own default',
+      initialLabel.trim() === 'OFF',
+      JSON.stringify({ initialLabel })
+    );
+
+    const readDates = () =>
+      Promise.all([
+        page.locator('#founding-fifty-start-date').inputValue().catch(() => null),
+        page.locator('#founding-fifty-end-date').inputValue().catch(() => null),
+      ]);
+    const datesBefore = await readDates();
+
+    await page.getByTestId('founding-fifty-enabled-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const onLabel = await page.getByTestId('founding-fifty-enabled-label').innerText().catch(() => '');
+    // #E5B80B (colors.gold) -- the label's own color, not just its text,
+    // since the brief explicitly asked for this to be unmistakable.
+    const onLabelColor = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="founding-fifty-enabled-label"]');
+      return el ? getComputedStyle(el).color : null;
+    });
+    const savedVisibleOn = await page.getByTestId('save-confirmation-saved').isVisible().catch(() => false);
+    record(
+      '[founding-50/admin] toggling ON flips the label to LIVE in gold and shows SAVED',
+      onLabel.trim() === 'LIVE' && onLabelColor === 'rgb(229, 184, 11)' && savedVisibleOn,
+      JSON.stringify({ onLabel, onLabelColor, savedVisibleOn })
+    );
+    const datesAfterOn = await readDates();
+    record(
+      '[founding-50/admin] turning the switch ON never touches the saved dates',
+      JSON.stringify(datesBefore) === JSON.stringify(datesAfterOn),
+      JSON.stringify({ datesBefore, datesAfterOn })
+    );
+
+    // Let the SAVED confirmation finish its own auto-revert (useSaveConfirmation's
+    // SAVED_DISPLAY_MS) before the second toggle, so this assertion reads a
+    // fresh confirmation, not a stale one still showing from the first toggle.
+    await page.waitForTimeout(2700);
+    await page.getByTestId('founding-fifty-enabled-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const offLabel = await page.getByTestId('founding-fifty-enabled-label').innerText().catch(() => '');
+    const offLabelColor = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="founding-fifty-enabled-label"]');
+      return el ? getComputedStyle(el).color : null;
+    });
+    const savedVisibleOff = await page.getByTestId('save-confirmation-saved').isVisible().catch(() => false);
+    record(
+      '[founding-50/admin] toggling back OFF flips the label back to OFF in gray and shows SAVED again',
+      // #5F6B66 (colors.textMuted).
+      offLabel.trim() === 'OFF' && offLabelColor === 'rgb(95, 107, 102)' && savedVisibleOff,
+      JSON.stringify({ offLabel, offLabelColor, savedVisibleOff })
+    );
+    const datesAfterOff = await readDates();
+    record(
+      '[founding-50/admin] a full OFF-then-ON-then-OFF round trip still preserves the dates untouched',
+      JSON.stringify(datesBefore) === JSON.stringify(datesAfterOff),
+      JSON.stringify({ datesBefore, datesAfterOff })
+    );
+
+    await context.close();
+  }
+
+  // The real consumers: with the SAME live date window, enabled=false must
+  // hide the founding experience everywhere, and enabled=true must show it
+  // -- looped so both directions run against identical dates/spots.
+  for (const enabledFlag of [false, true]) {
+    const stateLabel = enabledFlag ? 'ON' : 'OFF';
+
+    // About page, logged OUT -- the one screen a signed-out visitor sees,
+    // reads the anon-safe founding_fifty_public_status() RPC.
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.route('**/rest/v1/rpc/founding_fifty_public_status*', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ...FOUNDING_WINDOW_LIVE_DATES, claimed_count: 3, enabled: enabledFlag }),
+        })
+      );
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      const bannerText = await page
+        .getByText(/FOUNDING 50 RATE|2 WEEKS FREE/, { exact: false })
+        .first()
+        .innerText()
+        .catch(() => '');
+      const ctaText = await page.getByTestId('about-start-free').innerText().catch(() => '');
+      const spotsLeftVisible = await page.getByTestId('about-founding-spots-left').isVisible().catch(() => false);
+      const deadlineVisible = await page.getByTestId('about-founding-deadline').isVisible().catch(() => false);
+
+      record(
+        `[founding-50/about-${stateLabel}] the logged-out About page takeover reflects the switch, not just the live date window`,
+        enabledFlag
+          ? bannerText.includes('FOUNDING 50 RATE') && ctaText.includes('CLAIM YOUR SPOT') && spotsLeftVisible && deadlineVisible
+          : bannerText.includes('2 WEEKS FREE') && ctaText.includes('START FREE') && !spotsLeftVisible && !deadlineVisible,
+        JSON.stringify({ bannerText, ctaText, spotsLeftVisible, deadlineVisible })
+      );
+
+      await context.close();
+    }
+
+    // Memberships, signed IN -- reads the signed-in FoundingFiftyContext.
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.route('**/rest/v1/founding_fifty_settings*', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([{ ...FOUNDING_WINDOW_LIVE_DATES, enabled: enabledFlag }]),
+        })
+      );
+      await page.route('**/rest/v1/founding_fifty_members*', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(
+            enabledFlag
+              ? [
+                  { id: 'a', joined_at: new Date().toISOString(), profiles: { display_name: 'Member A' } },
+                  { id: 'b', joined_at: new Date().toISOString(), profiles: { display_name: 'Member B' } },
+                  { id: 'c', joined_at: new Date().toISOString(), profiles: { display_name: 'Member C' } },
+                ]
+              : []
+          ),
+        })
+      );
+      await seedSignedInSession(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await page.getByText('MEMBERSHIPS', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+
+      const foundingSpotsVisible = await page.getByTestId('founding-fifty-spots-left').isVisible().catch(() => false);
+      const foundingDeadlineVisible = await page.getByTestId('founding-fifty-deadline').isVisible().catch(() => false);
+      const foundingPriceVisible = await page
+        .getByText('$37', { exact: false })
+        .first()
+        .isVisible()
+        .catch(() => false);
+
+      record(
+        `[founding-50/memberships-${stateLabel}] the Memberships banner/strikethrough reflects the switch, not just the live date window`,
+        enabledFlag
+          ? foundingSpotsVisible && foundingDeadlineVisible && foundingPriceVisible
+          : !foundingSpotsVisible && !foundingDeadlineVisible && !foundingPriceVisible,
+        JSON.stringify({ foundingSpotsVisible, foundingDeadlineVisible, foundingPriceVisible })
+      );
+
+      await context.close();
+    }
+  }
+
+  // Server-side enforcement: a stale/forged client can never get the $37
+  // founding rate while the switch is off, regardless of what the saved
+  // dates say. The Edge Function runs in Deno, outside this Playwright
+  // harness's reach (same category of gap as every other "can't exercise
+  // the real server runtime from here" case already documented in this
+  // file) -- this is a static source check, the same technique used
+  // elsewhere in this suite when the real mechanism can't be driven
+  // directly, confirming the function actually fetches and gates on
+  // `enabled` before ever setting priceId to the founding price.
+  {
+    const edgeFnSrc = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'create-checkout', 'index.ts'), 'utf8');
+    const selectsEnabled = /founding_fifty_settings['"]\)\s*\n?\s*\.select\(['"]starts_at, ends_at, enabled['"]\)/.test(edgeFnSrc);
+    const gatesOnEnabled = /const\s+enabled\s*=\s*!!settingsRes\.data\?\.enabled;[\s\S]{0,120}eligibleForFounding\s*=\s*enabled\s*&&\s*windowLive/.test(
+      edgeFnSrc
+    );
+    record(
+      '[founding-50/edge-function] create-checkout re-fetches and gates on the enabled switch before ever granting the $37 founding price',
+      selectsEnabled && gatesOnEnabled,
+      JSON.stringify({ selectsEnabled, gatesOnEnabled })
+    );
+  }
+
   await browser.close();
   console.log('\n=== SUMMARY ===');
   const failed = results.filter((r) => !r.pass);
