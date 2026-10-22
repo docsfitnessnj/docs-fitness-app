@@ -25,6 +25,7 @@ export const FOUNDING_VALUE_LINE =
   'All 5 weekly workouts, the full Deck of WODs, the Weekly Challenge and live leaderboard, the community, and a direct line to Doc.';
 
 const WEEKDAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+const MONTH_NAMES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
 // "X SPOTS LEFT" counts DOWN (not up) — the loudest supporting element on
 // the founding door while the window is live. "ONLY" prefixes it once 10 or
@@ -33,14 +34,21 @@ export function foundingSpotsLeftLabel(spotsRemaining: number): string {
   return spotsRemaining <= 10 ? `ONLY ${spotsRemaining} SPOTS LEFT` : `${spotsRemaining} SPOTS LEFT`;
 }
 
-// "OFFER ENDS <DAY> 11:59 PM ET" — the day is always read live from the
-// real launch-window end datetime (in Eastern time, matching how Doc sets
-// the window from the admin screen), never hardcoded. Null while no window
-// end is set.
+// "OFFER ENDS <WEEKDAY>, <MON> <DAY>, <H:MM AM/PM> ET" — the exact weekday,
+// month, day, and time are all read live from the real launch-window end
+// datetime (in Eastern time, matching how Doc sets the window from the
+// admin screen), never hardcoded, so this updates automatically whenever
+// the saved window changes. e.g. "OFFER ENDS SUNDAY, JAN 3, 11:59 PM ET".
+// Month is always the short word (JAN, FEB, ...), never a numeric month,
+// so nobody has to translate a number into a date. Null while no window end
+// is set.
 export function foundingDeadlineLabel(endsAtMs: number | null): string | null {
   if (endsAtMs === null) return null;
-  const weekday = getEasternParts(new Date(endsAtMs)).weekday;
-  return `OFFER ENDS ${WEEKDAY_NAMES[weekday]} 11:59 PM ET`;
+  const p = getEasternParts(new Date(endsAtMs));
+  const hour12 = p.hour % 12 === 0 ? 12 : p.hour % 12;
+  const ampm = p.hour < 12 ? 'AM' : 'PM';
+  const minute = String(p.minute).padStart(2, '0');
+  return `OFFER ENDS ${WEEKDAY_NAMES[p.weekday]}, ${MONTH_NAMES[p.month - 1]} ${p.day}, ${hour12}:${minute} ${ampm} ET`;
 }
 
 // Single source of truth for plan pricing/copy — pricing has changed several
