@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppPressable } from './AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { useCommunity } from '../context/CommunityContext';
@@ -13,6 +13,7 @@ import { openMovementVault } from '../lib/movementVaultModal';
 import { navigateToTab } from '../lib/navigationRef';
 import { openPostDetail } from '../lib/postDetailModal';
 import { useFocusRing } from '../lib/useFocusRing';
+import { matchesWordStart } from '../lib/wordStartMatch';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -46,8 +47,13 @@ export function SearchModal({ visible, onClose, query, onQueryChange }: Props) {
     const q = query.trim().toLowerCase();
     if (!q) return [];
 
+    // Matching rule app-wide for this picker: the typed text must be a
+    // PREFIX of the result's own name or one of its words, never a
+    // mid-word substring -- see wordStartMatch.ts. A plain `.includes()`
+    // (what this used before) made a single common letter return almost
+    // everything with that letter anywhere in it.
     const wodResults: Result[] = WEEKDAY_WODS.filter(
-      (w) => w.title.toLowerCase().includes(q) || w.moves.some((m) => m.toLowerCase().includes(q))
+      (w) => matchesWordStart(w.title, q) || w.moves.some((m) => matchesWordStart(m, q))
     ).map((w) => ({ id: `wod-${w.key}`, section: 'WORKOUTS', title: w.title, subtitle: w.moves[0], wodKey: w.key }));
 
     // Uncompleted cards are face-down by design everywhere in the app (the
@@ -55,7 +61,7 @@ export function SearchModal({ visible, onClose, query, onQueryChange }: Props) {
     // its identity and spoil the shuffle, so they're excluded from the
     // index entirely, not just softened in how they're shown.
     const deckResults: Result[] = DECK_CARDS.filter(
-      (c) => isComplete(c.id) && (deckCardLabel(c).toLowerCase().includes(q) || c.title.toLowerCase().includes(q))
+      (c) => isComplete(c.id) && (matchesWordStart(deckCardLabel(c), q) || matchesWordStart(c.title, q))
     )
       .slice(0, 8)
       .map((c) => ({ id: `deck-${c.id}`, section: 'DECK CARDS', title: `${deckCardLabel(c)} — ${c.title}`, subtitle: c.format, cardId: c.id }));
@@ -63,10 +69,10 @@ export function SearchModal({ visible, onClose, query, onQueryChange }: Props) {
     const communityResults: Result[] = posts
       .filter(
         (p) =>
-          p.author.toLowerCase().includes(q) ||
-          p.title.toLowerCase().includes(q) ||
-          p.text.toLowerCase().includes(q) ||
-          p.meta?.workoutTitle.toLowerCase().includes(q)
+          matchesWordStart(p.author, q) ||
+          matchesWordStart(p.title, q) ||
+          matchesWordStart(p.text, q) ||
+          (p.meta?.workoutTitle ? matchesWordStart(p.meta.workoutTitle, q) : false)
       )
       .map((p) => ({
         id: `post-${p.id}`,
@@ -83,12 +89,12 @@ export function SearchModal({ visible, onClose, query, onQueryChange }: Props) {
     const seenMemberIds = new Set<string>();
     const memberResults: Result[] = [];
     for (const p of posts) {
-      if (seenMemberIds.has(p.authorId) || !p.author.toLowerCase().includes(q)) continue;
+      if (seenMemberIds.has(p.authorId) || !matchesWordStart(p.author, q)) continue;
       seenMemberIds.add(p.authorId);
       memberResults.push({ id: `member-${p.authorId}`, section: 'MEMBERS', title: p.author, memberId: p.authorId });
     }
 
-    const movementResults: Result[] = MOVEMENTS.filter((m) => m.name.toLowerCase().includes(q))
+    const movementResults: Result[] = MOVEMENTS.filter((m) => matchesWordStart(m.name, q))
       .slice(0, 8)
       .map((m) => ({ id: `movement-${m.id}`, section: 'MOVEMENTS', title: m.name, movementId: m.id }));
 
@@ -157,21 +163,32 @@ export function SearchModal({ visible, onClose, query, onQueryChange }: Props) {
       ) : results.length === 0 ? (
         <Text style={styles.hint}>No results for "{query}".</Text>
       ) : (
-        SECTION_ORDER.map((section) => {
-          const sectionResults = results.filter((r) => r.section === section);
-          if (sectionResults.length === 0) return null;
-          return (
-            <View key={section} style={styles.section}>
-              <Text style={styles.sectionLabel}>{section}</Text>
-              {sectionResults.map((r) => (
-                <AppPressable key={r.id} style={styles.resultRow} onPress={() => handleSelect(r)}>
-                  <Text style={styles.resultTitle}>{r.title}</Text>
-                  {'subtitle' in r && r.subtitle && <Text style={styles.resultSubtitle}>{r.subtitle}</Text>}
-                </AppPressable>
-              ))}
-            </View>
-          );
-        })
+        <ScrollView
+          style={styles.resultsScroll}
+          contentContainerStyle={styles.resultsScrollContent}
+          keyboardShouldPersistTaps="handled"
+          // Standard iOS pattern: dragging the results list dismisses the
+          // keyboard instead of fighting it for the gesture, so a longer
+          // result set under a shrunk (keyboard-open) shell stays reachable.
+          keyboardDismissMode="on-drag"
+          testID="search-results-scroll"
+        >
+          {SECTION_ORDER.map((section) => {
+            const sectionResults = results.filter((r) => r.section === section);
+            if (sectionResults.length === 0) return null;
+            return (
+              <View key={section} style={styles.section}>
+                <Text style={styles.sectionLabel}>{section}</Text>
+                {sectionResults.map((r) => (
+                  <AppPressable key={r.id} style={styles.resultRow} onPress={() => handleSelect(r)}>
+                    <Text style={styles.resultTitle}>{r.title}</Text>
+                    {'subtitle' in r && r.subtitle && <Text style={styles.resultSubtitle}>{r.subtitle}</Text>}
+                  </AppPressable>
+                ))}
+              </View>
+            );
+          })}
+        </ScrollView>
       )}
     </View>
   );
@@ -217,6 +234,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: 'center',
     marginTop: 40,
+  },
+  resultsScroll: {
+    flex: 1,
+  },
+  resultsScrollContent: {
+    paddingBottom: 40,
   },
   section: {
     marginBottom: 20,

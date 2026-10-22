@@ -32,19 +32,31 @@ type Props = {
   topBasePadding?: 60;
 };
 
-// A full-bleed secondary screen (Profile, My Workouts, Close Friends, the
-// Boathouse schedule, Messages) that stops just short of the bottom tab bar
-// instead of covering it, so the tab bar stays visible and tappable
-// underneath — the user can jump straight to another tab without first
-// backing out. Search is NOT one of these (see its own `fullBleed` usage in
-// App.tsx) -- its TextInput autoFocuses, so it belongs with the other
-// keyboard-driven full takeovers (the hamburger drawer, DOC'S GROUP CHAT).
+// A non-fullBleed secondary screen (Profile, My Workouts, Close Friends,
+// the Boathouse schedule, Messages, and Search whenever its own keyboard is
+// closed) stops just short of the bottom tab bar instead of covering it, so
+// the tab bar stays visible and tappable underneath — the user can jump
+// straight to another tab without first backing out. `fullBleed` covers the
+// full shell instead (hamburger drawer, DOC'S GROUP CHAT always; Search
+// only while its keyboard is open and the Round 17 shell can be resizing
+// #root — see its own `fullBleed={keyboardVisible}` in App.tsx).
 export function ScreenOverlay({ visible, children, fullBleed = false, topFillColor = colors.background, topBasePadding }: Props) {
   const tabBarHeight = useTabBarHeight();
   if (!visible) return null;
 
   return (
     <View
+      // `tabBarHeight` alone is the tab bar's own box height -- it doesn't
+      // include the SafeAreaBottomFill sibling stacked below it that
+      // extends the bar's background through the real home-indicator inset
+      // in standalone mode. Without the matching CSS override below (keyed
+      // to this id, added via `calc()` the same way every other real-inset
+      // addition in this app is), this box's own bottom edge would cut
+      // through the middle of the real tab bar rather than stopping above
+      // it entirely -- a real device confirmed this as a cropped-icons tab
+      // bar on Movement Vault, the exact same shape of bug search's own
+      // fullBleed fix solved for the keyboard-open case.
+      nativeID={fullBleed ? undefined : 'screen-overlay-tab-bar-gap'}
       style={[
         StyleSheet.absoluteFill,
         { bottom: fullBleed ? 0 : tabBarHeight, zIndex: 500, backgroundColor: colors.background },

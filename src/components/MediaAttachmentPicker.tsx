@@ -1,5 +1,5 @@
-import React from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MediaAttachment } from '../lib/media';
 import { useMediaPicker } from '../lib/useMediaPicker';
@@ -15,18 +15,75 @@ type Props = {
   compact?: boolean;
 };
 
+// Fraction of the screen's own height the preview may use before it caps
+// out and switches to letterboxed (contain) instead of growing further —
+// a real device confirmed a selected photo must preview at its actual
+// shape, not a fixed-height crop, but an extremely tall photo still needs
+// a ceiling so it doesn't push the rest of the composer off screen.
+const MAX_PREVIEW_HEIGHT_FRACTION = 0.6;
+// Shown only for the instant between picking a photo and Image.getSize()
+// resolving its real dimensions -- a plausible starting box, not a
+// meaningful default otherwise.
+const FALLBACK_PREVIEW_HEIGHT = 200;
+
 // Shared "ADD PHOTO / VIDEO" control used on Log Results and the community
 // composer — same picker, same thumbnail-preview-with-remove/replace
 // pattern, so an attachment picked in one place looks and behaves like one
 // picked in the other.
 export function MediaAttachmentPicker({ media, onChange, compact }: Props) {
   const { pick } = useMediaPicker(onChange);
+  const { height: screenHeight } = useWindowDimensions();
+  const [naturalRatio, setNaturalRatio] = useState<number | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  // Real device report: the preview rendered as a wide horizontal crop
+  // (a fixed 160px-tall box with the default `cover` resize) while the
+  // posted photo later rendered correctly at its own shape -- the preview
+  // must show exactly what posting will. Image.getSize() reads the real
+  // decoded dimensions directly from the file/blob URI, independent of
+  // whatever box the Image element itself ends up rendered at.
+  useEffect(() => {
+    setNaturalRatio(null);
+    if (media?.type !== 'image') return;
+    let cancelled = false;
+    Image.getSize(
+      media.uri,
+      (w, h) => {
+        if (!cancelled && h > 0) setNaturalRatio(w / h);
+      },
+      () => {
+        // Leave naturalRatio null -- falls back to FALLBACK_PREVIEW_HEIGHT
+        // below rather than a dead/blank box.
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [media?.uri, media?.type]);
 
   if (media) {
+    const maxHeight = screenHeight * MAX_PREVIEW_HEIGHT_FRACTION;
+    const naturalHeight = naturalRatio && containerWidth ? containerWidth / naturalRatio : null;
+    const previewHeight = naturalHeight !== null ? Math.min(naturalHeight, maxHeight) : FALLBACK_PREVIEW_HEIGHT;
+
     return (
-      <View style={styles.previewWrap} testID="media-preview">
+      <View
+        style={styles.previewWrap}
+        onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+        testID="media-preview"
+      >
         {media.type === 'image' ? (
-          <Image source={{ uri: media.uri }} style={styles.previewImage} />
+          <Image
+            source={{ uri: media.uri }}
+            // 'contain' always: when the box isn't capped, its ratio
+            // already exactly matches the image's own (computed above), so
+            // contain and cover render identically with nothing cropped;
+            // when it IS capped (an unusually tall photo), contain is what
+            // keeps the whole image visible, letterboxed, instead of
+            // cropping it to fit the cap.
+            resizeMode="contain"
+            style={[styles.previewImage, { height: previewHeight }]}
+          />
         ) : (
           <View style={styles.previewVideo}>
             <Ionicons name="videocam" size={26} color={colors.white} />
@@ -107,8 +164,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   previewImage: {
+    // Height is set inline per-instance (natural aspect ratio, capped at
+    // MAX_PREVIEW_HEIGHT_FRACTION of the screen) -- see the component body.
     width: '100%',
-    height: 160,
     backgroundColor: colors.background,
   },
   previewVideo: {
