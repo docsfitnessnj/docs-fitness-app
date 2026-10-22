@@ -10,11 +10,17 @@ import { colors, fonts } from '../theme';
 // All badges, earned in gold, unearned as gray silhouettes — tapping any of
 // them (earned or not) opens the name + description, so the grays double as
 // an ad for how to earn them.
-export function ProfileBadgeCase() {
-  const { myBadgeIds } = useBadges();
+//
+// `authorName`, when passed, renders another member's own Trophy Case
+// instead of the signed-in member's own (ProfileScreen's read-only "viewing
+// member X" mode, reached from a search MEMBERS result) — `getBadgesForAuthor`
+// already supports any display name, not just the current member's, since
+// `grants` is a single app-wide query, not a per-member one.
+export function ProfileBadgeCase({ authorName }: { authorName?: string } = {}) {
+  const { myBadgeIds, getBadgesForAuthor } = useBadges();
   const founding50 = useFoundingFifty();
   const [selected, setSelected] = useState<BadgeId | null>(null);
-  const earnedSet = new Set(myBadgeIds);
+  const earnedSet = new Set(authorName ? getBadgesForAuthor(authorName) : myBadgeIds);
   const permanentIds = permanentDisplayOrder(founding50.isLive || earnedSet.has('founding_50'));
 
   return (

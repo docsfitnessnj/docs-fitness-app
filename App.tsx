@@ -60,7 +60,6 @@ import { CheckoutRedirectLoadingScreen } from './src/components/CheckoutRedirect
 import { MemberStateErrorScreen } from './src/components/MemberStateErrorScreen';
 import { DeckCardDetailModal } from './src/components/DeckCardDetailModal';
 import { PostDetailModal } from './src/components/PostDetailModal';
-import { MemberProfileModal } from './src/components/MemberProfileModal';
 import { DECK_CARDS } from './src/data/deckCards';
 import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useMovementVaultModalState } from './src/lib/movementVaultModal';
@@ -622,10 +621,11 @@ function MainApp({
           memberProfileModal.ts) -- deliberately NOT closing `searchOpen`
           first, so the overlay above stays mounted underneath whichever of
           these is open. AppModal's own portal (DeckCardDetailModal,
-          PostDetailModal, MemberProfileModal) renders above every
-          ScreenOverlay regardless, so there's no stacking to coordinate;
-          closing any of these just reveals Search again exactly as it was,
-          query and results intact. */}
+          PostDetailModal) renders above every ScreenOverlay regardless; the
+          member result below is a ScreenOverlay itself (sharing the family's
+          zIndex 500), so its JSX position -- after Search's own ScreenOverlay
+          -- is what keeps it stacked above Search. Closing any of these just
+          reveals Search again exactly as it was, query and results intact. */}
       <DeckCardDetailModal
         card={deckCardId ? DECK_CARDS.find((c) => c.id === deckCardId) ?? null : null}
         onClose={() => setDeckCardId(null)}
@@ -637,7 +637,16 @@ function MainApp({
         onClose={() => setSearchPostId(null)}
         canInteract={communityAccess === 'full'}
       />
-      <MemberProfileModal memberId={searchMemberId} onClose={() => setSearchMemberId(null)} />
+      {/* Reuses the exact same ProfileScreen the signed-in member edits
+          their own profile with -- passing `memberId` switches it into a
+          read-only "viewing someone else" render (see ProfileScreen.tsx).
+          Replaces the Round 18 MemberProfileModal placeholder (avatar + name
+          only), which is now deleted. Non-fullBleed, same as Profile/My
+          Workouts/Close Friends -- this isn't keyboard-driven, so the tab
+          bar stays visible underneath. */}
+      <ScreenOverlay visible={!!searchMemberId} topBasePadding={60}>
+        <ProfileScreen visible={!!searchMemberId} memberId={searchMemberId} onClose={() => setSearchMemberId(null)} />
+      </ScreenOverlay>
       <ScreenOverlay visible={sidebarOpen} fullBleed topFillColor={colors.green} topBasePadding={60}>
         <SidebarDrawer
           visible={sidebarOpen}

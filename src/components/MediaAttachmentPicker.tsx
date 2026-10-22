@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MediaAttachment } from '../lib/media';
 import { useMediaPicker } from '../lib/useMediaPicker';
@@ -21,10 +21,21 @@ type Props = {
 // shape, not a fixed-height crop, but an extremely tall photo still needs
 // a ceiling so it doesn't push the rest of the composer off screen.
 const MAX_PREVIEW_HEIGHT_FRACTION = 0.6;
-// Shown only for the instant between picking a photo and Image.getSize()
-// resolving its real dimensions -- a plausible starting box, not a
-// meaningful default otherwise.
-const FALLBACK_PREVIEW_HEIGHT = 200;
+// The box's ratio before the real photo's own dimensions are known -- and,
+// if they never arrive, forever. A previous round computed the preview's
+// height in JS (containerWidth / naturalRatio from Image.getSize()) and
+// fell back to a plain numeric height when that measurement hadn't
+// resolved yet; a real iPhone showed that fallback never actually painted
+// anything -- Image.getSize() opens its OWN separate decode of the photo
+// (blob/data URI, often HEIC-converted by the picker), independent of
+// whatever the visible <Image> itself is doing, and on that device it
+// never resolved at all, silently leaving the preview blank with REPLACE/
+// remove floating over nothing. Using CSS `aspectRatio` here instead means
+// the box's height is derived purely from its own rendered width by the
+// browser/layout engine -- no JS measurement, no state that can stay null,
+// nothing that can leave it at zero. It paints at this sensible default the
+// instant a photo is picked, full stop.
+const DEFAULT_PREVIEW_RATIO = 4 / 3;
 
 // Shared "ADD PHOTO / VIDEO" control used on Log Results and the community
 // composer — same picker, same thumbnail-preview-with-remove/replace
@@ -34,28 +45,50 @@ export function MediaAttachmentPicker({ media, onChange, compact }: Props) {
   const { pick } = useMediaPicker(onChange);
   const { height: screenHeight } = useWindowDimensions();
   const [naturalRatio, setNaturalRatio] = useState<number | null>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
 
-  // Real device report: the preview rendered as a wide horizontal crop
-  // (a fixed 160px-tall box with the default `cover` resize) while the
-  // posted photo later rendered correctly at its own shape -- the preview
-  // must show exactly what posting will. Image.getSize() reads the real
-  // decoded dimensions directly from the file/blob URI, independent of
-  // whatever box the Image element itself ends up rendered at.
+  // Refines the default box to the photo's real shape once its own
+  // dimensions are known. Deliberately NOT react-native-web's own Image
+  // onLoad plumbing -- that forwards the browser's native `load` event as
+  // `nativeEvent`, and reading `nativeEvent.target` off it turns out to be
+  // exactly the trap this round's real-device bug was hiding in: Chromium
+  // confirmed directly (`e.target === img` true synchronously inside
+  // `onload`, false one microtask later) that an Event's own `target`
+  // goes stale the moment react-native-web's internal `image.decode()`
+  // promise resolves -- which is ALWAYS one microtask after `onload`
+  // fires, so `nativeEvent.target` is unconditionally null by the time any
+  // onLoad handler built on top of it ever runs. A plain `window.Image()`
+  // probe -- the real "web image onLoad" API -- sidesteps this entirely
+  // by reading `naturalWidth`/`naturalHeight` directly off the Image
+  // object itself, inside its OWN synchronous `onload`, never through a
+  // stale event reference. If it never fires (or the photo genuinely can't
+  // decode), DEFAULT_PREVIEW_RATIO above keeps showing the photo contained
+  // -- never blank.
   useEffect(() => {
     setNaturalRatio(null);
     if (media?.type !== 'image') return;
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.Image !== 'function') {
+      // Native has no equivalent event-staleness issue -- Image.getSize()
+      // is the ordinary, reliable way to get this there.
+      let cancelled = false;
+      Image.getSize(
+        media.uri,
+        (w, h) => {
+          if (!cancelled && h > 0) setNaturalRatio(w / h);
+        },
+        () => {}
+      );
+      return () => {
+        cancelled = true;
+      };
+    }
     let cancelled = false;
-    Image.getSize(
-      media.uri,
-      (w, h) => {
-        if (!cancelled && h > 0) setNaturalRatio(w / h);
-      },
-      () => {
-        // Leave naturalRatio null -- falls back to FALLBACK_PREVIEW_HEIGHT
-        // below rather than a dead/blank box.
-      }
-    );
+    const probe = new window.Image();
+    probe.onload = () => {
+      if (cancelled) return;
+      const { naturalWidth: w, naturalHeight: h } = probe;
+      if (w && h) setNaturalRatio(w / h);
+    };
+    probe.src = media.uri;
     return () => {
       cancelled = true;
     };
@@ -63,26 +96,21 @@ export function MediaAttachmentPicker({ media, onChange, compact }: Props) {
 
   if (media) {
     const maxHeight = screenHeight * MAX_PREVIEW_HEIGHT_FRACTION;
-    const naturalHeight = naturalRatio && containerWidth ? containerWidth / naturalRatio : null;
-    const previewHeight = naturalHeight !== null ? Math.min(naturalHeight, maxHeight) : FALLBACK_PREVIEW_HEIGHT;
+    const ratio = naturalRatio ?? DEFAULT_PREVIEW_RATIO;
 
     return (
-      <View
-        style={styles.previewWrap}
-        onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
-        testID="media-preview"
-      >
+      <View style={styles.previewWrap} testID="media-preview">
         {media.type === 'image' ? (
           <Image
             source={{ uri: media.uri }}
-            // 'contain' always: when the box isn't capped, its ratio
-            // already exactly matches the image's own (computed above), so
-            // contain and cover render identically with nothing cropped;
-            // when it IS capped (an unusually tall photo), contain is what
-            // keeps the whole image visible, letterboxed, instead of
-            // cropping it to fit the cap.
+            // 'contain' always: once the real ratio is known the box
+            // matches it exactly (nothing cropped); before that, or if it
+            // never arrives, contain is what keeps the whole photo visible
+            // within the 4:3 default instead of cropping it to fill it.
+            // Capped (an unusually tall photo) is the same story once
+            // maxHeight actually binds.
             resizeMode="contain"
-            style={[styles.previewImage, { height: previewHeight }]}
+            style={[styles.previewImage, { aspectRatio: ratio, maxHeight }]}
           />
         ) : (
           <View style={styles.previewVideo}>
@@ -164,8 +192,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   previewImage: {
-    // Height is set inline per-instance (natural aspect ratio, capped at
-    // MAX_PREVIEW_HEIGHT_FRACTION of the screen) -- see the component body.
+    // aspectRatio + maxHeight are set inline per-instance (DEFAULT_PREVIEW_RATIO
+    // until the real photo's dimensions arrive, then its natural ratio,
+    // capped at MAX_PREVIEW_HEIGHT_FRACTION of the screen) -- see the
+    // component body.
     width: '100%',
     backgroundColor: colors.background,
   },

@@ -6,11 +6,13 @@ import * as ImagePicker from 'expo-image-picker';
 import { ModalHeader } from '../components/ModalHeader';
 import { Avatar } from '../components/Avatar';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
+import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { ProfileBadgeCase } from '../components/ProfileBadgeCase';
 import { ProfilePhotoCropModal } from '../components/ProfilePhotoCropModal';
 import { MembershipTier, useMembership } from '../context/MembershipContext';
 import { HowTrain, useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
+import { supabase } from '../lib/supabaseClient';
 import { useActionCompletion } from '../lib/useActionCompletion';
 import { useFocusRing } from '../lib/useFocusRing';
 import { colors, fonts } from '../theme';
@@ -18,6 +20,19 @@ import { colors, fonts } from '../theme';
 type Props = {
   visible: boolean;
   onClose: () => void;
+  // When set, renders a READ-ONLY view of a DIFFERENT member's profile
+  // instead of the signed-in member's own editable one (see the early
+  // branch in the component body below) — reached from tapping a MEMBERS
+  // result in search. `profiles` RLS already lets any signed-in member
+  // read any other member's full row, so this needs no new backend access.
+  memberId?: string | null;
+};
+
+type OtherMemberProfile = {
+  displayName: string;
+  avatarUrl: string | null;
+  instagramHandle: string;
+  favoriteQuote: string;
 };
 
 // Mirrors how SettingsScreen states each tier, but spelled out on its own
@@ -66,11 +81,55 @@ function useMembershipLine(): string {
   return parts.join('   ·   ');
 }
 
-export function ProfileScreen({ visible, onClose }: Props) {
+export function ProfileScreen({ visible, onClose, memberId }: Props) {
   const { photoUri, name, instagramHandle, favoriteQuote, howTrain, loading, error, updateProfile, setHowTrain } =
     useProfile();
   const displayName = useDisplayName();
   const membershipLine = useMembershipLine();
+
+  // Another member's profile, read-only -- fetched fresh each time a
+  // different memberId is viewed (never the signed-in member's own data
+  // above, which stays wired to useProfile() regardless of this branch).
+  const [otherMember, setOtherMember] = useState<OtherMemberProfile | null>(null);
+  const [otherMemberNotFound, setOtherMemberNotFound] = useState(false);
+
+  useEffect(() => {
+    if (!memberId) {
+      setOtherMember(null);
+      setOtherMemberNotFound(false);
+      return;
+    }
+    let cancelled = false;
+    setOtherMember(null);
+    setOtherMemberNotFound(false);
+    supabase
+      .from('profiles')
+      .select('display_name, avatar_url, instagram_handle, favorite_quote')
+      .eq('id', memberId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        if (!data) {
+          setOtherMemberNotFound(true);
+          return;
+        }
+        const row = data as {
+          display_name: string | null;
+          avatar_url: string | null;
+          instagram_handle: string | null;
+          favorite_quote: string | null;
+        };
+        setOtherMember({
+          displayName: row.display_name?.trim() || 'Member',
+          avatarUrl: row.avatar_url,
+          instagramHandle: row.instagram_handle?.trim() || '',
+          favoriteQuote: row.favorite_quote?.trim() || '',
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [memberId]);
 
   const [draftPhotoUri, setDraftPhotoUri] = useState(photoUri);
   const [draftName, setDraftName] = useState(name);
@@ -169,6 +228,53 @@ export function ProfileScreen({ visible, onClose }: Props) {
   };
 
   if (!visible) return null;
+
+  // Read-only "viewing member X" mode -- checked before any of the
+  // own-profile loading/error/editable branches below, none of which apply
+  // here. No photo picker, no editable inputs, no SAVE button, no
+  // membership line (that's private to the signed-in member only).
+  if (memberId) {
+    return (
+      <View style={styles.container}>
+        <ModalHeader title="PROFILE" onBack={onClose} backTestID="close-profile" />
+        <ScrollView contentContainerStyle={styles.body}>
+          {otherMember ? (
+            <>
+              <View style={styles.photoWrap}>
+                <Avatar name={otherMember.displayName} uri={otherMember.avatarUrl} size={96} />
+              </View>
+
+              <Text style={styles.otherMemberName} testID="member-profile-name">
+                {otherMember.displayName}
+              </Text>
+
+              {otherMember.instagramHandle ? (
+                <ExternalLinkPressable
+                  href={`https://instagram.com/${otherMember.instagramHandle}`}
+                  style={styles.otherMemberHandleLink}
+                  testID="member-profile-instagram"
+                >
+                  <Text style={styles.otherMemberHandleText}>@{otherMember.instagramHandle}</Text>
+                </ExternalLinkPressable>
+              ) : null}
+
+              {otherMember.favoriteQuote ? (
+                <Text style={styles.otherMemberQuote} testID="member-profile-quote">
+                  "{otherMember.favoriteQuote}"
+                </Text>
+              ) : null}
+
+              <ProfileBadgeCase authorName={otherMember.displayName} />
+            </>
+          ) : otherMemberNotFound ? (
+            <Text style={styles.footnote}>This member couldn't be found.</Text>
+          ) : (
+            <View testID="member-profile-loading" />
+          )}
+        </ScrollView>
+      </View>
+    );
+  }
 
   if (loading) {
     return (
@@ -355,6 +461,31 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textAlign: 'center',
     marginBottom: 20,
+  },
+  otherMemberName: {
+    color: colors.text,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 20,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  otherMemberHandleLink: {
+    marginTop: 6,
+  },
+  otherMemberHandleText: {
+    color: colors.green,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+  },
+  otherMemberQuote: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontStyle: 'italic',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
   },
   label: {
     alignSelf: 'flex-start',

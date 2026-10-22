@@ -76,6 +76,10 @@ const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR || null;
 const DIST_DIR = process.env.DIST_DIR || path.join(__dirname, '..', 'dist');
 const PROJECT_REF = 'qooezwnskaqvmquydijg';
 const USER_ID = '99999999-9999-9999-9999-999999999999';
+// A DIFFERENT member's id (never the signed-in USER_ID) -- used by the
+// [search-deep-link/member] fixture below as a post author/search result
+// whose profile the signed-in member views read-only.
+const MEMBER_FIXTURE_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 // A Face-ID-era iPhone's real insets (iPhone 14/15/16 standard size).
 const FORCED_TOP = 59;
@@ -177,6 +181,32 @@ function buildSolidPng(width, height, [r, g, b]) {
 // rendered box's own ratio should match this exactly (not letterboxed).
 const ASPECT_RATIO_FIXTURE_PNG = buildSolidPng(300, 200, [60, 140, 90]);
 const ASPECT_RATIO_FIXTURE_RATIO = 300 / 200;
+
+// This round's own regression check needs a REAL, LARGE JPEG -- the real
+// device report that motivated it was a genuine iPhone photo (HEIC-
+// converted by the picker), not a small synthetic PNG, and the whole
+// hypothesis under test is that a large/awkward real photo is exactly what
+// can make Image.getSize() silently never resolve. `jpeg-js` (a small,
+// well-tested pure-JS encoder/decoder, added as a devDependency purely for
+// this fixture -- never shipped in the app bundle) produces a genuinely
+// decodable baseline JPEG, the same way buildSolidPng above hand-rolls a
+// real PNG rather than a byte string that only looks like one. The
+// dimensions are a real iPhone 12MP photo's own resolution (4032x3024, a
+// 4:3 ratio deliberately distinct from the PNG fixture's 1.5 above, so a
+// test against each can't be satisfied by the same wrong number).
+const jpeg = require('jpeg-js');
+function buildSolidJpeg(width, height, [r, g, b]) {
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let i = 0; i < width * height; i++) {
+    rgba[i * 4] = r;
+    rgba[i * 4 + 1] = g;
+    rgba[i * 4 + 2] = b;
+    rgba[i * 4 + 3] = 255;
+  }
+  return jpeg.encode({ data: rgba, width, height }, 80).data;
+}
+const LARGE_JPEG_FIXTURE = buildSolidJpeg(4032, 3024, [90, 150, 110]);
+const LARGE_JPEG_FIXTURE_RATIO = 4032 / 3024;
 
 async function setupMocks(page) {
   await page.route('**/auth/v1/token*', (route) =>
@@ -1780,7 +1810,7 @@ async function run() {
             workout_results_line: null,
             pinned: false,
             created_at: new Date().toISOString(),
-            author_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            author_id: MEMBER_FIXTURE_ID,
             profiles: { display_name: 'Ada Memberson' },
             community_comments: [],
             community_reactions: [],
@@ -1812,6 +1842,46 @@ async function run() {
         body: JSON.stringify([{ user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } }]),
       })
     );
+    // ProfileScreen's own member-lookup query (`.eq('id', memberId)`) needs
+    // a row distinct from the generic signed-in "Test Member" default --
+    // Ada Memberson's own profile, with real Instagram/quote fields, so the
+    // [search-deep-link/member] check below can assert the REAL member
+    // profile view rendered (not just that some modal opened). Any other
+    // `profiles` request (the signed-in member's own fetch, badge/group
+    // chat participant lookups) falls through to setupMocks' own generic
+    // Test Member row.
+    await page.route('**/rest/v1/profiles*', (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get('id') === `eq.${MEMBER_FIXTURE_ID}`) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            display_name: 'Ada Memberson',
+            avatar_url: null,
+            instagram_handle: 'ada.lifts',
+            favorite_quote: 'Discipline equals freedom.',
+          }),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Member',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: false,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+          },
+        ]),
+      });
+    });
     await seedSignedInSession(page);
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(900);
@@ -1970,17 +2040,38 @@ async function run() {
       return true;
     });
     await page.waitForTimeout(500);
-    const memberProfileOpen = await page
-      .getByTestId('member-profile-close')
-      .isVisible()
-      .catch(() => false);
+    // This round replaces the Round 18 placeholder (avatar + name only)
+    // with the real, shared ProfileScreen in its read-only "viewing member
+    // X" mode -- assert the full set of fields the user's own instructions
+    // named (photo, name, Instagram handle, favorite quote, Trophy Case),
+    // not just that some modal opened.
+    const memberProfileDetail = await page.evaluate(() => ({
+      closeVisible: !!document.querySelector('[data-testid="close-profile"]'),
+      name: document.querySelector('[data-testid="member-profile-name"]')?.textContent ?? null,
+      instagram: document.querySelector('[data-testid="member-profile-instagram"]')?.textContent ?? null,
+      quote: document.querySelector('[data-testid="member-profile-quote"]')?.textContent ?? null,
+      trophyCaseVisible: Array.from(document.querySelectorAll('*')).some((el) => el.textContent.trim() === 'TROPHY CASE'),
+      badgeCellCount: document.querySelectorAll('[data-testid^="profile-badge-"]').length,
+    }));
     record(
-      '[search-deep-link/member] tapping a MEMBERS result opens a read-only view of their profile',
-      memberClicked && memberProfileOpen,
-      JSON.stringify({ memberClicked, memberProfileOpen })
+      '[search-deep-link/member] tapping a MEMBERS result opens the real ProfileScreen, read-only, for that member',
+      memberClicked &&
+        memberProfileDetail.closeVisible &&
+        memberProfileDetail.name === 'Ada Memberson' &&
+        memberProfileDetail.instagram === '@ada.lifts' &&
+        memberProfileDetail.quote === '"Discipline equals freedom."' &&
+        memberProfileDetail.trophyCaseVisible &&
+        memberProfileDetail.badgeCellCount > 0,
+      JSON.stringify({ memberClicked, ...memberProfileDetail })
     );
-    await page.getByTestId('member-profile-close').click({ timeout: 5000 }).catch(() => {});
+    await page.getByTestId('close-profile').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(300);
+    const queryAfterMember = await page.locator('#app-search-input').inputValue().catch(() => null);
+    record(
+      '[search-deep-link/back] closing a MEMBERS result reveals search again underneath, query intact',
+      queryAfterMember === 'memberson',
+      JSON.stringify({ queryAfterMember })
+    );
 
     // MOVEMENTS: opens that exact movement in the vault, labeled "BACK TO
     // SEARCH" (the existing returnLabel mechanism movementVaultModal.ts
@@ -2276,27 +2367,54 @@ async function run() {
     await page.getByText('LOG IT. POST IT.', { exact: false }).first().click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(500);
 
+    // Helper shared by both fixtures below: a real device showed the OLD
+    // Image.getSize()-based preview can simply never paint anything --
+    // this reads the preview box's own rect at a fixed, short delay (well
+    // under the user's "within a second" bar) BEFORE waiting for any photo
+    // decode to finish, so a regression back to "nothing paints until some
+    // async measurement resolves" fails this check regardless of how long
+    // the rest of the test waits afterward.
+    async function readPreviewRect() {
+      return page.evaluate(() => {
+        const el = document.querySelector('[data-testid="media-preview"]');
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { width: Math.round(r.width), height: Math.round(r.height) };
+      });
+    }
+
     await page.getByTestId('media-add').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(300);
     const [fileChooser] = await Promise.all([
       page.waitForEvent('filechooser', { timeout: 5000 }),
       page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
     ]);
+    // Mirrors the real device path exactly: useMediaPicker.ts's own web
+    // branch calls URL.createObjectURL() on the real File object Playwright
+    // constructs here from this buffer -- a genuine blob: URL, not an
+    // abstraction over one.
     await fileChooser.setFiles({ name: 'fixture.png', mimeType: 'image/png', buffer: ASPECT_RATIO_FIXTURE_PNG });
-    // Image.getSize() resolving the real decoded dimensions is itself async,
-    // on top of the file picker's own round trip -- give it real room.
-    await page.waitForTimeout(700);
 
+    // Within a second, well before Image.getSize()/decode could ever
+    // resolve: the box must already be painted at the synchronous
+    // DEFAULT_PREVIEW_RATIO box -- never a zero/blank sliver.
+    await page.waitForTimeout(150);
+    const quickRectPng = await readPreviewRect();
+    record(
+      '[photo-preview/composer] the PNG fixture paints a nonzero preview box within a second, before any load event could resolve',
+      !!quickRectPng && quickRectPng.width > 100 && quickRectPng.height > 100,
+      JSON.stringify({ quickRectPng })
+    );
+
+    // Image.getSize()/decode resolving the real dimensions is itself
+    // async, on top of the file picker's own round trip -- give it real
+    // room before checking the REFINED ratio.
+    await page.waitForTimeout(700);
+    const previewRect = await readPreviewRect();
     const previewVisible = await page
       .getByTestId('media-preview')
       .isVisible()
       .catch(() => false);
-    const previewRect = await page.evaluate(() => {
-      const el = document.querySelector('[data-testid="media-preview"]');
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return { width: Math.round(r.width), height: Math.round(r.height) };
-    });
     record(
       '[photo-preview/composer] selecting a photo shows a real, correctly-sized preview (not collapsed to a blank sliver)',
       previewVisible && !!previewRect && previewRect.width > 100 && previewRect.height > 100,
@@ -2311,6 +2429,38 @@ async function run() {
       '[photo-preview/composer] the preview renders at the photo\'s own natural aspect ratio (1.5), not a fixed-height crop',
       previewRatio !== null && Math.abs(previewRatio - ASPECT_RATIO_FIXTURE_RATIO) < 0.08,
       JSON.stringify({ previewRect, previewRatio, expected: ASPECT_RATIO_FIXTURE_RATIO })
+    );
+
+    // --- The large, real-device-shaped fixture: a genuine 4032x3024
+    // (iPhone 12MP, 4:3) baseline JPEG -- the real device report's own
+    // hypothesis was that a large/HEIC-converted real photo is exactly
+    // what can make Image.getSize() silently never resolve. REPLACE swaps
+    // the attached media without closing the composer.
+    await page.getByTestId('media-replace').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const [fileChooser2] = await Promise.all([
+      page.waitForEvent('filechooser', { timeout: 5000 }),
+      page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+    ]);
+    await fileChooser2.setFiles({ name: 'large-fixture.jpg', mimeType: 'image/jpeg', buffer: LARGE_JPEG_FIXTURE });
+
+    await page.waitForTimeout(150);
+    const quickRectJpeg = await readPreviewRect();
+    record(
+      '[photo-preview/composer] the large JPEG fixture ALSO paints a nonzero preview box within a second, before any load event could resolve',
+      !!quickRectJpeg && quickRectJpeg.width > 100 && quickRectJpeg.height > 100,
+      JSON.stringify({ quickRectJpeg })
+    );
+
+    // A 4032x3024 real photo takes longer to decode than the tiny PNG --
+    // give it real room before checking the refined ratio.
+    await page.waitForTimeout(1500);
+    const jpegRect = await readPreviewRect();
+    const jpegRatio = jpegRect ? jpegRect.width / jpegRect.height : null;
+    record(
+      '[photo-preview/composer] the large JPEG fixture refines to its own real aspect ratio (4:3) once its load event fires',
+      jpegRatio !== null && Math.abs(jpegRatio - LARGE_JPEG_FIXTURE_RATIO) < 0.08,
+      JSON.stringify({ jpegRect, jpegRatio, expected: LARGE_JPEG_FIXTURE_RATIO })
     );
 
     await page.locator('#compose-post-title-input').fill('Beta Test 1');
