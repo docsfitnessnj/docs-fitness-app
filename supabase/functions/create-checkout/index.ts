@@ -104,7 +104,7 @@ Deno.serve(async (req) => {
       // Default/'monthly' — the only plan the Founding 50 rate can ever
       // apply to.
       const [settingsRes, claimedRes, alreadyClaimedRes] = await Promise.all([
-        admin.from('founding_fifty_settings').select('starts_at, ends_at').eq('id', 1).maybeSingle(),
+        admin.from('founding_fifty_settings').select('starts_at, ends_at, enabled').eq('id', 1).maybeSingle(),
         admin.from('founding_fifty_members').select('id', { count: 'exact', head: true }),
         admin.from('founding_fifty_members').select('id').eq('id', user.id).maybeSingle(),
       ]);
@@ -114,7 +114,12 @@ Deno.serve(async (req) => {
       const windowLive = startsAt !== null && endsAt !== null && now >= startsAt && now < endsAt;
       const soldOut = (claimedRes.count ?? 0) >= 50;
       const alreadyClaimed = !!alreadyClaimedRes.data;
-      const eligibleForFounding = windowLive && !soldOut && !alreadyClaimed;
+      // The master switch (see migration_022.sql) — re-checked here, server
+      // side, same as every other eligibility condition, so a stale or
+      // forged client request can never get the founding rate while Doc has
+      // the launch switched off, no matter what the saved dates say.
+      const enabled = !!settingsRes.data?.enabled;
+      const eligibleForFounding = enabled && windowLive && !soldOut && !alreadyClaimed;
       if (eligibleForFounding) {
         priceId = PRICE_IDS.founding;
         planLabel = 'founding';

@@ -6,6 +6,7 @@ type PublicStatusRow = {
   starts_at: string | null;
   ends_at: string | null;
   claimed_count: number;
+  enabled: boolean;
 };
 
 type FoundingFiftyPublicStatus = {
@@ -58,9 +59,13 @@ export function useFoundingFiftyPublicStatus(): FoundingFiftyPublicStatus {
         const startsAtMs = row.starts_at ? new Date(row.starts_at).getTime() : null;
         const endsAtMs = row.ends_at ? new Date(row.ends_at).getTime() : null;
         const windowOpen = startsAtMs !== null && endsAtMs !== null && now >= startsAtMs && now < endsAtMs;
+        // `enabled` (see migration_022.sql) gates the whole offer
+        // regardless of the dates — the About page's own logged-out
+        // takeover must honor the same master switch the signed-in
+        // context does.
         setState({
           loading: false,
-          isLive: windowOpen && !soldOut,
+          isLive: !!row.enabled && windowOpen && !soldOut,
           claimedCount,
           spotsRemaining,
           capacity: FOUNDING_FIFTY_CAPACITY,

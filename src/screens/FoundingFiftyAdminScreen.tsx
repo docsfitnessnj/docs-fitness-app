@@ -75,6 +75,8 @@ export function FoundingFiftyAdminScreen({ visible, onClose }: Props) {
   const [endTime, setEndTime] = useState('');
   const [saving, setSaving] = useState(false);
   const saveConfirm = useSaveConfirmation();
+  const [enabledPending, setEnabledPending] = useState(false);
+  const enabledSaveConfirm = useSaveConfirmation();
 
   // Reset the draft fields to the saved window every time the screen opens.
   useEffect(() => {
@@ -91,15 +93,30 @@ export function FoundingFiftyAdminScreen({ visible, onClose }: Props) {
 
   const members = [...founding50.members].sort((a, b) => b.joinedAt - a.joinedAt);
 
-  const statusLabel = founding50.soldOut
-    ? 'SOLD OUT — all 50 spots claimed'
-    : founding50.isLive
-      ? 'LIVE NOW'
-      : founding50.startsAt === null || founding50.endsAt === null
-        ? 'NOT SET — no launch window scheduled'
-        : Date.now() < founding50.startsAt
-          ? 'SCHEDULED — hasn’t started yet'
-          : 'ENDED';
+  const statusLabel = !founding50.enabled
+    ? 'OFF — launch switch is off, dates are ignored'
+    : founding50.soldOut
+      ? 'SOLD OUT — all 50 spots claimed'
+      : founding50.isLive
+        ? 'LIVE NOW'
+        : founding50.startsAt === null || founding50.endsAt === null
+          ? 'NOT SET — no launch window scheduled'
+          : Date.now() < founding50.startsAt
+            ? 'SCHEDULED — hasn’t started yet'
+            : 'ENDED';
+
+  const toggleEnabled = async () => {
+    setEnabledPending(true);
+    enabledSaveConfirm.start();
+    const result = await founding50.setEnabled(!founding50.enabled);
+    setEnabledPending(false);
+    if (result.error) {
+      enabledSaveConfirm.fail(result.error);
+      showAlert("Couldn't Save", result.error);
+      return;
+    }
+    enabledSaveConfirm.succeed();
+  };
 
   const saveWindow = async () => {
     // Both fields empty on either side clears the window entirely.
@@ -142,6 +159,31 @@ export function FoundingFiftyAdminScreen({ visible, onClose }: Props) {
       <ModalHeader title="FOUNDING 50 LAUNCH" onBack={onClose} backTestID="close-founding-fifty-admin" />
 
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+        <Pressable
+          style={[styles.masterToggleRow, enabledPending && styles.saveButtonDisabled]}
+          disabled={enabledPending}
+          onPress={toggleEnabled}
+          testID="founding-fifty-enabled-toggle"
+        >
+          <Toggle on={founding50.enabled} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.masterToggleTitle}>FOUNDING 50 LAUNCH SWITCH</Text>
+            <Text style={styles.masterToggleSubtext}>
+              OFF disables the entire offer everywhere, regardless of the dates below. ON lets the dates and spots
+              decide, same as always.
+            </Text>
+          </View>
+          <Text
+            style={[styles.masterToggleState, founding50.enabled ? styles.masterToggleStateLive : styles.masterToggleStateOff]}
+            testID="founding-fifty-enabled-label"
+          >
+            {founding50.enabled ? 'LIVE' : 'OFF'}
+          </Text>
+        </Pressable>
+        <View style={styles.saveConfirmWrap}>
+          <SaveConfirmation state={enabledSaveConfirm.state} errorMessage={enabledSaveConfirm.errorMessage} />
+        </View>
+
         <View style={styles.statusRow} testID="founding-fifty-status">
           <Toggle on={founding50.isLive} />
           <Text style={styles.statusText}>{statusLabel}</Text>
@@ -262,6 +304,41 @@ const styles = StyleSheet.create({
   body: {
     paddingHorizontal: 20,
     paddingBottom: 40,
+  },
+  masterToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 8,
+    gap: 12,
+  },
+  masterToggleTitle: {
+    color: colors.text,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  masterToggleSubtext: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  masterToggleState: {
+    fontFamily: fonts.headline,
+    fontSize: 18,
+    letterSpacing: 1,
+  },
+  masterToggleStateLive: {
+    color: colors.gold,
+  },
+  masterToggleStateOff: {
+    color: colors.textMuted,
   },
   statusRow: {
     flexDirection: 'row',
