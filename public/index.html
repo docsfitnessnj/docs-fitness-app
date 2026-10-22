@@ -702,6 +702,28 @@
       #doc-thread-composer-safe-area-fill {
         height: var(--real-safe-bottom, 0px);
       }
+      /* The tab bar's own real footprint -- what anything that needs to
+         stop above it, or spotlight it, must reserve -- is its own content
+         height (TAB_BAR_CONTENT_HEIGHT in tabBarHeight.ts, 64px; duplicated
+         here the same way 60 is duplicated as topBasePadding below) PLUS
+         the #tab-bar-safe-area-fill rule directly above, which extends the
+         bar's background further in standalone mode but isn't part of the
+         bar's own box. Two real-device bugs traced to consumers that used
+         only the flat 64 and never added this: ScreenOverlay's own
+         non-fullBleed box (ScreenOverlay.tsx) stopped short of the fill,
+         letting its bottom edge cut through the middle of the real tab bar
+         on Movement Vault; TabBarTourMarker (App.tsx) undersized tour stop
+         4's own spotlight cutout the same way, letting the backdrop darken
+         the tab icons while leaving the labels exposed below the cutoff.
+         Both share this one id-keyed override rather than each inventing
+         its own -- "every surface that shows the tab bar must show it
+         complete" is one fix, not one per screen. */
+      #screen-overlay-tab-bar-gap {
+        bottom: calc(64px + var(--real-safe-bottom, 0px)) !important;
+      }
+      #tab-bar-tour-marker {
+        height: calc(64px + var(--real-safe-bottom, 0px)) !important;
+      }
       /* Rounds 15 and 16 (full history in AGENTS.md) each tried a
          per-composer fix here -- first a measured `transform` written as
          an inline style, then the same measurement delivered through a

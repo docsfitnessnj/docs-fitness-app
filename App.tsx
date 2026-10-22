@@ -466,6 +466,22 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
 // Invisible marker sized/positioned to match the real tab bar, purely so the
 // tour can measure "the tab bar" by ref — react-navigation's bottom-tabs
 // doesn't expose a ref to its own rendered bar.
+//
+// `height: tabBarHeight` alone (the JS hook, which is always the flat
+// TAB_BAR_CONTENT_HEIGHT on web since insets.bottom is permanently pinned
+// to 0 -- see AGENTS.md) only covers the tab bar's OWN box, not the
+// SafeAreaBottomFill sibling stacked below it that extends the bar's
+// background through the real home-indicator inset in standalone mode. A
+// real device confirmed the spotlight on tour stop 4 ("THE FOUR ROOMS")
+// was undersized by exactly that fill height, so its own dark backdrop
+// covered the tab icons (the top portion of the bar, since this marker is
+// anchored to the screen's true bottom edge, not the bar's own top) while
+// leaving the labels exposed below the cutoff -- the same cropped-icons
+// shape the search overlay bug had, for the same reason: tabBarHeight was
+// used standing in for the bar's full real footprint without adding the
+// fill. The nativeID below lets index.html add the real inset back via
+// `calc()`, the same technique the rest of this app uses for every other
+// standalone-only addition.
 function TabBarTourMarker() {
   const { registerTarget } = useTour();
   const tabBarHeight = useTabBarHeight();
@@ -473,6 +489,7 @@ function TabBarTourMarker() {
     <View
       ref={registerTarget('tab-bar')}
       pointerEvents="none"
+      nativeID="tab-bar-tour-marker"
       style={[styles.tabBarTourMarker, { height: tabBarHeight }]}
     />
   );
@@ -580,21 +597,24 @@ function MainApp({
           onOpenGroupChat={activeTab === 'Community' ? onOpenGroupChat : undefined}
           onOpenDebugOverlay={Platform.OS === 'web' ? () => setDebugOverlayOpen(true) : undefined}
         />
-        <RootNavigator tabBarHidden={sidebarOpen || keyboardVisible || groupChatOpen || searchOpen} />
-        {!(sidebarOpen || keyboardVisible || groupChatOpen || searchOpen) && (
+        <RootNavigator tabBarHidden={sidebarOpen || keyboardVisible || groupChatOpen} />
+        {!(sidebarOpen || keyboardVisible || groupChatOpen) && (
           <SafeAreaBottomFill nativeID="tab-bar-safe-area-fill" backgroundColor={colors.card} />
         )}
         <TabBarTourMarker />
       </View>
       <DebugOverlay visible={debugOverlayOpen} onClose={() => setDebugOverlayOpen(false)} />
-      {/* fullBleed + tabBarHidden (above): real-device report found the real
-          tab bar, left visible/tappable underneath a non-fullBleed overlay,
-          rendering partially cropped specifically on Search -- its
-          TextInput autoFocuses, so the keyboard shell can be resizing #root
-          the instant this opens. Covering the whole shell and hiding the
-          real tab bar removes the gap this overlay used to leave for it,
-          the same fix already applied to DOC'S GROUP CHAT above. */}
-      <ScreenOverlay visible={searchOpen} fullBleed topBasePadding={60}>
+      {/* fullBleed is tied to `keyboardVisible`, not unconditional -- a real
+          device report corrected the previous round's fix: with the
+          keyboard CLOSED, the four tabs must stay visible and tappable
+          underneath search (same as any other non-fullBleed secondary
+          screen), and only need hiding while the keyboard is actually open
+          and the Round 17 shell can be resizing #root (the overlay then
+          needs to cover the full shrunk shell, same reasoning as DOC'S
+          GROUP CHAT). `searchOpen` itself was dropped from `tabBarHidden`/
+          the fill condition above for the same reason -- `keyboardVisible`
+          alone already covers the one case that actually needs hiding. */}
+      <ScreenOverlay visible={searchOpen} fullBleed={keyboardVisible} topBasePadding={60}>
         <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} query={searchQuery} onQueryChange={setSearchQuery} />
       </ScreenOverlay>
       {/* Global, App.tsx-level singletons a search result opens straight

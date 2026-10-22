@@ -130,9 +130,9 @@ const SANCTIONED_PROBE_IDS = [
   'debug-probe-100vh',
 ];
 
-// A real, decodable 1x1 PNG built in-memory (no fixture file to maintain,
-// no binary committed to the repo) -- used by the create-post photo-
-// preview-then-feed-render check below. PNG requires a correct CRC32 per
+// A real, decodable PNG built in-memory at any width/height (no fixture
+// file to maintain, no binary committed to the repo) -- used by the
+// create-post photo-preview checks below. PNG requires a correct CRC32 per
 // chunk, not just well-formed bytes, so this is a minimal real encoder
 // rather than a hand-assembled byte string that might only happen to work.
 function crc32(buf) {
@@ -151,20 +151,32 @@ function pngChunk(type, data) {
   crcBuf.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
   return Buffer.concat([len, typeBuf, data, crcBuf]);
 }
-function buildOnePixelPng() {
+function buildSolidPng(width, height, [r, g, b]) {
   const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   const ihdrData = Buffer.alloc(13);
-  ihdrData.writeUInt32BE(1, 0); // width
-  ihdrData.writeUInt32BE(1, 4); // height
+  ihdrData.writeUInt32BE(width, 0);
+  ihdrData.writeUInt32BE(height, 4);
   ihdrData[8] = 8; // bit depth
   ihdrData[9] = 2; // color type: RGB
   const ihdr = pngChunk('IHDR', ihdrData);
-  const raw = Buffer.from([0, 220, 38, 38]); // filter byte (none) + one red-ish RGB pixel
+  const row = Buffer.alloc(1 + width * 3); // filter byte (none) + width RGB pixels
+  for (let x = 0; x < width; x++) {
+    row[1 + x * 3] = r;
+    row[1 + x * 3 + 1] = g;
+    row[1 + x * 3 + 2] = b;
+  }
+  const raw = Buffer.concat(Array.from({ length: height }, () => row));
   const idat = pngChunk('IDAT', zlib.deflateSync(raw));
   const iend = pngChunk('IEND', Buffer.alloc(0));
   return Buffer.concat([signature, ihdr, idat, iend]);
 }
-const FIXTURE_PNG = buildOnePixelPng();
+// 1.5 (landscape) -- deliberately NOT close to the old bug's own ratio
+// (a fixed 160px-tall box at ~350px rendered width, ~2.19), so a test
+// against it can actually tell the fixed-crop bug and the real fix apart,
+// and well under the 60%-of-screen-height cap at this viewport so the
+// rendered box's own ratio should match this exactly (not letterboxed).
+const ASPECT_RATIO_FIXTURE_PNG = buildSolidPng(300, 200, [60, 140, 90]);
+const ASPECT_RATIO_FIXTURE_RATIO = 300 / 200;
 
 async function setupMocks(page) {
   await page.route('**/auth/v1/token*', (route) =>
@@ -1558,18 +1570,25 @@ async function run() {
     await context.close();
   }
 
-  // --- THIS ROUND's own regression guard: real-device report found the
-  // search overlay broken two ways -- the real tab bar partially cropped
-  // (icons cut off, labels visible) at rest, and underlying-screen content
-  // (a reaction row, a deck card, a schedule card) bleeding through near
-  // the bottom of the overlay once the keyboard opened. Root cause was
-  // Search's own ScreenOverlay usage missing `fullBleed` (see App.tsx) --
-  // unlike the chopped-tab-bar RESET LEAK the block above already covers,
-  // this is the overlay's base coverage, checked at rest, under all three
-  // keyboard-shell regimes, and after a full open/close cycle.
+  // --- Round 18 found the search overlay broken two ways -- the real tab
+  // bar partially cropped at rest, and underlying-screen content bleeding
+  // through near the bottom of the overlay once the keyboard opened -- and
+  // fixed it by making search `fullBleed` + hiding the real tab bar
+  // UNCONDITIONALLY whenever search was open. Round 19 corrected that
+  // overcorrection: a real device confirmed the four tabs must stay
+  // visible and tappable underneath search whenever the keyboard is
+  // CLOSED, the same as any other non-fullBleed secondary screen -- only
+  // hiding while the keyboard is open, which is also the one case where
+  // the Round 18 bleed-through fix actually needs to apply. `fullBleed` is
+  // now tied to `keyboardVisible` (see App.tsx), not unconditional.
+  // useKeyboardVisible() is purely a visualViewport.height-shrink signal
+  // on web (see useKeyboardVisible.ts) -- nothing in headless Chromium
+  // shrinks it on its own, so "at rest" here needs no explicit blur step;
+  // it's simply never true until a regime below forces it.
   // SearchModal.tsx's own `nativeID="search-screen-container"` is the
   // measurement anchor -- the one element that must always reach the exact
-  // bottom edge of whatever height #root currently is.
+  // bottom edge of whatever height #root currently is while the overlay
+  // IS fullBleed.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -1578,6 +1597,12 @@ async function run() {
     await seedSignedInSession(page);
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(900);
+    // A real nonzero home-indicator inset -- the exact condition the
+    // cropped-tab-bar bug on Movement Vault (and tour stop 4) needed to
+    // reproduce at all, see #screen-overlay-tab-bar-gap below -- forced the
+    // same way every other screen in this suite simulates standalone.
+    await page.addStyleTag({ content: FORCE_INSET_CSS });
+    await page.waitForTimeout(200);
 
     await page.getByTestId('open-search').click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(500);
@@ -1589,21 +1614,21 @@ async function run() {
       })
     );
     record(
-      '[search-screen/at-rest] the real tab bar is fully hidden (zero rendered size) while search is open, not partially cropped',
-      tabsAtRest.length > 0 && tabsAtRest.every((t) => t.width === 0 && t.height === 0),
+      '[search-screen/at-rest] the real tab bar is fully visible underneath search while the keyboard is closed, not hidden or cropped',
+      tabsAtRest.length > 0 && tabsAtRest.every((t) => t.width > 0 && t.height > 0),
       JSON.stringify(tabsAtRest)
     );
-
-    const containerAtRest = await page.evaluate(() => {
-      const el = document.getElementById('search-screen-container');
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return { top: Math.round(r.top), bottom: Math.round(r.bottom) };
-    });
+    const tabHitsAtRest = await Promise.all([0, 1, 2, 3].map((i) => hitTestsNth(page, '[role="tab"]', i)));
     record(
-      '[search-screen/at-rest] the search overlay reaches the true bottom edge of the shell -- no gap left for the tab bar or anything else to show through',
-      !!containerAtRest && Math.abs(containerAtRest.bottom - VIEWPORT.height) <= 1,
-      JSON.stringify({ containerAtRest, viewportHeight: VIEWPORT.height })
+      '[search-screen/at-rest] every tab still receives its own tap underneath search, not the overlay',
+      tabHitsAtRest.every((r) => r.found && r.visible && r.ok),
+      JSON.stringify(tabHitsAtRest)
+    );
+    const fillAtRest = await bottomFillReachesEdge(page, 'tab-bar-safe-area-fill');
+    record(
+      '[search-screen/at-rest] the tab bar\'s own safe-area fill reaches the true physical bottom edge underneath search',
+      !!fillAtRest && fillAtRest.height === FORCED_BOTTOM && Math.abs(fillAtRest.bottom - fillAtRest.windowHeight) <= 1,
+      JSON.stringify(fillAtRest)
     );
 
     for (const regime of KEYBOARD_SHELL_REGIMES) {
@@ -1611,6 +1636,8 @@ async function run() {
       await forceVisualViewport(page, { height: regime.vvHeight, offsetTop: regime.offsetTop });
       await page.waitForTimeout(200);
 
+      // Keyboard open (keyboardVisible true): fullBleed kicks in, same
+      // coverage requirements Round 18 established.
       const expectedBottom = regime.offsetTop + regime.vvHeight;
       const container = await page.evaluate(() => {
         const el = document.getElementById('search-screen-container');
@@ -1648,7 +1675,55 @@ async function run() {
       await resetInnerHeight(page);
       await resetVisualViewport(page);
       await page.waitForTimeout(200);
+
+      // Keyboard closed again (same regime cycle): the four tabs must come
+      // back automatically, underneath search, with no need to close
+      // search itself -- the exact behavior this round's correction adds.
+      const tabsAfterRegime = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('[role="tab"]')).map((el) => {
+          const r = el.getBoundingClientRect();
+          return { width: r.width, height: r.height };
+        })
+      );
+      record(
+        `[search-screen/${regime.name}] closing the keyboard restores the tab bar underneath search automatically, without closing search`,
+        tabsAfterRegime.length > 0 && tabsAfterRegime.every((t) => t.width > 0 && t.height > 0),
+        JSON.stringify(tabsAfterRegime)
+      );
     }
+
+    // Scrollable results under a forced keyboard regime: a query broad
+    // enough to produce more rows than the shrunk shell can show at once.
+    await page.locator('#app-search-input').fill('s');
+    await page.waitForTimeout(300);
+    await forceInnerHeight(page, KEYBOARD_SHELL_REGIMES[0].innerHeight);
+    await forceVisualViewport(page, { height: KEYBOARD_SHELL_REGIMES[0].vvHeight, offsetTop: KEYBOARD_SHELL_REGIMES[0].offsetTop });
+    await page.waitForTimeout(300);
+    const scrollInfo = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="search-results-scroll"]');
+      if (!el) return null;
+      return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, canScroll: el.scrollHeight > el.clientHeight };
+    });
+    let scrollMoved = false;
+    if (scrollInfo?.canScroll) {
+      await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="search-results-scroll"]');
+        if (el) el.scrollTop = 40;
+      });
+      await page.waitForTimeout(100);
+      scrollMoved = await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="search-results-scroll"]');
+        return !!el && el.scrollTop > 0;
+      });
+    }
+    record(
+      '[search-screen/scroll] results overflow and actually scroll under a forced keyboard regime',
+      !!scrollInfo && scrollInfo.canScroll && scrollMoved,
+      JSON.stringify({ scrollInfo, scrollMoved })
+    );
+    await resetInnerHeight(page);
+    await resetVisualViewport(page);
+    await page.waitForTimeout(200);
 
     // After a full open/close cycle: closing search (CANCEL) restores the
     // real tab bar to fully visible, not left cropped by any reset leak.
@@ -1936,6 +2011,210 @@ async function run() {
     await context.close();
   }
 
+  // --- THIS ROUND's own regression guard: real-device report found typing
+  // a single common letter ("L") returning results with that letter
+  // anywhere in the name -- a plain substring match. The matching rule is
+  // now a prefix match on the result's own name or one of its individual
+  // words (see wordStartMatch.ts), reused for every result type. "aunt" is
+  // a genuine mid-word substring of "GAUNTLET" (no word boundary before it
+  // -- the WOD title is one word) that must now return nothing; "gaunt" is
+  // a real prefix of the same word and must still match, proving this
+  // isn't just an empty matcher.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    await page.getByTestId('open-search').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    await page.locator('#app-search-input').fill('aunt');
+    await page.waitForTimeout(400);
+    const midWordShown = await page
+      .locator('#search-screen-container')
+      .getByText('THE GAUNTLET', { exact: false })
+      .first()
+      .isVisible()
+      .catch(() => false);
+    record(
+      '[search-word-start] a mid-word substring ("aunt" inside GAUNTLET) returns no match',
+      !midWordShown,
+      JSON.stringify({ midWordShown })
+    );
+
+    await page.locator('#app-search-input').fill('gaunt');
+    await page.waitForTimeout(400);
+    const prefixShown = await page
+      .locator('#search-screen-container')
+      .getByText('THE GAUNTLET', { exact: false })
+      .first()
+      .isVisible()
+      .catch(() => false);
+    record(
+      '[search-word-start] a real word-start prefix ("gaunt") still matches -- the matcher isn\'t just empty',
+      prefixShown,
+      JSON.stringify({ prefixShown })
+    );
+
+    await context.close();
+  }
+
+  // --- THIS ROUND's own regression guard: a real device found the tab bar
+  // partially cropped (icons cut off, labels visible) on Movement Vault
+  // and on spotlight tour stop 4 ("THE FOUR ROOMS") -- the same shape of
+  // bug Round 18 fixed for search, but these two never went through
+  // search's own fullBleed path at all. Root cause shared by both:
+  // tabBarHeight (the flat TAB_BAR_CONTENT_HEIGHT JS constant) is the tab
+  // bar's own box height, but not the #tab-bar-safe-area-fill sibling
+  // stacked below it that extends the bar's background through the real
+  // home-indicator inset in standalone mode -- anything that reserves
+  // space for, or spotlights, "the tab bar" using only the flat constant
+  // undersizes it by exactly that fill height. Fixed once, for the whole
+  // overlay family, via two id-keyed CSS overrides in index.html
+  // (#screen-overlay-tab-bar-gap, #tab-bar-tour-marker) rather than a
+  // per-screen patch -- this block proves both actual consumers.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    // Movement Vault entry (sidebar's own "THE MOVEMENT VAULT" row) and the
+    // tour's dev-reset control both need is_admin -- the tour reset row is
+    // admin-only, and this keeps both checks in one signed-in session.
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Member',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: true,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+          },
+        ]),
+      })
+    );
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.addStyleTag({ content: FORCE_INSET_CSS });
+    await page.waitForTimeout(200);
+
+    // Movement Vault: opened via DOC'S WODS own "LOOK UP A MOVEMENT" button,
+    // not the hamburger drawer -- the drawer's own row opens it with
+    // sidebarOpen still true (fullBleed={sidebarOpen} -- see App.tsx),
+    // which is a different, already-fullBleed path. This entry point is
+    // the plain, non-fullBleed case the real-device report was about.
+    await page
+      .getByRole('tab', { name: /DOC'?S WODS/i })
+      .first()
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('lookup-movement').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const overlayGap = await page.evaluate(() => {
+      const el = document.getElementById('screen-overlay-tab-bar-gap');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { bottom: Math.round(r.bottom), windowHeight: window.innerHeight };
+    });
+    record(
+      '[tab-bar-integrity/movement-vault] the overlay stops exactly above the tab bar\'s own real footprint (bar + fill), not short of it',
+      !!overlayGap && Math.abs(overlayGap.windowHeight - overlayGap.bottom - (64 + FORCED_BOTTOM)) <= 1,
+      JSON.stringify(overlayGap)
+    );
+    const vaultTabHits = await Promise.all([0, 1, 2, 3].map((i) => hitTestsNth(page, '[role="tab"]', i)));
+    record(
+      '[tab-bar-integrity/movement-vault] every tab icon+label is fully visible and receives its own tap underneath Movement Vault',
+      vaultTabHits.every((r) => r.found && r.visible && r.ok),
+      JSON.stringify(vaultTabHits)
+    );
+    const vaultFill = await bottomFillReachesEdge(page, 'tab-bar-safe-area-fill');
+    record(
+      '[tab-bar-integrity/movement-vault] the tab bar\'s own fill reaches the true physical bottom edge underneath Movement Vault',
+      !!vaultFill && vaultFill.height === FORCED_BOTTOM && Math.abs(vaultFill.bottom - vaultFill.windowHeight) <= 1,
+      JSON.stringify(vaultFill)
+    );
+
+    // Tour stop 4 ("tab-bar"): dev-reset starts the tour fresh regardless
+    // of the once-ever completed flag, then NEXT x3 reaches stepIndex 3.
+    // Movement Vault here is its own LIST view (opened via "LOOK UP A
+    // MOVEMENT"), so its own close control is movement-vault-close, not
+    // the per-movement detail's back button. Stops 1-3 (story-ring,
+    // date-strip, composer-bar) only register on the Community tab, so
+    // this switches back there first -- otherwise those stops never
+    // measure a target, never render a NEXT button, and the 3 taps below
+    // would have nothing to click.
+    await page.getByTestId('movement-vault-close').click({ timeout: 5000 }).catch(() => {});
+    await page
+      .getByRole('tab', { name: /Community/i })
+      .first()
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('dev-reset-tour').click({ timeout: 5000 }).catch(() => {});
+    // The tour's own measurement loop waits on document.fonts.ready (capped
+    // at 1500ms) before its first measurement attempt -- give the first
+    // stop's NEXT button real room to actually appear.
+    await page.waitForTimeout(1800);
+    for (let i = 0; i < 3; i++) {
+      await page.getByTestId('tour-next').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(600);
+    }
+    const tourCardText = await page.getByTestId('tour-card').innerText().catch(() => '');
+    record(
+      '[tab-bar-integrity/tour-stop-4] three NEXT taps from a fresh start land on "THE FOUR ROOMS" (tab-bar stop)',
+      tourCardText.includes('THE FOUR ROOMS'),
+      JSON.stringify({ tourCardText })
+    );
+    // Visibility only, not tappability -- the tour's own full-screen root
+    // is pointerEvents:'auto' by design while active (it's a guided modal:
+    // NEXT/BACK/SKIP on the card, not "tap the real element"), so it
+    // intercepts taps everywhere, spotlight included. "All four tabs
+    // completely visible" is what the spec actually asks for -- the
+    // spotlight rect (TabBarTourMarker) correctly matching the tab bar's
+    // own real footprint is what makes them visually uncropped underneath
+    // the backdrop's cutout.
+    const tourTabRects = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[role="tab"]')).map((el) => {
+        const r = el.getBoundingClientRect();
+        return { width: r.width, height: r.height };
+      })
+    );
+    record(
+      '[tab-bar-integrity/tour-stop-4] every tab icon+label is fully visible (nonzero rendered size, not cropped)',
+      tourTabRects.length > 0 && tourTabRects.every((r) => r.width > 0 && r.height > 0),
+      JSON.stringify(tourTabRects)
+    );
+    const cardAboveTabBar = await page.evaluate(() => {
+      const card = document.querySelector('[data-testid="tour-card"]');
+      const tab = document.querySelector('[role="tab"]');
+      if (!card || !tab) return null;
+      const cardRect = card.getBoundingClientRect();
+      const tabRect = tab.getBoundingClientRect();
+      return { cardBottom: Math.round(cardRect.bottom), tabTop: Math.round(tabRect.top) };
+    });
+    record(
+      '[tab-bar-integrity/tour-stop-4] the tip card sits fully above the tab bar, no overlap',
+      !!cardAboveTabBar && cardAboveTabBar.cardBottom <= cardAboveTabBar.tabTop,
+      JSON.stringify(cardAboveTabBar)
+    );
+
+    await context.close();
+  }
+
   // --- THIS ROUND's own regression guard: real-device report found a
   // large blank white area where a selected photo's preview belongs in the
   // create-post composer (post titled "Beta Test 1"). Root cause:
@@ -2003,8 +2282,10 @@ async function run() {
       page.waitForEvent('filechooser', { timeout: 5000 }),
       page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
     ]);
-    await fileChooser.setFiles({ name: 'fixture.png', mimeType: 'image/png', buffer: FIXTURE_PNG });
-    await page.waitForTimeout(500);
+    await fileChooser.setFiles({ name: 'fixture.png', mimeType: 'image/png', buffer: ASPECT_RATIO_FIXTURE_PNG });
+    // Image.getSize() resolving the real decoded dimensions is itself async,
+    // on top of the file picker's own round trip -- give it real room.
+    await page.waitForTimeout(700);
 
     const previewVisible = await page
       .getByTestId('media-preview')
@@ -2020,6 +2301,16 @@ async function run() {
       '[photo-preview/composer] selecting a photo shows a real, correctly-sized preview (not collapsed to a blank sliver)',
       previewVisible && !!previewRect && previewRect.width > 100 && previewRect.height > 100,
       JSON.stringify({ previewVisible, previewRect })
+    );
+    // The real regression check: a 300x200 (1.5) fixture must render at
+    // its own natural ratio, not the old fixed-160-tall `cover` crop
+    // (which would land near containerWidth/160 -- ~2.19 at this
+    // viewport's padding, clearly distinct from 1.5).
+    const previewRatio = previewRect ? previewRect.width / previewRect.height : null;
+    record(
+      '[photo-preview/composer] the preview renders at the photo\'s own natural aspect ratio (1.5), not a fixed-height crop',
+      previewRatio !== null && Math.abs(previewRatio - ASPECT_RATIO_FIXTURE_RATIO) < 0.08,
+      JSON.stringify({ previewRect, previewRatio, expected: ASPECT_RATIO_FIXTURE_RATIO })
     );
 
     await page.locator('#compose-post-title-input').fill('Beta Test 1');

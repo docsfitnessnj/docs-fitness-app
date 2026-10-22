@@ -36,8 +36,10 @@ type Props = {
 // LOG IT. POST IT. bar — a title + body box that writes through to the
 // community_posts table via addTextPost/updateTextPost. Laid out to match
 // the Skool posting experience (X close, filled POST pill, quiet identity
-// line, borderless title/body, thin toolbar) since that's where most of
-// the app's most engaged members are coming from.
+// line, thin toolbar) since that's where most of the app's most engaged
+// members are coming from. Title/body are each their own bounded card
+// (same treatment as Log Results' fields) rather than borderless text --
+// see composeTitleInput/composeBodyInput below.
 export function CreatePostModal({ visible, onClose, editingPost }: Props) {
   const { addTextPost, updateTextPost } = useCommunity();
   const displayName = useDisplayName();
@@ -257,14 +259,30 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 15,
   },
+  // Bounded fields, same treatment as Log Results' own `input` style
+  // (card background + hairline border) -- a real device report found the
+  // borderless Skool-style title/body read as floating text on a blank
+  // page, with no visible boundary telling a member they were typing into
+  // a field at all.
   composeTitleInput: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     color: colors.text,
     fontFamily: fonts.bodyBold,
     fontSize: 20,
-    paddingVertical: 2,
-    marginBottom: 4,
+    marginBottom: 12,
   },
   composeBodyInput: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     color: colors.text,
     fontFamily: fonts.body,
     fontSize: 16,
