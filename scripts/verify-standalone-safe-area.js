@@ -65,6 +65,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const { chromium } = require('playwright');
 
 const BASE = process.env.BASE_URL || 'http://localhost:8090/docs-fitness-app';
@@ -128,6 +129,42 @@ const SANCTIONED_PROBE_IDS = [
   'debug-probe-100lvh',
   'debug-probe-100vh',
 ];
+
+// A real, decodable 1x1 PNG built in-memory (no fixture file to maintain,
+// no binary committed to the repo) -- used by the create-post photo-
+// preview-then-feed-render check below. PNG requires a correct CRC32 per
+// chunk, not just well-formed bytes, so this is a minimal real encoder
+// rather than a hand-assembled byte string that might only happen to work.
+function crc32(buf) {
+  let crc = ~0;
+  for (let i = 0; i < buf.length; i++) {
+    crc ^= buf[i];
+    for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return ~crc >>> 0;
+}
+function pngChunk(type, data) {
+  const typeBuf = Buffer.from(type, 'ascii');
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length, 0);
+  const crcBuf = Buffer.alloc(4);
+  crcBuf.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
+  return Buffer.concat([len, typeBuf, data, crcBuf]);
+}
+function buildOnePixelPng() {
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdrData = Buffer.alloc(13);
+  ihdrData.writeUInt32BE(1, 0); // width
+  ihdrData.writeUInt32BE(1, 4); // height
+  ihdrData[8] = 8; // bit depth
+  ihdrData[9] = 2; // color type: RGB
+  const ihdr = pngChunk('IHDR', ihdrData);
+  const raw = Buffer.from([0, 220, 38, 38]); // filter byte (none) + one red-ish RGB pixel
+  const idat = pngChunk('IDAT', zlib.deflateSync(raw));
+  const iend = pngChunk('IEND', Buffer.alloc(0));
+  return Buffer.concat([signature, ihdr, idat, iend]);
+}
+const FIXTURE_PNG = buildOnePixelPng();
 
 async function setupMocks(page) {
   await page.route('**/auth/v1/token*', (route) =>
@@ -1516,6 +1553,506 @@ async function run() {
       '[keyboard-shell/search-screen] the tab bar\'s own safe-area fill still reaches the true physical bottom edge afterward, not chopped off',
       !!fill && fill.height === FORCED_BOTTOM && Math.abs(fill.bottom - fill.windowHeight) <= 1,
       JSON.stringify(fill)
+    );
+
+    await context.close();
+  }
+
+  // --- THIS ROUND's own regression guard: real-device report found the
+  // search overlay broken two ways -- the real tab bar partially cropped
+  // (icons cut off, labels visible) at rest, and underlying-screen content
+  // (a reaction row, a deck card, a schedule card) bleeding through near
+  // the bottom of the overlay once the keyboard opened. Root cause was
+  // Search's own ScreenOverlay usage missing `fullBleed` (see App.tsx) --
+  // unlike the chopped-tab-bar RESET LEAK the block above already covers,
+  // this is the overlay's base coverage, checked at rest, under all three
+  // keyboard-shell regimes, and after a full open/close cycle.
+  // SearchModal.tsx's own `nativeID="search-screen-container"` is the
+  // measurement anchor -- the one element that must always reach the exact
+  // bottom edge of whatever height #root currently is.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await forceStandaloneDisplayMode(page);
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    await page.getByTestId('open-search').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const tabsAtRest = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[role="tab"]')).map((el) => {
+        const r = el.getBoundingClientRect();
+        return { width: r.width, height: r.height };
+      })
+    );
+    record(
+      '[search-screen/at-rest] the real tab bar is fully hidden (zero rendered size) while search is open, not partially cropped',
+      tabsAtRest.length > 0 && tabsAtRest.every((t) => t.width === 0 && t.height === 0),
+      JSON.stringify(tabsAtRest)
+    );
+
+    const containerAtRest = await page.evaluate(() => {
+      const el = document.getElementById('search-screen-container');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: Math.round(r.top), bottom: Math.round(r.bottom) };
+    });
+    record(
+      '[search-screen/at-rest] the search overlay reaches the true bottom edge of the shell -- no gap left for the tab bar or anything else to show through',
+      !!containerAtRest && Math.abs(containerAtRest.bottom - VIEWPORT.height) <= 1,
+      JSON.stringify({ containerAtRest, viewportHeight: VIEWPORT.height })
+    );
+
+    for (const regime of KEYBOARD_SHELL_REGIMES) {
+      await forceInnerHeight(page, regime.innerHeight);
+      await forceVisualViewport(page, { height: regime.vvHeight, offsetTop: regime.offsetTop });
+      await page.waitForTimeout(200);
+
+      const expectedBottom = regime.offsetTop + regime.vvHeight;
+      const container = await page.evaluate(() => {
+        const el = document.getElementById('search-screen-container');
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: r.left, right: r.right };
+      });
+      record(
+        `[search-screen/${regime.name}] the search overlay still covers the full shrunk shell down to the visual viewport's own bottom (${expectedBottom})`,
+        !!container && Math.abs(container.bottom - expectedBottom) <= 1,
+        JSON.stringify({ container, regime })
+      );
+
+      // The real-device symptom was slivers of the underlying screen
+      // (a reaction row, a deck card, a schedule card) showing between the
+      // empty search state and the keyboard. Sample the point just above
+      // the overlay's own bottom edge and assert it's the overlay's own
+      // container (or a descendant of it), never whatever screen sits
+      // behind it.
+      const bleed = await page.evaluate(() => {
+        const el = document.getElementById('search-screen-container');
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        const x = (r.left + r.right) / 2;
+        const y = r.bottom - 2;
+        const hit = document.elementFromPoint(x, y);
+        return { ok: !!hit && (hit === el || el.contains(hit)), tag: hit ? hit.tagName + (hit.id ? `#${hit.id}` : '') : null };
+      });
+      record(
+        `[search-screen/${regime.name}] nothing from the screen behind search bleeds through near the bottom of the overlay`,
+        !!bleed && bleed.ok,
+        JSON.stringify(bleed)
+      );
+
+      await resetInnerHeight(page);
+      await resetVisualViewport(page);
+      await page.waitForTimeout(200);
+    }
+
+    // After a full open/close cycle: closing search (CANCEL) restores the
+    // real tab bar to fully visible, not left cropped by any reset leak.
+    await page
+      .getByText('CANCEL', { exact: false })
+      .first()
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    await page.waitForTimeout(400);
+    const tabsAfterClose = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[role="tab"]')).map((el) => {
+        const r = el.getBoundingClientRect();
+        return { width: r.width, height: r.height };
+      })
+    );
+    record(
+      '[search-screen/after-close] the real tab bar is fully visible again after a full open/close cycle, not left cropped',
+      tabsAfterClose.length > 0 && tabsAfterClose.every((t) => t.width > 0 && t.height > 0),
+      JSON.stringify(tabsAfterClose)
+    );
+
+    await context.close();
+  }
+
+  // --- THIS ROUND's own regression guard: real-device report found a
+  // search result tap landing in the wrong place (a deck card named Fury
+  // opened The Deck tab in Shuffle Mode instead of that card). Every
+  // result type must now open its EXACT destination, an uncompleted deck
+  // card must never appear in the index at all (face-down by design), and
+  // back must retrace to the same search results with the query intact.
+  // Fixture rows for `community_posts` / `deck_completions` are registered
+  // AFTER setupMocks(), so they take priority for just those two tables --
+  // every other table still falls through to setupMocks' own empty-array
+  // default.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/community_posts*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'post-1',
+            title: 'My First WOD',
+            body: 'Crushed it today',
+            category: 'General',
+            kind: 'text',
+            media_url: null,
+            media_type: null,
+            workout_title: null,
+            workout_notes: null,
+            workout_results_line: null,
+            pinned: false,
+            created_at: new Date().toISOString(),
+            author_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            profiles: { display_name: 'Ada Memberson' },
+            community_comments: [],
+            community_reactions: [],
+          },
+        ]),
+      })
+    );
+    // Card 'A-spade' ("Jen Loves Counting") is completed; '2-spade'
+    // ("Range Finder") is deliberately left out of this fixture, so it
+    // stays uncompleted and must never surface in search at all.
+    await page.route('**/rest/v1/deck_completions*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ card_id: 'A-spade', completed_at: new Date().toISOString() }]),
+      })
+    );
+    // A nonzero deck_completions row makes BadgeContext's own effect see
+    // totalWorkoutsLogged >= 1 and try to grant "day one doug" -- without
+    // this, the generic badge_grants mock (always []) never reflects that
+    // upsert, so the effect's own `grants` dependency keeps changing
+    // reference and re-fires forever. Returning the grant directly here
+    // satisfies the effect's own condition immediately, same as a real
+    // backend would after the first successful upsert.
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } }]),
+      })
+    );
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    await page.getByTestId('open-search').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    // WORKOUTS: opens that exact day's workout (the one tab-navigation
+    // case -- see SearchModal.tsx's handleSelect), not just whichever day
+    // the WODs tab would otherwise default to.
+    await page.locator('#app-search-input').fill('gauntlet');
+    await page.waitForTimeout(300);
+    await page
+      .getByText('THE GAUNTLET', { exact: false })
+      .first()
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    await page.waitForTimeout(600);
+    const wodLanded = await page
+      .getByText('THE GAUNTLET', { exact: false })
+      .first()
+      .isVisible()
+      .catch(() => false);
+    record(
+      '[search-deep-link/workout] tapping a WORKOUTS result lands on that exact workout\'s detail',
+      wodLanded,
+      JSON.stringify({ wodLanded })
+    );
+
+    // Back (the WODs tab has no overlay of its own to close -- reopening
+    // search is "back" here): the lifted `query` state in App.tsx is what
+    // makes this still show the same results, even though closing search
+    // to switch tabs unmounted SearchModal entirely.
+    await page.getByTestId('open-search').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const queryAfterWod = await page.locator('#app-search-input').inputValue().catch(() => null);
+    record(
+      '[search-deep-link/back] reopening search after a WORKOUTS result preserves the previous query',
+      queryAfterWod === 'gauntlet',
+      JSON.stringify({ queryAfterWod })
+    );
+
+    // DECK CARDS: opens that exact card's detail modal, stacked on top of
+    // search (which stays mounted underneath, unclosed) -- not just The
+    // Deck tab in whatever mode it defaults to.
+    await page.locator('#app-search-input').fill('jen');
+    await page.waitForTimeout(300);
+    await page
+      .getByText('Jen Loves Counting', { exact: false })
+      .first()
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    await page.waitForTimeout(500);
+    const deckCardOpen = await page
+      .getByTestId('deck-card-close')
+      .isVisible()
+      .catch(() => false);
+    record(
+      '[search-deep-link/deck-card] tapping a completed DECK CARDS result opens that exact card\'s detail modal',
+      deckCardOpen,
+      JSON.stringify({ deckCardOpen })
+    );
+    await page.getByTestId('deck-card-close').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const searchVisibleAfterDeck = await page.locator('#app-search-input').isVisible().catch(() => false);
+    const queryAfterDeck = await page.locator('#app-search-input').inputValue().catch(() => null);
+    record(
+      '[search-deep-link/back] closing a DECK CARDS result reveals search again underneath, query intact (the overlay was never closed)',
+      searchVisibleAfterDeck && queryAfterDeck === 'jen',
+      JSON.stringify({ searchVisibleAfterDeck, queryAfterDeck })
+    );
+
+    // Deck-card exclusion: an uncompleted card ('2-spade', not in the
+    // deck_completions fixture above) must never appear in the index at
+    // all, even though its title textually matches the query -- uncompleted
+    // cards are face-down by design everywhere else in the app, and a
+    // search result naming one would leak its identity and spoil the
+    // shuffle.
+    await page.locator('#app-search-input').fill('range finder');
+    // Polls instead of a single fixed sleep -- settles the instant the
+    // results recompute for the new query instead of guessing a delay long
+    // enough for however loaded this run's machine happens to be.
+    await page
+      .waitForFunction(() => {
+        const el = document.getElementById('search-screen-container');
+        return !!el && el.textContent && el.textContent.includes('No results for');
+      }, { timeout: 3000 })
+      .catch(() => {});
+    // The "No results for ..." hint ECHOES the typed query back verbatim --
+    // it legitimately, innocently contains the substring "range finder"
+    // itself, which a case-insensitive text search for the card's own
+    // title "Range Finder" would also match. Asserting the hint renders at
+    // all is the real proof of exclusion (SearchModal only shows it when
+    // results.length === 0); checking the literal card title's ABSENCE
+    // would produce a false "found it" against the hint's own echoed text.
+    const noResultsShown = await page
+      .locator('#search-screen-container')
+      .getByText('No results for', { exact: false })
+      .first()
+      .isVisible()
+      .catch(() => false);
+    record(
+      '[search-deep-link/deck-exclusion] an uncompleted deck card never appears in search results',
+      noResultsShown,
+      JSON.stringify({ noResultsShown })
+    );
+
+    // COMMUNITY: opens that exact post's detail, stacked on top of search.
+    // Scoped to the search container itself -- the real Community feed
+    // behind search also legitimately renders "My First WOD" (it's a real
+    // post, always in the feed regardless of the search query), and an
+    // unscoped text match can resolve to that one instead, which search's
+    // own fullBleed overlay then correctly refuses the click on.
+    await page.locator('#app-search-input').fill('crushed');
+    await page.waitForTimeout(300);
+    await page
+      .locator('#search-screen-container')
+      .getByText('My First WOD', { exact: false })
+      .first()
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    await page.waitForTimeout(500);
+    const postDetailOpen = await page
+      .getByTestId('close-post-detail')
+      .isVisible()
+      .catch(() => false);
+    record(
+      '[search-deep-link/post] tapping a COMMUNITY result opens that exact post\'s detail',
+      postDetailOpen,
+      JSON.stringify({ postDetailOpen })
+    );
+    await page.getByTestId('close-post-detail').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const queryAfterPost = await page.locator('#app-search-input').inputValue().catch(() => null);
+    record(
+      '[search-deep-link/back] closing a COMMUNITY result reveals search again underneath, query intact',
+      queryAfterPost === 'crushed',
+      JSON.stringify({ queryAfterPost })
+    );
+
+    // MEMBERS: a result row inside the MEMBERS section specifically (not
+    // the COMMUNITY row of the same author's post, which the same query
+    // also legitimately matches) opens a read-only view of their profile.
+    await page.locator('#app-search-input').fill('memberson');
+    await page.waitForTimeout(300);
+    const memberClicked = await page.evaluate(() => {
+      const labelEl = Array.from(document.querySelectorAll('*')).find((el) => el.children.length === 0 && el.textContent.trim() === 'MEMBERS');
+      if (!labelEl) return false;
+      let section = labelEl.parentElement;
+      while (section && !section.textContent.includes('Ada Memberson')) section = section.parentElement;
+      if (!section) return false;
+      const rowText = Array.from(section.querySelectorAll('*')).filter((el) => el.textContent.trim() === 'Ada Memberson');
+      const target = rowText.sort((a, b) => a.children.length - b.children.length)[0];
+      if (!target) return false;
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      return true;
+    });
+    await page.waitForTimeout(500);
+    const memberProfileOpen = await page
+      .getByTestId('member-profile-close')
+      .isVisible()
+      .catch(() => false);
+    record(
+      '[search-deep-link/member] tapping a MEMBERS result opens a read-only view of their profile',
+      memberClicked && memberProfileOpen,
+      JSON.stringify({ memberClicked, memberProfileOpen })
+    );
+    await page.getByTestId('member-profile-close').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+
+    // MOVEMENTS: opens that exact movement in the vault, labeled "BACK TO
+    // SEARCH" (the existing returnLabel mechanism movementVaultModal.ts
+    // already provides), stacked on top of search.
+    await page.locator('#app-search-input').fill('windmill');
+    await page.waitForTimeout(300);
+    await page
+      .getByText('1/2 Kneeling Windmill', { exact: false })
+      .first()
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    await page.waitForTimeout(500);
+    const movementBackLabel = await page.getByText('BACK TO SEARCH', { exact: false }).first().isVisible().catch(() => false);
+    record(
+      '[search-deep-link/movement] tapping a MOVEMENTS result opens that exact movement, labeled "BACK TO SEARCH"',
+      movementBackLabel,
+      JSON.stringify({ movementBackLabel })
+    );
+    await page.getByTestId('movement-detail-back').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const queryAfterMovement = await page.locator('#app-search-input').inputValue().catch(() => null);
+    record(
+      '[search-deep-link/back] closing a MOVEMENTS result reveals search again underneath, query intact',
+      queryAfterMovement === 'windmill',
+      JSON.stringify({ queryAfterMovement })
+    );
+
+    await context.close();
+  }
+
+  // --- THIS ROUND's own regression guard: real-device report found a
+  // large blank white area where a selected photo's preview belongs in the
+  // create-post composer (post titled "Beta Test 1"). Root cause:
+  // MediaAttachmentPicker.tsx's `previewWrap` had no width of its own
+  // inside CreatePostModal's row-flex toolbar, so its child Image's
+  // `width: '100%'` resolved against an undefined flex-item width -- see
+  // MediaAttachmentPicker.tsx's own comment on `previewWrap` for the full
+  // mechanism. End to end with a real fixture image: select, preview
+  // visible and correctly sized, post, renders in the feed afterward.
+  // `community_posts` is mocked statefully here (capturing the INSERT
+  // payload and serving it back on the next GET) specifically so the
+  // "renders in feed" half is a real round trip, not just an assumption.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+
+    const insertedPosts = [];
+    await page.route('**/rest/v1/community_posts*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'POST') {
+        let payload = {};
+        try {
+          payload = JSON.parse(req.postData() || '{}');
+        } catch {}
+        insertedPosts.push(payload);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify([{ id: `post-${insertedPosts.length}`, ...payload }]) });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          [...insertedPosts].reverse().map((p, i) => ({
+            id: `post-${insertedPosts.length - i}`,
+            title: p.title ?? '',
+            body: p.body ?? '',
+            category: p.category ?? 'General',
+            kind: p.kind ?? 'text',
+            media_url: p.media_url ?? null,
+            media_type: p.media_type ?? null,
+            workout_title: p.workout_title ?? null,
+            workout_notes: p.workout_notes ?? null,
+            workout_results_line: p.workout_results_line ?? null,
+            pinned: false,
+            created_at: new Date().toISOString(),
+            author_id: p.author_id ?? USER_ID,
+            profiles: { display_name: 'Test Member' },
+            community_comments: [],
+            community_reactions: [],
+          }))
+        ),
+      });
+    });
+
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    await page.getByText('LOG IT. POST IT.', { exact: false }).first().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    await page.getByTestId('media-add').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const [fileChooser] = await Promise.all([
+      page.waitForEvent('filechooser', { timeout: 5000 }),
+      page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+    ]);
+    await fileChooser.setFiles({ name: 'fixture.png', mimeType: 'image/png', buffer: FIXTURE_PNG });
+    await page.waitForTimeout(500);
+
+    const previewVisible = await page
+      .getByTestId('media-preview')
+      .isVisible()
+      .catch(() => false);
+    const previewRect = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="media-preview"]');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { width: Math.round(r.width), height: Math.round(r.height) };
+    });
+    record(
+      '[photo-preview/composer] selecting a photo shows a real, correctly-sized preview (not collapsed to a blank sliver)',
+      previewVisible && !!previewRect && previewRect.width > 100 && previewRect.height > 100,
+      JSON.stringify({ previewVisible, previewRect })
+    );
+
+    await page.locator('#compose-post-title-input').fill('Beta Test 1');
+    await page.locator('#compose-post-body-input').fill('Testing the photo preview fix end to end.');
+    await page.getByTestId('compose-submit').click({ timeout: 5000 }).catch(() => {});
+    // useActionCompletion()'s own "POSTED" acknowledgment holds the modal
+    // open for 900ms before it actually calls onClose() -- see
+    // useActionCompletion.ts's durationMs default. Wait past that, not up
+    // to it, or this reads the still-closing modal as never having closed.
+    await page.waitForTimeout(1300);
+
+    const composeStillOpen = await page
+      .getByTestId('compose-close')
+      .isVisible()
+      .catch(() => false);
+    const feedHasPost = await page
+      .getByText('Beta Test 1', { exact: false })
+      .first()
+      .isVisible()
+      .catch(() => false);
+    const feedImageRect = await page.evaluate(() => {
+      const imgs = Array.from(document.querySelectorAll('img')).filter((img) => {
+        const r = img.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      });
+      if (imgs.length === 0) return null;
+      const r = imgs[imgs.length - 1].getBoundingClientRect();
+      return { width: Math.round(r.width), height: Math.round(r.height) };
+    });
+    record(
+      '[photo-preview/feed] after posting, the composer closes and the post with its photo renders in the feed',
+      !composeStillOpen && feedHasPost && !!feedImageRect && feedImageRect.width > 0 && feedImageRect.height > 0,
+      JSON.stringify({ composeStillOpen, feedHasPost, feedImageRect, insertedPosts })
     );
 
     await context.close();

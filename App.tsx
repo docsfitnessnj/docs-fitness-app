@@ -29,12 +29,12 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { ClassPackProvider } from './src/context/ClassPackContext';
 import { MembershipProvider, useMembership } from './src/context/MembershipContext';
 import { SubscriptionProvider } from './src/context/SubscriptionContext';
-import { CommunityProvider } from './src/context/CommunityContext';
+import { CommunityProvider, useCommunity } from './src/context/CommunityContext';
 import { WorkoutLogProvider } from './src/context/WorkoutLogContext';
 import { CloseFriendsProvider } from './src/context/CloseFriendsContext';
 import { ProfileProvider, useProfile } from './src/context/ProfileContext';
 import { StoriesProvider } from './src/context/StoriesContext';
-import { DeckProgressProvider } from './src/context/DeckProgressContext';
+import { DeckProgressProvider, useDeckProgress } from './src/context/DeckProgressContext';
 import { ChallengeProvider } from './src/context/ChallengeContext';
 import { BadgeProvider } from './src/context/BadgeContext';
 import { FoundingFiftyProvider } from './src/context/FoundingFiftyContext';
@@ -58,8 +58,15 @@ import { TourOverlay } from './src/components/TourOverlay';
 import { PurchaseCelebrationOverlay } from './src/components/PurchaseCelebrationOverlay';
 import { CheckoutRedirectLoadingScreen } from './src/components/CheckoutRedirectLoadingScreen';
 import { MemberStateErrorScreen } from './src/components/MemberStateErrorScreen';
+import { DeckCardDetailModal } from './src/components/DeckCardDetailModal';
+import { PostDetailModal } from './src/components/PostDetailModal';
+import { MemberProfileModal } from './src/components/MemberProfileModal';
+import { DECK_CARDS } from './src/data/deckCards';
 import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useMovementVaultModalState } from './src/lib/movementVaultModal';
+import { useDeckCardModalState } from './src/lib/deckCardModal';
+import { usePostDetailModalState } from './src/lib/postDetailModal';
+import { useMemberProfileModalState } from './src/lib/memberProfileModal';
 import { openMemberships, useMembershipsModalState } from './src/lib/membershipsModal';
 import { useCheckoutRedirect } from './src/lib/checkoutRedirect';
 import {
@@ -499,6 +506,19 @@ function MainApp({
   // Weekly Challenge score form especially).
   const keyboardVisible = useKeyboardVisible();
   const [searchOpen, setSearchOpen] = useState(false);
+  // Lifted out of SearchModal itself -- a WORKOUTS result closes search to
+  // switch tabs (see SearchModal.tsx's handleSelect), which unmounts it and
+  // would otherwise drop the query. Keeping it here means reopening search
+  // afterward (or after any other result's destination closes) lands back
+  // on the exact same results, per the app-wide "back retraces your path"
+  // rule this round's search fixes need to honor.
+  const [searchQuery, setSearchQuery] = useState('');
+  const [deckCardId, setDeckCardId] = useDeckCardModalState();
+  const [searchPostId, setSearchPostId] = usePostDetailModalState();
+  const [searchMemberId, setSearchMemberId] = useMemberProfileModalState();
+  const { posts } = useCommunity();
+  const { isComplete: isDeckCardComplete, toggleComplete: toggleDeckCardComplete } = useDeckProgress();
+  const { communityAccess } = useMembership();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [membershipsOpen, setMembershipsOpen, membershipsMode] = useMembershipsModalState();
@@ -560,16 +580,44 @@ function MainApp({
           onOpenGroupChat={activeTab === 'Community' ? onOpenGroupChat : undefined}
           onOpenDebugOverlay={Platform.OS === 'web' ? () => setDebugOverlayOpen(true) : undefined}
         />
-        <RootNavigator tabBarHidden={sidebarOpen || keyboardVisible || groupChatOpen} />
-        {!(sidebarOpen || keyboardVisible || groupChatOpen) && (
+        <RootNavigator tabBarHidden={sidebarOpen || keyboardVisible || groupChatOpen || searchOpen} />
+        {!(sidebarOpen || keyboardVisible || groupChatOpen || searchOpen) && (
           <SafeAreaBottomFill nativeID="tab-bar-safe-area-fill" backgroundColor={colors.card} />
         )}
         <TabBarTourMarker />
       </View>
       <DebugOverlay visible={debugOverlayOpen} onClose={() => setDebugOverlayOpen(false)} />
-      <ScreenOverlay visible={searchOpen} topBasePadding={60}>
-        <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} />
+      {/* fullBleed + tabBarHidden (above): real-device report found the real
+          tab bar, left visible/tappable underneath a non-fullBleed overlay,
+          rendering partially cropped specifically on Search -- its
+          TextInput autoFocuses, so the keyboard shell can be resizing #root
+          the instant this opens. Covering the whole shell and hiding the
+          real tab bar removes the gap this overlay used to leave for it,
+          the same fix already applied to DOC'S GROUP CHAT above. */}
+      <ScreenOverlay visible={searchOpen} fullBleed topBasePadding={60}>
+        <SearchModal visible={searchOpen} onClose={() => setSearchOpen(false)} query={searchQuery} onQueryChange={setSearchQuery} />
       </ScreenOverlay>
+      {/* Global, App.tsx-level singletons a search result opens straight
+          into (see deckCardModal.ts / postDetailModal.ts /
+          memberProfileModal.ts) -- deliberately NOT closing `searchOpen`
+          first, so the overlay above stays mounted underneath whichever of
+          these is open. AppModal's own portal (DeckCardDetailModal,
+          PostDetailModal, MemberProfileModal) renders above every
+          ScreenOverlay regardless, so there's no stacking to coordinate;
+          closing any of these just reveals Search again exactly as it was,
+          query and results intact. */}
+      <DeckCardDetailModal
+        card={deckCardId ? DECK_CARDS.find((c) => c.id === deckCardId) ?? null : null}
+        onClose={() => setDeckCardId(null)}
+        isComplete={deckCardId ? isDeckCardComplete(deckCardId) : false}
+        onToggleComplete={() => deckCardId && toggleDeckCardComplete(deckCardId)}
+      />
+      <PostDetailModal
+        post={searchPostId ? posts.find((p) => p.id === searchPostId) ?? null : null}
+        onClose={() => setSearchPostId(null)}
+        canInteract={communityAccess === 'full'}
+      />
+      <MemberProfileModal memberId={searchMemberId} onClose={() => setSearchMemberId(null)} />
       <ScreenOverlay visible={sidebarOpen} fullBleed topFillColor={colors.green} topBasePadding={60}>
         <SidebarDrawer
           visible={sidebarOpen}
