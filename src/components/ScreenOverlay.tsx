@@ -33,11 +33,12 @@ type Props = {
 };
 
 // A full-bleed secondary screen (Profile, My Workouts, Close Friends, the
-// Boathouse schedule, Messages, Search) that stops just short of the bottom
-// tab bar instead of covering it, so the tab bar stays visible and tappable
+// Boathouse schedule, Messages) that stops just short of the bottom tab bar
+// instead of covering it, so the tab bar stays visible and tappable
 // underneath — the user can jump straight to another tab without first
-// backing out. Only truly transient overlays (the story viewer, the deck
-// card detail popup) are allowed to cover the whole screen.
+// backing out. Search is NOT one of these (see its own `fullBleed` usage in
+// App.tsx) -- its TextInput autoFocuses, so it belongs with the other
+// keyboard-driven full takeovers (the hamburger drawer, DOC'S GROUP CHAT).
 export function ScreenOverlay({ visible, children, fullBleed = false, topFillColor = colors.background, topBasePadding }: Props) {
   const tabBarHeight = useTabBarHeight();
   if (!visible) return null;

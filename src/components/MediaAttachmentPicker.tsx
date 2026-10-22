@@ -89,6 +89,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   previewWrap: {
+    // Explicit, not just the Image's own `width: '100%'` below -- the
+    // community composer's toolbar is a row flex container
+    // (CreatePostModal's `composeToolbar`), and a flex item with no width
+    // of its own sizes to its CONTENT's intrinsic width first, which
+    // treats a descendant's percentage width as contributing nothing (the
+    // CSS Flexbox spec's own rule for automatic sizing) -- collapsing this
+    // box toward zero width and leaving only its `backgroundColor` to show
+    // through as a blank area where the photo preview belongs. Declaring
+    // the width here, on the flex item itself, resolves directly against
+    // the toolbar's own (non-auto) width instead of going through that
+    // content-sizing pass. Log Results' own plain, non-flex `mediaWrap`
+    // never hit this, which is why only the community composer did.
+    width: '100%',
     position: 'relative',
     borderRadius: 10,
     overflow: 'hidden',

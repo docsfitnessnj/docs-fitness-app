@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { DateStrip } from '../components/DateStrip';
 import { LogResultsModal } from '../components/LogResultsModal';
@@ -13,6 +14,7 @@ import {
   formatFullDate,
   getCurrentWeek,
   isDayWodUnlocked,
+  isSameDay,
   parseMoveRow,
   STEADY_STATE_SATURDAY_KEY,
   STEADY_STATE_SATURDAY_NAME,
@@ -54,6 +56,23 @@ export default function DocsWodsScreen() {
   const defaultIndex = todayIndex >= 0 && isDayWodUnlocked(week[todayIndex], wodAccessLevel) ? todayIndex : 0;
 
   const [selectedIndex, setSelectedIndex] = useState(defaultIndex);
+
+  // Mirrors CommunityScreen's own `jumpToDate` param -- a search WOD result
+  // resolves the tapped weekday key to this week's real date and navigates
+  // here with it (see navigateToTab('DocsWods', { jumpToDate }) in
+  // SearchModal.tsx) so the result lands on that exact workout, not just
+  // whichever day this screen would otherwise default to.
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const jumpToDate: number | undefined = route.params?.jumpToDate;
+  useEffect(() => {
+    if (jumpToDate == null) return;
+    const target = new Date(jumpToDate);
+    const index = week.findIndex((d) => isSameDay(d.date, target));
+    if (index >= 0) setSelectedIndex(index);
+    navigation.setParams({ jumpToDate: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpToDate]);
 
   const isUnlocked = (index: number) => isDayWodUnlocked(week[index], wodAccessLevel);
 
