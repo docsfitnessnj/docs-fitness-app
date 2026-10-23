@@ -3,7 +3,7 @@ import { clearCheckoutRedirectPending, markCheckoutRedirecting } from './checkou
 import { supabase } from './supabaseClient';
 
 export type OnlineCheckoutPlan = 'monthly' | 'annual';
-export type InPersonCheckoutPlan = 'in_person_monthly' | 'ten_pack' | 'drop_in';
+export type InPersonCheckoutPlan = 'in_person_monthly' | 'ten_pack' | 'drop_in' | 'pilates_guest';
 
 const GENERIC_CHECKOUT_ERROR = "Couldn't start checkout right now. Check your connection and try again.";
 const GENERIC_PORTAL_ERROR = "Couldn't open billing right now. Check your connection and try again.";
@@ -81,18 +81,24 @@ export async function startOnlineCheckout(plan: OnlineCheckoutPlan): Promise<{ e
   }
 }
 
-// Starts a real Stripe Checkout session for one of the three in-person
+// Starts a real Stripe Checkout session for one of the four in-person
 // plans. in_person_monthly is a subscription (no trial — in person's hook
 // is the first class free, handled entirely client-side before this is
-// ever called, never a Stripe trial). ten_pack and drop_in are one-time
-// payments. Same loading-gate/error-handling shape as startOnlineCheckout
-// above — the server (create-checkout) is still the only thing that ever
-// decides the real price.
-export async function startInPersonCheckout(plan: InPersonCheckoutPlan): Promise<{ error: string | null }> {
+// ever called, never a Stripe trial). ten_pack, drop_in, and pilates_guest
+// are one-time payments. Same loading-gate/error-handling shape as
+// startOnlineCheckout above — the server (create-checkout) is still the
+// only thing that ever decides the real price. `classSessionId` is
+// required for drop_in/pilates_guest (migration_023) — it's what lets the
+// webhook book the exact right class the instant payment confirms, rather
+// than trusting the browser's own return trip.
+export async function startInPersonCheckout(
+  plan: InPersonCheckoutPlan,
+  opts?: { classSessionId?: string }
+): Promise<{ error: string | null }> {
   markCheckoutRedirecting();
   try {
     const { data, error } = await supabase.functions.invoke('create-checkout', {
-      body: { plan, origin: currentOrigin() },
+      body: { plan, origin: currentOrigin(), classSessionId: opts?.classSessionId },
     });
     if (error) {
       clearCheckoutRedirectPending();

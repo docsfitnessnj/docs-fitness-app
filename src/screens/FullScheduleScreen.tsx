@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { ModalHeader } from '../components/ModalHeader';
+import { useClassBookingData } from '../context/ClassBookingContext';
 import { useProfile } from '../context/ProfileContext';
 import { dayHasContent, formatDateKey, getTwoWeekCalendar, WeekDay } from '../data/content';
 import { ClassRow, LOCATION_CITY, LOCATION_NAME, rowsForDate } from '../data/schedule';
@@ -99,6 +100,7 @@ function DayCell({ day, onOpenDay, isOnlineMember, onBookClass }: DayCellProps) 
 export function FullScheduleScreen({ visible, onClose }: Props) {
   const { howTrain } = useProfile();
   const { handleSignUp } = useClassBooking();
+  const { getSession } = useClassBookingData();
   const isOnlineMember = howTrain === 'online';
 
   if (!visible) return null;
@@ -115,7 +117,9 @@ export function FullScheduleScreen({ visible, onClose }: Props) {
   const bookClass = (row: ClassRow, day: WeekDay) => {
     const dateKey = formatDateKey(day.date);
     const weekdayName = day.date.toLocaleDateString('en-US', { weekday: 'long' });
-    handleSignUp(row, dateKey, weekdayName);
+    const session = getSession(row.id, dateKey);
+    if (!session) return;
+    handleSignUp(session, `${row.className} · ${weekdayName} · ${row.time}`);
   };
 
   return (

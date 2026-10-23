@@ -9,6 +9,7 @@ import { UnreadCountBadge } from './UnreadCountBadge';
 import { useBadges } from '../context/BadgeContext';
 import { useChallengeLeaderboard, useCurrentChallenge } from '../context/ChallengeContext';
 import { useGroupChatUnread } from '../context/GroupChatUnreadContext';
+import { useClassBookingData } from '../context/ClassBookingContext';
 import { useMembership } from '../context/MembershipContext';
 import { BADGE_MAP, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import { formatDateKey, isSameDay } from '../data/content';
@@ -71,7 +72,8 @@ function ChallengeModule() {
 }
 
 function NextClassModule() {
-  const { isSignedUp, handleSignUp } = useClassBooking();
+  const { handleSignUp } = useClassBooking();
+  const { getSession, getMyBooking } = useClassBookingData();
   const next = findNextClass(new Date());
   if (!next) return null;
 
@@ -81,7 +83,8 @@ function NextClassModule() {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const dayLabel = isSameDay(date, new Date()) ? 'TODAY' : isSameDay(date, tomorrow) ? 'TOMORROW' : weekdayName.toUpperCase();
-  const signedUp = isSignedUp(dateKey, row.id);
+  const session = getSession(row.id, dateKey);
+  const signedUp = !!(session && getMyBooking(session.id));
 
   return (
     <View style={styles.card} testID="sidebar-next-class-module">
@@ -99,7 +102,8 @@ function NextClassModule() {
       ) : (
         <AppPressable
           style={styles.signUpButton}
-          onPress={() => handleSignUp(row, dateKey, weekdayName)}
+          onPress={() => session && handleSignUp(session, `${row.className} · ${weekdayName} · ${row.time}`)}
+          disabled={!session}
           testID="sidebar-next-class-signup"
         >
           <Text style={styles.signUpButtonText}>SIGN UP</Text>

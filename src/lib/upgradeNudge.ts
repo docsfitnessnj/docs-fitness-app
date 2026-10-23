@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useClassSignUp } from '../context/ClassSignUpContext';
+import { useClassBookingData } from '../context/ClassBookingContext';
 import { useMembership } from '../context/MembershipContext';
-import { useDisplayName, useProfile } from '../context/ProfileContext';
+import { useProfile } from '../context/ProfileContext';
 import { showAlert } from './alert';
 import { useCheckoutGatePhase } from './checkoutRedirectGate';
 import { canShowInterruption, claimInterruption, releaseInterruption } from './interruptionGate';
@@ -42,8 +42,7 @@ export function useWeeklyUpgradeNudge() {
   const { tier, stateLoading, stateRefetching } = useMembership();
   const { howTrain, loading: profileLoading, refetching: profileRefetching } = useProfile();
   const checkoutGatePhase = useCheckoutGatePhase();
-  const { bookingEvents } = useClassSignUp();
-  const displayName = useDisplayName();
+  const { hasEverBooked } = useClassBookingData();
   const firedThisMount = useRef(false);
 
   // Same "mid-checkout-redirect, or a background refetch, isn't a safe
@@ -62,8 +61,7 @@ export function useWeeklyUpgradeNudge() {
 
     if (signedUpThisSession(user?.id ?? null)) return;
 
-    const hasAnyBooking = bookingEvents.some((event) => event.type === 'booked' && event.memberName === displayName);
-    if (howTrain === 'boathouse' && !hasAnyBooking) return;
+    if (howTrain === 'boathouse' && !hasEverBooked) return;
 
     const lastShownAt = loadJSON<number | null>(STORAGE_KEY, null);
     if (lastShownAt !== null && Date.now() - lastShownAt < MIN_INTERVAL_MS) return;

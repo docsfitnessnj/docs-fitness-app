@@ -208,16 +208,16 @@ function buildSolidJpeg(width, height, [r, g, b]) {
 const LARGE_JPEG_FIXTURE = buildSolidJpeg(4032, 3024, [90, 150, 110]);
 const LARGE_JPEG_FIXTURE_RATIO = 4032 / 3024;
 
-async function setupMocks(page) {
+async function setupMocks(page, userId = USER_ID) {
   await page.route('**/auth/v1/token*', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ access_token: 't', token_type: 'bearer', expires_in: 3600, refresh_token: 'r', user: { id: USER_ID, email: 'member@example.com' } }),
+      body: JSON.stringify({ access_token: 't', token_type: 'bearer', expires_in: 3600, refresh_token: 'r', user: { id: userId, email: 'member@example.com' } }),
     })
   );
   await page.route('**/auth/v1/user*', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: USER_ID, email: 'member@example.com', aud: 'authenticated', role: 'authenticated' }) })
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: userId, email: 'member@example.com', aud: 'authenticated', role: 'authenticated' }) })
   );
   await page.route('**/rest/v1/**', async (route) => {
     const url = new URL(route.request().url());
@@ -258,12 +258,33 @@ async function setupMocks(page) {
         ]),
       });
     }
+    // Round 24: DayPanel's class rows are now DB-backed (migration_023) --
+    // without this, every check that doesn't care about booking at all
+    // (nearly everything above this comment in this file) would silently
+    // render ZERO class rows, same as a genuinely stale/un-generated
+    // session window would in the real app. That's a real behavior worth
+    // knowing about, but it isn't what any of those checks are testing,
+    // and the missing content was enough to flip the
+    // [viewport-lock/ordinary-scrolling] check (which needs the Community
+    // tab to have ITS USUAL amount of content to overflow at all). A
+    // realistic default -- generated fresh every call, mirroring
+    // migration_023's own real weekly template, zero bookings -- restores
+    // the same baseline every pre-existing check already assumed. Any
+    // check that actually cares about booking state registers its own
+    // registerClassBookingMocks AFTER this (same override-priority
+    // convention as every other fixture in this file), which wins.
+    if (table === 'ensure_class_sessions') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+    }
+    if (table === 'class_sessions_with_availability') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(defaultClassSessionsFixture()) });
+    }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
   });
   await page.routeWebSocket(/realtime/, (ws) => ws.close());
 }
 
-async function seedSignedInSession(page) {
+async function seedSignedInSession(page, userId = USER_ID) {
   await page.addInitScript(
     ({ projectRef, userId }) => {
       window.localStorage.setItem(
@@ -271,8 +292,372 @@ async function seedSignedInSession(page) {
         JSON.stringify({ access_token: 't', token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: 'r', user: { id: userId, email: 'member@example.com', aud: 'authenticated', role: 'authenticated' } })
       );
     },
-    { projectRef: PROJECT_REF, userId: USER_ID }
+    { projectRef: PROJECT_REF, userId }
   );
+}
+
+// ---------------------------------------------------------------------------
+// Round 24: real class booking backend (migration_023) mock harness.
+//
+// The real atomicity guarantee (book_class's row lock, the partial unique
+// indexes) was already proven directly against a real local Postgres
+// instance, not assumed -- a 12-point functional test script covering
+// session generation, every payment method, CLASS_FULL, waitlist join +
+// auto-promotion-on-cancel, first-class-free (once, and refused on
+// Pilates), the service-role gate, and admin capacity cascading. That's
+// documented in this round's PR description, not re-proven here.
+//
+// What THIS suite verifies is the one thing the direct-Postgres test
+// can't: that the CLIENT correctly respects whatever the server decides --
+// never double-books past a CLASS_FULL response, renders the waitlist/
+// uncapped-Pilates states correctly, and that two independently
+// authenticated members racing for the same last spot can't both land it.
+// A single shared, in-memory `state` object (mutated by route handlers
+// that run in this Node process, not in the browser) stands in for the
+// server; two separate browser contexts pointed at the SAME state object
+// is what makes the "two different members, one spot" check below a real
+// two-actor test rather than one user tapping twice.
+const OTHER_MEMBER_A = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const OTHER_MEMBER_B = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+const SECOND_BOOKER_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+const DISPLAY_NAMES = {
+  [USER_ID]: 'Test Member',
+  [OTHER_MEMBER_A]: 'Alex Boathouse',
+  [OTHER_MEMBER_B]: 'Bailey Boathouse',
+  [SECOND_BOOKER_ID]: 'Casey Boathouse',
+  [MEMBER_FIXTURE_ID]: 'Ada Memberson',
+};
+
+function pgDateString(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// How many days from today (0 = today) the next occurrence of weekday
+// `targetDow` (0=Sun..6=Sat) falls -- deterministic regardless of which
+// real day this suite happens to run on. Community's own DateStrip cells
+// are indexed the same way (index 0 = today, see getUpcomingDays), so
+// this offset doubles as both the fixture's own date and the
+// `date-strip-cell-${offset}` to tap to reach it.
+function offsetToWeekday(targetDow) {
+  return (targetDow - new Date().getDay() + 7) % 7;
+}
+function dateAtOffsetDays(offsetDays, hour, minute) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  d.setHours(hour, minute, 0, 0);
+  return d;
+}
+
+// A session fixture a few hours from now, guaranteed inside the real
+// 21-day booking window, with its own real class_key/class_name so DayPanel
+// (which keys off schedule.ts's rowsForDate -> classKey == 'mwf-530a') or
+// the Pilates lookup (isGuestClass) renders it as a live session. `date`
+// defaults to today, matching whatever weekday this suite happens to run
+// on -- callers that need a SPECIFIC weekday pass one explicitly.
+function makeSessionFixture({ id, classKey, className, classType, capacity, isGuestClass = false, priceCents = null, stripePriceId = null, date = new Date(Date.now() + 3 * 3600000) }) {
+  return {
+    id,
+    class_key: classKey,
+    session_date: pgDateString(date),
+    start_at: date.toISOString(),
+    class_name: className,
+    class_type: classType,
+    location_name: "Dr. John W. Holland Boathouse",
+    capacity,
+    is_guest_class: isGuestClass,
+    price_cents: priceCents,
+    stripe_price_id: stripePriceId,
+  };
+}
+
+function createClassBookingState(sessions) {
+  return { sessions, bookings: [], waitlist: [], nextId: 1 };
+}
+
+// setupMocks' own generic baseline (see the big comment at its
+// class_sessions_with_availability branch) -- the real weekly template
+// from migration_023.sql (Pilates deliberately excluded; it's a once-a-
+// week guest class most pre-existing checks have no reason to expect),
+// generated fresh for the real 21-day window every call so it's never
+// tied to whatever day this suite happens to run. Always zero bookings --
+// a signed-in member with no booking history is the correct default for
+// every check that isn't itself about booking state.
+const DEFAULT_WEEKLY_TEMPLATE = [
+  { classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', days: [1, 3, 5], hour: 5, minute: 30 },
+  { classKey: 'mwf-930a', className: 'Yawn Patrol', classType: 'Kettlebell Strength', days: [1, 3, 5], hour: 9, minute: 30 },
+  { classKey: 'tth-930a', className: 'Yawn Patrol', classType: 'Kettlebell Cardio', days: [2, 4], hour: 9, minute: 30 },
+  { classKey: 'sat-815a', className: 'Savage Saturday', classType: 'Hybrid', days: [6], hour: 8, minute: 15 },
+];
+function defaultClassSessionsFixture() {
+  const rows = [];
+  for (let offset = 0; offset < 21; offset++) {
+    const date = dateAtOffsetDays(offset, 0, 0);
+    const dow = date.getDay();
+    for (const t of DEFAULT_WEEKLY_TEMPLATE) {
+      if (!t.days.includes(dow)) continue;
+      const session = makeSessionFixture({
+        id: `default-${t.classKey}-${offset}`,
+        classKey: t.classKey,
+        className: t.className,
+        classType: t.classType,
+        capacity: 30,
+        date: dateAtOffsetDays(offset, t.hour, t.minute),
+      });
+      rows.push({ ...session, booked_count: 0, waiting_count: 0 });
+    }
+  }
+  return rows;
+}
+
+function bookedCountFor(state, sessionId) {
+  return state.bookings.filter((b) => b.session_id === sessionId && b.status === 'booked').length;
+}
+function waitingCountFor(state, sessionId) {
+  return state.waitlist.filter((w) => w.session_id === sessionId && w.status === 'waiting').length;
+}
+function sessionAvailabilityRow(state, s) {
+  return { ...s, booked_count: bookedCountFor(state, s.id), waiting_count: waitingCountFor(state, s.id) };
+}
+
+// Seeds `count` already-booked fixture rows from OTHER members (never
+// USER_ID) directly into shared state -- simulating "this class already
+// has N real people in it" without those other members ever being a real
+// browser context. Used to put a session at (capacity - 1) or already full
+// before the signed-in test user's own action is what's under test.
+function seedOtherBookings(state, sessionId, count, paymentMethod = 'unlimited') {
+  const others = [OTHER_MEMBER_A, OTHER_MEMBER_B];
+  for (let i = 0; i < count; i++) {
+    state.bookings.push({
+      id: `fixture-booking-${state.nextId++}`,
+      session_id: sessionId,
+      user_id: others[i % others.length],
+      status: 'booked',
+      payment_method: paymentMethod,
+      booked_at: new Date(Date.now() - (count - i) * 1000).toISOString(),
+    });
+  }
+}
+
+// Registers every class-booking RPC/table route against one shared `state`
+// object, scoped to one `userId` (the member this particular page/context
+// is signed in as -- see OTHER_MEMBER_A/B above for why two contexts can
+// share the SAME state while being two different "members"). Registered
+// AFTER setupMocks(page, userId), same override-priority convention as the
+// search-deep-link/founding-50 fixtures elsewhere in this file -- every
+// table setupMocks already has a real default for (profiles, subscriptions)
+// still falls through to it untouched.
+async function registerClassBookingMocks(page, state, userId) {
+  await page.route('**/rest/v1/rpc/ensure_class_sessions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: 'null' }));
+
+  await page.route('**/rest/v1/rpc/class_sessions_with_availability*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state.sessions.map((s) => sessionAvailabilityRow(state, s))) })
+  );
+
+  await page.route('**/rest/v1/rpc/book_class*', (route) => {
+    const body = route.request().postDataJSON() || {};
+    const sessionId = body.p_session_id;
+    const paymentMethod = body.p_payment_method;
+    const session = state.sessions.find((s) => s.id === sessionId);
+    if (!session) {
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'NOT_FOUND: session does not exist' }) });
+    }
+    const alreadyActive = state.bookings.some((b) => b.session_id === sessionId && b.user_id === userId && b.status === 'booked');
+    if (alreadyActive) {
+      return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: 'ALREADY_BOOKED: you already have a spot in this class' }) });
+    }
+    if (paymentMethod === 'first_class_free') {
+      const everUsed = state.bookings.some((b) => b.user_id === userId && b.payment_method === 'first_class_free');
+      if (everUsed) {
+        return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: 'ALREADY_USED: first class free already redeemed' }) });
+      }
+      if (session.is_guest_class) {
+        return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: 'NOT_ELIGIBLE: first class free does not apply to Downbeach Pilates' }) });
+      }
+    }
+    // The one real server guarantee under test here: whoever's request
+    // reaches this capacity check SECOND, with the first already recorded
+    // in shared state, is refused -- the same row-lock-serializes-the-race
+    // shape as the real book_class, just expressed as ordinary JS
+    // single-threaded execution instead of a Postgres row lock.
+    const bookedCount = bookedCountFor(state, sessionId);
+    if (session.capacity !== null && bookedCount >= session.capacity) {
+      return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: 'CLASS_FULL: this class is full' }) });
+    }
+    // Mirrors use_class_pack_credit() being called as part of the real
+    // book_class's own transaction -- the spend and the booking are one
+    // atomic unit server-side, so the mock debits the same shared state the
+    // signed-in user's own `class_packs` route reads from.
+    if (paymentMethod === 'pack_credit' && state.packCreditsRemaining !== undefined) {
+      state.packCreditsRemaining = Math.max(0, state.packCreditsRemaining - 1);
+    }
+    state.bookings.push({ id: `booking-${state.nextId++}`, session_id: sessionId, user_id: userId, status: 'booked', payment_method: paymentMethod, booked_at: new Date().toISOString() });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+  });
+
+  await page.route('**/rest/v1/rpc/cancel_class_booking*', (route) => {
+    const body = route.request().postDataJSON() || {};
+    const booking = state.bookings.find((b) => b.id === body.p_booking_id);
+    if (!booking || booking.user_id !== userId || booking.status !== 'booked') {
+      return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: 'NOT_FOUND: booking not found' }) });
+    }
+    booking.status = 'cancelled';
+    if (booking.payment_method === 'pack_credit') state.packCreditsRemaining = (state.packCreditsRemaining ?? 10) + 1;
+    // Auto-promotion: the first (earliest-joined) waiting entry for this
+    // exact session becomes a real booking, spending ITS OWN payment
+    // method -- mirrors _promote_waitlist_spend_pack_credit's own "whoever
+    // joined first, paid however they chose to" rule.
+    const waiting = state.waitlist
+      .filter((w) => w.session_id === booking.session_id && w.status === 'waiting')
+      .sort((a, b) => a.joined_at.localeCompare(b.joined_at));
+    if (waiting.length > 0) {
+      const promoted = waiting[0];
+      promoted.status = 'promoted';
+      state.bookings.push({
+        id: `booking-${state.nextId++}`,
+        session_id: booking.session_id,
+        user_id: promoted.user_id,
+        status: 'booked',
+        payment_method: promoted.payment_method,
+        booked_at: new Date().toISOString(),
+      });
+    }
+    // Mirrors the real function's own RETURNS TABLE(payment_method,
+    // needs_stripe_refund, stripe_checkout_session_id) -- this is what
+    // ClassBookingContext.cancel() reads to decide whether to call
+    // refund-booking at all, so the mock has to shape it the same way,
+    // not just report success.
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          payment_method: booking.payment_method,
+          needs_stripe_refund: booking.payment_method === 'drop_in_paid' || booking.payment_method === 'pilates_paid',
+          stripe_checkout_session_id: booking.stripe_checkout_session_id ?? null,
+        },
+      ]),
+    });
+  });
+
+  await page.route('**/rest/v1/rpc/join_waitlist*', (route) => {
+    const body = route.request().postDataJSON() || {};
+    const sessionId = body.p_session_id;
+    const already = state.waitlist.some((w) => w.session_id === sessionId && w.user_id === userId && w.status === 'waiting');
+    if (already) {
+      return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: 'ALREADY_WAITLISTED: already on the waitlist' }) });
+    }
+    state.waitlist.push({ id: `wl-${state.nextId++}`, session_id: sessionId, user_id: userId, status: 'waiting', payment_method: body.p_payment_method, joined_at: new Date().toISOString() });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+  });
+
+  await page.route('**/rest/v1/rpc/leave_waitlist*', (route) => {
+    const body = route.request().postDataJSON() || {};
+    const entry = state.waitlist.find((w) => w.id === body.p_waitlist_id);
+    if (entry) entry.status = 'left';
+    return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+  });
+
+  await page.route('**/rest/v1/rpc/admin_class_roster*', (route) => {
+    const body = route.request().postDataJSON() || {};
+    const rows = state.bookings
+      .filter((b) => b.session_id === body.p_session_id && b.status === 'booked')
+      .map((b) => ({
+        booking_id: b.id,
+        user_id: b.user_id,
+        display_name: DISPLAY_NAMES[b.user_id] ?? 'Member',
+        payment_method: b.payment_method,
+        booked_at: b.booked_at,
+        is_first_class: b.payment_method === 'first_class_free',
+      }));
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rows) });
+  });
+
+  await page.route('**/rest/v1/rpc/admin_class_waitlist*', (route) => {
+    const body = route.request().postDataJSON() || {};
+    const rows = state.waitlist
+      .filter((w) => w.session_id === body.p_session_id && w.status === 'waiting')
+      .sort((a, b) => a.joined_at.localeCompare(b.joined_at))
+      .map((w, i) => ({
+        waitlist_id: w.id,
+        user_id: w.user_id,
+        display_name: DISPLAY_NAMES[w.user_id] ?? 'Member',
+        payment_method: w.payment_method,
+        joined_at: w.joined_at,
+        waitlist_position: i + 1,
+      }));
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rows) });
+  });
+
+  await page.route('**/rest/v1/rpc/admin_update_template_capacity*', (route) => {
+    const body = route.request().postDataJSON() || {};
+    state.sessions.filter((s) => s.class_key === body.p_class_key).forEach((s) => (s.capacity = body.p_capacity));
+    return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+  });
+
+  await page.route('**/rest/v1/rpc/admin_pilates_month_summary*', (route) => {
+    const body = route.request().postDataJSON() || {};
+    const pilatesBooked = state.bookings.filter((b) => {
+      const s = state.sessions.find((sess) => sess.id === b.session_id);
+      if (!s || !s.is_guest_class || b.status !== 'booked') return false;
+      const [y, m] = s.session_date.split('-').map((n) => parseInt(n, 10));
+      return y === body.p_year && m === body.p_month;
+    });
+    const grossCents = pilatesBooked.reduce((sum, b) => sum + (state.sessions.find((s) => s.id === b.session_id)?.price_cents ?? 0), 0);
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ bookings_count: pilatesBooked.length, gross_revenue_cents: grossCents }]) });
+  });
+
+  // ClassBookingContext's own direct table reads (not RPCs) -- the
+  // signed-in user's own active bookings/waitlist entries, plus the two
+  // HEAD/count-only existence checks (hasEverBooked / hasBookedDropInBefore).
+  // Registered for GET and HEAD alike -- supabase-js sends HEAD for a
+  // `.select(..., { count: 'exact', head: true })` call and reads the
+  // count back from the `content-range: */<n>` response header, not a body.
+  await page.route('**/rest/v1/class_bookings*', (route) => {
+    if (route.request().method() === 'HEAD') {
+      const everCount = state.bookings.filter((b) => b.user_id === userId).length;
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'content-range': `*/${everCount}` }, body: '' });
+    }
+    const mine = state.bookings
+      .filter((b) => b.user_id === userId && b.status === 'booked')
+      .map((b) => ({ id: b.id, session_id: b.session_id, payment_method: b.payment_method }));
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mine) });
+  });
+
+  await page.route('**/rest/v1/class_waitlist*', (route) => {
+    const mine = state.waitlist
+      .filter((w) => w.user_id === userId && w.status === 'waiting')
+      .map((w) => ({ id: w.id, session_id: w.session_id, payment_method: w.payment_method }));
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mine) });
+  });
+
+  await page.route('**/rest/v1/in_person_purchases*', (route) => {
+    if (route.request().method() === 'HEAD') {
+      const url = new URL(route.request().url());
+      const count = url.searchParams.get('plan') === 'eq.drop_in' ? (state.dropInPurchasesCount ?? 0) : 0;
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'content-range': `*/${count}` }, body: '' });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+  });
+
+  // ClassPackContext's own direct read -- mutated by cancel_class_booking's
+  // refund above, and by whatever a given check seeds in
+  // `state.packCreditsRemaining` up front. A single not-yet-expired row
+  // with that many credits is sufficient to drive useMembership().
+  // hasActivePack/tenPackClassesRemaining through the real MembershipContext
+  // logic, not a stand-in.
+  await page.route('**/rest/v1/class_packs*', (route) => {
+    if (state.packCreditsRemaining === undefined) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ credits_remaining: state.packCreditsRemaining, expires_at: new Date(Date.now() + 20 * 86400000).toISOString() }]),
+    });
+  });
 }
 
 // STEP 1's audit deliverable, enforced permanently: walks every file in
@@ -3339,6 +3724,497 @@ async function run() {
       startTimeValue === '9:30 AM' && endTimeValue === '11:59 PM',
       JSON.stringify({ startTimeValue, endTimeValue })
     );
+    await context.close();
+  }
+
+  // ---------------------------------------------------------------------
+  // Round 24: real class booking backend (migration_023). See the
+  // registerClassBookingMocks block above this function for what the
+  // mock server actually does and does not prove -- the atomicity
+  // guarantee itself was proven directly against real Postgres, not here.
+  const MONDAY_OFFSET = offsetToWeekday(1);
+  // || 7 (never 0): AdminRosterScreen's own "upcoming" filter excludes
+  // anything more than 1 hour in the past, so a fixture dated TODAY would
+  // flip in and out of that window purely based on what time of day this
+  // suite happens to run -- always landing on a future day sidesteps that
+  // entirely, same reasoning as MONDAY_OFFSET needing no such guard (its
+  // own fixtures are only ever read by the admin roster block, never a
+  // schedule check gated on "has this already happened today").
+  const SATURDAY_OFFSET = offsetToWeekday(6) || 7;
+  const IN_PERSON_UNLIMITED_SUBSCRIPTION = [
+    { user_id: USER_ID, plan: 'in_person_monthly', status: 'active', current_period_end: new Date(Date.now() + 20 * 86400000).toISOString(), trial_end: null, cancel_at_period_end: false, stripe_customer_id: 'cus_test' },
+  ];
+
+  // [booking/capacity] + [booking/double-book-last-spot] + [booking/
+  // waitlist-promotion]: one shared scenario, one shared in-memory
+  // `bookingState`, two independently-authenticated browser contexts (two
+  // real "members," not one user tapping twice) -- this is what makes
+  // "two different members racing for the last spot" a genuine two-actor
+  // check rather than a single-user double-click.
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({ id: 'sess-cap', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 2, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
+    ]);
+    seedOtherBookings(bookingState, 'sess-cap', 1, 'unlimited'); // 1 of 2 spots already taken -- one spot left.
+
+    // --- Member A books the last spot. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(IN_PERSON_UNLIMITED_SUBSCRIPTION) }));
+      await registerClassBookingMocks(page, bookingState, USER_ID);
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+
+      const pillTextBefore = await page.getByTestId('sign-up-mwf-530a').innerText().catch(() => null);
+      record('[booking/capacity] a session with 1 of 2 spots taken still shows SIGN UP, not CLASS FULL', pillTextBefore === 'SIGN UP', JSON.stringify({ pillTextBefore }));
+
+      await page.getByTestId('sign-up-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await page.getByText('OK', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+
+      const nowBooked = await page.getByTestId('cancel-class-mwf-530a').isVisible().catch(() => false);
+      record(
+        '[booking/capacity] booking the last spot succeeds and the session is now full in shared state',
+        nowBooked && bookedCountFor(bookingState, 'sess-cap') === 2,
+        JSON.stringify({ nowBooked, bookedCount: bookedCountFor(bookingState, 'sess-cap') })
+      );
+      await context.close();
+    }
+
+    // --- Member B (a different, independently-authenticated account)
+    // reaches the SAME now-full session a moment later -- the one spot
+    // is already gone, so this must never create a 3rd booking. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, SECOND_BOOKER_ID);
+      await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ ...IN_PERSON_UNLIMITED_SUBSCRIPTION[0], user_id: SECOND_BOOKER_ID }]) }));
+      await registerClassBookingMocks(page, bookingState, SECOND_BOOKER_ID);
+      await seedSignedInSession(page, SECOND_BOOKER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+
+      const pillTextFull = await page.getByTestId('sign-up-mwf-530a').innerText().catch(() => null);
+      record('[booking/capacity] the same session now reads CLASS FULL for a second member', pillTextFull === 'CLASS FULL', JSON.stringify({ pillTextFull }));
+
+      const bookingsBeforeTap = bookingState.bookings.filter((b) => b.session_id === 'sess-cap' && b.status === 'booked').length;
+      await page.getByTestId('sign-up-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      // Scoped to the alert's own body text ("is full right now"), not the
+      // bare word "Class Full" -- the SIGN UP pill itself already renders
+      // the literal text "CLASS FULL" on screen before this tap, and
+      // Playwright's default text match is case-insensitive, so a looser
+      // match here could pass from the pill alone without the alert ever
+      // actually appearing.
+      const classFullAlertVisible = await page.getByText('is full right now', { exact: false }).first().isVisible().catch(() => false);
+      const bookingsAfterTap = bookingState.bookings.filter((b) => b.session_id === 'sess-cap' && b.status === 'booked').length;
+      record(
+        '[booking/double-book-last-spot] tapping SIGN UP on an already-full class never creates a 3rd booking -- the server refusal is respected, not raced past',
+        classFullAlertVisible && bookingsBeforeTap === 2 && bookingsAfterTap === 2,
+        JSON.stringify({ classFullAlertVisible, bookingsBeforeTap, bookingsAfterTap })
+      );
+
+      await page.getByText('JOIN WAITLIST', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const onWaitlistAlertVisible = await page.getByText("You're On The Waitlist", { exact: false }).first().isVisible().catch(() => false);
+      await page.getByText('OK', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const waitlistedBadgeVisible = await page.getByTestId('waitlisted-mwf-530a').isVisible().catch(() => false);
+      record(
+        '[booking/double-book-last-spot] offered and joins the waitlist instead, with a real waitlist entry recorded',
+        onWaitlistAlertVisible && waitlistedBadgeVisible && bookingState.waitlist.some((w) => w.session_id === 'sess-cap' && w.user_id === SECOND_BOOKER_ID && w.status === 'waiting'),
+        JSON.stringify({ onWaitlistAlertVisible, waitlistedBadgeVisible })
+      );
+      await context.close();
+    }
+
+    // --- Member A cancels; the waitlisted Member B must be auto-promoted
+    // to a real booking, and must see it the next time their own app
+    // state refreshes (there is no real websocket in this mocked
+    // harness to push a live postgres_changes event through, so this
+    // proxies "the member's own app refreshes" the same honest way the
+    // rest of this file proxies anything it can't drive end to end --
+    // see ClassBookingContext.tsx's realtime subscription for the real
+    // mechanism this stands in for). ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(IN_PERSON_UNLIMITED_SUBSCRIPTION) }));
+      await registerClassBookingMocks(page, bookingState, USER_ID);
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.getByTestId('cancel-class-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await page.getByText('Cancel Class', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+
+      const myBookingNowCancelled = bookingState.bookings.find((b) => b.session_id === 'sess-cap' && b.user_id === USER_ID)?.status === 'cancelled';
+      const waitlistEntryPromoted = bookingState.waitlist.find((w) => w.session_id === 'sess-cap' && w.user_id === SECOND_BOOKER_ID)?.status === 'promoted';
+      const promotedBooking = bookingState.bookings.find((b) => b.session_id === 'sess-cap' && b.user_id === SECOND_BOOKER_ID && b.status === 'booked');
+      record(
+        '[booking/waitlist-promotion] cancelling frees the spot and auto-promotes the first waitlisted member to a real booking',
+        myBookingNowCancelled && waitlistEntryPromoted && !!promotedBooking && promotedBooking.payment_method === 'unlimited',
+        JSON.stringify({ myBookingNowCancelled, waitlistEntryPromoted, promotedBooking })
+      );
+      await context.close();
+    }
+
+    // Member B reopens the app (a reload stands in for "their own app
+    // state refreshes" -- see the comment above) and should now see
+    // YOU'RE IN, not ON WAITLIST.
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, SECOND_BOOKER_ID);
+      await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ ...IN_PERSON_UNLIMITED_SUBSCRIPTION[0], user_id: SECOND_BOOKER_ID }]) }));
+      await registerClassBookingMocks(page, bookingState, SECOND_BOOKER_ID);
+      await seedSignedInSession(page, SECOND_BOOKER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      const nowShowsBooked = await page.getByTestId('cancel-class-mwf-530a').isVisible().catch(() => false);
+      const noLongerWaitlisted = !(await page.getByTestId('waitlisted-mwf-530a').isVisible().catch(() => false));
+      record(
+        "[booking/waitlist-promotion] the promoted member's own app reflects YOU'RE IN, no longer ON WAITLIST",
+        nowShowsBooked && noLongerWaitlisted,
+        JSON.stringify({ nowShowsBooked, noLongerWaitlisted })
+      );
+      await context.close();
+    }
+  }
+
+  // [booking/cancel-refund]: a 10 Class Pack booking spends a credit, and
+  // cancelling it refunds that exact credit -- both ends verified through
+  // the real UI number ("X OF 10 CLASSES LEFT"), not just the mock's own
+  // internal bookkeeping.
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({ id: 'sess-pack', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 10, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
+    ]);
+    bookingState.packCreditsRemaining = 5;
+
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const classesLeftBefore = await page.getByTestId('pack-classes-left').innerText().catch(() => null);
+    await page.getByTestId('sign-up-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('OK', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const classesLeftAfterBooking = await page.getByTestId('pack-classes-left').innerText().catch(() => null);
+    record(
+      '[booking/cancel-refund] booking with a 10 Class Pack spends exactly one credit, reflected live in "X OF 10 CLASSES LEFT"',
+      (classesLeftBefore ?? '').includes('5') && (classesLeftAfterBooking ?? '').includes('4') && bookingState.packCreditsRemaining === 4,
+      JSON.stringify({ classesLeftBefore, classesLeftAfterBooking, packCreditsRemaining: bookingState.packCreditsRemaining })
+    );
+
+    await page.getByTestId('cancel-class-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('Cancel Class', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const classesLeftAfterCancel = await page.getByTestId('pack-classes-left').innerText().catch(() => null);
+    const signUpVisibleAgain = await page.getByTestId('sign-up-mwf-530a').isVisible().catch(() => false);
+    record(
+      '[booking/cancel-refund] cancelling a pack-credit booking refunds the exact credit, reflected live again',
+      (classesLeftAfterCancel ?? '').includes('5') && signUpVisibleAgain && bookingState.packCreditsRemaining === 5,
+      JSON.stringify({ classesLeftAfterCancel, signUpVisibleAgain, packCreditsRemaining: bookingState.packCreditsRemaining })
+    );
+    await context.close();
+  }
+
+  // [booking/cancel-refund-stripe]: "drop in and Pilates payments auto
+  // refunded through Stripe server side" -- cancelling a drop_in_paid
+  // booking must call the real refund-booking Edge Function with exactly
+  // this booking's own id, the moment cancel_class_booking reports
+  // needs_stripe_refund. The booking itself is seeded directly as already
+  // drop_in_paid (the same "can't drive the real Stripe Checkout redirect
+  // from here" gap every other paid-gate check in this file already
+  // stops short of) -- what's under test is the CLIENT'S OWN reaction to
+  // cancel_class_booking's return value, not Checkout itself.
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({ id: 'sess-dropin-refund', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 10, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
+    ]);
+    bookingState.bookings.push({ id: 'dropin-booking-1', session_id: 'sess-dropin-refund', user_id: USER_ID, status: 'booked', payment_method: 'drop_in_paid', stripe_checkout_session_id: 'cs_test_dropin1', booked_at: new Date().toISOString() });
+
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    let refundInvokeBody = null;
+    await page.route('**/functions/v1/refund-booking*', async (route) => {
+      refundInvokeBody = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('cancel-class-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('Cancel Class', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const signUpVisibleAfter = await page.getByTestId('sign-up-mwf-530a').isVisible().catch(() => false);
+    record(
+      '[booking/cancel-refund-stripe] cancelling a drop-in-paid booking calls refund-booking with exactly this booking\'s own id',
+      signUpVisibleAfter && !!refundInvokeBody && refundInvokeBody.bookingId === 'dropin-booking-1',
+      JSON.stringify({ signUpVisibleAfter, refundInvokeBody })
+    );
+    await context.close();
+  }
+
+  // [booking/pilates-uncapped]: "DOWNBEACH PILATES ... has NO cap and
+  // deliberately shows no spots count or attendance number anywhere
+  // member facing" -- seeded with 40 other bookings (deliberately past
+  // what any of this app's other classes cap at) to prove there is
+  // genuinely no ceiling, not just an untested high one, and that the
+  // count itself never leaks into the member-facing card.
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({
+        id: 'sess-pilates-uncapped',
+        classKey: 'pilates-wed-830a',
+        className: 'Downbeach Pilates with Marina',
+        classType: 'Pilates',
+        capacity: null,
+        isGuestClass: true,
+        priceCents: 2000,
+        stripePriceId: 'price_1UTjj9K8jMUFAOQwhnr7flRh',
+        date: dateAtOffsetDays(MONDAY_OFFSET, 8, 30),
+      }),
+    ]);
+    seedOtherBookings(bookingState, 'sess-pilates-uncapped', 40, 'pilates_paid');
+
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const pilatesRowText = await page.getByTestId('pilates-class-row').innerText().catch(() => '');
+    const pilatesPillText = await page.getByTestId('sign-up-pilates').innerText().catch(() => null);
+    record(
+      '[booking/pilates-uncapped] 40 real bookings on an uncapped class never renders a spots count or the attendance number anywhere in the card',
+      !/\b\d+\s*\/\s*\d+\b/.test(pilatesRowText) && !pilatesRowText.includes('40') && pilatesPillText === 'BOOK · $20',
+      JSON.stringify({ pilatesRowText, pilatesPillText })
+    );
+
+    await page.getByTestId('sign-up-pilates').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const paidGateVisible = await page.getByText('PAY $20 AND BOOK', { exact: false }).first().isVisible().catch(() => false);
+    record(
+      '[booking/pilates-uncapped] tapping BOOK always reaches the universal $20 paid gate, even for 40 existing bookings, with no capacity check blocking it',
+      paidGateVisible,
+      JSON.stringify({ paidGateVisible })
+    );
+    await page.getByText('Not Now', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await context.close();
+  }
+
+  // [booking/pilates-deep-link]: `?book=pilates` (pilatesDeepLink.ts) must
+  // open the app directly to the real $20 paid booking flow for Downbeach
+  // Pilates, with no tap from the member at all -- "their path is email
+  // signup, pay $20, booked."
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({
+        id: 'sess-pilates-deeplink',
+        classKey: 'pilates-wed-830a',
+        className: 'Downbeach Pilates with Marina',
+        classType: 'Pilates',
+        capacity: null,
+        isGuestClass: true,
+        priceCents: 2000,
+        stripePriceId: 'price_1UTjj9K8jMUFAOQwhnr7flRh',
+        date: dateAtOffsetDays(MONDAY_OFFSET, 8, 30),
+      }),
+    ]);
+
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/?book=pilates`, { waitUntil: 'networkidle' });
+    await page
+      .getByText('PAY $20 AND BOOK', { exact: false })
+      .first()
+      .waitFor({ state: 'visible', timeout: 8000 })
+      .catch(() => {});
+
+    const paidGateAutoOpened = await page.getByText('PAY $20 AND BOOK', { exact: false }).first().isVisible().catch(() => false);
+    const titleText = await page.getByText('Downbeach Pilates is $20', { exact: false }).first().isVisible().catch(() => false);
+    const urlStripped = !page.url().includes('book=pilates');
+    record(
+      '[booking/pilates-deep-link] ?book=pilates opens the real booking flow for that exact class, with no member tap at all',
+      paidGateAutoOpened && titleText && urlStripped,
+      JSON.stringify({ paidGateAutoOpened, titleText, urlStripped })
+    );
+    await context.close();
+  }
+
+  // [booking/admin-roster]: admin sees the real roster (names + payment
+  // method + first-timer tag), the real waitlist with position numbers,
+  // can edit a class's capacity live, and sees real Pilates revenue.
+  {
+    const rosterSession = makeSessionFixture({ id: 'sess-admin-roster', classKey: 'sat-815a', className: 'Savage Saturday', classType: 'Hybrid', capacity: 30, date: dateAtOffsetDays(SATURDAY_OFFSET, 8, 15) });
+    const pilatesSession = makeSessionFixture({
+      id: 'sess-admin-pilates',
+      classKey: 'pilates-wed-830a',
+      className: 'Downbeach Pilates with Marina',
+      classType: 'Pilates',
+      capacity: null,
+      isGuestClass: true,
+      priceCents: 2000,
+      stripePriceId: 'price_1UTjj9K8jMUFAOQwhnr7flRh',
+      // admin_pilates_month_summary (the mock, same as the real RPC) sums
+      // by the session's own calendar month, not by whether it shows up
+      // in the roster's unrelated 7-day "upcoming" list -- this session
+      // is never read through that list, so today's real date (always
+      // "this month," by definition, regardless of day-of-month or
+      // weekday) is the simplest fixture that can never drift into an
+      // adjacent month the way a multi-day-ahead offset could near a
+      // month boundary.
+      date: new Date(),
+    });
+    const bookingState = createClassBookingState([rosterSession, pilatesSession]);
+    bookingState.bookings.push(
+      { id: 'roster-booking-1', session_id: 'sess-admin-roster', user_id: OTHER_MEMBER_A, status: 'booked', payment_method: 'first_class_free', booked_at: new Date().toISOString() },
+      { id: 'roster-booking-2', session_id: 'sess-admin-roster', user_id: OTHER_MEMBER_B, status: 'booked', payment_method: 'unlimited', booked_at: new Date().toISOString() },
+      { id: 'roster-booking-pilates-1', session_id: 'sess-admin-pilates', user_id: OTHER_MEMBER_A, status: 'booked', payment_method: 'pilates_paid', booked_at: new Date().toISOString() },
+      { id: 'roster-booking-pilates-2', session_id: 'sess-admin-pilates', user_id: OTHER_MEMBER_B, status: 'booked', payment_method: 'pilates_paid', booked_at: new Date().toISOString() }
+    );
+    bookingState.waitlist.push({ id: 'roster-wl-1', session_id: 'sess-admin-roster', user_id: MEMBER_FIXTURE_ID, status: 'waiting', payment_method: 'pack_credit', joined_at: new Date().toISOString() });
+
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { display_name: 'Test Admin', instagram_handle: '', favorite_quote: '', avatar_url: null, how_train: 'boathouse', is_admin: true, show_tomorrows_workout: true, tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(), group_chat_muted: false },
+        ]),
+      })
+    );
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('CLASS ROSTER', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const bookingsCountText = await page.getByTestId('pilates-bookings-count').innerText().catch(() => null);
+    const grossRevenueText = await page.getByTestId('pilates-gross-revenue').innerText().catch(() => null);
+    record(
+      '[booking/admin-roster] PILATES revenue card shows the real bookings count and gross revenue for the month',
+      bookingsCountText === '2' && grossRevenueText === '$40.00',
+      JSON.stringify({ bookingsCountText, grossRevenueText })
+    );
+
+    await page.getByTestId('roster-class-sess-admin-roster').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const headcountText = await page.getByTestId('roster-headcount-sess-admin-roster').innerText().catch(() => null);
+    const aBadgeVisible = await page.getByTestId(`first-class-tag-${DISPLAY_NAMES[OTHER_MEMBER_A]}`).isVisible().catch(() => false);
+    const rosterText = await page.getByTestId('roster-class-sess-admin-roster').innerText().catch(() => '');
+    record(
+      '[booking/admin-roster] the real roster shows both booked names, the FIRST CLASS tag, and payment methods',
+      headcountText === '2/30' && aBadgeVisible && rosterText.includes(DISPLAY_NAMES[OTHER_MEMBER_A]) && rosterText.includes(DISPLAY_NAMES[OTHER_MEMBER_B]) && rosterText.includes('MONTHLY UNLIMITED'),
+      JSON.stringify({ headcountText, aBadgeVisible, rosterText })
+    );
+    record(
+      '[booking/admin-roster] the real waitlist shows the waiting member with a position number',
+      rosterText.includes('WAITLIST') && rosterText.includes(`#1 ${DISPLAY_NAMES[MEMBER_FIXTURE_ID]}`) && rosterText.includes('10 CLASS PACK'),
+      JSON.stringify({ rosterText })
+    );
+
+    const capacityInputBefore = await page.locator('#class-capacity-sat-815a').inputValue().catch(() => null);
+    await page.locator('#class-capacity-sat-815a').fill('50');
+    await page.getByTestId('class-capacity-save-sat-815a').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const capacityNowOnSession = rosterSession.capacity;
+    record(
+      '[booking/admin-roster] editing a class capacity saves and cascades to the generated session',
+      capacityInputBefore === '30' && capacityNowOnSession === 50,
+      JSON.stringify({ capacityInputBefore, capacityNowOnSession })
+    );
+
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'admin-roster.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // --- Screenshots: the schedule with the gold Pilates card, and a full
+  // class showing the waitlist option -- both explicitly requested for
+  // this round. A fresh, deliberately simple scenario (not reused from
+  // the checks above, so a screenshot never depends on exactly which
+  // assertions ran right before it). ---
+  if (SCREENSHOT_DIR) {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({ id: 'sess-shot-full', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 2, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
+      makeSessionFixture({
+        id: 'sess-shot-pilates',
+        classKey: 'pilates-wed-830a',
+        className: 'Downbeach Pilates with Marina',
+        classType: 'Pilates',
+        capacity: null,
+        isGuestClass: true,
+        priceCents: 2000,
+        stripePriceId: 'price_1UTjj9K8jMUFAOQwhnr7flRh',
+        date: dateAtOffsetDays(MONDAY_OFFSET, 8, 30),
+      }),
+    ]);
+    seedOtherBookings(bookingState, 'sess-shot-full', 2, 'unlimited'); // already full
+
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    // in_person_unlimited so tapping a full class goes straight to
+    // CLASS_FULL -> offerWaitlist, same as the capacity/double-book check
+    // above -- otherwise tapping SIGN UP would show the unrelated "Have
+    // You Trained at Doc's Fitness Before?" question first instead of the
+    // waitlist offer this screenshot is actually meant to show.
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(IN_PERSON_UNLIMITED_SUBSCRIPTION) }));
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'schedule-pilates-gold-card.png') }).catch(() => {});
+
+    await page.getByTestId('sign-up-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'schedule-full-class-waitlist.png') }).catch(() => {});
+    await page.getByText('Not Now', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
     await context.close();
   }
 
