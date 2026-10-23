@@ -85,6 +85,51 @@ Deno.serve(async (req) => {
       }
       const classSessionId: string | undefined =
         planLabel === 'drop_in' || planLabel === 'pilates_guest' ? body.classSessionId : undefined;
+
+      // Round 25: "CLASS FULL is a dead end, not a flow" — a real-device bug
+      // found a stale/full client could still walk all the way through to a
+      // real Stripe Checkout Session for a class with zero room left. This
+      // is the server-side half of that fix: refuse BEFORE Stripe ever
+      // creates the session, so a member is never charged for a class that
+      // can't actually seat them. book_class's own atomic row-lock check
+      // (webhook time) is still the real, final backstop — Stripe Checkout
+      // creation and webhook confirmation aren't atomic with each other, so
+      // this can't close that exact race, only the much larger, much more
+      // common window a stale client sits in before ever tapping PAY. Never
+      // runs for Pilates in practice — its own session row's `capacity` is
+      // always null (uncapped by design), so the check below is a no-op
+      // for it, exactly as it should be.
+      if (classSessionId) {
+        const { data: sessionRow, error: sessionError } = await admin
+          .from('class_sessions')
+          .select('capacity')
+          .eq('id', classSessionId)
+          .maybeSingle();
+        if (sessionError || !sessionRow) {
+          return json({ error: 'That class is no longer available.' }, 400);
+        }
+        if (sessionRow.capacity !== null) {
+          const { count: bookedCount, error: countError } = await admin
+            .from('class_bookings')
+            .select('id', { count: 'exact', head: true })
+            .eq('session_id', classSessionId)
+            .eq('status', 'booked');
+          if (countError) {
+            return json({ error: "Couldn't check class availability right now. Try again in a moment." }, 500);
+          }
+          if ((bookedCount ?? 0) >= sessionRow.capacity) {
+            return json({ error: 'That class is full.' }, 400);
+          }
+        }
+      }
+
+      // Round 25: drop_in/pilates_guest carry their own plan on both return
+      // URLs so the client can tell a cancelled CLASS BOOKING checkout
+      // apart from a cancelled MEMBERSHIP PLAN one — "Stripe's cancel
+      // return lands the member back on the schedule instantly," not the
+      // Memberships screen a plan checkout's own cancel still correctly
+      // opens. See checkoutRedirect.ts.
+      const planParam = classSessionId ? `&plan=${planLabel}` : '';
       const session = await stripe.checkout.sessions.create({
         mode: 'payment',
         customer: customerId,
@@ -96,8 +141,8 @@ Deno.serve(async (req) => {
           ...(classSessionId ? { class_session_id: classSessionId } : {}),
         },
         allow_promotion_codes: false,
-        success_url: `${origin}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${origin}/?checkout=cancel`,
+        success_url: `${origin}/?checkout=success&session_id={CHECKOUT_SESSION_ID}${planParam}`,
+        cancel_url: `${origin}/?checkout=cancel${planParam}`,
       });
       if (!session.url) {
         return json({ error: 'Could not start checkout.' }, 500);

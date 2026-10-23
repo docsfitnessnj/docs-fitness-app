@@ -14,8 +14,11 @@ type Props = {
 export function DeckUpsellModal({ visible, onDismiss }: Props) {
   return (
     <AppModal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
+      <Pressable style={styles.backdrop} onPress={onDismiss}>
+        <Pressable style={styles.sheet} onPress={() => {}}>
+          <Pressable onPress={onDismiss} hitSlop={8} style={styles.closeButton} testID="deck-upsell-close">
+            <Ionicons name="close" size={20} color={colors.textMuted} />
+          </Pressable>
           <View style={styles.iconWrap}>
             <Ionicons name="albums" size={30} color={colors.gold} />
           </View>
@@ -29,8 +32,8 @@ export function DeckUpsellModal({ visible, onDismiss }: Props) {
           <Pressable onPress={onDismiss} hitSlop={8} style={styles.dismissLink} testID="deck-upsell-dismiss">
             <Text style={styles.dismissLinkText}>NOT YET</Text>
           </Pressable>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </AppModal>
   );
 }
@@ -51,7 +54,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.hairline,
     padding: 24,
+    paddingTop: 44,
     alignItems: 'center',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    zIndex: 1,
   },
   iconWrap: {
     width: 64,

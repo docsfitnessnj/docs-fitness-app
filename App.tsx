@@ -931,6 +931,10 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
             <View style={styles.checkoutGateOverlay}>
               <CheckoutRedirectLoadingScreen
                 message={checkoutGatePhase === 'confirming' ? 'CONFIRMING YOUR MEMBERSHIP' : 'TAKING YOU TO CHECKOUT'}
+                // Second backstop (see checkoutRedirectGate.ts's own first
+                // one) — if this is somehow still showing ~10s later, the
+                // member can always get back in, no app close required.
+                onBackToApp={clearCheckoutRedirectPending}
               />
             </View>
           )}

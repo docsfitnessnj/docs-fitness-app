@@ -36,15 +36,6 @@ type RosterRow = {
   is_first_class: boolean;
 };
 
-type WaitlistRow = {
-  waitlist_id: string;
-  user_id: string;
-  display_name: string;
-  payment_method: string;
-  joined_at: string;
-  waitlist_position: number;
-};
-
 function paymentMethodLabel(method: string): string {
   switch (method) {
     case 'unlimited':
@@ -62,29 +53,21 @@ function paymentMethodLabel(method: string): string {
   }
 }
 
-function ClassRosterCard({ sessionId, label, dateLabel, capacity, bookedCount, waitingCount, isGuestClass }: {
+function ClassRosterCard({ sessionId, label, dateLabel, capacity, bookedCount }: {
   sessionId: string;
   label: string;
   dateLabel: string;
   capacity: number | null;
   bookedCount: number;
-  waitingCount: number;
-  isGuestClass: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [roster, setRoster] = useState<RosterRow[] | null>(null);
-  const [waitlist, setWaitlist] = useState<WaitlistRow[] | null>(null);
 
   useEffect(() => {
     if (!expanded || roster !== null) return;
     supabase
       .rpc('admin_class_roster', { p_session_id: sessionId })
       .then(({ data }) => setRoster((data as RosterRow[] | null) ?? []));
-    if (!isGuestClass) {
-      supabase
-        .rpc('admin_class_waitlist', { p_session_id: sessionId })
-        .then(({ data }) => setWaitlist((data as WaitlistRow[] | null) ?? []));
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded]);
 
@@ -127,22 +110,6 @@ function ClassRosterCard({ sessionId, label, dateLabel, capacity, bookedCount, w
               </View>
             ))
           )}
-
-          {!isGuestClass && waitingCount > 0 && (
-            <>
-              <Text style={styles.waitlistHeading}>WAITLIST</Text>
-              {(waitlist ?? []).map((w) => (
-                <View key={w.waitlist_id} style={styles.bookerRow}>
-                  <Text style={styles.bookerName}>
-                    #{w.waitlist_position} {w.display_name}
-                  </Text>
-                  <View style={styles.planBadge}>
-                    <Text style={styles.planBadgeText}>{paymentMethodLabel(w.payment_method)}</Text>
-                  </View>
-                </View>
-              ))}
-            </>
-          )}
         </View>
       )}
     </AppPressable>
@@ -175,11 +142,9 @@ function CapacityRow({ classKey, label }: { classKey: string; label: string }) {
     } else {
       // admin_update_template_capacity cascades to every not-yet-happened
       // session of this class_key server-side, but nothing about calling
-      // it is a booking/cancel/join/leave action of this admin's own, so
-      // ClassBookingContext's realtime channel (class_bookings/
-      // class_waitlist only) never fires for it — without this, the
-      // roster headcount badges just below keep showing the OLD capacity
-      // until something else happens to refetch.
+      // it refetches ClassBookingContext's own session state on its own —
+      // without this, the roster headcount badges just below keep showing
+      // the OLD capacity until something else happens to refetch.
       await refetch();
       confirm.succeed();
     }
@@ -289,8 +254,6 @@ export function AdminRosterScreen({ visible, onClose }: Props) {
               dateLabel={new Date(session.startAt).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
               capacity={session.capacity}
               bookedCount={session.bookedCount}
-              waitingCount={session.waitingCount}
-              isGuestClass={session.isGuestClass}
             />
           ))
         )}
@@ -491,13 +454,5 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelSemiBold,
     fontSize: 10,
     letterSpacing: 0.5,
-  },
-  waitlistHeading: {
-    color: colors.gold,
-    fontFamily: fonts.labelBold,
-    fontSize: 11,
-    letterSpacing: 0.6,
-    marginTop: 10,
-    marginBottom: 2,
   },
 });
