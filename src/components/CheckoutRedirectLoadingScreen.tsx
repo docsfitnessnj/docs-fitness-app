@@ -1,11 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { DocsBadge } from './brand/DocsBadge';
 import { colors, fonts } from '../theme';
 
 type Props = {
   message: string;
+  // Opt-in second backstop (see checkoutRedirectGate.ts's own first one) —
+  // only passed by the checkout-redirect overlay, never by the plain
+  // "LOADING YOUR ACCOUNT" usage, which has its own separate error/retry
+  // path instead. If this screen is STILL showing ~10 seconds after
+  // mounting, a BACK TO THE APP button appears; tapping it calls this to
+  // force the gate closed. "Roughly 10 seconds" because this is a backstop
+  // for an already-abnormal wait, not a promise about how long checkout
+  // normally takes.
+  onBackToApp?: () => void;
 };
+
+const BACKSTOP_DELAY_MS = 10000;
 
 const BADGE_SIZE = 96;
 const RING_SIZE = BADGE_SIZE + 22;
@@ -40,10 +51,18 @@ const LINE_FADE_MS = 300;
 // screen buffer in the app — any future one should reuse this rather than
 // rolling its own, so the wait always looks identical: badge, spinner ring,
 // cycling brand line, status message.
-export function CheckoutRedirectLoadingScreen({ message }: Props) {
+export function CheckoutRedirectLoadingScreen({ message, onBackToApp }: Props) {
   const spin = useRef(new Animated.Value(0)).current;
   const lineOpacity = useRef(new Animated.Value(1)).current;
   const [lineIndex, setLineIndex] = useState(0);
+  const [showBackstop, setShowBackstop] = useState(false);
+
+  useEffect(() => {
+    if (!onBackToApp) return;
+    setShowBackstop(false);
+    const timer = setTimeout(() => setShowBackstop(true), BACKSTOP_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [onBackToApp, message]);
 
   useEffect(() => {
     const spinLoop = Animated.loop(
@@ -103,6 +122,11 @@ export function CheckoutRedirectLoadingScreen({ message }: Props) {
         {BRAND_LINES[lineIndex]}
       </Animated.Text>
       <Text style={styles.message}>{message}</Text>
+      {showBackstop && onBackToApp && (
+        <Pressable style={styles.backstopButton} onPress={onBackToApp} testID="checkout-redirect-back-to-app">
+          <Text style={styles.backstopButtonText}>BACK TO THE APP</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -159,5 +183,19 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     marginTop: 10,
     textAlign: 'center',
+  },
+  backstopButton: {
+    marginTop: 28,
+    borderWidth: 1.5,
+    borderColor: colors.green,
+    borderRadius: 10,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+  },
+  backstopButtonText: {
+    color: colors.green,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 1,
   },
 });

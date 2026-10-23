@@ -24,8 +24,8 @@ export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplet
 
   return (
     <AppModal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={[styles.card, card.joker && { borderColor: jokerColor, borderWidth: 2 }]}>
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable style={[styles.card, card.joker && { borderColor: jokerColor, borderWidth: 2 }]} onPress={() => {}}>
           <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton} testID="deck-card-close">
             <Ionicons name="close" size={22} color={colors.textMuted} />
           </Pressable>
@@ -76,8 +76,8 @@ export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplet
 
             <Text style={[styles.corner, styles.cornerBottomRight, { color: suitColor }]}>{label}</Text>
           </ScrollView>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </AppModal>
   );
 }

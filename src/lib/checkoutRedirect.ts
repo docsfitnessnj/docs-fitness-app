@@ -50,10 +50,24 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
     if (!checkout) return;
 
     sessionIdRef.current = params.get('session_id');
+    const plan = params.get('plan');
+    const isBookingPlan = plan === 'drop_in' || plan === 'pilates_guest';
     // Strip the query string immediately so a later refresh doesn't replay
     // this (especially re-firing the celebration).
     window.history.replaceState({}, '', window.location.pathname + window.location.hash);
-    onOpenMemberships();
+    // Round 25: "Stripe's cancel return lands the member back on the
+    // schedule instantly" — a cancelled Drop In/Downbeach Pilates checkout
+    // skips opening Memberships entirely, leaving the member exactly where
+    // this fresh page load already lands them (Community, the schedule's
+    // own home — this is a full top-level navigation back from Stripe, not
+    // an in-app one, so there's no prior screen to "return" to; Community
+    // simply IS where a signed-in load always starts). Every other
+    // checkout (every plan's success, every other plan's cancel) opens
+    // Memberships exactly as before — "Cancel returns them to the
+    // memberships screen unchanged" still holds for those.
+    if (!(checkout === 'cancel' && isBookingPlan)) {
+      onOpenMemberships();
+    }
     if (checkout === 'success') {
       // Already set to 'confirming' (module import saw this exact URL
       // before any component rendered — see checkoutRedirectGate.ts) —

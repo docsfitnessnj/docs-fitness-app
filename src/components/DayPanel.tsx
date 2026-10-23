@@ -52,8 +52,8 @@ function TrainingNearVentnorLine() {
 // not a stack of screens.
 export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
   const { isCompleted, toggleCompleted } = useWorkoutLog();
-  const { handleSignUp: signUpForClass, handleCancel: cancelClass } = useClassBooking();
-  const { sessions, getSession, getMyBooking, getMyWaitlistEntry } = useClassBookingData();
+  const { handleSignUp: signUpForClass, handleCancel: cancelClass, isFull } = useClassBooking();
+  const { sessions, getSession, getMyBooking } = useClassBookingData();
   const { hasActivePack, tenPackClassesRemaining } = useMembership();
   const isDesktop = useIsDesktop();
   const [logOpen, setLogOpen] = useState(false);
@@ -114,7 +114,7 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
             if (!session) return null;
             const label = `${row.className} · ${weekdayName} · ${row.time}`;
             const myBooking = getMyBooking(session.id);
-            const waitlistEntry = getMyWaitlistEntry(session.id);
+            const full = isFull(session);
             return (
               <View key={row.id} style={styles.classRow}>
                 <View style={{ flex: 1 }}>
@@ -140,20 +140,21 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                       <Text style={styles.cancelPillText}>CANCEL CLASS</Text>
                     </AppPressable>
                   </View>
-                ) : waitlistEntry ? (
-                  <View style={styles.signedUpBadge} testID={`waitlisted-${row.id}`}>
-                    <Ionicons name="time-outline" size={13} color={colors.gold} />
-                    <Text style={styles.waitlistedBadgeText}>ON WAITLIST</Text>
-                  </View>
                 ) : (
+                  // Full is a dead end, not a flow — no waitlist, no tap at
+                  // all once a session is at capacity. `disabled` is the
+                  // real enforcement (RN Pressable never fires onPress nor
+                  // shows a pressed state while disabled); the grayed style
+                  // is just what makes that legible at a glance.
                   <AppPressable
-                    style={styles.signUpPill}
+                    style={[styles.signUpPill, full && styles.signUpPillFull]}
                     pressedStyle={styles.signUpPillPressed}
                     onPress={() => signUpForClass(session, label)}
+                    disabled={full}
                     testID={`sign-up-${row.id}`}
                   >
-                    <Text style={styles.signUpPillText}>
-                      {session.capacity !== null && session.bookedCount >= session.capacity ? 'CLASS FULL' : 'SIGN UP'}
+                    <Text style={[styles.signUpPillText, full && styles.signUpPillTextFull]}>
+                      {full ? 'CLASS FULL' : 'SIGN UP'}
                     </Text>
                   </AppPressable>
                 )}
@@ -632,6 +633,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 0.8,
   },
+  // Inert dead-end state — grayed, no press feedback (the `disabled` prop
+  // itself is what actually blocks the tap; this is just what makes that
+  // legible at a glance).
+  signUpPillFull: {
+    backgroundColor: colors.hairline,
+  },
+  signUpPillTextFull: {
+    color: colors.textMuted,
+  },
   signedUpWrap: {
     alignItems: 'flex-end',
     gap: 6,
@@ -643,12 +653,6 @@ const styles = StyleSheet.create({
   },
   signedUpBadgeText: {
     color: colors.green,
-    fontFamily: fonts.labelBold,
-    fontSize: 11,
-    letterSpacing: 0.8,
-  },
-  waitlistedBadgeText: {
-    color: colors.gold,
     fontFamily: fonts.labelBold,
     fontSize: 11,
     letterSpacing: 0.8,

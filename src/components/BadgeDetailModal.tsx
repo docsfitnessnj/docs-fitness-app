@@ -26,8 +26,11 @@ export function BadgeDetailModal({ badgeId, earned, onClose, onVerifyJoker }: Pr
 
   return (
     <AppModal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.card}>
+      {/* Round 25: escape-hatch audit — tapping the dimmed backdrop
+          dismisses too, same as every other small popup in the app now.
+          The X already existed; this just adds the second path. */}
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable style={styles.card} onPress={() => {}}>
           <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton} testID="badge-detail-close">
             <Text style={styles.closeText}>✕</Text>
           </Pressable>
@@ -50,8 +53,8 @@ export function BadgeDetailModal({ badgeId, earned, onClose, onVerifyJoker }: Pr
               </ExternalLinkPressable>
             </View>
           )}
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </AppModal>
   );
 }

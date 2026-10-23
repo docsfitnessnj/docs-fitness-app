@@ -1554,10 +1554,11 @@ end $$;
 -- 0=Sunday..6=Saturday convention Postgres's own extract(dow from ...)
 -- already uses, so session generation below needs no index translation.
 -- `default_capacity` is the one admin-editable control for "Doc's classes
--- default to a cap of 30, editable per class by admin (planned bump to 50
--- around Memorial Day)" — editing it (admin_update_template_capacity,
--- below) cascades to every not-yet-happened class_sessions row for that
--- class_key, not just future generations, so a capacity bump takes effect
+-- default to a cap of 50" (the room's real maximum — migration_024 bumped
+-- this up from an initial 30), editable per class by admin — editing it
+-- (admin_update_template_capacity, below) cascades to every
+-- not-yet-happened class_sessions row for that class_key, not just future
+-- generations, so a capacity bump takes effect
 -- immediately on the whole visible booking window.
 -- ----------------------------------------------------------------------------
 create table if not exists public.class_templates (
@@ -1587,10 +1588,10 @@ create policy "anyone signed in reads class templates"
 
 insert into public.class_templates (class_key, class_name, class_type, start_time_local, weekdays, default_capacity, is_guest_class, price_cents, stripe_price_id)
 values
-  ('mwf-530a', 'Dawn Patrol', 'Kettlebell Strength', time '05:30', array[1,3,5]::smallint[], 30, false, null, null),
-  ('mwf-930a', 'Yawn Patrol', 'Kettlebell Strength', time '09:30', array[1,3,5]::smallint[], 30, false, null, null),
-  ('tth-930a', 'Yawn Patrol', 'Kettlebell Cardio', time '09:30', array[2,4]::smallint[], 30, false, null, null),
-  ('sat-815a', 'Savage Saturday', 'Hybrid', time '08:15', array[6]::smallint[], 30, false, null, null),
+  ('mwf-530a', 'Dawn Patrol', 'Kettlebell Strength', time '05:30', array[1,3,5]::smallint[], 50, false, null, null),
+  ('mwf-930a', 'Yawn Patrol', 'Kettlebell Strength', time '09:30', array[1,3,5]::smallint[], 50, false, null, null),
+  ('tth-930a', 'Yawn Patrol', 'Kettlebell Cardio', time '09:30', array[2,4]::smallint[], 50, false, null, null),
+  ('sat-815a', 'Savage Saturday', 'Hybrid', time '08:15', array[6]::smallint[], 50, false, null, null),
   ('pilates-wed-830a', 'Downbeach Pilates with Marina', 'Pilates', time '08:30', array[3]::smallint[], null, true, 2000, 'price_1UTjj9K8jMUFAOQwhnr7flRh')
 on conflict (class_key) do nothing;
 
@@ -1698,6 +1699,13 @@ create policy "a member reads their own bookings, admin reads all"
 -- position, read via row_number() at query time (admin_class_waitlist
 -- below), so there's no renumbering to maintain when someone is promoted
 -- or leaves.
+--
+-- ROUND 25: dormant. Owner decision removed the waitlist app-wide — a full
+-- class is now a dead end, not a flow — so nothing in the app reads or
+-- writes this table or its functions (join_waitlist, leave_waitlist,
+-- _promote_waitlist_spend_pack_credit, admin_class_waitlist) anymore. Left
+-- in place rather than dropped, same as any other dormant table in this
+-- schema; see AGENTS.md's "Round 25" section for the full writeup.
 -- ----------------------------------------------------------------------------
 create table if not exists public.class_waitlist (
   id uuid primary key default gen_random_uuid(),
@@ -2258,8 +2266,8 @@ grant execute on function public.admin_class_waitlist(uuid) to authenticated;
 
 -- ----------------------------------------------------------------------------
 -- admin_update_template_capacity() — the one admin control for "Doc's
--- classes default to a cap of 30, editable per class by admin (planned
--- bump to 50 around Memorial Day)." Updates the template's own
+-- classes default to a cap of 50" (migration_024), editable per class by
+-- admin. Updates the template's own
 -- default_capacity (so every FUTURE generation picks it up) AND cascades
 -- immediately to every not-yet-started class_sessions row already
 -- generated for that class_key, so a capacity bump is visible across the

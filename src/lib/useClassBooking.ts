@@ -39,30 +39,10 @@ export function useClassBooking() {
     return !!session && !!booking.getMyBooking(session.id);
   };
 
-  const getWaitlistEntry = (classKey: string, dateKey: string) => {
-    const session = booking.getSession(classKey, dateKey);
-    return session ? booking.getMyWaitlistEntry(session.id) : undefined;
-  };
-
+  // Pilates is always capacity: null (uncapped, by design — see Round 24),
+  // so this is only ever true for the four regular classes.
   const isFull = (session: ClassSession): boolean =>
     session.capacity !== null && session.bookedCount >= session.capacity;
-
-  const offerWaitlist = (session: ClassSession, label: string, paymentMethod: 'unlimited' | 'pack_credit') => {
-    showAlert('Class Full', `${label} is full right now.`, [
-      { text: 'Not Now', style: 'cancel' },
-      {
-        text: 'JOIN WAITLIST',
-        onPress: async () => {
-          const result = await booking.joinWaitlist(session.id, paymentMethod);
-          if (result.ok) {
-            showAlert("You're On The Waitlist", "We'll book you in automatically the moment a spot opens up.");
-          } else {
-            showAlert("Couldn't Join Waitlist", result.message);
-          }
-        },
-      },
-    ]);
-  };
 
   const startPaidBooking = async (session: ClassSession, label: string, plan: 'drop_in' | 'pilates_guest') => {
     const price = plan === 'pilates_guest' ? (session.priceCents ?? 2000) / 100 : DROP_IN_PRICE;
@@ -91,12 +71,20 @@ export function useClassBooking() {
   };
 
   const handleSignUp = (session: ClassSession, label: string) => {
+    // CLASS FULL is a dead end, not a flow — no alert, no dialog, for any
+    // tier. The SIGN UP button itself is already inert (non-pressable) the
+    // moment a session is full (DayPanel/IdentitySidebar), so this call
+    // shouldn't normally even happen — this is the defense-in-depth guard
+    // that makes it impossible regardless of how handleSignUp got called.
+    // Real-device bug this directly fixes: tapping a CLASS FULL button
+    // still walked all the way through the first-class-free question, the
+    // $25 drop-in popup, and real Stripe checkout for a class with zero
+    // room left. Pilates is always capacity: null, so this never applies
+    // to it — its own universal paid gate below is unaffected.
+    if (isFull(session)) return;
+
     // Downbeach Pilates: universal paid gate, no other path at all.
     if (session.isGuestClass) {
-      if (isFull(session)) {
-        showAlert('Class Full', `${label} is full right now.`);
-        return;
-      }
       startPaidBooking(session, label, 'pilates_guest');
       return;
     }
@@ -106,7 +94,10 @@ export function useClassBooking() {
         if (result.ok) {
           showAlert("YOU'RE IN", label);
         } else if (result.code === 'CLASS_FULL') {
-          offerWaitlist(session, label, 'unlimited');
+          // The client's own capacity check above just missed a real race
+          // (someone else took the last spot a moment earlier) — still a
+          // dead end, just reported after the fact instead of before.
+          showAlert('Class Full', `${label} filled up just now — try a different class.`);
         } else {
           showAlert("Couldn't Book That Class", result.message);
         }
@@ -133,7 +124,7 @@ export function useClassBooking() {
           classPack.refetch();
           showAlert("YOU'RE IN", `${label}\n${remaining - 1} classes left`);
         } else if (result.code === 'CLASS_FULL') {
-          offerWaitlist(session, label, 'pack_credit');
+          showAlert('Class Full', `${label} filled up just now — try a different class.`);
         } else {
           showAlert("Couldn't Book That Class", result.message);
         }
@@ -149,13 +140,13 @@ export function useClassBooking() {
     if (!hasUsedFirstClass) {
       showAlert("Have You Trained at Doc's Fitness Before?", undefined, [
         {
-          text: 'FIRST TIME HERE',
+          text: 'FIRST TIME HERE · FIRST CLASS FREE',
           onPress: async () => {
             const result = await booking.book(session.id, 'first_class_free');
             if (result.ok) {
               showAlert('Your First Class Is On Us', `You're in — ${label}.`);
             } else if (result.code === 'CLASS_FULL') {
-              showAlert('Class Full', `${label} is full right now — try a different class, your free first class is still waiting.`);
+              showAlert('Class Full', `${label} filled up just now — try a different class, your free first class is still waiting.`);
             } else {
               showAlert("Couldn't Book That Class", result.message);
             }
@@ -197,7 +188,6 @@ export function useClassBooking() {
 
   return {
     isSignedUp,
-    getWaitlistEntry,
     isFull,
     handleSignUp,
     handleCancel,

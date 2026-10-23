@@ -72,7 +72,7 @@ function ChallengeModule() {
 }
 
 function NextClassModule() {
-  const { handleSignUp } = useClassBooking();
+  const { handleSignUp, isFull } = useClassBooking();
   const { getSession, getMyBooking } = useClassBookingData();
   const next = findNextClass(new Date());
   if (!next) return null;
@@ -85,6 +85,7 @@ function NextClassModule() {
   const dayLabel = isSameDay(date, new Date()) ? 'TODAY' : isSameDay(date, tomorrow) ? 'TOMORROW' : weekdayName.toUpperCase();
   const session = getSession(row.id, dateKey);
   const signedUp = !!(session && getMyBooking(session.id));
+  const full = !!session && isFull(session);
 
   return (
     <View style={styles.card} testID="sidebar-next-class-module">
@@ -100,13 +101,15 @@ function NextClassModule() {
           <Text style={styles.signedUpText}>YOU'RE IN</Text>
         </View>
       ) : (
+        // Same dead-end rule as DayPanel's own SIGN UP pill — full is
+        // inert, not a flow, here too.
         <AppPressable
-          style={styles.signUpButton}
+          style={[styles.signUpButton, full && styles.signUpButtonFull]}
           onPress={() => session && handleSignUp(session, `${row.className} · ${weekdayName} · ${row.time}`)}
-          disabled={!session}
+          disabled={!session || full}
           testID="sidebar-next-class-signup"
         >
-          <Text style={styles.signUpButtonText}>SIGN UP</Text>
+          <Text style={[styles.signUpButtonText, full && styles.signUpButtonTextFull]}>{full ? 'CLASS FULL' : 'SIGN UP'}</Text>
         </AppPressable>
       )}
     </View>
@@ -324,6 +327,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelBold,
     fontSize: 11,
     letterSpacing: 0.8,
+  },
+  signUpButtonFull: {
+    backgroundColor: colors.hairline,
+  },
+  signUpButtonTextFull: {
+    color: colors.textMuted,
   },
   signedUpBadge: {
     flexDirection: 'row',

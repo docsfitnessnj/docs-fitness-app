@@ -86,3 +86,39 @@ export function subscribeCheckoutGatePhase(listener: () => void): () => void {
 export function useCheckoutGatePhase(): CheckoutGatePhase {
   return useSyncExternalStore(subscribeCheckoutGatePhase, getCheckoutGatePhase);
 }
+
+// Round 25: "cold feet is a normal exit, not an error" — a real-device bug
+// found that tapping the X on Stripe's own checkout page could leave this
+// app stuck on the "TAKING YOU TO CHECKOUT" loading screen forever,
+// requiring a full app close. Root cause: Stripe's cancel_url takes the
+// member back to this same origin, which SHOULD be a normal page load (and
+// checkoutRedirect.ts's own effect, reading `?checkout=cancel`, already
+// clears this gate on that path) — but a real device can instead restore
+// the page from the browser's own back/forward cache (bfcache) rather than
+// reloading it, which replays the in-memory JS heap exactly as it was
+// mid-redirect (`phase` still 'redirecting') without ever re-running that
+// effect or re-evaluating `hasSuccessParamOnLoad` at the top of this file.
+//
+// This is the first of two independent backstops (the second is
+// CheckoutRedirectLoadingScreen's own ~10s BACK TO THE APP button) —
+// deliberately redundant, since neither alone is guaranteed to catch every
+// browser's exact behavior here. Both `visibilitychange` (the member
+// switches back to this tab/app) and `pageshow` (fires specifically, with
+// `persisted: true`, on a bfcache restore — the more precise signal for
+// the exact failure mode found on device) are listened for; either one
+// firing while still 'redirecting' (never 'confirming' — that phase
+// represents a real completed checkout already polling for the webhook,
+// with its own existing timeout) clears the gate. Registered once here, at
+// module load, same as every other piece of this file — never inside a
+// component, so it can never be skipped by whatever did or didn't mount.
+if (typeof document !== 'undefined') {
+  const clearIfStuckRedirecting = () => {
+    if (phase === 'redirecting') {
+      clearCheckoutRedirectPending();
+    }
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') clearIfStuckRedirecting();
+  });
+  window.addEventListener('pageshow', clearIfStuckRedirecting);
+}

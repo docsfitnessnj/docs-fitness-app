@@ -302,15 +302,21 @@ async function seedSignedInSession(page, userId = USER_ID) {
 // The real atomicity guarantee (book_class's row lock, the partial unique
 // indexes) was already proven directly against a real local Postgres
 // instance, not assumed -- a 12-point functional test script covering
-// session generation, every payment method, CLASS_FULL, waitlist join +
-// auto-promotion-on-cancel, first-class-free (once, and refused on
-// Pilates), the service-role gate, and admin capacity cascading. That's
-// documented in this round's PR description, not re-proven here.
+// session generation, every payment method, CLASS_FULL,
+// first-class-free (once, and refused on Pilates), the service-role gate,
+// and admin capacity cascading. That's documented in this round's PR
+// description, not re-proven here.
+//
+// Round 25: the waitlist (join, position, auto-promotion-on-cancel) was
+// removed app-wide by owner decision -- a full class is now a dead end,
+// not a flow. The class_waitlist table/functions still exist, dormant, in
+// the database; nothing in this mock harness or the suite below
+// references them anymore.
 //
 // What THIS suite verifies is the one thing the direct-Postgres test
 // can't: that the CLIENT correctly respects whatever the server decides --
-// never double-books past a CLASS_FULL response, renders the waitlist/
-// uncapped-Pilates states correctly, and that two independently
+// never double-books past a CLASS_FULL response, renders the
+// uncapped-Pilates state correctly, and that two independently
 // authenticated members racing for the same last spot can't both land it.
 // A single shared, in-memory `state` object (mutated by route handlers
 // that run in this Node process, not in the browser) stands in for the
@@ -374,7 +380,7 @@ function makeSessionFixture({ id, classKey, className, classType, capacity, isGu
 }
 
 function createClassBookingState(sessions) {
-  return { sessions, bookings: [], waitlist: [], nextId: 1 };
+  return { sessions, bookings: [], nextId: 1 };
 }
 
 // setupMocks' own generic baseline (see the big comment at its
@@ -403,10 +409,15 @@ function defaultClassSessionsFixture() {
         classKey: t.classKey,
         className: t.className,
         classType: t.classType,
-        capacity: 30,
+        // Round 25: the real default capacity is 50 (migration_024), not
+        // the original 30 -- this is the one place every pre-existing,
+        // non-booking-specific check's baseline sessions come from, so
+        // this single number IS the "default capacity" this whole suite
+        // assumes unless a check explicitly overrides it.
+        capacity: 50,
         date: dateAtOffsetDays(offset, t.hour, t.minute),
       });
-      rows.push({ ...session, booked_count: 0, waiting_count: 0 });
+      rows.push({ ...session, booked_count: 0 });
     }
   }
   return rows;
@@ -415,11 +426,8 @@ function defaultClassSessionsFixture() {
 function bookedCountFor(state, sessionId) {
   return state.bookings.filter((b) => b.session_id === sessionId && b.status === 'booked').length;
 }
-function waitingCountFor(state, sessionId) {
-  return state.waitlist.filter((w) => w.session_id === sessionId && w.status === 'waiting').length;
-}
 function sessionAvailabilityRow(state, s) {
-  return { ...s, booked_count: bookedCountFor(state, s.id), waiting_count: waitingCountFor(state, s.id) };
+  return { ...s, booked_count: bookedCountFor(state, s.id) };
 }
 
 // Seeds `count` already-booked fixture rows from OTHER members (never
@@ -505,25 +513,8 @@ async function registerClassBookingMocks(page, state, userId) {
     }
     booking.status = 'cancelled';
     if (booking.payment_method === 'pack_credit') state.packCreditsRemaining = (state.packCreditsRemaining ?? 10) + 1;
-    // Auto-promotion: the first (earliest-joined) waiting entry for this
-    // exact session becomes a real booking, spending ITS OWN payment
-    // method -- mirrors _promote_waitlist_spend_pack_credit's own "whoever
-    // joined first, paid however they chose to" rule.
-    const waiting = state.waitlist
-      .filter((w) => w.session_id === booking.session_id && w.status === 'waiting')
-      .sort((a, b) => a.joined_at.localeCompare(b.joined_at));
-    if (waiting.length > 0) {
-      const promoted = waiting[0];
-      promoted.status = 'promoted';
-      state.bookings.push({
-        id: `booking-${state.nextId++}`,
-        session_id: booking.session_id,
-        user_id: promoted.user_id,
-        status: 'booked',
-        payment_method: promoted.payment_method,
-        booked_at: new Date().toISOString(),
-      });
-    }
+    // Round 25: no auto-promotion -- the waitlist is gone app-wide. A
+    // cancelled spot simply opens back up for the next person who books it.
     // Mirrors the real function's own RETURNS TABLE(payment_method,
     // needs_stripe_refund, stripe_checkout_session_id) -- this is what
     // ClassBookingContext.cancel() reads to decide whether to call
@@ -542,24 +533,6 @@ async function registerClassBookingMocks(page, state, userId) {
     });
   });
 
-  await page.route('**/rest/v1/rpc/join_waitlist*', (route) => {
-    const body = route.request().postDataJSON() || {};
-    const sessionId = body.p_session_id;
-    const already = state.waitlist.some((w) => w.session_id === sessionId && w.user_id === userId && w.status === 'waiting');
-    if (already) {
-      return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: 'ALREADY_WAITLISTED: already on the waitlist' }) });
-    }
-    state.waitlist.push({ id: `wl-${state.nextId++}`, session_id: sessionId, user_id: userId, status: 'waiting', payment_method: body.p_payment_method, joined_at: new Date().toISOString() });
-    return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
-  });
-
-  await page.route('**/rest/v1/rpc/leave_waitlist*', (route) => {
-    const body = route.request().postDataJSON() || {};
-    const entry = state.waitlist.find((w) => w.id === body.p_waitlist_id);
-    if (entry) entry.status = 'left';
-    return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
-  });
-
   await page.route('**/rest/v1/rpc/admin_class_roster*', (route) => {
     const body = route.request().postDataJSON() || {};
     const rows = state.bookings
@@ -571,22 +544,6 @@ async function registerClassBookingMocks(page, state, userId) {
         payment_method: b.payment_method,
         booked_at: b.booked_at,
         is_first_class: b.payment_method === 'first_class_free',
-      }));
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rows) });
-  });
-
-  await page.route('**/rest/v1/rpc/admin_class_waitlist*', (route) => {
-    const body = route.request().postDataJSON() || {};
-    const rows = state.waitlist
-      .filter((w) => w.session_id === body.p_session_id && w.status === 'waiting')
-      .sort((a, b) => a.joined_at.localeCompare(b.joined_at))
-      .map((w, i) => ({
-        waitlist_id: w.id,
-        user_id: w.user_id,
-        display_name: DISPLAY_NAMES[w.user_id] ?? 'Member',
-        payment_method: w.payment_method,
-        joined_at: w.joined_at,
-        waitlist_position: i + 1,
       }));
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rows) });
   });
@@ -610,7 +567,7 @@ async function registerClassBookingMocks(page, state, userId) {
   });
 
   // ClassBookingContext's own direct table reads (not RPCs) -- the
-  // signed-in user's own active bookings/waitlist entries, plus the two
+  // signed-in user's own active bookings, plus the two
   // HEAD/count-only existence checks (hasEverBooked / hasBookedDropInBefore).
   // Registered for GET and HEAD alike -- supabase-js sends HEAD for a
   // `.select(..., { count: 'exact', head: true })` call and reads the
@@ -623,13 +580,6 @@ async function registerClassBookingMocks(page, state, userId) {
     const mine = state.bookings
       .filter((b) => b.user_id === userId && b.status === 'booked')
       .map((b) => ({ id: b.id, session_id: b.session_id, payment_method: b.payment_method }));
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mine) });
-  });
-
-  await page.route('**/rest/v1/class_waitlist*', (route) => {
-    const mine = state.waitlist
-      .filter((w) => w.user_id === userId && w.status === 'waiting')
-      .map((w) => ({ id: w.id, session_id: w.session_id, payment_method: w.payment_method }));
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mine) });
   });
 
@@ -3745,12 +3695,14 @@ async function run() {
     { user_id: USER_ID, plan: 'in_person_monthly', status: 'active', current_period_end: new Date(Date.now() + 20 * 86400000).toISOString(), trial_end: null, cancel_at_period_end: false, stripe_customer_id: 'cus_test' },
   ];
 
-  // [booking/capacity] + [booking/double-book-last-spot] + [booking/
-  // waitlist-promotion]: one shared scenario, one shared in-memory
-  // `bookingState`, two independently-authenticated browser contexts (two
-  // real "members," not one user tapping twice) -- this is what makes
-  // "two different members racing for the last spot" a genuine two-actor
-  // check rather than a single-user double-click.
+  // [booking/capacity] + [booking/double-book-last-spot]: one shared
+  // scenario, one shared in-memory `bookingState`, two independently-
+  // authenticated browser contexts (two real "members," not one user
+  // tapping twice) -- this is what makes "two different members racing
+  // for the last spot" a genuine two-actor check rather than a
+  // single-user double-click. Round 25: the waitlist offer this scenario
+  // used to end with is gone -- Member B's refused tap is simply the end
+  // of the flow now, same as every other full class.
   {
     const bookingState = createClassBookingState([
       makeSessionFixture({ id: 'sess-cap', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 2, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
@@ -3789,7 +3741,9 @@ async function run() {
 
     // --- Member B (a different, independently-authenticated account)
     // reaches the SAME now-full session a moment later -- the one spot
-    // is already gone, so this must never create a 3rd booking. ---
+    // is already gone, so this must never create a 3rd booking, and
+    // there is no waitlist offer to fall back to -- CLASS FULL is simply
+    // where this ends. ---
     {
       const context = await browser.newContext({ viewport: VIEWPORT });
       const page = await context.newPage();
@@ -3803,97 +3757,355 @@ async function run() {
       await page.waitForTimeout(500);
 
       const pillTextFull = await page.getByTestId('sign-up-mwf-530a').innerText().catch(() => null);
-      record('[booking/capacity] the same session now reads CLASS FULL for a second member', pillTextFull === 'CLASS FULL', JSON.stringify({ pillTextFull }));
+      const ariaDisabled = await page.getByTestId('sign-up-mwf-530a').getAttribute('aria-disabled').catch(() => null);
+      record(
+        '[booking/capacity] the same session now reads CLASS FULL for a second member, and the pill is genuinely inert',
+        pillTextFull === 'CLASS FULL' && ariaDisabled === 'true',
+        JSON.stringify({ pillTextFull, ariaDisabled })
+      );
 
       const bookingsBeforeTap = bookingState.bookings.filter((b) => b.session_id === 'sess-cap' && b.status === 'booked').length;
-      await page.getByTestId('sign-up-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+      await page.getByTestId('sign-up-mwf-530a').click({ timeout: 5000, force: true }).catch(() => {});
       await page.waitForTimeout(400);
-      // Scoped to the alert's own body text ("is full right now"), not the
-      // bare word "Class Full" -- the SIGN UP pill itself already renders
-      // the literal text "CLASS FULL" on screen before this tap, and
-      // Playwright's default text match is case-insensitive, so a looser
-      // match here could pass from the pill alone without the alert ever
-      // actually appearing.
-      const classFullAlertVisible = await page.getByText('is full right now', { exact: false }).first().isVisible().catch(() => false);
+      const anyAlertVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
       const bookingsAfterTap = bookingState.bookings.filter((b) => b.session_id === 'sess-cap' && b.status === 'booked').length;
       record(
-        '[booking/double-book-last-spot] tapping SIGN UP on an already-full class never creates a 3rd booking -- the server refusal is respected, not raced past',
-        classFullAlertVisible && bookingsBeforeTap === 2 && bookingsAfterTap === 2,
-        JSON.stringify({ classFullAlertVisible, bookingsBeforeTap, bookingsAfterTap })
-      );
-
-      await page.getByText('JOIN WAITLIST', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(400);
-      const onWaitlistAlertVisible = await page.getByText("You're On The Waitlist", { exact: false }).first().isVisible().catch(() => false);
-      await page.getByText('OK', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(300);
-      const waitlistedBadgeVisible = await page.getByTestId('waitlisted-mwf-530a').isVisible().catch(() => false);
-      record(
-        '[booking/double-book-last-spot] offered and joins the waitlist instead, with a real waitlist entry recorded',
-        onWaitlistAlertVisible && waitlistedBadgeVisible && bookingState.waitlist.some((w) => w.session_id === 'sess-cap' && w.user_id === SECOND_BOOKER_ID && w.status === 'waiting'),
-        JSON.stringify({ onWaitlistAlertVisible, waitlistedBadgeVisible })
+        '[booking/double-book-last-spot] tapping (even forced) the inert CLASS FULL button never creates a 3rd booking and never opens any dialog -- a dead end, not a flow',
+        !anyAlertVisible && bookingsBeforeTap === 2 && bookingsAfterTap === 2,
+        JSON.stringify({ anyAlertVisible, bookingsBeforeTap, bookingsAfterTap })
       );
       await context.close();
     }
+  }
 
-    // --- Member A cancels; the waitlisted Member B must be auto-promoted
-    // to a real booking, and must see it the next time their own app
-    // state refreshes (there is no real websocket in this mocked
-    // harness to push a live postgres_changes event through, so this
-    // proxies "the member's own app refreshes" the same honest way the
-    // rest of this file proxies anything it can't drive end to end --
-    // see ClassBookingContext.tsx's realtime subscription for the real
-    // mechanism this stands in for). ---
-    {
-      const context = await browser.newContext({ viewport: VIEWPORT });
-      const page = await context.newPage();
-      await setupMocks(page, USER_ID);
-      await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(IN_PERSON_UNLIMITED_SUBSCRIPTION) }));
-      await registerClassBookingMocks(page, bookingState, USER_ID);
-      await seedSignedInSession(page, USER_ID);
-      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-      await page.waitForTimeout(900);
-      await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(500);
-      await page.getByTestId('cancel-class-mwf-530a').click({ timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(400);
-      await page.getByText('Cancel Class', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(400);
+  // [booking/capacity-default]: "change the default class capacity from
+  // 30 to 50 (the room's true maximum) for all Doc's classes, existing
+  // and future sessions" (migration_024). Read straight off the real
+  // admin CapacityRow prefill, which reads a real session's own
+  // `capacity` field (see CapacityRow in AdminRosterScreen.tsx) -- no
+  // registerClassBookingMocks override at all, so this is exactly the
+  // same generic session data (see defaultClassSessionsFixture) every
+  // other, non-booking-specific check in this file already assumes.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { display_name: 'Test Admin', instagram_handle: '', favorite_quote: '', avatar_url: null, how_train: 'boathouse', is_admin: true, show_tomorrows_workout: true, tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(), group_chat_muted: false },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('CLASS ROSTER', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
 
-      const myBookingNowCancelled = bookingState.bookings.find((b) => b.session_id === 'sess-cap' && b.user_id === USER_ID)?.status === 'cancelled';
-      const waitlistEntryPromoted = bookingState.waitlist.find((w) => w.session_id === 'sess-cap' && w.user_id === SECOND_BOOKER_ID)?.status === 'promoted';
-      const promotedBooking = bookingState.bookings.find((b) => b.session_id === 'sess-cap' && b.user_id === SECOND_BOOKER_ID && b.status === 'booked');
-      record(
-        '[booking/waitlist-promotion] cancelling frees the spot and auto-promotes the first waitlisted member to a real booking',
-        myBookingNowCancelled && waitlistEntryPromoted && !!promotedBooking && promotedBooking.payment_method === 'unlimited',
-        JSON.stringify({ myBookingNowCancelled, waitlistEntryPromoted, promotedBooking })
-      );
-      await context.close();
+    const capacities = {};
+    for (const classKey of ['mwf-530a', 'mwf-930a', 'tth-930a', 'sat-815a']) {
+      capacities[classKey] = await page.getByTestId(`class-capacity-input-${classKey}`).inputValue().catch(() => null);
     }
+    record(
+      "[booking/capacity-default] every real, freshly-generated Doc's class session defaults to capacity 50 (migration_024), not the old 30 -- Downbeach Pilates excluded, it stays uncapped",
+      Object.values(capacities).every((v) => v === '50'),
+      JSON.stringify(capacities)
+    );
+    await context.close();
+  }
 
-    // Member B reopens the app (a reload stands in for "their own app
-    // state refreshes" -- see the comment above) and should now see
-    // YOU'RE IN, not ON WAITLIST.
-    {
-      const context = await browser.newContext({ viewport: VIEWPORT });
-      const page = await context.newPage();
-      await setupMocks(page, SECOND_BOOKER_ID);
-      await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ ...IN_PERSON_UNLIMITED_SUBSCRIPTION[0], user_id: SECOND_BOOKER_ID }]) }));
-      await registerClassBookingMocks(page, bookingState, SECOND_BOOKER_ID);
-      await seedSignedInSession(page, SECOND_BOOKER_ID);
-      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-      await page.waitForTimeout(900);
-      await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(500);
-      const nowShowsBooked = await page.getByTestId('cancel-class-mwf-530a').isVisible().catch(() => false);
-      const noLongerWaitlisted = !(await page.getByTestId('waitlisted-mwf-530a').isVisible().catch(() => false));
-      record(
-        "[booking/waitlist-promotion] the promoted member's own app reflects YOU'RE IN, no longer ON WAITLIST",
-        nowShowsBooked && noLongerWaitlisted,
-        JSON.stringify({ nowShowsBooked, noLongerWaitlisted })
-      );
-      await context.close();
-    }
+  // [booking/inert-full/*]: the real-device bug this whole round exists
+  // for -- "tapping CLASS FULL still launched the first class free
+  // question, then the $25 drop in popup, then real Stripe checkout."
+  // "CLASS FULL is a dead end, not a flow... for every tier." Three
+  // separate tiers, each of which would otherwise reach a DIFFERENT
+  // gate (instant book, a pack credit, or the first-class-free
+  // question/$25 drop-in) -- proving isFull()'s own guard inside
+  // handleSignUp, not just one tier's own gating, is what makes the
+  // button inert. aria-disabled is the reliable signal a React Native
+  // Web Pressable's `disabled` prop actually produces (confirmed by
+  // reading react-native-web's own Pressable source) -- a forced click
+  // on top of that is defense-in-depth, not the primary assertion.
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({ id: 'sess-full-member', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 1, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
+    ]);
+    seedOtherBookings(bookingState, 'sess-full-member', 1, 'unlimited');
+
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(IN_PERSON_UNLIMITED_SUBSCRIPTION) }));
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const pill = page.getByTestId('sign-up-mwf-530a');
+    const pillText = await pill.innerText().catch(() => null);
+    const ariaDisabled = await pill.getAttribute('aria-disabled').catch(() => null);
+    const bookingsBefore = bookingState.bookings.length;
+    await pill.click({ timeout: 5000, force: true }).catch(() => {});
+    await page.waitForTimeout(400);
+    const anyAlertAfterTap = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    const bookingsAfter = bookingState.bookings.length;
+    record(
+      '[booking/inert-full/member] a full class renders a genuinely inert CLASS FULL button for an instant-book member -- no alert, no flow, no new booking',
+      pillText === 'CLASS FULL' && ariaDisabled === 'true' && !anyAlertAfterTap && bookingsAfter === bookingsBefore,
+      JSON.stringify({ pillText, ariaDisabled, anyAlertAfterTap, bookingsBefore, bookingsAfter })
+    );
+    await context.close();
+  }
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({ id: 'sess-full-pack', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 1, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
+    ]);
+    seedOtherBookings(bookingState, 'sess-full-pack', 1, 'unlimited');
+    bookingState.packCreditsRemaining = 5;
+
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const pill = page.getByTestId('sign-up-mwf-530a');
+    const pillText = await pill.innerText().catch(() => null);
+    const ariaDisabled = await pill.getAttribute('aria-disabled').catch(() => null);
+    const creditsBefore = bookingState.packCreditsRemaining;
+    await pill.click({ timeout: 5000, force: true }).catch(() => {});
+    await page.waitForTimeout(400);
+    const anyAlertAfterTap = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    record(
+      '[booking/inert-full/pack-holder] a full class renders a genuinely inert CLASS FULL button for a 10 Class Pack holder -- no alert, no flow, no credit spent',
+      pillText === 'CLASS FULL' && ariaDisabled === 'true' && !anyAlertAfterTap && bookingState.packCreditsRemaining === creditsBefore,
+      JSON.stringify({ pillText, ariaDisabled, anyAlertAfterTap, creditsBefore, creditsAfter: bookingState.packCreditsRemaining })
+    );
+    await context.close();
+  }
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({ id: 'sess-full-guest', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 1, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
+    ]);
+    seedOtherBookings(bookingState, 'sess-full-guest', 1, 'unlimited');
+
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const pill = page.getByTestId('sign-up-mwf-530a');
+    const pillText = await pill.innerText().catch(() => null);
+    const ariaDisabled = await pill.getAttribute('aria-disabled').catch(() => null);
+    const bookingsBefore = bookingState.bookings.length;
+    await pill.click({ timeout: 5000, force: true }).catch(() => {});
+    await page.waitForTimeout(400);
+    // The real bug this directly regression-guards: tapping CLASS FULL
+    // used to still open the first-class-free question for this exact
+    // tier.
+    const questionVisible = await page.getByText("Have You Trained at Doc's Fitness Before", { exact: false }).first().isVisible().catch(() => false);
+    const anyAlertAfterTap = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    const bookingsAfter = bookingState.bookings.length;
+    record(
+      '[booking/inert-full/guest] a full class renders a genuinely inert CLASS FULL button for a guest -- never opens the first-class-free question, no flow, no new booking',
+      pillText === 'CLASS FULL' && ariaDisabled === 'true' && !questionVisible && !anyAlertAfterTap && bookingsAfter === bookingsBefore,
+      JSON.stringify({ pillText, ariaDisabled, questionVisible, anyAlertAfterTap, bookingsBefore, bookingsAfter })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'class-full-inert.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [booking/create-checkout-full]: "create-checkout must verify space
+  // BEFORE creating a Stripe Checkout Session for drop in or Pilates and
+  // refuse clearly if full, so a stale client can never pay for a full
+  // class." The Edge Function runs in Deno, outside this Playwright
+  // harness's reach (same category of gap as every other "can't drive
+  // the real server runtime from here" case already documented in this
+  // file) -- same static-source-grep technique as the Founding 50
+  // enabled-switch check above, confirming the function queries the real
+  // session capacity and real booked count, and refuses with a 400
+  // strictly BEFORE ever calling stripe.checkout.sessions.create.
+  {
+    const edgeFnSrc = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'create-checkout', 'index.ts'), 'utf8');
+    const selectsCapacity = /class_sessions['"]\)[\s\S]{0,40}\.select\(['"]capacity['"]\)/.test(edgeFnSrc);
+    const countsBookings = /class_bookings['"]\)[\s\S]{0,200}status['"],\s*'booked'/.test(edgeFnSrc);
+    const refusesWhenFull = /bookedCount\s*\?\?\s*0\)\s*>=\s*sessionRow\.capacity\)[\s\S]{0,120}That class is full/.test(edgeFnSrc);
+    const checkBeforeCreate =
+      edgeFnSrc.indexOf('That class is full.') > 0 && edgeFnSrc.indexOf('That class is full.') < edgeFnSrc.indexOf('stripe.checkout.sessions.create');
+    record(
+      '[booking/create-checkout-full] create-checkout re-checks real capacity/booked-count and refuses a full class BEFORE ever creating a Stripe Checkout Session',
+      selectsCapacity && countsBookings && refusesWhenFull && checkBeforeCreate,
+      JSON.stringify({ selectsCapacity, countsBookings, refusesWhenFull, checkBeforeCreate })
+    );
+  }
+
+  // [popup-escape/*]: "every informational or choice popup must be
+  // dismissible without choosing, via an X in the top right AND tapping
+  // the dimmed background... starting with the first class free
+  // question, currently a trap with no exit for someone browsing" --
+  // plus the new button copy that's supposed to sell the free class.
+  // Dismissing must never book, charge, or save anything.
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({ id: 'sess-popup', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 50, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
+    ]);
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID); // default tier, no pack -- reaches the first-class-free question.
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sign-up-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    const titleVisible = await page.getByText("Have You Trained at Doc's Fitness Before?", { exact: false }).first().isVisible().catch(() => false);
+    const newCopyVisible = await page.getByText('FIRST TIME HERE · FIRST CLASS FREE', { exact: false }).first().isVisible().catch(() => false);
+    const beenBeforeVisible = await page.getByText("I'VE BEEN BEFORE", { exact: false }).first().isVisible().catch(() => false);
+    const closeButtonVisible = await page.getByTestId('alert-close').isVisible().catch(() => false);
+    record(
+      "[popup-escape/button-copy] the question title stays word for word, the FIRST TIME HERE button now sells the free class, and the X is present",
+      titleVisible && newCopyVisible && beenBeforeVisible && closeButtonVisible,
+      JSON.stringify({ titleVisible, newCopyVisible, beenBeforeVisible, closeButtonVisible })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'first-class-free-question.png') }).catch(() => {});
+
+    await page.getByTestId('alert-close').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const dismissedViaX = !(await page.getByTestId('alert-backdrop').isVisible().catch(() => false));
+    const noBookingAfterX = bookingState.bookings.length === 0;
+    record(
+      '[popup-escape/x] the X dismisses the first-class-free question with no booking, charge, or save of any kind',
+      dismissedViaX && noBookingAfterX,
+      JSON.stringify({ dismissedViaX, noBookingAfterX })
+    );
+
+    await page.getByTestId('sign-up-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    // A point in the top-left corner of the full-screen backdrop,
+    // deliberately outside the centered sheet's own bounds -- proves the
+    // DIMMED BACKGROUND itself dismisses, not just the X.
+    await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const dismissedViaBackdrop = !(await page.getByTestId('alert-backdrop').isVisible().catch(() => false));
+    const noBookingAfterBackdrop = bookingState.bookings.length === 0;
+    record(
+      '[popup-escape/backdrop] tapping the dimmed background dismisses the first-class-free question with no booking, charge, or save of any kind',
+      dismissedViaBackdrop && noBookingAfterBackdrop,
+      JSON.stringify({ dismissedViaBackdrop, noBookingAfterBackdrop })
+    );
+    await context.close();
+  }
+
+  // [booking/checkout-cancel-return]: "Stripe's cancel return lands the
+  // member back on the schedule instantly, nothing booked or charged, no
+  // leftover loading state." A fresh page load with the exact query
+  // string create-checkout's own cancel_url now sends for a class
+  // booking (?checkout=cancel&plan=drop_in) is the normal, working
+  // path -- see checkoutRedirect.ts's own isBookingPlan branch. The
+  // bfcache-restore failure mode itself is covered by the backstop check
+  // below, not this one.
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({ id: 'sess-cancel-return', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 50, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
+    ]);
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/?checkout=cancel&plan=drop_in`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    const loadingVisible = await page.getByTestId('checkout-redirect-loading').isVisible().catch(() => false);
+    const scheduleVisible = await page.getByTestId('date-strip-cell-0').isVisible().catch(() => false);
+    const urlStripped = !page.url().includes('checkout=cancel');
+    record(
+      '[booking/checkout-cancel-return] a cancelled class-booking checkout return lands on the schedule instantly, with no loading screen and nothing booked',
+      !loadingVisible && scheduleVisible && urlStripped && bookingState.bookings.length === 0,
+      JSON.stringify({ loadingVisible, scheduleVisible, urlStripped, bookingsCount: bookingState.bookings.length })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'schedule-after-cancelled-checkout.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [booking/checkout-loading] + [booking/checkout-loading-backstop]: the
+  // other half of the same real-device bug -- "tapping the X on the
+  // Stripe checkout page left the app stuck forever on the TAKING YOU TO
+  // CHECKOUT loading screen." create-checkout is mocked to simply never
+  // respond -- the request just hangs, standing in for "stuck
+  // mid-redirect," the real condition this screen's own ~10s backstop
+  // exists for. Proves both halves end to end: the loading screen itself
+  // appears the instant PAY is tapped, and its own BACK TO THE APP button
+  // genuinely clears the gate and returns to the schedule.
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({ id: 'sess-backstop', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 50, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
+    ]);
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await page.route('**/functions/v1/create-checkout*', () => {}); // never resolves.
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sign-up-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText("I'VE BEEN BEFORE", { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('PAY $25 AND BOOK', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    const loadingVisible = await page.getByTestId('checkout-redirect-loading').isVisible().catch(() => false);
+    const messageVisible = await page.getByText('TAKING YOU TO CHECKOUT', { exact: false }).first().isVisible().catch(() => false);
+    record(
+      '[booking/checkout-loading] tapping PAY shows the branded TAKING YOU TO CHECKOUT loading screen while the redirect is stuck',
+      loadingVisible && messageVisible,
+      JSON.stringify({ loadingVisible, messageVisible })
+    );
+
+    const backstopAppeared = await page
+      .getByTestId('checkout-redirect-back-to-app')
+      .waitFor({ state: 'visible', timeout: 12000 })
+      .then(() => true)
+      .catch(() => false);
+    record(
+      '[booking/checkout-loading-backstop] the BACK TO THE APP button appears after roughly 10 seconds stuck on the loading screen',
+      backstopAppeared,
+      JSON.stringify({ backstopAppeared })
+    );
+
+    await page.getByTestId('checkout-redirect-back-to-app').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const loadingGoneAfter = !(await page.getByTestId('checkout-redirect-loading').isVisible().catch(() => false));
+    const scheduleVisibleAfter = await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).isVisible().catch(() => false);
+    record(
+      '[booking/checkout-loading-backstop] tapping BACK TO THE APP clears the stuck loading screen and returns to the schedule, with nothing booked',
+      loadingGoneAfter && scheduleVisibleAfter && bookingState.bookings.length === 0,
+      JSON.stringify({ loadingGoneAfter, scheduleVisibleAfter, bookingsCount: bookingState.bookings.length })
+    );
+    await context.close();
   }
 
   // [booking/cancel-refund]: a 10 Class Pack booking spends a credit, and
@@ -4080,10 +4292,11 @@ async function run() {
   }
 
   // [booking/admin-roster]: admin sees the real roster (names + payment
-  // method + first-timer tag), the real waitlist with position numbers,
-  // can edit a class's capacity live, and sees real Pilates revenue.
+  // method + first-timer tag), can edit a class's capacity live, and
+  // sees real Pilates revenue. Round 25: the waitlist section this block
+  // used to check is gone -- see AGENTS.md's own Round 25 section for why.
   {
-    const rosterSession = makeSessionFixture({ id: 'sess-admin-roster', classKey: 'sat-815a', className: 'Savage Saturday', classType: 'Hybrid', capacity: 30, date: dateAtOffsetDays(SATURDAY_OFFSET, 8, 15) });
+    const rosterSession = makeSessionFixture({ id: 'sess-admin-roster', classKey: 'sat-815a', className: 'Savage Saturday', classType: 'Hybrid', capacity: 50, date: dateAtOffsetDays(SATURDAY_OFFSET, 8, 15) });
     const pilatesSession = makeSessionFixture({
       id: 'sess-admin-pilates',
       classKey: 'pilates-wed-830a',
@@ -4110,8 +4323,6 @@ async function run() {
       { id: 'roster-booking-pilates-1', session_id: 'sess-admin-pilates', user_id: OTHER_MEMBER_A, status: 'booked', payment_method: 'pilates_paid', booked_at: new Date().toISOString() },
       { id: 'roster-booking-pilates-2', session_id: 'sess-admin-pilates', user_id: OTHER_MEMBER_B, status: 'booked', payment_method: 'pilates_paid', booked_at: new Date().toISOString() }
     );
-    bookingState.waitlist.push({ id: 'roster-wl-1', session_id: 'sess-admin-roster', user_id: MEMBER_FIXTURE_ID, status: 'waiting', payment_method: 'pack_credit', joined_at: new Date().toISOString() });
-
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
     await setupMocks(page, USER_ID);
@@ -4148,23 +4359,18 @@ async function run() {
     const rosterText = await page.getByTestId('roster-class-sess-admin-roster').innerText().catch(() => '');
     record(
       '[booking/admin-roster] the real roster shows both booked names, the FIRST CLASS tag, and payment methods',
-      headcountText === '2/30' && aBadgeVisible && rosterText.includes(DISPLAY_NAMES[OTHER_MEMBER_A]) && rosterText.includes(DISPLAY_NAMES[OTHER_MEMBER_B]) && rosterText.includes('MONTHLY UNLIMITED'),
+      headcountText === '2/50' && aBadgeVisible && rosterText.includes(DISPLAY_NAMES[OTHER_MEMBER_A]) && rosterText.includes(DISPLAY_NAMES[OTHER_MEMBER_B]) && rosterText.includes('MONTHLY UNLIMITED'),
       JSON.stringify({ headcountText, aBadgeVisible, rosterText })
-    );
-    record(
-      '[booking/admin-roster] the real waitlist shows the waiting member with a position number',
-      rosterText.includes('WAITLIST') && rosterText.includes(`#1 ${DISPLAY_NAMES[MEMBER_FIXTURE_ID]}`) && rosterText.includes('10 CLASS PACK'),
-      JSON.stringify({ rosterText })
     );
 
     const capacityInputBefore = await page.locator('#class-capacity-sat-815a').inputValue().catch(() => null);
-    await page.locator('#class-capacity-sat-815a').fill('50');
+    await page.locator('#class-capacity-sat-815a').fill('75');
     await page.getByTestId('class-capacity-save-sat-815a').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(500);
     const capacityNowOnSession = rosterSession.capacity;
     record(
       '[booking/admin-roster] editing a class capacity saves and cascades to the generated session',
-      capacityInputBefore === '30' && capacityNowOnSession === 50,
+      capacityInputBefore === '50' && capacityNowOnSession === 75,
       JSON.stringify({ capacityInputBefore, capacityNowOnSession })
     );
 
@@ -4172,14 +4378,13 @@ async function run() {
     await context.close();
   }
 
-  // --- Screenshots: the schedule with the gold Pilates card, and a full
-  // class showing the waitlist option -- both explicitly requested for
-  // this round. A fresh, deliberately simple scenario (not reused from
-  // the checks above, so a screenshot never depends on exactly which
-  // assertions ran right before it). ---
+  // --- Screenshot: the schedule with the gold Pilates card. The inert
+  // CLASS FULL state, the first-class-free question's new copy/X, and
+  // the post-cancelled-checkout schedule are already captured by the
+  // [booking/inert-full/guest], [popup-escape/button-copy], and
+  // [booking/checkout-cancel-return] blocks above. ---
   if (SCREENSHOT_DIR) {
     const bookingState = createClassBookingState([
-      makeSessionFixture({ id: 'sess-shot-full', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 2, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
       makeSessionFixture({
         id: 'sess-shot-pilates',
         classKey: 'pilates-wed-830a',
@@ -4192,17 +4397,10 @@ async function run() {
         date: dateAtOffsetDays(MONDAY_OFFSET, 8, 30),
       }),
     ]);
-    seedOtherBookings(bookingState, 'sess-shot-full', 2, 'unlimited'); // already full
 
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
     await setupMocks(page, USER_ID);
-    // in_person_unlimited so tapping a full class goes straight to
-    // CLASS_FULL -> offerWaitlist, same as the capacity/double-book check
-    // above -- otherwise tapping SIGN UP would show the unrelated "Have
-    // You Trained at Doc's Fitness Before?" question first instead of the
-    // waitlist offer this screenshot is actually meant to show.
-    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(IN_PERSON_UNLIMITED_SUBSCRIPTION) }));
     await registerClassBookingMocks(page, bookingState, USER_ID);
     await seedSignedInSession(page, USER_ID);
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
@@ -4210,11 +4408,6 @@ async function run() {
     await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(600);
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'schedule-pilates-gold-card.png') }).catch(() => {});
-
-    await page.getByTestId('sign-up-mwf-530a').click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'schedule-full-class-waitlist.png') }).catch(() => {});
-    await page.getByText('Not Now', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
     await context.close();
   }
 

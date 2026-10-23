@@ -68,8 +68,8 @@ export function TrialExpiryModal() {
 
   return (
     <AppModal visible={visible} transparent animationType="fade" onRequestClose={dismissTrialWarning}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
+      <Pressable style={styles.backdrop} onPress={dismissTrialWarning}>
+        <Pressable style={styles.sheet} onPress={() => {}}>
           <Pressable onPress={dismissTrialWarning} hitSlop={8} style={styles.closeButton}>
             <Ionicons name="close" size={20} color={colors.textMuted} />
           </Pressable>
@@ -100,8 +100,8 @@ export function TrialExpiryModal() {
           <Pressable onPress={dismissTrialWarning} hitSlop={8} style={styles.laterLink}>
             <Text style={styles.laterLinkText}>Got it</Text>
           </Pressable>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </AppModal>
   );
 }
