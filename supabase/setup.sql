@@ -1559,12 +1559,15 @@ end $$;
 -- (admin_update_template_capacity, below) cascades to every
 -- not-yet-happened class_sessions row for that class_key, not just future
 -- generations, so a capacity bump takes effect
--- immediately on the whole visible booking window.
+-- immediately on the whole visible booking window. Downbeach Pilates's own
+-- class_type reads 'Group Mat Pilates' (migration_025 renamed it from the
+-- original 'Pilates') — the class NAME ("Downbeach Pilates with Marina")
+-- is a separate column and is untouched.
 -- ----------------------------------------------------------------------------
 create table if not exists public.class_templates (
   class_key text primary key,
   class_name text not null,
-  class_type text not null check (class_type in ('Kettlebell Strength', 'Kettlebell Cardio', 'Hybrid', 'Pilates')),
+  class_type text not null check (class_type in ('Kettlebell Strength', 'Kettlebell Cardio', 'Hybrid', 'Group Mat Pilates')),
   start_time_local time not null,
   weekdays smallint[] not null,
   default_capacity integer,
@@ -1592,7 +1595,7 @@ values
   ('mwf-930a', 'Yawn Patrol', 'Kettlebell Strength', time '09:30', array[1,3,5]::smallint[], 50, false, null, null),
   ('tth-930a', 'Yawn Patrol', 'Kettlebell Cardio', time '09:30', array[2,4]::smallint[], 50, false, null, null),
   ('sat-815a', 'Savage Saturday', 'Hybrid', time '08:15', array[6]::smallint[], 50, false, null, null),
-  ('pilates-wed-830a', 'Downbeach Pilates with Marina', 'Pilates', time '08:30', array[3]::smallint[], null, true, 2000, 'price_1UTjj9K8jMUFAOQwhnr7flRh')
+  ('pilates-wed-830a', 'Downbeach Pilates with Marina', 'Group Mat Pilates', time '08:30', array[3]::smallint[], null, true, 2000, 'price_1UTjj9K8jMUFAOQwhnr7flRh')
 on conflict (class_key) do nothing;
 
 -- ----------------------------------------------------------------------------
