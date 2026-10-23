@@ -724,6 +724,11 @@
       #tab-bar-tour-marker {
         height: calc(64px + var(--real-safe-bottom, 0px)) !important;
       }
+      /* Round 27's limited tour variant spotlights just the DOC'S WODS tab
+         -- same undersizing bug as #tab-bar-tour-marker above, same fix. */
+      #wods-tab-tour-marker {
+        height: calc(64px + var(--real-safe-bottom, 0px)) !important;
+      }
       /* Rounds 15 and 16 (full history in AGENTS.md) each tried a
          per-composer fix here -- first a measured `transform` written as
          an inline style, then the same measurement delivered through a

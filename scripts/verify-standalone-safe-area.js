@@ -4378,6 +4378,338 @@ async function run() {
     await context.close();
   }
 
+  // ---------------------------------------------------------------------
+  // Round 27: tour and access. Item 1 ("LOG IT. POST IT. to every tier")
+  // needed no app-code change at all -- community_posts' own insert
+  // policy ("members can post as themselves," no tier check) and
+  // wod_completions' own policy (user_id = auth.uid(), no tier check)
+  // already permit every signed-in tier, verified directly against a
+  // real local Postgres instance (see this round's own PR description);
+  // ComposerBar is already unconditionally rendered and MembershipContext
+  // already computes `communityAccess: 'full'` for every tier. What THIS
+  // round actually built is the tier-aware tour (see TourContext.tsx's
+  // own FULL_ACCESS_STOPS/LIMITED_ACCESS_STOPS) and its structural
+  // "skip a stop with no anchor, never ring the wrong element" fix -- this
+  // block verifies both end to end, plus the one thing item 1 really
+  // needed a NEW check for: a booking-tier/online-free account actually
+  // completing a log-and-post round trip, not just having the composer
+  // visible.
+  //
+  // No subscriptions row + no active class pack is what the real
+  // MembershipContext tier derivation lands on 'online_free'
+  // (fullContentAccess: false) -- exactly the booking-tier/online-free
+  // shape every item in this block needs, and the one lever available
+  // here to produce it (there's no devTier knob for a non-admin account).
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+    );
+    // A fresh, tour-not-yet-completed, non-admin profile -- the real
+    // entry point (CommunityScreen's own mount effect) fires the tour
+    // exactly as it would for a genuine first-time member. No dev-reset
+    // control exists for a non-admin account, and none is needed: this
+    // IS the real first-load path.
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Member',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: false,
+            show_tomorrows_workout: true,
+            tour_completed_at: null,
+            group_chat_muted: false,
+          },
+        ]),
+      })
+    );
+    // One real, already-existing post so the feed has genuine nonzero
+    // content for the tour's own stop 4 to ring -- a feed with zero posts
+    // ever is a real but separate product state (the brand new install
+    // before any member has posted anything) this round's own access
+    // change didn't create, not the "missing anchor" case the dedicated
+    // skip-filtering check below is actually about. Stateful: captures
+    // the WOD-result INSERT this block makes further down and serves it
+    // back on the next GET, so "lands in the feed" is a genuine round
+    // trip, not an assumption.
+    const insertedPosts = [];
+    await page.route('**/rest/v1/community_posts*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'POST') {
+        let payload = {};
+        try {
+          payload = JSON.parse(req.postData() || '{}');
+        } catch {}
+        insertedPosts.push(payload);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify([{ id: `post-${insertedPosts.length}`, ...payload }]) });
+      }
+      const seeded = {
+        title: 'Welcome to the crew',
+        body: 'Glad you are here.',
+        category: 'General',
+        kind: 'text',
+        media_url: null,
+        media_type: null,
+        workout_title: null,
+        workout_notes: null,
+        workout_results_line: null,
+      };
+      const rows = [...insertedPosts, seeded].reverse();
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          rows.map((p, i) => ({
+            id: `post-${rows.length - i}`,
+            title: p.title ?? '',
+            body: p.body ?? '',
+            category: p.category ?? 'General',
+            kind: p.kind ?? 'text',
+            media_url: p.media_url ?? null,
+            media_type: p.media_type ?? null,
+            workout_title: p.workout_title ?? null,
+            workout_notes: p.workout_notes ?? null,
+            workout_results_line: p.workout_results_line ?? null,
+            pinned: false,
+            created_at: new Date().toISOString(),
+            author_id: p.author_id ?? USER_ID,
+            profiles: { display_name: 'Test Member' },
+            community_comments: [],
+            community_reactions: [],
+          }))
+        ),
+      });
+    });
+
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    const composerVisible = await page.getByTestId('composer-bar').isVisible().catch(() => false);
+    record(
+      '[post/every-tier] a booking-tier / online-free account sees the LOG IT. POST IT. composer',
+      composerVisible,
+      JSON.stringify({ composerVisible })
+    );
+
+    // The tour's own real entry point just fired on mount -- give it the
+    // same document.fonts.ready + first-measurement budget the existing
+    // admin tour check already waits out.
+    await page.waitForTimeout(1800);
+
+    // The spotlight is deliberately the real anchor's own rect expanded by
+    // SPOTLIGHT_PADDING (10px on phone, TourOverlay.tsx) on every side, not
+    // a 1:1 copy of it -- this suite's own VIEWPORT is always the phone
+    // size, so the expansion is always exactly 10px, never the desktop
+    // +2px variant.
+    const SPOT_PAD = 10;
+    const rectsClose = (spotlight, anchor) =>
+      !!spotlight &&
+      !!anchor &&
+      Math.abs(spotlight.x - (anchor.x - SPOT_PAD)) <= 2 &&
+      Math.abs(spotlight.y - (anchor.y - SPOT_PAD)) <= 2 &&
+      Math.abs(spotlight.width - (anchor.width + SPOT_PAD * 2)) <= 2 &&
+      Math.abs(spotlight.height - (anchor.height + SPOT_PAD * 2)) <= 2;
+    const readRect = (selector) =>
+      page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
+      }, selector);
+    const readStop = async () => ({
+      cardText: await page.getByTestId('tour-card').innerText().catch(() => ''),
+      spotlightRect: await readRect('[data-testid="tour-spotlight"]'),
+    });
+
+    const stop1 = await readStop();
+    const dateStripRect = await readRect('[data-testid="date-strip-scroll-wrap"]');
+    record(
+      '[tour/limited-variant] stop 1 (1 OF 4) shows the limited YOUR WEEK LIVES HERE copy and rings the date strip',
+      stop1.cardText.includes('1 OF 4') &&
+        stop1.cardText.includes('YOUR WEEK LIVES HERE') &&
+        stop1.cardText.includes("Tap any date to sign up for class at Doc's Fitness.") &&
+        rectsClose(stop1.spotlightRect, dateStripRect),
+      JSON.stringify({ stop1, dateStripRect })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tour-limited-stop-1.png') }).catch(() => {});
+
+    await page.getByTestId('tour-next').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const stop2 = await readStop();
+    const wodsTabRect = await readRect('#wods-tab-tour-marker');
+    record(
+      "[tour/limited-variant] stop 2 (2 OF 4) shows A TASTE OF DOC'S WODS and rings the DOC'S WODS tab specifically, not the whole bar",
+      stop2.cardText.includes('2 OF 4') && stop2.cardText.includes("A TASTE OF DOC'S WODS") && rectsClose(stop2.spotlightRect, wodsTabRect),
+      JSON.stringify({ stop2, wodsTabRect })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tour-limited-stop-2.png') }).catch(() => {});
+
+    await page.getByTestId('tour-next').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const stop3 = await readStop();
+    const composerRect = await readRect('[data-testid="composer-bar"]');
+    record(
+      '[tour/limited-variant] stop 3 (3 OF 4) shows the limited LOG IT. POST IT. copy and rings the real composer',
+      stop3.cardText.includes('3 OF 4') &&
+        stop3.cardText.includes('LOG IT. POST IT.') &&
+        stop3.cardText.includes("Did one of Doc's workouts? Post it.") &&
+        rectsClose(stop3.spotlightRect, composerRect),
+      JSON.stringify({ stop3, composerRect })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tour-limited-stop-3.png') }).catch(() => {});
+
+    await page.getByTestId('tour-next').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const stop4 = await readStop();
+    const feedRect = await readRect('[data-testid="posts-feed"]');
+    record(
+      '[tour/limited-variant] stop 4 (4 OF 4) shows THE COMMUNITY, its own button reads DONE, and rings the real posts feed',
+      stop4.cardText.includes('4 OF 4') && stop4.cardText.includes('THE COMMUNITY') && stop4.cardText.includes('DONE') && rectsClose(stop4.spotlightRect, feedRect),
+      JSON.stringify({ stop4, feedRect })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tour-limited-stop-4.png') }).catch(() => {});
+
+    await page.getByTestId('tour-next').click({ timeout: 5000 }).catch(() => {}); // DONE
+    await page.waitForTimeout(600);
+    const tourCardGone = !(await page.getByTestId('tour-card').isVisible().catch(() => true));
+    record('[tour/limited-variant] tapping DONE on the final stop finishes the tour', tourCardGone, JSON.stringify({ tourCardGone }));
+
+    // [post/every-tier], end to end: Monday is one of online_free's own 2
+    // free weekly WODs (FREE_UNLOCKED_WOD_KEYS, content.ts) -- log it and
+    // post it, and confirm it's a genuine round trip into the real feed,
+    // not just an assumption that the write happened.
+    await page.getByTestId(`date-strip-cell-${offsetToWeekday(1)}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const logButtonVisible = await page.getByTestId('day-panel-log').isVisible().catch(() => false);
+    record(
+      "[post/every-tier] a booking-tier / online-free account can open LOG RESULTS for one of its 2 free weekly WODs (not locked, unlike COWs/Deck)",
+      logButtonVisible,
+      JSON.stringify({ logButtonVisible })
+    );
+    await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.locator('#log-results-rounds-input').fill('5');
+    await page.locator('#log-results-kettlebell-input').fill('16');
+    await page.getByTestId('post-to-community').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('Post', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    // useActionCompletion()'s own "POSTED" acknowledgment holds the modal
+    // open for 900ms before actually calling onClose() -- wait past that,
+    // not up to it, same convention as every other check in this file
+    // against the identical pattern.
+    await page.waitForTimeout(1300);
+
+    const logModalClosed = !(await page.getByTestId('close-log-results').isVisible().catch(() => false));
+    const feedHasWodPost = await page.getByText('RESULTS: 16 · 5 ROUNDS', { exact: false }).first().isVisible().catch(() => false);
+    record(
+      '[post/every-tier] the logged result actually posts, closes the modal, and lands in the real feed',
+      logModalClosed && feedHasWodPost && insertedPosts.some((p) => p.kind === 'wod' && p.author_id === USER_ID),
+      JSON.stringify({ logModalClosed, feedHasWodPost, insertedPosts })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'post-every-tier-feed.png') }).catch(() => {});
+
+    await context.close();
+  }
+
+  // [tour/missing-anchor-skip]: the structural fix itself, exercised
+  // against a genuinely missing anchor. There is no way to organically
+  // force a real anchor missing from a signed-in build -- every anchor in
+  // both variants is, by design, always present for every tier after this
+  // round's access changes -- so window.__tourTestForceMissing
+  // (TourContext.tsx) is the one test-only lever for exactly this, the
+  // same "force what the real mechanism would produce" technique this
+  // suite already uses throughout (FORCE_INSET_CSS, forceVisualViewportShrink).
+  // Seeded via addInitScript, before the app bundle (and TourContext's own
+  // module-level pickup of it) ever runs, so what follows drives the
+  // real, completely unmodified skip-filtering and measurement code.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      window.__tourTestForceMissing = ['wods-tab'];
+    });
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+    );
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Member',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: false,
+            show_tomorrows_workout: true,
+            tour_completed_at: null,
+            group_chat_muted: false,
+          },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.waitForTimeout(1800);
+
+    const stop1Text = await page.getByTestId('tour-card').innerText().catch(() => '');
+    const dotCount1 = await page.locator('[data-testid="tour-dots"] > *').count().catch(() => -1);
+    record(
+      '[tour/missing-anchor-skip] with wods-tab forced missing, the run starts at 1 OF 3 -- the candidate list already shrank, never a gap left for the missing stop',
+      stop1Text.includes('1 OF 3') && stop1Text.includes('YOUR WEEK LIVES HERE') && dotCount1 === 3,
+      JSON.stringify({ stop1Text, dotCount1 })
+    );
+
+    await page.getByTestId('tour-next').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const stop2Text = await page.getByTestId('tour-card').innerText().catch(() => '');
+    record(
+      "[tour/missing-anchor-skip] NEXT from stop 1 lands directly on the composer stop (2 OF 3) -- the missing wods-tab stop never rendered at all",
+      stop2Text.includes('2 OF 3') && stop2Text.includes('LOG IT. POST IT.') && !stop2Text.includes("A TASTE OF DOC'S WODS"),
+      JSON.stringify({ stop2Text })
+    );
+    // Same SPOTLIGHT_PADDING (10px, phone viewport) expansion as the
+    // [tour/limited-variant] block's own rectsClose above -- the spotlight
+    // is the real anchor's rect expanded by that padding, never a 1:1 copy.
+    const spotlightOnComposer = await page.evaluate(() => {
+      const spot = document.querySelector('[data-testid="tour-spotlight"]');
+      const composer = document.querySelector('[data-testid="composer-bar"]');
+      if (!spot || !composer) return null;
+      const a = spot.getBoundingClientRect();
+      const b = composer.getBoundingClientRect();
+      const pad = 10;
+      return {
+        close:
+          Math.abs(a.x - (b.x - pad)) <= 2 &&
+          Math.abs(a.y - (b.y - pad)) <= 2 &&
+          Math.abs(a.width - (b.width + pad * 2)) <= 2 &&
+          Math.abs(a.height - (b.height + pad * 2)) <= 2,
+      };
+    });
+    record(
+      '[tour/missing-anchor-skip] the spotlight itself still rings the real composer -- never a stale rect left over from the skipped stop',
+      !!spotlightOnComposer && spotlightOnComposer.close,
+      JSON.stringify({ spotlightOnComposer })
+    );
+
+    await context.close();
+  }
+
   // --- Screenshot: the schedule with the gold Pilates card. The inert
   // CLASS FULL state, the first-class-free question's new copy/X, and
   // the post-cancelled-checkout schedule are already captured by the

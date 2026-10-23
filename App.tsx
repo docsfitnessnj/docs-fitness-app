@@ -494,6 +494,35 @@ function TabBarTourMarker() {
   );
 }
 
+// Round 27's limited tour variant points its own stop 2 at just the DOC'S
+// WODS tab specifically, not the whole bar -- same "bottom-tabs exposes no
+// ref of its own" limitation as TabBarTourMarker above, so this is the
+// identical invisible-marker technique, sized to one tab's own horizontal
+// slice instead of the full bar width. React Navigation's bottom-tabs lays
+// out an even number of equal-width (flex: 1) tab buttons across the full
+// bar width, so WODS_TAB_LEFT_PCT/WODS_TAB_WIDTH_PCT (derived from TABS
+// itself, never a hardcoded "25%") land exactly on the real button
+// regardless of how many tabs this app ever has.
+const WODS_TAB_INDEX = TABS.findIndex((t) => t.name === 'DocsWods');
+const WODS_TAB_LEFT_PCT = `${(WODS_TAB_INDEX / TABS.length) * 100}%` as const;
+const WODS_TAB_WIDTH_PCT = `${(1 / TABS.length) * 100}%` as const;
+
+function WodsTabTourMarker() {
+  const { registerTarget } = useTour();
+  const tabBarHeight = useTabBarHeight();
+  return (
+    <View
+      ref={registerTarget('wods-tab')}
+      pointerEvents="none"
+      nativeID="wods-tab-tour-marker"
+      style={[
+        styles.wodsTabTourMarker,
+        { height: tabBarHeight, left: WODS_TAB_LEFT_PCT, width: WODS_TAB_WIDTH_PCT },
+      ]}
+    />
+  );
+}
+
 type MainAppProps = {
   messagesOpen: boolean;
   onOpenMessages: () => void;
@@ -601,6 +630,7 @@ function MainApp({
           <SafeAreaBottomFill nativeID="tab-bar-safe-area-fill" backgroundColor={colors.card} />
         )}
         <TabBarTourMarker />
+        <WodsTabTourMarker />
       </View>
       <DebugOverlay visible={debugOverlayOpen} onClose={() => setDebugOverlayOpen(false)} />
       {/* fullBleed is tied to `keyboardVisible`, not unconditional -- a real
@@ -1211,6 +1241,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    bottom: 0,
+  },
+  wodsTabTourMarker: {
+    position: 'absolute',
     bottom: 0,
   },
   tabBar: {
