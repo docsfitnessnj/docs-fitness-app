@@ -22,7 +22,11 @@ function pad2(n: number): string {
 }
 
 // Renders a stored UTC instant back as the Eastern-time date/time strings
-// the admin fields show — null shows both fields empty.
+// the admin fields show — null shows both fields empty. The time field is
+// 12-hour with AM/PM (never military time), matching the member-facing
+// foundingDeadlineLabel() copy (src/data/plans.ts) this same saved value
+// eventually renders as — no unpadded-vs-padded hour mismatch either,
+// since that label also uses a bare, unpadded hour (e.g. "11:59 PM").
 function etDateStrOf(ms: number | null): string {
   if (ms === null) return '';
   const p = getEasternParts(new Date(ms));
@@ -31,27 +35,33 @@ function etDateStrOf(ms: number | null): string {
 function etTimeStrOf(ms: number | null): string {
   if (ms === null) return '';
   const p = getEasternParts(new Date(ms));
-  return `${pad2(p.hour)}:${pad2(p.minute)}`;
+  const hour12 = p.hour % 12 === 0 ? 12 : p.hour % 12;
+  const ampm = p.hour < 12 ? 'AM' : 'PM';
+  return `${hour12}:${pad2(p.minute)} ${ampm}`;
 }
 
-// Parses the admin's typed "YYYY-MM-DD" + "HH:MM" back into the wall-clock
-// parts setWindow needs — null (rather than throwing) for anything that
-// doesn't parse, so the caller can show one plain error instead of a crash.
+// Parses the admin's typed "YYYY-MM-DD" + "H:MM AM/PM" back into the
+// wall-clock parts setWindow needs — null (rather than throwing) for
+// anything that doesn't parse, so the caller can show one plain error
+// instead of a crash. Case-insensitive AM/PM, optional space before it.
 function parseEtParts(
   dateStr: string,
   timeStr: string
 ): { year: number; month: number; day: number; hour: number; minute: number } | null {
   const dateMatch = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  const timeMatch = timeStr.trim().match(/^(\d{1,2}):(\d{2})$/);
+  const timeMatch = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/);
   if (!dateMatch || !timeMatch) return null;
   const [, y, mo, d] = dateMatch;
-  const [, h, mi] = timeMatch;
+  const [, h, mi, meridiem] = timeMatch;
   const year = Number(y);
   const month = Number(mo);
   const day = Number(d);
-  const hour = Number(h);
   const minute = Number(mi);
-  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
+  let hour = Number(h);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour < 1 || hour > 12 || minute > 59) return null;
+  const isPM = meridiem.toUpperCase() === 'PM';
+  hour = hour % 12; // 12 AM -> 0, 12 PM stays 0 before the +12 below
+  if (isPM) hour += 12;
   return { year, month, day, hour, minute };
 }
 
@@ -138,7 +148,7 @@ export function FoundingFiftyAdminScreen({ visible, onClose }: Props) {
     const start = parseEtParts(startDate, startTime);
     const end = parseEtParts(endDate, endTime);
     if (!start || !end) {
-      showAlert('Check The Dates', 'Enter both a start and an end as YYYY-MM-DD and HH:MM (24-hour), Eastern Time — or leave all four fields blank to turn the window off.');
+      showAlert('Check The Dates', 'Enter both a start and an end as YYYY-MM-DD and H:MM AM/PM, Eastern Time — or leave all four fields blank to turn the window off.');
       return;
     }
 
@@ -213,13 +223,13 @@ export function FoundingFiftyAdminScreen({ visible, onClose }: Props) {
           style={styles.input}
           value={startTime}
           onChangeText={setStartTime}
-          placeholder="HH:MM (24-hour)"
+          placeholder="H:MM AM/PM"
           placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
           spellCheck={false}
           nativeID="founding-fifty-start-time"
-          aria-label="Launch window start time, Eastern Time"
+          aria-label="Launch window start time, Eastern Time, 12 hour with AM or PM"
         />
         <Text style={styles.label}>END DATE</Text>
         <TextInput
@@ -239,13 +249,13 @@ export function FoundingFiftyAdminScreen({ visible, onClose }: Props) {
           style={styles.input}
           value={endTime}
           onChangeText={setEndTime}
-          placeholder="HH:MM (24-hour)"
+          placeholder="H:MM AM/PM"
           placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
           spellCheck={false}
           nativeID="founding-fifty-end-time"
-          aria-label="Launch window end time, Eastern Time"
+          aria-label="Launch window end time, Eastern Time, 12 hour with AM or PM"
         />
 
         <Pressable

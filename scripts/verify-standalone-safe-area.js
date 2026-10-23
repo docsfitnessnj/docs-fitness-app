@@ -338,6 +338,59 @@ function auditBuiltOutputEnvConsumers(record) {
   );
 }
 
+// Round 23: 12-hour clock everywhere a time of day renders, never 24-hour/
+// military time. Static half: these exact old-format strings (the 24-hour
+// placeholder/hint/aria-label/error copy the Founding 50 admin time fields
+// and the Content Library release-time field used to show) must never
+// reappear anywhere in the built JS bundle, and their 12-hour replacements
+// must actually be present -- a direct regression guard against a future
+// round silently reverting to "HH:MM (24-hour)"-style copy. The
+// behavioral half (does a specific rendered TIME VALUE actually show as
+// 12-hour AM/PM, not just the static placeholder text) needs live app
+// state no static grep can see -- that's the separate [12-hour-clock/*]
+// block further down this file.
+function auditTwelveHourClock(record) {
+  if (!fs.existsSync(DIST_DIR)) {
+    record('[audit] production build output exists for the 12-hour-clock check', false, 'run `npx expo export -p web` first');
+    return;
+  }
+  let bundleText = '';
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/\.js$/.test(entry.name)) continue;
+      bundleText += fs.readFileSync(full, 'utf8');
+    }
+  }
+  walk(DIST_DIR);
+
+  const FORBIDDEN_24H_STRINGS = [
+    'HH:MM (24-hour)',
+    '24-hour time, e.g. 06:00 or 18:00.',
+    'Release time, 24 hour',
+    'YYYY-MM-DD and HH:MM (24h)',
+    'YYYY-MM-DD and time as HH:MM (24h)',
+  ];
+  const foundForbidden = FORBIDDEN_24H_STRINGS.filter((s) => bundleText.includes(s));
+  record(
+    'built output: no 24-hour/military-time placeholder, hint, or error copy remains anywhere (Founding 50 admin, Content Library release time)',
+    foundForbidden.length === 0,
+    foundForbidden.length ? JSON.stringify(foundForbidden) : 'none found'
+  );
+
+  const REQUIRED_12H_STRINGS = ['H:MM AM/PM', '12-hour time, e.g. 6:00 AM or 6:00 PM.'];
+  const missingRequired = REQUIRED_12H_STRINGS.filter((s) => !bundleText.includes(s));
+  record(
+    'built output: the 12-hour AM/PM placeholder/hint copy that replaced it actually shipped',
+    missingRequired.length === 0,
+    missingRequired.length ? JSON.stringify(missingRequired) : 'all present'
+  );
+}
+
 // Round 11's own audit: the viewport lock. Static, like the env() audit
 // above -- the viewport meta and the gesturestart/change/end handlers are
 // both plain, uncompiled text straight out of public/index.html's own
@@ -993,6 +1046,7 @@ async function run() {
   };
 
   auditBuiltOutputEnvConsumers(record);
+  auditTwelveHourClock(record);
   auditViewportLock(record);
 
   const VIEWPORT = { width: 390, height: 844 };
@@ -3083,6 +3137,209 @@ async function run() {
       selectsEnabled && gatesOnEnabled,
       JSON.stringify({ selectsEnabled, gatesOnEnabled })
     );
+  }
+
+  // --- Round 23: 12-hour clock everywhere. The static grep in
+  // auditTwelveHourClock() (above) catches banned/required COPY strings in
+  // the built bundle; this behavioral block proves actual RENDERED time
+  // VALUES on three key live screens come out as 12-hour AM/PM, not just
+  // that the right placeholder text shipped.
+  // The minutes group is optional -- formatEtTime() (challengeSchedule.ts)
+  // deliberately omits ":00" on an exact-hour time ("SATURDAY 12 PM ET",
+  // not "12:00 PM ET"), which is still correctly 12-hour, not a 24-hour
+  // regression.
+  const twelveHourPattern = /\b(1[0-2]|[1-9])(:[0-5]\d)?\s?(AM|PM)\b/;
+  const twentyFourHourPattern = /\b([01]\d|2[0-3]):[0-5]\d\b(?!\s?(AM|PM))/;
+
+  // Group chat: a freshly sent message's own timestamp label must render
+  // 12-hour AM/PM, never a bare 24-hour "HH:MM".
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    // sendMessage() (useGroupChat.ts) does a real `.insert(...).select(MESSAGE_SELECT).single()`
+    // -- the default `[]` fallback every other unmocked table gets back from
+    // setupMocks() makes `.single()` throw (no row), which rolls the optimistic
+    // bubble straight back out before this check ever gets to read it. A real
+    // single-object row (matching MESSAGE_SELECT's own shape) is required for
+    // the message to actually land and stay rendered.
+    await page.route('**/rest/v1/group_chat_messages*', async (route) => {
+      if (route.request().method() !== 'POST') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      }
+      let payload = {};
+      try {
+        payload = JSON.parse(route.request().postData() || '{}');
+      } catch {}
+      return route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'msg-12h-check',
+          sender_id: USER_ID,
+          body: payload.body ?? '',
+          media_url: payload.media_url ?? null,
+          media_type: payload.media_type ?? null,
+          thumbnail_url: payload.thumbnail_url ?? null,
+          created_at: new Date().toISOString(),
+          deleted: false,
+          profiles: { display_name: 'Test Member', avatar_url: null },
+          group_chat_cheers: [],
+        }),
+      });
+    });
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-group-chat').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.getByTestId('group-chat-input').fill('12-hour clock check');
+    await page.getByTestId('group-chat-send').click({ timeout: 5000 }).catch(() => {});
+    // The timestamp Text is swapped for a pending-clock icon while the
+    // optimistic bubble is still in flight (see DocsGroupChatScreen.tsx) --
+    // wait for the real row (the mocked insert resolves quickly, but not
+    // synchronously) before reading it, instead of a fixed guess.
+    await page
+      .locator('[data-testid^="group-chat-message-pending-"]')
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => {});
+    // The row's own testID (`group-chat-message-${id}`) is only an exact
+    // match on the real server-assigned id -- the mocked insert above
+    // always returns `msg-12h-check`. A prefix selector would also match
+    // this message's OWN nested `-body-`/`-pending-`/`-menu-` testIDs
+    // (same `group-chat-message-` prefix), and `.last()` on those resolves
+    // to whichever nested element happens to render last in the DOM (the
+    // body text), not the outer row that actually carries the timestamp
+    // sibling -- an exact id match is the only way to reliably land on the
+    // row itself.
+    const messageRowText = await page
+      .getByTestId('group-chat-message-msg-12h-check')
+      .innerText({ timeout: 3000 })
+      .catch(() => '');
+    record(
+      '[12-hour-clock/group-chat] a freshly sent message\'s own timestamp renders 12-hour AM/PM, not 24-hour',
+      twelveHourPattern.test(messageRowText) && !twentyFourHourPattern.test(messageRowText),
+      JSON.stringify({ messageRowText })
+    );
+    await context.close();
+  }
+
+  // Weekly Challenge: whichever timing line is showing (open or closed)
+  // must render 12-hour AM/PM.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    // useCurrentChallenge() (ChallengeContext.tsx) only renders the
+    // ChallengeHero (and thus either timing testid) once it finds a
+    // published 'cow' entry in Content Library's own local storage --
+    // the real seed ships every entry as a DRAFT, so a fresh/empty
+    // profile (every other screen in this suite) never has a "current"
+    // challenge at all and shows the no-challenge notice instead. Seed one
+    // directly, bypassing the admin publish flow, the same way a real
+    // member's device would have one after Doc publishes.
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem(
+          'contentLibraryDrafts.v1',
+          JSON.stringify([
+            {
+              id: 'test-12h-cow',
+              name: 'Test Challenge',
+              originalTitle: 'Test Challenge',
+              type: 'cow',
+              format: '10min AMRAP',
+              formatDescription: '',
+              movements: ['Kettlebell Swings'],
+              videoUrl: '',
+              notes: '',
+              scoringType: 'rounds',
+              releaseAt: Date.now() - 86400000,
+              status: 'published',
+              scheduled: true,
+              createdAt: Date.now() - 86400000,
+              updatedAt: Date.now() - 86400000,
+            },
+          ])
+        );
+        window.localStorage.setItem('contentLibraryDrafts.v1.seedVersion', '1');
+      } catch {}
+    });
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const tabButton = page.getByRole('tab', { name: /WEEKLY CHALLENGE/i }).first();
+    await tabButton.click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const openTiming = await page.getByTestId('challenge-open-timing').innerText({ timeout: 3000 }).catch(() => null);
+    const closedTiming = await page.getByTestId('challenge-closed-timing').innerText({ timeout: 3000 }).catch(() => null);
+    const timingText = openTiming ?? closedTiming ?? '';
+    record(
+      '[12-hour-clock/weekly-challenge] the challenge close/reveal timing line renders 12-hour AM/PM, not 24-hour',
+      !!timingText && twelveHourPattern.test(timingText) && !twentyFourHourPattern.test(timingText),
+      JSON.stringify({ openTiming, closedTiming })
+    );
+    await context.close();
+  }
+
+  // FoundingFiftyAdminScreen: a known seeded ET window must prefill the
+  // START/END TIME fields in exact 12-hour "H:MM AM/PM" form.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Admin',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: true,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+          },
+        ]),
+      })
+    );
+    // 2027-01-15T14:30:00.000Z / 2027-01-20T04:59:00.000Z -- January, no
+    // DST ambiguity -- are confirmed (via a standalone Intl check) to read
+    // as exactly "9:30 AM" / "11:59 PM" Eastern, the two boundary-adjacent
+    // values (a non-12/non-zero-minute AM time, and a PM time crossing
+    // the 12-hour rollover) this function's own hour12/hour%12 math most
+    // needs to get right.
+    await page.route('**/rest/v1/founding_fifty_settings*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { starts_at: '2027-01-15T14:30:00.000Z', ends_at: '2027-01-20T04:59:00.000Z', enabled: true },
+        ]),
+      })
+    );
+    await page.route('**/rest/v1/founding_fifty_members*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) })
+    );
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('THE FOUNDING 50', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const startTimeValue = await page.locator('#founding-fifty-start-time').inputValue().catch(() => null);
+    const endTimeValue = await page.locator('#founding-fifty-end-time').inputValue().catch(() => null);
+    record(
+      '[12-hour-clock/founding-50-admin] the seeded ET window prefills START/END TIME as exact 12-hour "H:MM AM/PM"',
+      startTimeValue === '9:30 AM' && endTimeValue === '11:59 PM',
+      JSON.stringify({ startTimeValue, endTimeValue })
+    );
+    await context.close();
   }
 
   await browser.close();
