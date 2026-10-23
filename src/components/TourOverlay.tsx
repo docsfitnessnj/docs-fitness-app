@@ -15,7 +15,8 @@ type Stop = {
   radius: number | 'circle';
 };
 
-const STOPS: Stop[] = [
+// Full access members: word for word, the original 4-stop tour.
+const FULL_STOPS: Stop[] = [
   {
     key: 'story-ring',
     title: "DOC'S DAILY STORY",
@@ -51,6 +52,38 @@ const STOPS: Stop[] = [
   },
 ];
 
+// Round 27: booking tier and online free members (anyone without
+// fullContentAccess) get this variant instead -- pointed at what's
+// actually theirs (booking, their 2 free weekly WODs, posting, the
+// feed), never at COWs/Deck/stories/the full WOD week, which stay locked
+// exactly as before.
+const LIMITED_STOPS: Stop[] = [
+  {
+    key: 'date-strip',
+    title: 'YOUR WEEK LIVES HERE',
+    body: "Tap any date to sign up for class at Doc's Fitness.",
+    radius: 16,
+  },
+  {
+    key: 'wods-tab',
+    title: "A TASTE OF DOC'S WODS",
+    body: "Two of Doc's five weekly workouts are open to you, free. Go try one.",
+    radius: 16,
+  },
+  {
+    key: 'composer-bar',
+    title: 'LOG IT. POST IT.',
+    body: "Did one of Doc's workouts? Post it. Every win here gets celebrated.",
+    radius: 18,
+  },
+  {
+    key: 'posts-feed',
+    title: 'THE COMMUNITY',
+    body: 'The crew posts their wins here. Look around, cheer people on, and when you want it all, Memberships is in the menu.',
+    radius: 16,
+  },
+];
+
 const SPOTLIGHT_PADDING = 10;
 const CARD_GAP = 16;
 const CARD_MARGIN = 16;
@@ -82,6 +115,16 @@ export function TourOverlay() {
   const pulse = useRef(new Animated.Value(0)).current;
   const rootRef = useRef<View>(null);
 
+  // tour.stops is already skip-filtered to only the anchors this run found
+  // actually present (see TourContext.buildStops) -- mapping it onto the
+  // variant's own content array (never the other way around) is what
+  // makes a skipped stop simply not exist here: it was never in
+  // tour.stops to begin with, so it never gets a dot, a number, or a
+  // position in this array.
+  const variantStops = tour.variant === 'full' ? FULL_STOPS : LIMITED_STOPS;
+  const STOPS = tour.stops
+    .map((key) => variantStops.find((s) => s.key === key))
+    .filter((s): s is Stop => s !== undefined);
   const stop = STOPS[tour.stepIndex];
 
   useEffect(() => {
@@ -113,7 +156,15 @@ export function TourOverlay() {
     // render before `mounted` catches up) finds rootRef.current still
     // null, bails out, and — since none of this effect's other deps
     // change once mounted does — never gets another chance to measure.
-    if (!tour.active || !mounted) return undefined;
+    if (!tour.active || !mounted || !stop) return undefined;
+    // Round 27: never carry a previous stop's spotlight into the next one
+    // while the new stop's own first measurement is still pending -- the
+    // structural fix for the real-device bug where a stop with no anchor
+    // (now impossible by construction, see TourContext's own skip
+    // filtering) left the PRIOR stop's stale rect on screen under the
+    // wrong card. Clearing here means every stop genuinely starts from
+    // nothing until it has its own real measurement.
+    setRect(null);
     let cancelled = false;
     let frameId: number | null = null;
     let lastMeasured: Rect | null = null;
@@ -250,7 +301,7 @@ export function TourOverlay() {
       cancelled = true;
       if (frameId !== null) cancelAnimationFrame(frameId);
     };
-  }, [tour.active, mounted, tour.stepIndex, stop.key, winWidth, winHeight]);
+  }, [tour.active, mounted, tour.stepIndex, stop?.key, winWidth, winHeight]);
 
   if (!mounted) return null;
 
@@ -294,6 +345,7 @@ export function TourOverlay() {
       <>
         <View
           pointerEvents="none"
+          testID="tour-spotlight"
           style={
             {
               position: 'absolute',
@@ -375,7 +427,7 @@ export function TourOverlay() {
               )}
             </View>
 
-            <View style={styles.dotsRow}>
+            <View style={styles.dotsRow} testID="tour-dots">
               {STOPS.map((s, i) => (
                 <View key={s.key} style={[styles.dot, i === tour.stepIndex && styles.dotActive]} />
               ))}

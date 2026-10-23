@@ -79,7 +79,7 @@ export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isComplet
 
   if (scrollable) {
     return (
-      <View style={styles.scrollWrap} ref={registerTarget('date-strip')}>
+      <View style={styles.scrollWrap} ref={registerTarget('date-strip')} testID="date-strip-scroll-wrap">
         {leading && (
           <>
             <View style={styles.leadingSlot}>{leading}</View>

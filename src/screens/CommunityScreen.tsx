@@ -39,6 +39,7 @@ function ComposerBar({ onOpen }: { onOpen: () => void }) {
       ref={registerTarget('composer-bar')}
       style={[styles.composerBar, isDesktop && styles.composerBarDesktop]}
       onPress={onOpen}
+      testID="composer-bar"
     >
       <Avatar name={displayName} uri={photoUri} size={isDesktop ? 44 : 36} />
       <View style={styles.composerField}>
@@ -273,17 +274,24 @@ function CommunityFeed({
   communityAccess: 'full';
 }) {
   const { posts, error } = useCommunity();
+  const { registerTarget } = useTour();
   const canInteract = communityAccess === 'full';
   return (
     <View>
       <ComposerBar onOpen={onOpenComposer} />
-      {error ? (
-        <BackendErrorNotice message={error} />
-      ) : (
-        posts.map((post) => (
-          <PostCard key={post.id} post={post} canInteract={canInteract} onEdit={onEditPost} onOpenDetail={onOpenDetail} />
-        ))
-      )}
+      {/* The limited tour variant's own stop 4 ("THE COMMUNITY") spotlights
+          the feed itself, not the composer above it -- a dedicated wrapper
+          around just the posts, same registerTarget pattern as every other
+          tour anchor in this app. */}
+      <View ref={registerTarget('posts-feed')} testID="posts-feed">
+        {error ? (
+          <BackendErrorNotice message={error} />
+        ) : (
+          posts.map((post) => (
+            <PostCard key={post.id} post={post} canInteract={canInteract} onEdit={onEditPost} onOpenDetail={onOpenDetail} />
+          ))
+        )}
+      </View>
     </View>
   );
 }
