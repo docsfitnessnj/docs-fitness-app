@@ -88,7 +88,9 @@ function dayLabel(ms: number): string {
 }
 
 function timeLabel(ms: number): string {
-  return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  // hour12 explicit, not just relying on the en-US locale's own default --
+  // see AGENTS.md's "12 hour clock everywhere" writeup.
+  return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
 type ListItem = { kind: 'divider'; key: string; label: string } | { kind: 'message'; key: string; message: GroupChatMessage };

@@ -127,6 +127,10 @@ export function formatEtTime(ms: number): string {
     weekday: 'long',
     hour: 'numeric',
     minute: ms % 60000 === 0 ? undefined : '2-digit',
+    // Explicit, not just relying on the en-US locale's own default — a 12
+    // hour clock with AM/PM everywhere is a deliberate house rule, never
+    // military time. See AGENTS.md's "12 hour clock everywhere" writeup.
+    hour12: true,
   })
     .format(new Date(ms))
     .toUpperCase()

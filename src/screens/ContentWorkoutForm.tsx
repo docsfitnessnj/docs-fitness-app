@@ -61,9 +61,16 @@ function dateStrOf(ms: number): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+// 12-hour with AM/PM, never military time -- parseReleaseAt() (see
+// src/lib/contentLibraryParser.ts) already accepts an optional AM/PM
+// meridiem on this same field, so this pre-fill format and what the admin
+// types back agree with each other.
 function timeStrOf(ms: number): string {
   const d = new Date(ms);
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const hour = d.getHours();
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  const ampm = hour < 12 ? 'AM' : 'PM';
+  return `${hour12}:${pad2(d.getMinutes())} ${ampm}`;
 }
 
 function defaultReleaseAt(): number {
@@ -144,7 +151,7 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
   const handleSave = () => {
     const releaseAt = parseReleaseAt(`${dateStr.trim()} ${timeStr.trim()}`);
     if (releaseAt === null) {
-      setDateError('Enter the date as YYYY-MM-DD and time as HH:MM (24h).');
+      setDateError('Enter the date as YYYY-MM-DD and time as H:MM AM/PM.');
       return;
     }
     const weekdayName = weekdayNameFor(type);
@@ -420,17 +427,17 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
               style={styles.input}
               value={timeStr}
               onChangeText={setTimeStr}
-              placeholder="HH:MM"
+              placeholder="H:MM AM/PM"
               placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
               spellCheck={false}
-              aria-label="Release time, 24 hour"
+              aria-label="Release time, 12 hour with AM or PM"
               testID="content-form-release-time"
             />
           </View>
         </View>
-        <Text style={styles.hint}>24-hour time, e.g. 06:00 or 18:00.</Text>
+        <Text style={styles.hint}>12-hour time, e.g. 6:00 AM or 6:00 PM.</Text>
         {dateError && <Text style={styles.errorText}>{dateError}</Text>}
 
         <Text style={styles.label}>STATUS</Text>

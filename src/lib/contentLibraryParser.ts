@@ -23,7 +23,7 @@ Goblet Squats
 Push-Ups
 Video: https://youtube.com/watch?v=example
 Notes: Scale swings to a lighter bell for beginners.
-Release: 2026-09-08 06:00
+Release: 2026-09-08 6:00 AM
 Status: Published
 ---
 Name: SWING CHALLENGE
@@ -35,7 +35,7 @@ Kettlebell Swings
 Box Jumps
 Video: https://youtube.com/watch?v=example2
 Notes:
-Release: 2026-09-11 06:00
+Release: 2026-09-11 6:00 AM
 Status: Draft
 Scoring: Rounds`;
 
@@ -188,7 +188,7 @@ function parseBlock(block: string, blockIndex: number): ParsedEntry {
       ok: false,
       blockIndex,
       name,
-      error: `Couldn't read the release date "${releaseRaw}" — use YYYY-MM-DD HH:MM.`,
+      error: `Couldn't read the release date "${releaseRaw}" — use YYYY-MM-DD H:MM AM/PM.`,
     };
   }
 

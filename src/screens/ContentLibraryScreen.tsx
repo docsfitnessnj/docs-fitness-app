@@ -133,7 +133,9 @@ function formatReleaseAt(ms: number): string {
       day: 'numeric',
     }) +
     ' · ' +
-    new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    // hour12 explicit, not just relying on the en-US locale's own default
+    // -- see AGENTS.md's "12 hour clock everywhere" writeup.
+    new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
   );
 }
 
