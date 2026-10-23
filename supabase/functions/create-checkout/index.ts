@@ -8,11 +8,12 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-const ONE_TIME_PLANS: readonly PlanKey[] = ['ten_pack', 'drop_in'];
+const ONE_TIME_PLANS: readonly PlanKey[] = ['ten_pack', 'drop_in', 'pilates_guest'];
 
-// Starts a real Stripe Checkout session for whichever of the 5
+// Starts a real Stripe Checkout session for whichever of the 6
 // member-choosable plans (online monthly/annual, in-person Monthly
-// Unlimited, 10 Class Pack, or Drop In) the client asked for. The Founding
+// Unlimited, 10 Class Pack, Drop In, or Downbeach Pilates) the client asked
+// for. The Founding
 // 50 rate is never something the client asks for directly — this function
 // re-checks eligibility itself (live launch window, under 50 claimed, this
 // account hasn't already claimed one) and silently falls back to the
@@ -69,16 +70,31 @@ Deno.serve(async (req) => {
     const rawPlan = body.plan;
 
     if (ONE_TIME_PLANS.includes(rawPlan)) {
-      // 10 CLASS PACK ($200) or DROP IN ($25) — a one-time payment, not a
-      // subscription. The webhook grants the pack / confirms the booking
-      // once Stripe confirms the payment, never before.
+      // 10 CLASS PACK ($200), DROP IN ($25), or DOWNBEACH PILATES WITH
+      // MARINA ($20, migration_023) — a one-time payment, not a
+      // subscription. The webhook grants the pack / books the class once
+      // Stripe confirms the payment, never before — "never by trusting the
+      // browser returning from Stripe," per the brief. drop_in and
+      // pilates_guest carry the specific class_sessions row id in
+      // metadata so the webhook knows exactly which class to book; the
+      // request is rejected if either plan is missing it, since the
+      // webhook has no other way to recover which class was meant.
       const planLabel: PlanKey = rawPlan;
+      if ((planLabel === 'drop_in' || planLabel === 'pilates_guest') && typeof body.classSessionId !== 'string') {
+        return json({ error: 'Missing classSessionId for this booking.' }, 400);
+      }
+      const classSessionId: string | undefined =
+        planLabel === 'drop_in' || planLabel === 'pilates_guest' ? body.classSessionId : undefined;
       const session = await stripe.checkout.sessions.create({
         mode: 'payment',
         customer: customerId,
         line_items: [{ price: PRICE_IDS[planLabel], quantity: 1 }],
         client_reference_id: user.id,
-        metadata: { supabase_user_id: user.id, plan: planLabel },
+        metadata: {
+          supabase_user_id: user.id,
+          plan: planLabel,
+          ...(classSessionId ? { class_session_id: classSessionId } : {}),
+        },
         allow_promotion_codes: false,
         success_url: `${origin}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}/?checkout=cancel`,

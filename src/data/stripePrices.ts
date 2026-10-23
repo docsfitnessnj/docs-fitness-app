@@ -16,4 +16,7 @@ export const STRIPE_PRICE_IDS = {
   in_person_monthly: 'price_1US34vK8jMUFAOQw6KKUdNmh',
   ten_pack: 'price_1US36lK8jMUFAOQw6ehhrYgJ',
   drop_in: 'price_1US37zK8jMUFAOQwr6G5YPZE',
+  // DOWNBEACH PILATES WITH MARINA (migration_023) — a separate guest class,
+  // not included in any Doc's Fitness membership; everyone pays this.
+  pilates_guest: 'price_1UTjj9K8jMUFAOQwhnr7flRh',
 } as const;

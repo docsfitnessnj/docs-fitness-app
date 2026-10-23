@@ -1,20 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { useBadges } from '../context/BadgeContext';
+import { useClassBookingData } from '../context/ClassBookingContext';
 import { useClassPack } from '../context/ClassPackContext';
-import { useClassSignUp } from '../context/ClassSignUpContext';
 import { useFoundingFifty } from '../context/FoundingFiftyContext';
 import { useMembership } from '../context/MembershipContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { useSubscription } from '../context/SubscriptionContext';
 import { clearCheckoutRedirectPending, markCheckoutConfirming } from './checkoutRedirectGate';
-import { clearPendingDropInBooking, loadPendingDropInBooking } from './pendingDropInBooking';
 import { supabase } from './supabaseClient';
 
 const POLL_INTERVAL_MS = 1500;
 const MAX_POLL_ATTEMPTS = 8;
 
-type OneTimePurchase = { plan: 'ten_pack' | 'drop_in' } | null;
+type OneTimePurchase = { plan: 'ten_pack' | 'drop_in' | 'pilates_guest' } | null;
 
 // After Stripe Checkout (or the billing portal) redirects back to this app
 // (?checkout=success|cancel|return in the URL), reopen the Memberships
@@ -33,7 +32,7 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
   const membership = useMembership();
   const subscription = useSubscription();
   const classPack = useClassPack();
-  const classSignUp = useClassSignUp();
+  const classBooking = useClassBookingData();
   const founding50 = useFoundingFifty();
   const badges = useBadges();
   const displayName = useDisplayName();
@@ -67,11 +66,10 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
     } else {
       // Cancelled, or returning from the billing portal — no purchase
       // happened and no celebration is coming, so nothing should keep the
-      // tour blocked. A cancelled Drop In checkout also means the pending
-      // booking it was about to finalize never happened — drop it rather
-      // than leaving it to wrongly finalize on some later, unrelated
-      // successful checkout.
-      clearPendingDropInBooking();
+      // tour blocked. A cancelled Drop In/Pilates checkout never had a
+      // local pending-booking record to clean up as of migration_023 — the
+      // booking itself is only ever created server-side, by the webhook,
+      // after Stripe actually confirms payment.
       clearCheckoutRedirectPending();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -95,9 +93,7 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
         // Memberships screen with no celebration rather than a scary error;
         // their real status shows correctly the next time this data loads.
         // No celebration is coming this session, so the tour is no longer
-        // blocked on it, and any pending Drop In booking is dropped rather
-        // than finalizing it without ever having confirmed the charge.
-        clearPendingDropInBooking();
+        // blocked on it.
         clearCheckoutRedirectPending();
         setAwaitingConfirmation(false);
         return;
@@ -112,7 +108,7 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
           .maybeSingle()
           .then(({ data }) => {
             if (cancelled) return;
-            if (data?.plan === 'ten_pack' || data?.plan === 'drop_in') {
+            if (data?.plan === 'ten_pack' || data?.plan === 'drop_in' || data?.plan === 'pilates_guest') {
               setOneTimePurchase({ plan: data.plan });
             }
           });
@@ -146,32 +142,20 @@ export function useCheckoutRedirect(onOpenMemberships: () => void) {
 
   // Reacts the moment a ONE-TIME in-person purchase confirms. 10 Class Pack
   // just needs the real credits re-fetched (the webhook already granted
-  // them); Drop In finalizes the booking that was put on hold before the
-  // redirect to Stripe — the very first time it's actually created, never
-  // before this lands.
+  // them); Drop In and Downbeach Pilates both need the real booking
+  // re-fetched too — as of migration_023, the webhook itself already
+  // created that booking (payment_method 'drop_in_paid'/'pilates_paid')
+  // the instant Stripe confirmed payment, "never by trusting the browser
+  // returning from Stripe" — this just pulls the now-real state down.
   useEffect(() => {
     if (!awaitingConfirmation || !oneTimePurchase) return;
     if (oneTimePurchase.plan === 'ten_pack') {
       classPack.refetch();
     } else {
-      const pending = loadPendingDropInBooking();
-      if (pending) {
-        classSignUp.signUp({
-          dateKey: pending.dateKey,
-          classId: pending.classId,
-          className: pending.className,
-          classType: pending.classType,
-          time: pending.time,
-          dayLabel: pending.dayLabel,
-          memberName: displayName,
-          planType: 'Drop In',
-          firstClass: false,
-        });
-        clearPendingDropInBooking();
-      }
+      classBooking.refetch();
     }
     membership.notifyCheckoutSuccess();
     setAwaitingConfirmation(false);
     setOneTimePurchase(null);
-  }, [awaitingConfirmation, oneTimePurchase, classPack, classSignUp, displayName, membership]);
+  }, [awaitingConfirmation, oneTimePurchase, classPack, classBooking, membership]);
 }

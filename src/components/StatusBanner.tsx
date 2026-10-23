@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { PostAuthorBadges } from './PostAuthorBadges';
-import { useClassSignUp } from '../context/ClassSignUpContext';
+import { useClassBookingData } from '../context/ClassBookingContext';
 import { useMembership } from '../context/MembershipContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { openFullSchedule } from '../lib/scheduleModal';
@@ -23,15 +23,12 @@ type DocksideVariant = 'first_time' | 'free_tier' | 'ten_pack' | 'drop_in';
 // has ever actually trained here (started a trial) or booked/attended a
 // class. That's deliberate: someone who lands from Instagram to book a
 // class shouldn't see a membership pitch before they've ever set foot at
-// the boathouse — see membership.hasEverTrialed and the bookingEvents log
-// below, which (unlike the live signUps map) keeps every booking ever made
-// even after it's later cancelled.
+// the boathouse — see membership.hasEverTrialed and
+// ClassBookingContext.hasEverBooked, which (unlike the live sessions
+// map) keeps every booking ever made even after it's later cancelled.
 function useDocksideVariant(): DocksideVariant {
   const { tier, hasEverTrialed } = useMembership();
-  const displayName = useDisplayName();
-  const { bookingEvents } = useClassSignUp();
-
-  const hasEverBooked = bookingEvents.some((event) => event.type === 'booked' && event.memberName === displayName);
+  const { hasEverBooked } = useClassBookingData();
 
   if (!hasEverTrialed && !hasEverBooked) return 'first_time';
   if (tier === 'ten_pack') return 'ten_pack';

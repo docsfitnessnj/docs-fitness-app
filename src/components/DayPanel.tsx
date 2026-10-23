@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { AppPressable } from './AppPressable';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,6 +6,7 @@ import { LogResultsModal } from './LogResultsModal';
 import { ScheduleStrip } from './ScheduleStrip';
 import { WatchVideoBreakdownButton } from './WatchVideoBreakdownButton';
 import { TappableMovementText } from './movement/TappableMovementText';
+import { useClassBookingData } from '../context/ClassBookingContext';
 import { useMembership } from '../context/MembershipContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import {
@@ -51,7 +52,8 @@ function TrainingNearVentnorLine() {
 // not a stack of screens.
 export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
   const { isCompleted, toggleCompleted } = useWorkoutLog();
-  const { isSignedUp, handleSignUp: signUpForClass, handleCancel: cancelClass } = useClassBooking();
+  const { handleSignUp: signUpForClass, handleCancel: cancelClass } = useClassBooking();
+  const { sessions, getSession, getMyBooking, getMyWaitlistEntry } = useClassBookingData();
   const { hasActivePack, tenPackClassesRemaining } = useMembership();
   const isDesktop = useIsDesktop();
   const [logOpen, setLogOpen] = useState(false);
@@ -73,6 +75,15 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
   const dateLabel = formatFullDate(day.date);
   const weekdayName = day.date.toLocaleDateString('en-US', { weekday: 'long' });
   const scheduleRows = rowsForDate(day.date);
+  // Downbeach Pilates isn't in the static schedule.ts template at all (it's
+  // generated purely from class_templates/class_sessions, migration_023) —
+  // pulled in here as whichever live session on this date has
+  // isGuestClass, so it renders alongside the regular classes without
+  // schedule.ts needing to know about it.
+  const pilatesSession = useMemo(
+    () => sessions.find((s) => s.isGuestClass && s.dateKey === formatDateKey(day.date)),
+    [sessions, day.date]
+  );
   const barLabel = isSaturday ? STEADY_STATE_SATURDAY_NAME : isSunday ? SUNDAY_SETUP_NAME : "DOC'S WORKOUT OF THE DAY";
 
   const toggleComplete = () => {
@@ -82,9 +93,6 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
       toggleCompleted(dayKey, STEADY_STATE_SATURDAY_NAME, dateLabel, day.date.getTime());
     }
   };
-
-  const handleSignUp = (row: (typeof scheduleRows)[number]) => signUpForClass(row, dateKey, weekdayName);
-  const handleCancel = (row: (typeof scheduleRows)[number]) => cancelClass(row, dateKey, weekdayName);
 
   return (
     <View>
@@ -102,7 +110,11 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
             </Text>
           )}
           {scheduleRows.map((row) => {
-            const signedUp = isSignedUp(dateKey, row.id);
+            const session = getSession(row.id, dateKey);
+            if (!session) return null;
+            const label = `${row.className} · ${weekdayName} · ${row.time}`;
+            const myBooking = getMyBooking(session.id);
+            const waitlistEntry = getMyWaitlistEntry(session.id);
             return (
               <View key={row.id} style={styles.classRow}>
                 <View style={{ flex: 1 }}>
@@ -114,7 +126,7 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                     <Text style={styles.classLocation}>{LOCATION_NAME}</Text>
                   </ExternalLinkPressable>
                 </View>
-                {signedUp ? (
+                {myBooking ? (
                   <View style={styles.signedUpWrap}>
                     <View style={styles.signedUpBadge}>
                       <Ionicons name="checkmark-circle" size={13} color={colors.green} />
@@ -122,25 +134,82 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                     </View>
                     <AppPressable
                       style={styles.cancelPill}
-                      onPress={() => handleCancel(row)}
+                      onPress={() => cancelClass(session, label)}
                       testID={`cancel-class-${row.id}`}
                     >
                       <Text style={styles.cancelPillText}>CANCEL CLASS</Text>
                     </AppPressable>
                   </View>
+                ) : waitlistEntry ? (
+                  <View style={styles.signedUpBadge} testID={`waitlisted-${row.id}`}>
+                    <Ionicons name="time-outline" size={13} color={colors.gold} />
+                    <Text style={styles.waitlistedBadgeText}>ON WAITLIST</Text>
+                  </View>
                 ) : (
                   <AppPressable
                     style={styles.signUpPill}
                     pressedStyle={styles.signUpPillPressed}
-                    onPress={() => handleSignUp(row)}
+                    onPress={() => signUpForClass(session, label)}
                     testID={`sign-up-${row.id}`}
                   >
-                    <Text style={styles.signUpPillText}>SIGN UP</Text>
+                    <Text style={styles.signUpPillText}>
+                      {session.capacity !== null && session.bookedCount >= session.capacity ? 'CLASS FULL' : 'SIGN UP'}
+                    </Text>
                   </AppPressable>
                 )}
               </View>
             );
           })}
+
+          {pilatesSession && (
+            <View style={styles.pilatesCard} testID="pilates-class-row">
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pilatesTag}>SEPARATE CLASS · NOT INCLUDED IN ANY DOC'S MEMBERSHIP</Text>
+                <Text style={styles.classTime}>
+                  {new Date(pilatesSession.startAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}{' '}
+                  · {pilatesSession.className}
+                </Text>
+                <Text style={styles.classMeta}>{pilatesSession.classType}</Text>
+                <ExternalLinkPressable href={LOCATION_MAPS_URL} hitSlop={4}>
+                  <Text style={styles.classLocation}>{LOCATION_NAME}</Text>
+                </ExternalLinkPressable>
+              </View>
+              {getMyBooking(pilatesSession.id) ? (
+                <View style={styles.signedUpWrap}>
+                  <View style={styles.signedUpBadge}>
+                    <Ionicons name="checkmark-circle" size={13} color={colors.green} />
+                    <Text style={styles.signedUpBadgeText}>YOU'RE IN</Text>
+                  </View>
+                  <AppPressable
+                    style={styles.cancelPill}
+                    onPress={() =>
+                      cancelClass(
+                        pilatesSession,
+                        `${pilatesSession.className} · ${weekdayName} · ${new Date(pilatesSession.startAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+                      )
+                    }
+                    testID="cancel-class-pilates"
+                  >
+                    <Text style={styles.cancelPillText}>CANCEL CLASS</Text>
+                  </AppPressable>
+                </View>
+              ) : (
+                <AppPressable
+                  style={styles.signUpPill}
+                  pressedStyle={styles.signUpPillPressed}
+                  onPress={() =>
+                    signUpForClass(
+                      pilatesSession,
+                      `${pilatesSession.className} · ${weekdayName} · ${new Date(pilatesSession.startAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+                    )
+                  }
+                  testID="sign-up-pilates"
+                >
+                  <Text style={styles.signUpPillText}>BOOK · ${((pilatesSession.priceCents ?? 2000) / 100).toFixed(0)}</Text>
+                </AppPressable>
+              )}
+            </View>
+          )}
         </View>
       )}
 
@@ -577,6 +646,28 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelBold,
     fontSize: 11,
     letterSpacing: 0.8,
+  },
+  waitlistedBadgeText: {
+    color: colors.gold,
+    fontFamily: fonts.labelBold,
+    fontSize: 11,
+    letterSpacing: 0.8,
+  },
+  pilatesCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.gold,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+  },
+  pilatesTag: {
+    color: colors.gold,
+    fontFamily: fonts.labelBold,
+    fontSize: 9,
+    letterSpacing: 0.4,
+    marginBottom: 4,
   },
   cancelPill: {
     borderWidth: 1,

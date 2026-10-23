@@ -13,7 +13,7 @@ import { StatusBanner } from '../components/StatusBanner';
 import { StoryRow } from '../components/StoryRow';
 import { DateStrip } from '../components/DateStrip';
 import { DayPanel } from '../components/DayPanel';
-import { useClassSignUp } from '../context/ClassSignUpContext';
+import { useClassBookingData } from '../context/ClassBookingContext';
 import { Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
 import { useMembership } from '../context/MembershipContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
@@ -21,7 +21,9 @@ import { useStories } from '../context/StoriesContext';
 import { useTour } from '../context/TourContext';
 import { getUpcomingDays, isDayWodUnlocked, isSameDay } from '../data/content';
 import { showAlert } from '../lib/alert';
+import { useClassBooking } from '../lib/useClassBooking';
 import { openMemberships } from '../lib/membershipsModal';
+import { consumePilatesBookingIntent, hasPilatesBookingIntent } from '../lib/pilatesDeepLink';
 import { useIsDesktop } from '../lib/responsive';
 import { colors, fonts } from '../theme';
 
@@ -305,8 +307,7 @@ export default function CommunityScreen() {
   const { howTrain, loading: profileLoading, refetching: profileRefetching } = useProfile();
   const { activeStories } = useStories();
   const tour = useTour();
-  const displayName = useDisplayName();
-  const { bookingEvents } = useClassSignUp();
+  const { hasBookedDropInBefore, sessions, loading: sessionsLoading } = useClassBookingData();
   // Online members train on their own, so the in-person class sign-up card
   // and schedule strip aren't the front door for them the way they are for
   // Boathouse locals — UNLESS they've layered in-person booking on top of
@@ -326,9 +327,6 @@ export default function CommunityScreen() {
   // mocked profile response resolves same-tick, so this window never shows
   // up in a simulated test; it only exists once a real network delay is in
   // the picture. See profileLoading below, which is what actually closes it.
-  const hasBookedDropInBefore = bookingEvents.some(
-    (event) => event.type === 'booked' && event.planType === 'Drop In' && event.memberName === displayName
-  );
   const showClassCard = howTrain !== 'online' || hasActivePack || hasBookedDropInBefore;
 
   // First-open spotlight tour: fires once per install. tour.start() is the
@@ -359,6 +357,32 @@ export default function CommunityScreen() {
     tour.start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFocused, memberStateSettled]);
+
+  // The shareable DOWNBEACH PILATES deep link (`?book=pilates`, see
+  // pilatesDeepLink.ts) — "open the app directly to this class," for
+  // Instagram promotion. Fires once a signed-in member genuinely lands
+  // here with real session data loaded (never while membership/sessions
+  // are still resolving, same "settled" discipline as the tour effect
+  // above), finds the soonest upcoming Pilates session, and opens its real
+  // booking flow exactly as if the member had tapped it on the schedule —
+  // "their path is email signup, pay $20, booked."
+  const pilatesIntentHandled = useRef(false);
+  const { handleSignUp } = useClassBooking();
+  useEffect(() => {
+    if (pilatesIntentHandled.current) return;
+    if (!isFocused || !memberStateSettled || sessionsLoading) return;
+    if (!hasPilatesBookingIntent()) return;
+    const pilatesSession = sessions
+      .filter((s) => s.isGuestClass)
+      .sort((a, b) => a.startAt - b.startAt)[0];
+    if (!pilatesSession) return;
+    pilatesIntentHandled.current = true;
+    consumePilatesBookingIntent();
+    const dateObj = new Date(pilatesSession.startAt);
+    const label = `${pilatesSession.className} · ${dateObj.toLocaleDateString('en-US', { weekday: 'long' })} · ${dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+    handleSignUp(pilatesSession, label);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFocused, memberStateSettled, sessionsLoading, sessions]);
 
   const days = useMemo(() => getUpcomingDays(BOOKING_DAYS_AHEAD), []);
   const todayIndex = days.findIndex((d) => d.isToday);

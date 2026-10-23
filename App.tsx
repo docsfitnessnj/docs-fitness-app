@@ -39,7 +39,7 @@ import { ChallengeProvider } from './src/context/ChallengeContext';
 import { BadgeProvider } from './src/context/BadgeContext';
 import { FoundingFiftyProvider } from './src/context/FoundingFiftyContext';
 import { DocsInboxProvider } from './src/context/DocsInboxContext';
-import { ClassSignUpProvider } from './src/context/ClassSignUpContext';
+import { ClassBookingProvider } from './src/context/ClassBookingContext';
 import { ContentLibraryProvider } from './src/context/ContentLibraryContext';
 import { GroupChatUnreadProvider } from './src/context/GroupChatUnreadContext';
 import { TourProvider, useTour } from './src/context/TourContext';
@@ -1085,7 +1085,7 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
                       <BadgeProvider>
                         <FoundingFiftyProvider>
                           <DocsInboxProvider>
-                            <ClassSignUpProvider>
+                            <ClassBookingProvider>
                               <ContentLibraryProvider>
                                 <GroupChatUnreadProvider>
                                 <TourProvider>
@@ -1123,7 +1123,7 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
                                 </TourProvider>
                                 </GroupChatUnreadProvider>
                               </ContentLibraryProvider>
-                            </ClassSignUpProvider>
+                            </ClassBookingProvider>
                           </DocsInboxProvider>
                         </FoundingFiftyProvider>
                       </BadgeProvider>

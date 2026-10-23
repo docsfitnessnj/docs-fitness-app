@@ -138,17 +138,19 @@ Deno.serve(async (req) => {
               console.error('stripe-webhook: could not record founding 50 claim for', userId, claimError);
             }
           }
-        } else if (session.mode === 'payment' && (plan === 'ten_pack' || plan === 'drop_in')) {
-          // 10 Class Pack or Drop In — a one-time payment, confirmed right
-          // here. in_person_purchases is what the client polls (by this
-          // Checkout Session id) to know the purchase actually went
-          // through before it finalizes a booking or shows the purchase
+        } else if (session.mode === 'payment' && (plan === 'ten_pack' || plan === 'drop_in' || plan === 'pilates_guest')) {
+          // 10 Class Pack, Drop In, or Downbeach Pilates — a one-time
+          // payment, confirmed right here. in_person_purchases is what the
+          // client polls (by this Checkout Session id) to know the
+          // purchase actually went through before it shows the purchase
           // celebration — never optimistically before this lands.
+          const classSessionId: string | undefined = session.metadata?.class_session_id;
           const { error: purchaseError } = await admin.from('in_person_purchases').insert({
             id: session.id,
             user_id: userId,
             plan,
             amount_cents: session.amount_total ?? null,
+            class_session_id: classSessionId ?? null,
           });
           if (purchaseError) {
             // Top-level event-id dedupe (above) already catches a true
@@ -171,6 +173,38 @@ Deno.serve(async (req) => {
               console.error('stripe-webhook: could not grant class pack for', userId, packError);
             }
             await admin.from('profiles').update({ in_person_plan: 'ten_pack' }).eq('id', userId);
+          } else if (plan === 'drop_in' || plan === 'pilates_guest') {
+            // The booking itself is created HERE, under the service role,
+            // the moment Stripe confirms payment — never by the browser
+            // returning from Checkout (migration_023's book_class() only
+            // accepts 'drop_in_paid'/'pilates_paid' from a service-role
+            // caller for exactly this reason). A paid checkout with no
+            // booking (webhook failure — e.g. the class filled in the
+            // moments between Checkout starting and completing) must stay
+            // VISIBLE in admin rather than silently lost, so any failure
+            // here is recorded back onto the purchase row itself instead
+            // of only being logged.
+            if (!classSessionId) {
+              await admin
+                .from('in_person_purchases')
+                .update({ booking_error: 'No class_session_id in Checkout metadata.' })
+                .eq('id', session.id);
+              console.error('stripe-webhook: paid', plan, 'checkout had no class_session_id', session.id);
+            } else {
+              const { error: bookingError } = await admin.rpc('book_class', {
+                p_session_id: classSessionId,
+                p_payment_method: plan === 'drop_in' ? 'drop_in_paid' : 'pilates_paid',
+                p_user_id: userId,
+                p_stripe_checkout_session_id: session.id,
+              });
+              if (bookingError) {
+                await admin
+                  .from('in_person_purchases')
+                  .update({ booking_error: bookingError.message })
+                  .eq('id', session.id);
+                console.error('stripe-webhook: could not book', plan, 'class for', userId, bookingError);
+              }
+            }
           }
         }
         break;
