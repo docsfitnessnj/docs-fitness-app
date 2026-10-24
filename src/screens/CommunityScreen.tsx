@@ -174,12 +174,30 @@ function PostCard({
             {post.unread && <View style={styles.unreadDot} />}
             <Text style={[styles.wodTitle, isDesktop && styles.wodTitleDesktop]}>{post.title}</Text>
           </View>
-          {!!post.meta.notes && (
-            <Text style={styles.wodNotes} numberOfLines={3}>
-              {post.meta.notes}
-            </Text>
-          )}
-          {!!post.meta.resultsLine && <Text style={styles.wodResults}>{post.meta.resultsLine}</Text>}
+          {/* Round 28: a WOD-result post's own attached photo/video never
+              rendered here at all -- this branch had no thumbnail block of
+              its own, unlike the text-post branch below. Same thumbnail
+              treatment, just alongside the notes/results text instead of
+              the post body. */}
+          <View style={styles.previewRow}>
+            <View style={{ flex: 1 }}>
+              {!!post.meta.notes && (
+                <Text style={styles.wodNotes} numberOfLines={3}>
+                  {post.meta.notes}
+                </Text>
+              )}
+              {!!post.meta.resultsLine && <Text style={styles.wodResults}>{post.meta.resultsLine}</Text>}
+            </View>
+            {post.media && (
+              <View style={styles.thumbnail}>
+                {post.media.type === 'image' ? (
+                  <Image source={{ uri: post.media.uri }} style={styles.thumbnailImage} />
+                ) : (
+                  <Ionicons name="videocam-outline" size={22} color={colors.textMuted} />
+                )}
+              </View>
+            )}
+          </View>
         </View>
       ) : (
         <View>

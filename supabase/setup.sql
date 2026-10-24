@@ -354,6 +354,44 @@ create policy "members can remove their own comment reaction"
   to authenticated
   using (author_id = auth.uid());
 
+-- STORAGE: community-media bucket (migration_026.sql) — same public-read /
+-- owner-write shape as group-chat-media above. Fixes the real root cause
+-- of "photos don't render in the feed": a locally-picked attachment's
+-- `media_url` used to be written as a page-local blob: URL with no upload
+-- step at all (see CommunityContext.tsx's uploadCommunityMedia), which
+-- rendered fine for the posting member in that same browser session and
+-- came up blank for anyone else, forever, the moment that session ended.
+-- No chat-access-style gating here — posting to Community is already open
+-- to every signed-in tier (Round 27), so any authenticated member may
+-- upload into their own folder.
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('community-media', 'community-media', true, 52428800)
+on conflict (id) do nothing;
+
+drop policy if exists "community post photos are publicly viewable" on storage.objects;
+create policy "community post photos are publicly viewable"
+  on storage.objects for select
+  to public
+  using (bucket_id = 'community-media');
+
+drop policy if exists "a member uploads community media into their own folder" on storage.objects;
+create policy "a member uploads community media into their own folder"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'community-media'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "the uploader or admin can delete a community media file" on storage.objects;
+create policy "the uploader or admin can delete a community media file"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'community-media'
+    and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin(auth.uid()))
+  );
+
 -- ----------------------------------------------------------------------------
 -- WORKOUT TRACKING: WOD completions, Deck completions, Weekly Challenge
 -- entries. All strictly private to the member who logged them (this is

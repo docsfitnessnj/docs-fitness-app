@@ -54,9 +54,13 @@ const FULL_STOPS: Stop[] = [
 
 // Round 27: booking tier and online free members (anyone without
 // fullContentAccess) get this variant instead -- pointed at what's
-// actually theirs (booking, their 2 free weekly WODs, posting, the
-// feed), never at COWs/Deck/stories/the full WOD week, which stay locked
-// exactly as before.
+// actually theirs (booking, their 2 free weekly WODs, posting), never at
+// COWs/Deck/stories/the full WOD week, which stay locked exactly as
+// before.
+//
+// Round 28: dropped the 4th stop ("THE COMMUNITY", the posts feed) by
+// owner decision -- its spirit folded into this composer stop's own
+// body copy instead. Stops 1 and 2 are untouched.
 const LIMITED_STOPS: Stop[] = [
   {
     key: 'date-strip',
@@ -73,14 +77,8 @@ const LIMITED_STOPS: Stop[] = [
   {
     key: 'composer-bar',
     title: 'LOG IT. POST IT.',
-    body: "Did one of Doc's workouts? Post it. Every win here gets celebrated.",
+    body: "Did one of Doc's workouts? Post it. This crew celebrates every win and shows up for each other.",
     radius: 18,
-  },
-  {
-    key: 'posts-feed',
-    title: 'THE COMMUNITY',
-    body: 'The crew posts their wins here. Look around, cheer people on, and when you want it all, Memberships is in the menu.',
-    radius: 16,
   },
 ];
 
