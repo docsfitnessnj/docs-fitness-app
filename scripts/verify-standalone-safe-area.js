@@ -281,6 +281,23 @@ async function setupMocks(page, userId = USER_ID) {
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
   });
+  // Round 28: CommunityContext.tsx's addTextPost/addWodResultPost/
+  // updateTextPost now upload a locally-picked (blob:) attachment to the
+  // real community-media Storage bucket before ever writing media_url --
+  // see uploadCommunityMedia there. Any check that posts with a photo now
+  // genuinely calls supabase.storage.from('community-media').upload(),
+  // which without this mock would hit the real network and fail (no real
+  // session/credentials in this harness). @supabase/storage-js's own
+  // uploadOrUpdate() reads `data.Key`/`data.Id` off the JSON response body
+  // (dist/index.cjs) -- this is the same response shape a real successful
+  // upload returns.
+  await page.route('**/storage/v1/object/community-media/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ Key: `community-media/${route.request().url().split('/community-media/')[1]}`, Id: 'mock-upload-id' }),
+    })
+  );
   await page.routeWebSocket(/realtime/, (ws) => ws.close());
 }
 
@@ -2888,6 +2905,237 @@ async function run() {
     await context.close();
   }
 
+  // ---------------------------------------------------------------------
+  // Round 28: the real root-cause fix for "photos don't render in the
+  // feed" / old posts showing blank gray blocks. Two independent bugs,
+  // both fixed: (1) CommunityContext.tsx's addTextPost/addWodResultPost/
+  // updateTextPost wrote a locally-picked attachment's `uri` straight into
+  // `media_url` with no upload step -- on web that's a page-local blob:
+  // URL, valid only inside the browser document that created it (a known,
+  // documented gap since Round 18). uploadCommunityMedia there now
+  // uploads it to the real community-media Storage bucket
+  // (migration_026.sql) first. (2) CommunityScreen.tsx's `PostCard` never
+  // rendered ANY media for a `kind: 'wod'` post at all -- a structural gap
+  // in the feed's own JSX, independent of URL validity, which is exactly
+  // why a workout logged with a photo never showed it even though the
+  // SAME bug didn't (as visibly) affect a plain text post with a shorter-
+  // lived single-session blob: URL.
+  //
+  // This proves the fix end to end from BOTH entry points (CreatePostModal,
+  // LogResultsModal), through to a REAL loaded <img> with nonzero natural
+  // size -- not just a correctly-sized box with a dead src, which a
+  // bounding-rect-only check (like [photo-preview/feed] above) can't tell
+  // apart from a broken image -- and, the actual proof of durability a
+  // same-session blob: URL could never pass, viewed by a SECOND,
+  // independently-authenticated account. `insertedPosts` and the storage
+  // mocks are shared across every context below, the same two-actor
+  // pattern Round 24's booking race checks already established
+  // (registerClassBookingMocks/SECOND_BOOKER_ID -- reused here as a plain
+  // "a different signed-in account" id, not for anything booking-specific).
+  {
+    const insertedPosts = [];
+    // The upload POST itself (**/storage/v1/object/community-media/**) is
+    // already mocked globally in setupMocks() -- every check that posts
+    // with media needs that, not just this block. This additionally mocks
+    // the GET for the PUBLIC url supabase-js's own getPublicUrl()
+    // constructs (`.../object/public/community-media/...`), serving back
+    // the real fixture bytes, so the browser's own <img> genuinely decodes
+    // them into a real, nonzero naturalWidth/naturalHeight.
+    const registerCommunityPostMocks = async (page, userId) => {
+      await setupMocks(page, userId);
+      await page.route('**/storage/v1/object/public/community-media/**', (route) =>
+        route.fulfill({ status: 200, contentType: 'image/png', body: ASPECT_RATIO_FIXTURE_PNG })
+      );
+      await page.route('**/rest/v1/community_posts*', async (route) => {
+        const req = route.request();
+        if (req.method() === 'POST') {
+          let payload = {};
+          try {
+            payload = JSON.parse(req.postData() || '{}');
+          } catch {}
+          insertedPosts.push(payload);
+          return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify([{ id: `r28-post-${insertedPosts.length}`, ...payload }]) });
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(
+            [...insertedPosts].reverse().map((p, i) => ({
+              id: `r28-post-${insertedPosts.length - i}`,
+              title: p.title ?? '',
+              body: p.body ?? '',
+              category: p.category ?? 'General',
+              kind: p.kind ?? 'text',
+              media_url: p.media_url ?? null,
+              media_type: p.media_type ?? null,
+              workout_title: p.workout_title ?? null,
+              workout_notes: p.workout_notes ?? null,
+              workout_results_line: p.workout_results_line ?? null,
+              pinned: false,
+              created_at: new Date().toISOString(),
+              author_id: p.author_id ?? userId,
+              profiles: { display_name: p.author_id === USER_ID ? 'Test Member' : 'Second Member' },
+              community_comments: [],
+              community_reactions: [],
+            }))
+          ),
+        });
+      });
+    };
+
+    const realLoadedImageRects = (page) =>
+      page.evaluate(() =>
+        Array.from(document.querySelectorAll('img'))
+          .filter((img) => img.complete && img.naturalWidth > 0 && img.naturalHeight > 0)
+          .map((img) => ({ naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight }))
+      );
+
+    // --- Entry point 1: CreatePostModal (a plain text post with a photo). ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await registerCommunityPostMocks(page, USER_ID);
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      await page.getByText('LOG IT. POST IT.', { exact: false }).first().click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.getByTestId('media-add').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 5000 }),
+        page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+      ]);
+      await fileChooser.setFiles({ name: 'r28-fixture.png', mimeType: 'image/png', buffer: ASPECT_RATIO_FIXTURE_PNG });
+      await page.waitForTimeout(500);
+
+      await page.locator('#compose-post-title-input').fill('Beta Test 28');
+      await page.locator('#compose-post-body-input').fill('Round 28 photo upload round trip.');
+      await page.getByTestId('compose-submit').click({ timeout: 5000 }).catch(() => {});
+      // useActionCompletion()'s own 900ms POSTED acknowledgment, plus the
+      // real (mocked) upload + insert + refetch it now genuinely awaits.
+      await page.waitForTimeout(1500);
+
+      const uploadedPost = insertedPosts.find((p) => p.title === 'Beta Test 28');
+      record(
+        "[post-photo/create-post] the post's media_url is a real Storage public URL, never the page-local blob: URL",
+        !!uploadedPost &&
+          typeof uploadedPost.media_url === 'string' &&
+          uploadedPost.media_url.includes('/storage/v1/object/public/community-media/') &&
+          !uploadedPost.media_url.startsWith('blob:'),
+        JSON.stringify({ uploadedPost })
+      );
+
+      await page.waitForTimeout(600); // the browser's own real <img> fetch + decode of the mocked bytes
+      const ownAccountRects = await realLoadedImageRects(page);
+      record(
+        '[post-photo/create-post] the posting account itself sees a real, loaded <img> with nonzero natural size in the feed',
+        ownAccountRects.some((r) => r.naturalWidth === 300 && r.naturalHeight === 200),
+        JSON.stringify({ ownAccountRects })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'post-photo-create-post-feed.png') }).catch(() => {});
+      await context.close();
+    }
+
+    // --- The real proof of durability: a SECOND, independently-
+    // authenticated account loads the same feed and sees the SAME photo,
+    // genuinely decoded -- a page-local blob: URL could never survive
+    // this, which is exactly the real-device bug report ("old posts show
+    // blank gray blocks"). ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await registerCommunityPostMocks(page, SECOND_BOOKER_ID);
+      await seedSignedInSession(page, SECOND_BOOKER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(1500);
+
+      const secondAccountRects = await realLoadedImageRects(page);
+      const secondAccountFeedText = await page.getByText('Beta Test 28', { exact: false }).first().isVisible().catch(() => false);
+      record(
+        "[post-photo/second-account] a different signed-in account sees the SAME photo, genuinely loaded -- proof it lives in Storage, not on the posting phone",
+        secondAccountFeedText && secondAccountRects.some((r) => r.naturalWidth === 300 && r.naturalHeight === 200),
+        JSON.stringify({ secondAccountFeedText, secondAccountRects })
+      );
+      await context.close();
+    }
+
+    // --- Entry point 2: LogResultsModal (a WOD-result post with a photo)
+    // -- this is also where CommunityScreen.tsx's own feed-rendering gap
+    // lived: the wodBlock branch never rendered ANY media at all before
+    // this round, regardless of URL validity. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await registerCommunityPostMocks(page, USER_ID);
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      const mondayOffset = offsetToWeekday(1);
+      await page.getByTestId(`date-strip-cell-${mondayOffset}`).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await page.locator('#log-results-rounds-input').fill('5');
+      await page.locator('#log-results-kettlebell-input').fill('16');
+      await page.getByTestId('media-add').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const [fileChooser2] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 5000 }),
+        page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+      ]);
+      await fileChooser2.setFiles({ name: 'r28-wod-fixture.png', mimeType: 'image/png', buffer: ASPECT_RATIO_FIXTURE_PNG });
+      await page.waitForTimeout(500);
+
+      await page.getByTestId('post-to-community').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await page.getByText('Post', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(1500);
+
+      const wodPost = insertedPosts.find((p) => p.kind === 'wod' && p.media_url);
+      record(
+        "[post-photo/log-results] a logged WOD result's media_url is a real Storage public URL, never blob:",
+        !!wodPost &&
+          typeof wodPost.media_url === 'string' &&
+          wodPost.media_url.includes('/storage/v1/object/public/community-media/') &&
+          !wodPost.media_url.startsWith('blob:'),
+        JSON.stringify({ wodPost })
+      );
+
+      await page.waitForTimeout(600);
+      const wodOwnRects = await realLoadedImageRects(page);
+      record(
+        '[post-photo/log-results] the WOD-result post itself shows a real, loaded photo in the feed -- CommunityScreen.tsx had no thumbnail at all for this post kind before this round',
+        wodOwnRects.some((r) => r.naturalWidth === 300 && r.naturalHeight === 200),
+        JSON.stringify({ wodOwnRects })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'post-photo-log-results-feed.png') }).catch(() => {});
+      await context.close();
+    }
+
+    // --- Second account, again, now for the WOD-result post specifically. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await registerCommunityPostMocks(page, SECOND_BOOKER_ID);
+      await seedSignedInSession(page, SECOND_BOOKER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(1500);
+
+      const secondAccountWodRects = await realLoadedImageRects(page);
+      record(
+        "[post-photo/second-account] a different signed-in account also sees the WOD-result post's photo, genuinely loaded",
+        secondAccountWodRects.some((r) => r.naturalWidth === 300 && r.naturalHeight === 200),
+        JSON.stringify({ secondAccountWodRects })
+      );
+      await context.close();
+    }
+  }
+
   // --- Round 13's own regression guard: the standalone-only 100lvh fix,
   // behavioral half (the static half -- that the real @media
   // (display-mode: standalone) block exists, sizes the right selectors,
@@ -4432,14 +4680,13 @@ async function run() {
       })
     );
     // One real, already-existing post so the feed has genuine nonzero
-    // content for the tour's own stop 4 to ring -- a feed with zero posts
-    // ever is a real but separate product state (the brand new install
-    // before any member has posted anything) this round's own access
-    // change didn't create, not the "missing anchor" case the dedicated
-    // skip-filtering check below is actually about. Stateful: captures
-    // the WOD-result INSERT this block makes further down and serves it
-    // back on the next GET, so "lands in the feed" is a genuine round
-    // trip, not an assumption.
+    // content for [post/every-tier]'s own round trip below -- a feed with
+    // zero posts ever is a real but separate product state (the brand new
+    // install before any member has posted anything) this round's own
+    // access change didn't create. Stateful: captures the WOD-result
+    // INSERT this block makes further down and serves it back on the next
+    // GET, so "lands in the feed" is a genuine round trip, not an
+    // assumption.
     const insertedPosts = [];
     await page.route('**/rest/v1/community_posts*', async (route) => {
       const req = route.request();
@@ -4533,8 +4780,8 @@ async function run() {
     const stop1 = await readStop();
     const dateStripRect = await readRect('[data-testid="date-strip-scroll-wrap"]');
     record(
-      '[tour/limited-variant] stop 1 (1 OF 4) shows the limited YOUR WEEK LIVES HERE copy and rings the date strip',
-      stop1.cardText.includes('1 OF 4') &&
+      '[tour/limited-variant] stop 1 (1 OF 3) shows the limited YOUR WEEK LIVES HERE copy and rings the date strip',
+      stop1.cardText.includes('1 OF 3') &&
         stop1.cardText.includes('YOUR WEEK LIVES HERE') &&
         stop1.cardText.includes("Tap any date to sign up for class at Doc's Fitness.") &&
         rectsClose(stop1.spotlightRect, dateStripRect),
@@ -4547,36 +4794,30 @@ async function run() {
     const stop2 = await readStop();
     const wodsTabRect = await readRect('#wods-tab-tour-marker');
     record(
-      "[tour/limited-variant] stop 2 (2 OF 4) shows A TASTE OF DOC'S WODS and rings the DOC'S WODS tab specifically, not the whole bar",
-      stop2.cardText.includes('2 OF 4') && stop2.cardText.includes("A TASTE OF DOC'S WODS") && rectsClose(stop2.spotlightRect, wodsTabRect),
+      "[tour/limited-variant] stop 2 (2 OF 3) shows A TASTE OF DOC'S WODS and rings the DOC'S WODS tab specifically, not the whole bar",
+      stop2.cardText.includes('2 OF 3') && stop2.cardText.includes("A TASTE OF DOC'S WODS") && rectsClose(stop2.spotlightRect, wodsTabRect),
       JSON.stringify({ stop2, wodsTabRect })
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tour-limited-stop-2.png') }).catch(() => {});
 
+    // Round 28: stop 3 is now the FINAL stop (the old 4th stop, "THE
+    // COMMUNITY", was removed by owner decision -- its spirit folded into
+    // this stop's own copy instead). Its own NEXT button must read DONE.
     await page.getByTestId('tour-next').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(600);
     const stop3 = await readStop();
     const composerRect = await readRect('[data-testid="composer-bar"]');
+    const stop3NextLabel = await page.getByTestId('tour-next').innerText().catch(() => '');
     record(
-      '[tour/limited-variant] stop 3 (3 OF 4) shows the limited LOG IT. POST IT. copy and rings the real composer',
-      stop3.cardText.includes('3 OF 4') &&
+      '[tour/limited-variant] stop 3 (3 OF 3) shows the folded-in LOG IT. POST IT. copy, its own button reads DONE, and rings the real composer',
+      stop3.cardText.includes('3 OF 3') &&
         stop3.cardText.includes('LOG IT. POST IT.') &&
-        stop3.cardText.includes("Did one of Doc's workouts? Post it.") &&
+        stop3.cardText.includes("Did one of Doc's workouts? Post it. This crew celebrates every win and shows up for each other.") &&
+        stop3NextLabel === 'DONE' &&
         rectsClose(stop3.spotlightRect, composerRect),
-      JSON.stringify({ stop3, composerRect })
+      JSON.stringify({ stop3, composerRect, stop3NextLabel })
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tour-limited-stop-3.png') }).catch(() => {});
-
-    await page.getByTestId('tour-next').click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(600);
-    const stop4 = await readStop();
-    const feedRect = await readRect('[data-testid="posts-feed"]');
-    record(
-      '[tour/limited-variant] stop 4 (4 OF 4) shows THE COMMUNITY, its own button reads DONE, and rings the real posts feed',
-      stop4.cardText.includes('4 OF 4') && stop4.cardText.includes('THE COMMUNITY') && stop4.cardText.includes('DONE') && rectsClose(stop4.spotlightRect, feedRect),
-      JSON.stringify({ stop4, feedRect })
-    );
-    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tour-limited-stop-4.png') }).catch(() => {});
 
     await page.getByTestId('tour-next').click({ timeout: 5000 }).catch(() => {}); // DONE
     await page.waitForTimeout(600);
@@ -4667,21 +4908,28 @@ async function run() {
     await page.waitForTimeout(900);
     await page.waitForTimeout(1800);
 
+    // Round 28: the limited variant's own candidate list shrank to 3 keys
+    // (date-strip, wods-tab, composer-bar — see TourContext.tsx). Forcing
+    // wods-tab missing here now leaves only 2 real stops, not 3.
     const stop1Text = await page.getByTestId('tour-card').innerText().catch(() => '');
     const dotCount1 = await page.locator('[data-testid="tour-dots"] > *').count().catch(() => -1);
     record(
-      '[tour/missing-anchor-skip] with wods-tab forced missing, the run starts at 1 OF 3 -- the candidate list already shrank, never a gap left for the missing stop',
-      stop1Text.includes('1 OF 3') && stop1Text.includes('YOUR WEEK LIVES HERE') && dotCount1 === 3,
+      '[tour/missing-anchor-skip] with wods-tab forced missing, the run starts at 1 OF 2 -- the candidate list already shrank, never a gap left for the missing stop',
+      stop1Text.includes('1 OF 2') && stop1Text.includes('YOUR WEEK LIVES HERE') && dotCount1 === 2,
       JSON.stringify({ stop1Text, dotCount1 })
     );
 
     await page.getByTestId('tour-next').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(600);
     const stop2Text = await page.getByTestId('tour-card').innerText().catch(() => '');
+    const stop2NextLabel = await page.getByTestId('tour-next').innerText().catch(() => '');
     record(
-      "[tour/missing-anchor-skip] NEXT from stop 1 lands directly on the composer stop (2 OF 3) -- the missing wods-tab stop never rendered at all",
-      stop2Text.includes('2 OF 3') && stop2Text.includes('LOG IT. POST IT.') && !stop2Text.includes("A TASTE OF DOC'S WODS"),
-      JSON.stringify({ stop2Text })
+      "[tour/missing-anchor-skip] NEXT from stop 1 lands directly on the composer stop (2 OF 2, its own button reads DONE) -- the missing wods-tab stop never rendered at all",
+      stop2Text.includes('2 OF 2') &&
+        stop2Text.includes('LOG IT. POST IT.') &&
+        !stop2Text.includes("A TASTE OF DOC'S WODS") &&
+        stop2NextLabel === 'DONE',
+      JSON.stringify({ stop2Text, stop2NextLabel })
     );
     // Same SPOTLIGHT_PADDING (10px, phone viewport) expansion as the
     // [tour/limited-variant] block's own rectsClose above -- the spotlight

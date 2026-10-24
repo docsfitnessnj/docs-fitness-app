@@ -78,7 +78,12 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
         onPress: () => {
           runPost(() => {
             markCompleteIfNeeded();
-            addWodResultPost(
+            // Awaited by useActionCompletion's own run() -- see
+            // CommunityContext.tsx's addWodResultPost, which now uploads a
+            // locally-picked photo/video to real Storage before writing
+            // the post, so POSTED (and the modal closing) waits for that
+            // to actually finish.
+            return addWodResultPost(
               displayName,
               title,
               { workoutTitle, dateLabel, notes: log.notes.trim(), resultsLine: formatResultsLine(log) },

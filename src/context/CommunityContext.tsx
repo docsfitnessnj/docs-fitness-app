@@ -3,8 +3,40 @@ import { useAuth } from './AuthContext';
 import { MediaAttachment } from '../lib/media';
 import { loadJSON, saveJSON } from '../lib/storage';
 import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
+import { showAlert } from '../lib/alert';
 
 const LAST_VIEWED_STORAGE_KEY = 'docsfitness.communityLastViewed.v1';
+
+// Round 28 root cause: a web-picked photo/video was never actually
+// uploaded anywhere -- addTextPost/addWodResultPost/updateTextPost wrote
+// `media.uri` straight into `media_url`, and on web that's a
+// `URL.createObjectURL()` blob: URL, valid only inside the browser
+// document that created it (documented as a known, not-yet-fixed gap
+// since Round 18). It rendered fine for the posting member, in the same
+// session, right up until a reload, a different device, or a different
+// account tried to load that same URL and got nothing -- exactly "photos
+// silently vanish for every member." This uploads any locally-picked
+// (blob:) media to the real `community-media` Storage bucket
+// (migration_026.sql) before it's ever written to the database, the same
+// shape useGroupChat.ts's uploadGroupChatFile already uses for chat
+// media. A `uri` that isn't a blob: URL (editing a post without touching
+// its existing already-durable media, or a native file:// URI) passes
+// through untouched -- there's nothing local left to upload.
+const COMMUNITY_MEDIA_BUCKET = 'community-media';
+
+async function uploadCommunityMedia(userId: string, media: MediaAttachment): Promise<MediaAttachment> {
+  if (!media.uri.startsWith('blob:')) return media;
+  const response = await fetch(media.uri);
+  const blob = await response.blob();
+  const extension = media.type === 'video' ? 'mp4' : blob.type.includes('png') ? 'png' : 'jpg';
+  const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+  const { error } = await supabase.storage
+    .from(COMMUNITY_MEDIA_BUCKET)
+    .upload(path, blob, { upsert: false, contentType: blob.type || undefined, cacheControl: `${60 * 60 * 24 * 365}` });
+  if (error) throw error;
+  const { data } = supabase.storage.from(COMMUNITY_MEDIA_BUCKET).getPublicUrl(path);
+  return { ...media, uri: data.publicUrl };
+}
 
 export type Comment = {
   id: string;
@@ -74,9 +106,9 @@ type CommunityContextValue = {
   // `author` is accepted for compatibility with existing call sites, but
   // ignored — the real author is always the signed-in member (author_id =
   // auth.uid(), enforced by RLS), never whatever string is passed in.
-  addTextPost: (author: string, title: string, text: string, category?: string, media?: MediaAttachment | null) => void;
-  addWodResultPost: (author: string, title: string, meta: WodPostMeta, media?: MediaAttachment | null) => void;
-  updateTextPost: (postId: string, title: string, text: string, media?: MediaAttachment | null) => void;
+  addTextPost: (author: string, title: string, text: string, category?: string, media?: MediaAttachment | null) => Promise<void>;
+  addWodResultPost: (author: string, title: string, meta: WodPostMeta, media?: MediaAttachment | null) => Promise<void>;
+  updateTextPost: (postId: string, title: string, text: string, media?: MediaAttachment | null) => Promise<void>;
   deletePost: (postId: string) => void;
   // Toggles the given reaction off if this viewer already placed it, on
   // otherwise — the ❤️ pill is this feed's "like," using the exact same
@@ -281,28 +313,46 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       refetch();
     };
 
+    // Shared by every write path below -- uploads a locally-picked (blob:)
+    // attachment to real Storage first, and tells the member plainly if
+    // that upload itself fails (a real new failure mode this round
+    // introduces, distinct from the write afterward) rather than silently
+    // posting with no media or leaving them guessing why POST never
+    // completed.
+    const resolveMedia = async (media: MediaAttachment | null | undefined): Promise<MediaAttachment | null> => {
+      if (!media || !user) return media ?? null;
+      try {
+        return await uploadCommunityMedia(user.id, media);
+      } catch (uploadError) {
+        showAlert('Photo Didn’t Upload', "Your post's photo or video couldn't be uploaded. Try again.");
+        throw uploadError;
+      }
+    };
+
     return {
       loading,
       error,
       posts,
-      addTextPost: (_author, title, text, category = 'General', media = null) => {
-        insertPost({
+      addTextPost: async (_author, title, text, category = 'General', media = null) => {
+        const resolved = await resolveMedia(media);
+        await insertPost({
           title: title.trim() || text.trim().slice(0, 60),
           body: text,
           category,
           kind: 'text',
-          media_url: media?.uri ?? null,
-          media_type: media?.type ?? null,
+          media_url: resolved?.uri ?? null,
+          media_type: resolved?.type ?? null,
         });
       },
-      addWodResultPost: (_author, title, meta, media = null) => {
-        insertPost({
+      addWodResultPost: async (_author, title, meta, media = null) => {
+        const resolved = await resolveMedia(media);
+        await insertPost({
           title: title.trim() || meta.workoutTitle,
           body: '',
           category: 'Workout',
           kind: 'wod',
-          media_url: media?.uri ?? null,
-          media_type: media?.type ?? null,
+          media_url: resolved?.uri ?? null,
+          media_type: resolved?.type ?? null,
           workout_title: meta.workoutTitle,
           workout_notes: meta.notes,
           workout_results_line: meta.resultsLine ?? null,
@@ -312,8 +362,9 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         if (!user) return;
         const patch: Record<string, unknown> = { title: title.trim() || text.trim().slice(0, 60), body: text };
         if (media !== undefined) {
-          patch.media_url = media?.uri ?? null;
-          patch.media_type = media?.type ?? null;
+          const resolved = await resolveMedia(media);
+          patch.media_url = resolved?.uri ?? null;
+          patch.media_type = resolved?.type ?? null;
         }
         await supabase.from('community_posts').update(patch).eq('id', postId);
         refetch();

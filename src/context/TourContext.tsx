@@ -20,13 +20,18 @@ export type TourTargetKey = (typeof TOUR_TARGET_KEYS)[number];
 // Round 27: full access members keep the original 4-stop tour (anchors:
 // story ring, date strip, composer, the whole tab bar). Booking tier and
 // online free members -- anyone without fullContentAccess -- get a
-// different 4-stop variant pointed at what's actually theirs to use: the
-// date strip (booking), the DOC'S WODS tab (their 2 free weekly workouts),
-// the composer (open to every tier as of this round), and the posts feed
-// itself. TourOverlay owns the per-stop title/body copy for each variant;
-// this file only owns which ANCHORS each variant walks, in order.
+// different variant pointed at what's actually theirs to use: the date
+// strip (booking), the DOC'S WODS tab (their 2 free weekly workouts), and
+// the composer (open to every tier as of Round 27). TourOverlay owns the
+// per-stop title/body copy for each variant; this file only owns which
+// ANCHORS each variant walks, in order.
+//
+// Round 28: dropped the limited variant's own 4th stop (the posts feed,
+// "THE COMMUNITY") by owner decision -- its spirit folded into the
+// composer stop's own copy instead (see TourOverlay.tsx). Down to 3
+// anchors; the full-access variant is untouched.
 const FULL_ACCESS_STOPS: TourTargetKey[] = ['story-ring', 'date-strip', 'composer-bar', 'tab-bar'];
-const LIMITED_ACCESS_STOPS: TourTargetKey[] = ['date-strip', 'wods-tab', 'composer-bar', 'posts-feed'];
+const LIMITED_ACCESS_STOPS: TourTargetKey[] = ['date-strip', 'wods-tab', 'composer-bar'];
 
 export type TourVariant = 'full' | 'limited';
 

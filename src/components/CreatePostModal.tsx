@@ -77,11 +77,14 @@ export function CreatePostModal({ visible, onClose, editingPost }: Props) {
   const handleSubmit = () => {
     if (!canSubmit) return;
     runSubmit(() => {
+      // Awaited by useActionCompletion's own run() -- the POSTED/SAVED
+      // acknowledgment (and the modal closing behind it) now genuinely
+      // waits for the real upload + database write to finish, not just
+      // for this function to return.
       if (editingPost) {
-        updateTextPost(editingPost.id, title, body.trim(), media);
-      } else {
-        addTextPost(displayName, title, body.trim(), undefined, media);
+        return updateTextPost(editingPost.id, title, body.trim(), media);
       }
+      return addTextPost(displayName, title, body.trim(), undefined, media);
     }, () => {
       reset();
       onClose();
