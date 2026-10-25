@@ -221,9 +221,17 @@ type RootNavigatorProps = {
   // tab bar rule — it's its own space, not a second navigation, so the tab
   // bar hides while it's open and reappears once the drawer closes.
   tabBarHidden: boolean;
+  // Called on every tab button press, active tab or not (react-navigation's
+  // own `tabPress` event, not a route-change effect — the latter never
+  // fires for a press on the ALREADY-active tab, which is exactly the case
+  // a real device reported: Movement Vault open, tapping the tab it was
+  // opened from lit the tab gold with no visible change, because nothing
+  // closed the overlay still covering that tab's own content). See
+  // `closeAllOverlays` in MainApp for what this actually does.
+  onTabPress: () => void;
 };
 
-function RootNavigator({ tabBarHidden }: RootNavigatorProps) {
+function RootNavigator({ tabBarHidden, onTabPress }: RootNavigatorProps) {
   const membership = useMembership();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useTabBarHeight();
@@ -245,6 +253,7 @@ function RootNavigator({ tabBarHidden }: RootNavigatorProps) {
         tabBarActiveTintColor: colors.gold,
         tabBarInactiveTintColor: colors.textMuted,
       }}
+      screenListeners={{ tabPress: onTabPress }}
     >
       {TABS.map(({ name, navLabel, renderIcon, component, isLocked }) => {
         const locked = isLocked(membership);
@@ -563,7 +572,7 @@ function MainApp({
   const [searchMemberId, setSearchMemberId] = useMemberProfileModalState();
   const { posts } = useCommunity();
   const { isComplete: isDeckCardComplete, toggleComplete: toggleDeckCardComplete } = useDeckProgress();
-  const { communityAccess } = useMembership();
+  const { communityAccess, fullContentAccess } = useMembership();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [membershipsOpen, setMembershipsOpen, membershipsMode] = useMembershipsModalState();
@@ -609,6 +618,49 @@ function MainApp({
     navigateToTab('Community');
   };
 
+  // Round 30: a real device reported that tapping a bottom tab while
+  // Movement Vault's detail view was open lit the tab gold (react-navigation
+  // genuinely registered the press and switched its own active route) but
+  // nothing on screen changed — Movement Vault, a non-fullBleed ScreenOverlay
+  // (see its own comment: "stops just short of the bottom tab bar... the
+  // user can jump straight to another tab without first backing out"),
+  // kept covering the newly-active tab's content with nothing closing it.
+  // Every ScreenOverlay rendered below that leaves the tab bar visible when
+  // opened from its normal (non-sidebar) entry point has the identical
+  // structural gap — none of them close themselves on a tab press, since
+  // nothing needed to before this bug was found. This one function, wired
+  // to the Tab.Navigator's own `tabPress` event (every press, including on
+  // the already-active tab — see RootNavigator), closes every one of them
+  // unconditionally; at most one is ever actually open, so closing the rest
+  // is a no-op. Overlays that already force `tabBarHidden` (the hamburger
+  // drawer, DOC'S GROUP CHAT) are deliberately excluded — the tab bar isn't
+  // rendered at all while they're open, so a tab press can't reach it in
+  // the first place. The AppModal-based true modals (DeckCardDetailModal,
+  // PostDetailModal, InviteFriendModal) are also excluded: their own
+  // full-screen backdrop (zIndex 1000, above the tab bar's own stacking
+  // context) already wins hit-testing over the tab bar underneath, so a tap
+  // there closes the modal instead of ever reaching a tab button — verified
+  // directly with Playwright, not assumed from reading the stacking order.
+  const closeAllOverlays = () => {
+    setSearchOpen(false);
+    setSearchMemberId(null);
+    setProfileOpen(false);
+    setMembershipsOpen(false);
+    setMyWorkoutsOpen(false);
+    setCloseFriendsOpen(false);
+    setAdminRosterOpen(false);
+    setSettingsOpen(false);
+    setTrophyCaseOpen(false);
+    setMemberManagerOpen(false);
+    setFoundingFiftyAdminOpen(false);
+    setContentLibraryOpen(false);
+    setDocsInboxOpen(false);
+    setScheduleOpen(false);
+    setMovementVaultOpen(false);
+    setMessagesDraft(undefined);
+    onCloseMessages();
+  };
+
   return (
     <NavigationContainer
       ref={navigationRef}
@@ -625,7 +677,7 @@ function MainApp({
           onOpenGroupChat={activeTab === 'Community' ? onOpenGroupChat : undefined}
           onOpenDebugOverlay={Platform.OS === 'web' ? () => setDebugOverlayOpen(true) : undefined}
         />
-        <RootNavigator tabBarHidden={sidebarOpen || keyboardVisible || groupChatOpen} />
+        <RootNavigator tabBarHidden={sidebarOpen || keyboardVisible || groupChatOpen} onTabPress={closeAllOverlays} />
         {!(sidebarOpen || keyboardVisible || groupChatOpen) && (
           <SafeAreaBottomFill nativeID="tab-bar-safe-area-fill" backgroundColor={colors.card} />
         )}
@@ -656,11 +708,20 @@ function MainApp({
           zIndex 500), so its JSX position -- after Search's own ScreenOverlay
           -- is what keeps it stacked above Search. Closing any of these just
           reveals Search again exactly as it was, query and results intact. */}
+      {/* Round 30: this ONE global singleton is the real door every
+          openDeckCard() caller app-wide actually opens (Search's own DECK
+          CARDS result, same as Movement Vault's former APPEARS IN leak) --
+          gating `locked` here, once, closes every door at the single real
+          choke point instead of trusting each caller to remember to check
+          first. A limited tier (no Deck access) gets the same "JOIN THE
+          BOATHOUSE" lock treatment the Deck tab itself already shows,
+          never the real card content or its own MARK COMPLETE button. */}
       <DeckCardDetailModal
         card={deckCardId ? DECK_CARDS.find((c) => c.id === deckCardId) ?? null : null}
         onClose={() => setDeckCardId(null)}
         isComplete={deckCardId ? isDeckCardComplete(deckCardId) : false}
         onToggleComplete={() => deckCardId && toggleDeckCardComplete(deckCardId)}
+        locked={!fullContentAccess}
       />
       <PostDetailModal
         post={searchPostId ? posts.find((p) => p.id === searchPostId) ?? null : null}

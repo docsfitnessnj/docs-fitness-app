@@ -3,6 +3,7 @@ import { Pressable, ScrollView, SectionList, StyleSheet, Text, TextInput, View }
 import { Ionicons } from '@expo/vector-icons';
 import { ModalHeader } from '../components/ModalHeader';
 import { MovementVideoPlayer } from '../components/movement/MovementVideoPlayer';
+import { useMembership } from '../context/MembershipContext';
 import { getCurrentWeek } from '../data/content';
 import { deckCardLabel } from '../data/deckCards';
 import { Movement, getMovementById, searchMovements } from '../data/movements';
@@ -44,6 +45,20 @@ function buildSections(movements: Movement[]): Section[] {
 }
 
 export function MovementVaultScreen({ visible, onClose, initialMovementId, initialReturnLabel }: Props) {
+  // Round 30, owner decision, final: APPEARS IN is shown only to accounts
+  // with full workout access (paid online, in person unlimited, active
+  // trial, admin) -- every limited tier (online free, ten pack, drop in,
+  // guest, booking only) gets no APPEARS IN section at all on movement
+  // detail, no locked rows, no teaser list, regardless of reference type.
+  // A limited-access account's deck card reference used to open the real
+  // DeckCardDetailModal with full workout content and a working MARK
+  // COMPLETE button -- a paywall leak, since that account has no Deck
+  // access at all. Hiding the section here is the first of two closures:
+  // the deck card door itself is also gated directly, in App.tsx (see its
+  // own comment there) -- hiding the section here is belt, that gate is
+  // suspenders, since a future caller of findReferencesForMovement
+  // shouldn't have to remember this rule to stay safe.
+  const { fullContentAccess } = useMembership();
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | undefined>(initialMovementId);
   // True while the detail view on screen is still the one the vault was
@@ -124,7 +139,7 @@ export function MovementVaultScreen({ visible, onClose, initialMovementId, initi
             </>
           )}
 
-          {references.length > 0 && (
+          {fullContentAccess && references.length > 0 && (
             <>
               <Text style={styles.referencesHeading}>APPEARS IN</Text>
               {references.map((ref, index) => (
