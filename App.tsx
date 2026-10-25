@@ -152,7 +152,7 @@ const TABS: TabConfig[] = [
   {
     name: 'DocsWods',
     title: "DOC'S WODS",
-    navLabel: "DOC'S WODS",
+    navLabel: 'WORKOUT OF THE DAY',
     renderIcon: ({ color, size }) => <Ionicons name="flame-outline" size={size} color={color} />,
     component: DocsWodsScreen,
     isLocked: (m) => m.wodAccessLevel === 'none',
@@ -160,7 +160,7 @@ const TABS: TabConfig[] = [
   {
     name: 'DocsCows',
     title: "DOC'S COWS + LIVE LEADERBOARD",
-    navLabel: 'WEEKLY CHALLENGE',
+    navLabel: "DOC'S COWS",
     renderIcon: ({ color, size }) => <Ionicons name="trophy-outline" size={size} color={color} />,
     component: DocsCowsScreen,
     isLocked: (m) => !m.cowsAccess,

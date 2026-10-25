@@ -21,7 +21,7 @@ export type TourTargetKey = (typeof TOUR_TARGET_KEYS)[number];
 // story ring, date strip, composer, the whole tab bar). Booking tier and
 // online free members -- anyone without fullContentAccess -- get a
 // different variant pointed at what's actually theirs to use: the date
-// strip (booking), the DOC'S WODS tab (their 2 free weekly workouts), and
+// strip (booking), the WORKOUT OF THE DAY tab (their 2 free weekly workouts), and
 // the composer (open to every tier as of Round 27). TourOverlay owns the
 // per-stop title/body copy for each variant; this file only owns which
 // ANCHORS each variant walks, in order.
