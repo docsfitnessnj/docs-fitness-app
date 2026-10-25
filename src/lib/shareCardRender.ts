@@ -367,7 +367,6 @@ const BORDER_WIDTH = 7;
 const BORDER_RADIUS = 79;
 const CONTENT_INSET = 93; // card edge to content edge, padding(86) + border(7)
 const CONTENT_WIDTH = CARD_WIDTH - CONTENT_INSET * 2; // 894 -- matches the measured progress-bar width exactly
-const BACKDROP_COLOR = '#000000'; // fills the canvas outside the rounded card -- baked into the real exported PNG, confirmed directly against the reference images' own corner pixels
 
 const EYEBROW_INK_TOP = 121;
 const GAP_EYEBROW_WAVE = 71;
@@ -466,25 +465,22 @@ function drawFooter(ctx: CanvasRenderingContext2D, topY: number, centerX: number
   drawCenteredInkTop(ctx, FOOTER_LINE_2, centerX, brandBottom + GAP_BRAND_HANDLE, `${HANDLE_FONT}px ${fonts.labelSemiBold}`, handleColor, HANDLE_LETTER_SPACING);
 }
 
-// Clips the canvas to a rounded rect and fills the exterior with the real
-// exported image's own black backdrop -- confirmed directly against the
-// reference PNGs' own corner pixels, which show a solid dark fill outside
-// the rounded card, not transparency (these are flat RGB PNGs with no
-// alpha channel at all). The on-screen preview's own DOM wrapper no longer
-// needs its own CSS rounding -- this canvas now bakes the real card shape
-// into the bitmap itself, so the exported/shared/saved image already has
-// the correct rounded-corner-on-black look without any further processing.
-function clipToRoundedCard(ctx: CanvasRenderingContext2D, height: number) {
-  ctx.fillStyle = BACKDROP_COLOR;
-  ctx.fillRect(0, 0, CARD_WIDTH, height);
-  roundRect(ctx, 0, 0, CARD_WIDTH, height, BORDER_RADIUS);
-  ctx.clip();
-}
+// Round 33 corners (owner decision, final): the exported canvas is now a
+// plain, full-bleed rectangle filled edge-to-edge with the card's own
+// background color -- no clip, no separate backdrop fill. The black
+// corner notches the "polish" round baked in were a misreading of the
+// reference PNGs: that black was the owner's own dark gallery page
+// showing through a screenshot, not part of the approved card design.
+// There is nothing left for a clip-to-rounded-rect step to do -- the
+// rounded-CARD impression comes entirely from strokeRoundedBorder()
+// below, inset from the edge; the corners beyond that stroke simply
+// continue in the same background color as the rest of the card, for
+// every variant (including the two black colorways, where this is
+// invisible, and the deck card, whose "background" is white).
 
-// The card's own thin edge border -- inset by half the stroke width so the
-// full stroke stays inside the rounded-rect clip region (a stroke centers
-// on its own path, so an un-inset path would paint half the stroke outside
-// the clip and get silently cut off).
+// The card's own thin edge border, inset by half the stroke width (a
+// stroke centers on its own path, so an un-inset path would paint half
+// the stroke outside the canvas and get silently clipped by it).
 function strokeRoundedBorder(ctx: CanvasRenderingContext2D, color: string, height: number) {
   ctx.strokeStyle = color;
   ctx.lineWidth = BORDER_WIDTH;
@@ -496,7 +492,6 @@ async function drawStandardCard(ctx: CanvasRenderingContext2D, payload: Standard
   const { colorway, title, date, workoutNumber } = payload;
   const centerX = CARD_WIDTH / 2;
 
-  clipToRoundedCard(ctx, CARD_HEIGHT);
   ctx.fillStyle = colorway.background;
   ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
   strokeRoundedBorder(ctx, colorway.border, CARD_HEIGHT);
@@ -596,7 +591,6 @@ async function drawDeckCard(ctx: CanvasRenderingContext2D, payload: DeckCardPayl
   const rank = card.joker ? 'JOKER' : card.rank;
   const suit = card.joker ? '' : card.suit ?? '';
 
-  clipToRoundedCard(ctx, DECK_CARD_HEIGHT);
   ctx.fillStyle = colors.white;
   ctx.fillRect(0, 0, CARD_WIDTH, DECK_CARD_HEIGHT);
 

@@ -174,7 +174,7 @@ export function CompletionShareCardOverlay() {
         <Ionicons name="close" size={26} color={colors.white} />
       </AppPressable>
 
-      <View style={[styles.cardWrap, { height: previewHeight }]}>
+      <View style={[styles.cardWrap, { height: previewHeight }]} testID="completion-share-card-wrap">
         <View nativeID="completion-share-card-canvas-host" style={styles.canvasHost} testID="completion-share-card-canvas" />
         {!ready && (
           <View style={styles.loadingOverlay} testID="completion-share-card-loading">
@@ -240,13 +240,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.14)',
   },
   cardWrap: {
-    // No borderRadius/overflow:hidden here anymore -- the canvas itself now
-    // bakes the real rounded-card shape (and its own black backdrop
-    // outside the rounded corners) directly into the bitmap, matching the
-    // real exported/shared/saved image exactly. See shareCardRender.ts's
-    // clipToRoundedCard().
+    // Round 33 corners: the exported canvas bitmap is now a plain
+    // full-bleed rectangle (see shareCardRender.ts) -- it no longer bakes
+    // its own rounded-corner clip into the bitmap. The on-screen preview
+    // rounds it here instead, purely as CSS, so the modal's own green
+    // backdrop (styles.root) shows through the corners rather than black.
+    // This is cosmetic-only: the real exported/shared/saved PNG is already
+    // correct on its own (no black notches) regardless of this wrapper.
     width: PREVIEW_MAX_WIDTH,
-    backgroundColor: '#000000',
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: colors.greenDeep,
   },
   canvasHost: {
     width: '100%',

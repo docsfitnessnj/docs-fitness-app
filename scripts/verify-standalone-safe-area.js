@@ -5784,6 +5784,42 @@ async function run() {
 
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'share-card-modal.png') }).catch(() => {});
 
+    // Round 33 corners: the on-screen PREVIEW's own DOM wrapper
+    // (cardWrap, testID completion-share-card-wrap) must round its own
+    // corners via CSS and show the modal's green backdrop through them --
+    // the canvas bitmap inside it is now a plain rectangle by design, so
+    // nothing but this wrapper's own clip gives the preview a rounded
+    // look any more. Checked two ways: the wrapper's own computed style
+    // actually clips (borderRadius>0, overflow hidden) and paints the
+    // modal's real green, not black; and a cropped screenshot of just the
+    // wrapper's own corner pixel (outside any possible card content) for
+    // direct visual proof, saved alongside the full-modal screenshot above.
+    const wrapStyle = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="completion-share-card-wrap"]');
+      if (!el) return null;
+      const cs = window.getComputedStyle(el);
+      return { borderRadius: cs.borderRadius, overflow: cs.overflow, backgroundColor: cs.backgroundColor };
+    });
+    record(
+      '[share-card/preview-corners] the preview wrapper rounds its own corners via CSS and shows the modal\'s green backdrop, never black',
+      !!wrapStyle &&
+        parseFloat(wrapStyle.borderRadius) > 0 &&
+        wrapStyle.overflow === 'hidden' &&
+        wrapStyle.backgroundColor === 'rgb(5, 76, 61)',
+      JSON.stringify({ wrapStyle })
+    );
+    if (SCREENSHOT_DIR) {
+      const wrapBox = await page.getByTestId('completion-share-card-wrap').boundingBox().catch(() => null);
+      if (wrapBox) {
+        await page
+          .screenshot({
+            path: path.join(SCREENSHOT_DIR, 'share-card-preview-corner-zoom.png'),
+            clip: { x: wrapBox.x, y: wrapBox.y, width: Math.min(60, wrapBox.width), height: Math.min(60, wrapBox.height) },
+          })
+          .catch(() => {});
+      }
+    }
+
     // [share-card/close]: the standing popup rule -- X closes with zero
     // side effects on the completion itself, and never reappears on its
     // own for this same completion.
@@ -5909,6 +5945,17 @@ async function run() {
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, `share-card-deck-${fixture.label.replace(' ', '-')}.png`) }).catch(() => {});
 
+    // Round 33 corners: the deck card's own notch (same BORDER_RADIUS,
+    // same top-left corner geometry as the standard card -- only the
+    // canvas HEIGHT differs between variants) must be white, matching its
+    // own card background, never black.
+    const deckCornerSample = await sampleCanvasPixel(page, 3, 3);
+    record(
+      `[share-card/corner-deck-${fixture.label.replace(' ', '-')}] the deck card's corner notch is white, never black`,
+      closeToRgb(deckCornerSample, [255, 255, 255]),
+      JSON.stringify({ deckCornerSample })
+    );
+
     await context.close();
   }
 
@@ -5956,10 +6003,9 @@ async function run() {
 
     // Round 33 polish's own exact spec hexes (measured directly off the
     // reference PNGs too): Bright Yellow's bg is #FFD520 (goldBright), not
-    // the shipped-round's old #E5B80B guess; Black's bg is #0B0B0B, not
-    // pure #000000 -- that's the canvas's own black BACKDROP color now
-    // (see clipToRoundedCard), a different thing from either colorway's
-    // actual card background.
+    // the shipped-round's old #E5B80B guess; Black's bg is #0B0B0B, a real
+    // colorway background, distinct from pure #000000 (which, since Round
+    // 33 corners, is no longer painted anywhere on this canvas at all).
     const expectedBackgrounds = [
       [7, 102, 82], // Augusta Green -- #076652
       [255, 213, 32], // Bright Yellow -- #FFD520
@@ -5988,6 +6034,18 @@ async function run() {
         `[share-card/colorway-${i}] colorway ${STANDARD_COLORWAY_IDS[i]} renders the real background color on the canvas`,
         cardVisible && !!debugInfo && debugInfo.colorwayId === STANDARD_COLORWAY_IDS[i] && closeToRgb(bgSample, expectedBackgrounds[i]),
         JSON.stringify({ cardVisible, debugInfo, bgSample })
+      );
+      // Round 33 corners: (3,3) sits outside BORDER_RADIUS's own rounded
+      // arc (center (79,79), radius 79 -- (3,3) is ~107px from that
+      // center) -- exactly the notch the "polish" round's clipToRoundedCard
+      // painted solid black. It must now read the card's own background
+      // color, continuing edge to edge with zero clip, same as everywhere
+      // else on the card.
+      const cornerSample = await sampleCanvasPixel(page, 3, 3);
+      record(
+        `[share-card/corner-${i}] colorway ${STANDARD_COLORWAY_IDS[i]}'s corner notch is the card's own background, never black`,
+        closeToRgb(cornerSample, expectedBackgrounds[i]),
+        JSON.stringify({ cornerSample, expected: expectedBackgrounds[i] })
       );
       if (SCREENSHOT_DIR)
         await page.screenshot({ path: path.join(SCREENSHOT_DIR, `share-card-colorway-${STANDARD_COLORWAY_IDS[i]}.png`) }).catch(() => {});
