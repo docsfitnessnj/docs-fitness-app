@@ -5662,6 +5662,31 @@ async function run() {
   };
   const closeToRgb = (sample, [r, g, b], tolerance = 12) =>
     !!sample && Math.abs(sample[0] - r) <= tolerance && Math.abs(sample[1] - g) <= tolerance && Math.abs(sample[2] - b) <= tolerance;
+  // Scans a full horizontal row for ANY pixel that isn't close to
+  // `bgRgb`, instead of trusting one fixed x coordinate -- centered text
+  // drawn as a single fillText() call (no per-char letter-spacing) can
+  // legitimately land a dead-center pixel column in the gap BETWEEN two
+  // glyphs depending on the exact string's own measured width (confirmed
+  // directly: x=540 at y=890 landed squarely in the gap between "No." and
+  // "1" for one real title/count combination, a false negative a single-
+  // point sample can never rule out for arbitrary real content).
+  const canvasRowHasInk = async (page, y, bgRgb, xStart = 80, xEnd = 1000, tolerance = 20) => {
+    return page.evaluate(
+      ({ y, bgRgb, xStart, xEnd, tolerance }) => {
+        const canvas = document.querySelector('#completion-share-card-canvas-host canvas');
+        if (!canvas) return false;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return false;
+        const data = ctx.getImageData(xStart, y, xEnd - xStart, 1).data;
+        for (let i = 0; i < data.length; i += 4) {
+          const diff = Math.abs(data[i] - bgRgb[0]) + Math.abs(data[i + 1] - bgRgb[1]) + Math.abs(data[i + 2] - bgRgb[2]);
+          if (diff > tolerance) return true;
+        }
+        return false;
+      },
+      { y, bgRgb, xStart, xEnd, tolerance }
+    );
+  };
   // drawShareCard() is async -- it awaits the kettlewave asset's own
   // decode before drawing the mark/counter/progress block, so a fixed
   // waitForTimeout after tapping MARK COMPLETE can land before that
@@ -5735,6 +5760,28 @@ async function run() {
       (await page.getByTestId('completion-share-card-close').isVisible().catch(() => false));
     record('[share-card/wod] SHARE TO STORY, SAVE, and the close X are all present', buttonsPresent, JSON.stringify({ buttonsPresent }));
 
+    // Round 33 polish: the WORKOUT No. line was missing entirely from the
+    // shipped layout -- this is the brief's own explicitly-requested
+    // regression check that it actually renders. A canvas has no DOM text
+    // for a locator to read, so this scans a real row of canvas pixels
+    // (y=890, inside the No. line's own ink per shareCardRender.ts's
+    // measured gap constants -- date inkTop 793 + GAP_DATE_NO 26 lands the
+    // No. line's own ink band at roughly 848-926) for ANY pixel that isn't
+    // the colorway's own background (sampled from the same row at x=950,
+    // well outside the centered text's own footprint) -- if something
+    // besides background painted on that row, the No. line actually
+    // rendered. A single fixed-x pixel sample isn't reliable here: it can
+    // land in the gap between two glyphs depending on the exact string's
+    // own width (confirmed directly -- x=540 landed exactly between "No."
+    // and the digit for one real title/count combination).
+    const noLineBackgroundSample = await sampleCanvasPixel(page, 950, 890);
+    const noLineHasInk = await canvasRowHasInk(page, 890, noLineBackgroundSample || [0, 0, 0]);
+    record(
+      "[share-card/wod] the WORKOUT No. line actually renders ink, not just blank background",
+      noLineHasInk,
+      JSON.stringify({ noLineHasInk, noLineBackgroundSample })
+    );
+
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'share-card-modal.png') }).catch(() => {});
 
     // [share-card/close]: the standing popup rule -- X closes with zero
@@ -5804,7 +5851,7 @@ async function run() {
   // stroke, not just the debug mirror, so a bug in drawDeckCard's own ink
   // logic (not just a copy-paste of it) would still fail this.
   for (const fixture of [
-    { id: 'A-spade', expectedInk: [0, 0, 0], label: 'black suit' },
+    { id: 'A-spade', expectedInk: [18, 33, 28], label: 'black suit' },
     { id: 'A-heart', expectedInk: [200, 16, 46], label: 'red suit' },
   ]) {
     const context = await browser.newContext({ viewport: VIEWPORT });
@@ -5837,17 +5884,19 @@ async function run() {
     const cardVisible = await page.getByTestId('completion-share-card').isVisible().catch(() => false);
     const debugInfo = await readShareCardDebug(page);
     // Samples the left border stroke at mid-height. shareCardRender.ts's
-    // drawDeckCard strokes a rect at x=28 (borderInset) with lineWidth=4 --
-    // canvas centers a stroke ON its path, so the painted stroke spans
-    // x=26 to x=30; x=28 (the path's own center) is the most solidly
-    // painted pixel, while the original x=30 attempt landed right on the
-    // stroke's own outer edge and sampled background instead (the real
-    // bug this comment update fixes -- confirmed directly, not guessed,
-    // by the first run's own [255,255,255] white result). y=675 is
-    // CARD_HEIGHT/2, well clear of the corner indices.
+    // strokeRoundedBorder() strokes the rounded-rect path inset by
+    // BORDER_WIDTH/2 (3.5px) with lineWidth=BORDER_WIDTH (7) -- canvas
+    // centers a stroke ON its path, so the painted stroke spans x=0 to
+    // x=7 along a straight edge; x=4 (near the path's own center) is the
+    // most solidly painted pixel. y=756 is DECK_CARD_HEIGHT/2 (the deck
+    // card's own true 5:7-ratio center, 1512/2 -- NOT the standard card's
+    // CARD_HEIGHT/2, which this deck card no longer shares since the
+    // round 33 polish gave the deck its own real playing-card aspect
+    // ratio), well clear of both the rounded corners and the corner
+    // indices.
     await waitForShareCardReady(page);
-    const inkSample = await sampleCanvasPixel(page, 28, 675);
-    const expectedInkHex = fixture.expectedInk[0] === 0 ? '#000000' : '#c8102e';
+    const inkSample = await sampleCanvasPixel(page, 4, 756);
+    const expectedInkHex = fixture.expectedInk[0] === 18 ? '#12211c' : '#c8102e';
     record(
       `[share-card/deck-${fixture.label.replace(' ', '-')}] completing a ${fixture.label} Deck card opens the white playing-card variant with the correct suit ink`,
       cardVisible &&
@@ -5905,12 +5954,18 @@ async function run() {
       await page.waitForTimeout(400);
     }
 
+    // Round 33 polish's own exact spec hexes (measured directly off the
+    // reference PNGs too): Bright Yellow's bg is #FFD520 (goldBright), not
+    // the shipped-round's old #E5B80B guess; Black's bg is #0B0B0B, not
+    // pure #000000 -- that's the canvas's own black BACKDROP color now
+    // (see clipToRoundedCard), a different thing from either colorway's
+    // actual card background.
     const expectedBackgrounds = [
-      [7, 102, 82], // Augusta Green
-      [229, 184, 11], // Bright Yellow
-      [0, 0, 0], // Black
-      [7, 102, 82], // Green with the yellow wave
-      [0, 0, 0], // Black with the yellow wave
+      [7, 102, 82], // Augusta Green -- #076652
+      [255, 213, 32], // Bright Yellow -- #FFD520
+      [11, 11, 11], // Black -- #0B0B0B
+      [7, 102, 82], // Green with the yellow wave -- #076652
+      [11, 11, 11], // Black with the yellow wave -- #0B0B0B
     ];
     const weekdayTargets = [1, 2, 3, 4, 5]; // Mon-Fri, each a distinct real WOD day
 

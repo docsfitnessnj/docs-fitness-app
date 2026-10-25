@@ -1,23 +1,35 @@
 import { Image as RNImage } from 'react-native';
-import { DeckCardData, isRedSuit, deckCardLabel } from '../data/deckCards';
+import { DeckCardData, isRedSuit } from '../data/deckCards';
 import { colors, fonts } from '../theme';
 import { HUNDRED_DOWN_TARGET } from '../context/BadgeContext';
 
-// Round 33: THE COMPLETION SHARE CARD's own renderer. One canvas, drawn
-// once at full export resolution (1080x1350 -- a clean 4:5 ratio, already
-// well past Instagram story's "at least 1080 wide" bar) and then simply
-// displayed smaller via CSS on screen. Because the on-screen preview and
-// the exported PNG are the exact same canvas pixels, "the on screen
-// preview and the exported image must look identical" is true by
-// construction, not by separately keeping two render paths in sync.
+// Round 33 polish: THE COMPLETION SHARE CARD's renderer, rebuilt to match
+// the owner's seven committed reference renders pixel-for-pixel (see
+// design-references/ at the repo root -- never shipped in the app bundle).
+// Every constant below (ink-band positions, gaps, font sizes, colors) was
+// measured directly off those PNGs (Python/PIL row-band + pixel-color
+// scans), then cross-checked against the written "exact spec" prose in the
+// round's own brief -- the two agreed almost exactly everywhere except the
+// deck card's own aspect ratio (the written spec implied it shared the
+// standard card's 4:5 canvas; the real exported deck references are a true
+// 5:7 playing-card ratio, confirmed on both samples) and the written
+// "flexible stretch zone between the date and the No. line" (empirically,
+// both a 1-line-title standard sample and a 2-line-title deck sample
+// produce the EXACT SAME date-to-No. gap, 26px -- meaning a plain,
+// uniform, top-down additive layout using identical gap constants for both
+// variants already reproduces both references exactly, with no special
+// flex-grow case needed at all; see AGENTS.md for the full writeup). Where
+// the images and the prose disagreed, the images were treated as
+// authoritative, per this round's own explicit instruction.
 export const CARD_WIDTH = 1080;
-export const CARD_HEIGHT = 1350; // 4:5
+export const CARD_HEIGHT = 1357; // standard card: 4:5-ish, matches the 5 standard references exactly
+export const DECK_CARD_HEIGHT = 1512; // deck card: a true 5:7 playing-card ratio, matches both deck references exactly
 
 const KETTLEWAVE_SOURCE = require('../../assets/brand/kettlewave-green.png');
 // The real committed ink's own color (confirmed directly against the PNG's
-// own pixel data: solid #076652 everywhere alpha > 0) -- the one case that
-// never needs a recolor pass, since colorway B (Bright Yellow bg) wants
-// exactly this native green wave.
+// own pixel data: solid #076652 everywhere alpha > 0, and the source PNG's
+// own ink fills its canvas edge-to-edge with zero internal padding -- also
+// confirmed directly) -- the one case that never needs a recolor pass.
 const KETTLEWAVE_NATIVE_HEX = colors.green;
 
 export type StandardColorwayId = 'augusta-green' | 'bright-yellow' | 'black' | 'green-yellow-wave' | 'black-yellow-wave';
@@ -27,22 +39,102 @@ export type StandardColorway = {
   background: string;
   wave: string; // hex the kettlewave mark is mechanically recolored to for this colorway
   border: string;
-  text: string;
-  textMuted: string; // a dimmer version of `text` for the eyebrow/footer
+  eyebrow: string;
+  name: string; // workout title color
+  date: string;
+  no: string; // "WORKOUT No. X" color
+  barTrack: string;
+  barFill: string;
+  road: string; // "N OF 100 · ROAD TO HUNDRED DOWN" color
+  brand: string; // "DOC'S FITNESS APP"
+  handle: string; // "@docsfitness_nj"
 };
 
-const BLACK = '#000000';
-
-// THE FIVE COLORWAYS, word for word per the approved spec. Order here is
-// also draw/display order wherever all five are shown together (e.g. this
-// round's own screenshot sweep) -- randomized per completion is a separate
-// pickRandomColorway() below, not this array's own order.
+// THE FIVE COLORWAYS, exact hexes measured off the five committed
+// reference PNGs (design-references/reference-card-{a..e}-*.png) and
+// cross-confirmed against the brief's own color table. Order here is also
+// draw/display order wherever all five are shown together (this round's
+// own screenshot sweep) -- randomized per completion is pickRandomColorway()
+// below, not this array's own order.
 export const STANDARD_COLORWAYS: StandardColorway[] = [
-  { id: 'augusta-green', background: colors.green, wave: colors.white, border: colors.gold, text: colors.white, textMuted: 'rgba(255,255,255,0.72)' },
-  { id: 'bright-yellow', background: colors.gold, wave: KETTLEWAVE_NATIVE_HEX, border: colors.greenDeep, text: colors.greenDeep, textMuted: 'rgba(5,76,61,0.72)' },
-  { id: 'black', background: BLACK, wave: colors.white, border: colors.gold, text: colors.white, textMuted: 'rgba(255,255,255,0.72)' },
-  { id: 'green-yellow-wave', background: colors.green, wave: colors.goldBright, border: colors.goldBright, text: colors.white, textMuted: 'rgba(255,255,255,0.72)' },
-  { id: 'black-yellow-wave', background: BLACK, wave: colors.goldBright, border: colors.goldBright, text: colors.white, textMuted: 'rgba(255,255,255,0.72)' },
+  {
+    id: 'augusta-green',
+    background: colors.green, // #076652
+    wave: colors.white,
+    border: colors.gold, // #E5B80B
+    eyebrow: colors.gold,
+    name: colors.white,
+    date: '#BFD6CF',
+    no: colors.goldBright, // #FFD520
+    barTrack: colors.greenDeep, // #054C3D
+    barFill: colors.gold,
+    road: '#BFD6CF',
+    brand: colors.white,
+    handle: '#BFD6CF',
+  },
+  {
+    id: 'bright-yellow',
+    background: colors.goldBright, // #FFD520
+    wave: KETTLEWAVE_NATIVE_HEX, // #076652
+    border: colors.greenDeep, // #054C3D
+    eyebrow: colors.green,
+    name: colors.text, // #12211C
+    date: '#6B5E00',
+    no: colors.greenDeep,
+    barTrack: '#E3BC0E',
+    barFill: colors.greenDeep,
+    road: '#6B5E00',
+    brand: colors.text,
+    handle: '#6B5E00',
+  },
+  {
+    id: 'black',
+    background: '#0B0B0B',
+    wave: colors.white,
+    border: colors.gold,
+    eyebrow: colors.gold,
+    name: colors.white,
+    date: '#9a9a93',
+    no: colors.goldBright,
+    barTrack: '#2a2a28',
+    barFill: colors.gold,
+    road: '#9a9a93',
+    brand: colors.white,
+    handle: '#9a9a93',
+  },
+  {
+    // Same as augusta-green but border + wave + eyebrow go bright gold.
+    id: 'green-yellow-wave',
+    background: colors.green,
+    wave: colors.goldBright,
+    border: colors.goldBright,
+    eyebrow: colors.goldBright,
+    name: colors.white,
+    date: '#BFD6CF',
+    no: colors.goldBright,
+    barTrack: colors.greenDeep,
+    barFill: colors.gold,
+    road: '#BFD6CF',
+    brand: colors.white,
+    handle: '#BFD6CF',
+  },
+  {
+    // Same as black but border + wave + bar fill go bright gold (one more
+    // override than green-yellow-wave gets -- per spec, verbatim).
+    id: 'black-yellow-wave',
+    background: '#0B0B0B',
+    wave: colors.goldBright,
+    border: colors.goldBright,
+    eyebrow: colors.gold,
+    name: colors.white,
+    date: '#9a9a93',
+    no: colors.goldBright,
+    barTrack: '#2a2a28',
+    barFill: colors.goldBright,
+    road: '#9a9a93',
+    brand: colors.white,
+    handle: '#9a9a93',
+  },
 ];
 
 // Test-only override: `window.__shareCardForceColorwayIndex` -- the same
@@ -82,15 +174,12 @@ export function formatShareCardDate(date: Date): string {
 // this exact file. Read `.uri` straight off that shape first; only fall
 // back to RNImage.resolveAssetSource() for the numeric-asset-id shape native
 // platforms use, which this web-only file should never actually see. This
-// is the real fix for a bug caught directly, not guessed at: a first
-// version called RNImage.resolveAssetSource() unconditionally, which threw
-// `o.default.resolveAssetSource is not a function` in the real production
-// bundle (traced to how this file's particular bundle chunk tree-shook the
-// `react-native` Image import's own static method away) -- the kettlewave
-// mark, counter, and progress bar never painted because the async draw's
-// own promise rejected with nothing to catch it, leaving the loading
-// spinner up forever. Reading `.uri` directly for the shape web actually
-// produces sidesteps that broken call on the one path real members use.
+// is the fix for a real production bug caught directly (not guessed) in the
+// round that first built this feature: calling RNImage.resolveAssetSource()
+// unconditionally threw `o.default.resolveAssetSource is not a function` in
+// the real production bundle (tree-shaken away in this chunk), silently
+// stalling the card's own async draw forever behind an uncaught promise
+// rejection.
 function resolveUri(source: unknown): string {
   if (typeof source === 'string') return source;
   if (source && typeof source === 'object' && 'uri' in source) {
@@ -138,9 +227,68 @@ function getTintedKettlewave(hex: string): Promise<HTMLCanvasElement> {
   return promise;
 }
 
-// Shrinks the font size until `text` fits within `maxWidth`, so an
-// unusually long workout name (THE GAUNTLET vs. a longer Deck card title)
-// never overflows the card instead of silently clipping.
+// ---------------------------------------------------------------------
+// Ink-top-anchored text drawing. Every Y position used by this file is
+// measured from the reference PNGs as the TOP of a glyph's visible ink
+// (cap-height, since every font used here -- Bebas Neue, Barlow Condensed
+// -- is set in all-caps with no descenders in practice). Canvas has no
+// native "position by ink top" mode, so this helper measures the real,
+// currently-set font's own actualBoundingBoxAscent (the live distance from
+// baseline to the top of THIS string's own ink, for whatever font actually
+// loaded) and computes the baseline from it -- immune to font-metric
+// differences between fonts/fallbacks, unlike a hardcoded baseline offset.
+// ---------------------------------------------------------------------
+function measureAscent(ctx: CanvasRenderingContext2D, text: string): number {
+  const m = ctx.measureText(text || 'M');
+  // Some engines report 0 for an empty/space-only string's bounding box;
+  // fall back to the font's own nominal ascent so a blank line still
+  // advances the cursor sensibly instead of collapsing to zero height.
+  return m.actualBoundingBoxAscent || m.fontBoundingBoxAscent || 0;
+}
+
+// Draws `text` centered horizontally at `centerX`, with its own ink-top at
+// `inkTopY`, returns the Y of the ink's own bottom edge (for chaining the
+// next element's own margin off of).
+function drawCenteredInkTop(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  centerX: number,
+  inkTopY: number,
+  font: string,
+  color: string,
+  letterSpacing = 0
+): number {
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'alphabetic';
+  const ascent = measureAscent(ctx, text);
+  const baselineY = inkTopY + ascent;
+  if (letterSpacing === 0) {
+    ctx.textAlign = 'center';
+    ctx.fillText(text, centerX, baselineY);
+    ctx.textAlign = 'left';
+  } else {
+    // Canvas text has no native letter-spacing -- measured and drawn
+    // character by character, centered as a whole block, so condensed-caps
+    // eyebrows/footers read with the same deliberate tracking the rest of
+    // the app's Barlow Condensed labels use.
+    let totalWidth = 0;
+    for (const ch of text) totalWidth += ctx.measureText(ch).width + letterSpacing;
+    totalWidth -= letterSpacing;
+    let x = centerX - totalWidth / 2;
+    ctx.textAlign = 'left';
+    for (const ch of text) {
+      ctx.fillText(ch, x, baselineY);
+      x += ctx.measureText(ch).width + letterSpacing;
+    }
+  }
+  return baselineY;
+}
+
+// Shrinks the font size until `text` fits within `maxWidth` -- a defensive
+// fallback only, for a single "word" too wide to wrap (see wrapTitle()
+// below); never engaged by any real workout/deck-card title in this app's
+// own content today (checked directly).
 function fitFontSize(ctx: CanvasRenderingContext2D, text: string, family: string, startSize: number, minSize: number, maxWidth: number): number {
   let size = startSize;
   while (size > minSize) {
@@ -151,37 +299,28 @@ function fitFontSize(ctx: CanvasRenderingContext2D, text: string, family: string
   return size;
 }
 
-function drawCenteredText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  centerX: number,
-  y: number,
-  font: string,
-  color: string,
-  letterSpacing = 0
-) {
-  ctx.font = font;
-  ctx.fillStyle = color;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  if (letterSpacing === 0) {
-    ctx.textAlign = 'center';
-    ctx.fillText(text, centerX, y);
-    ctx.textAlign = 'left';
-    return;
+// Greedy word-wrap to AT MOST 2 lines, matching the real reference images
+// (both committed deck samples, "PRACTICE MAKES PROGRESS" and "SAMPLE
+// HEARTS CARD", wrap their own titles onto exactly two lines rather than
+// shrinking to fit one -- confirmed directly by measuring the reference
+// PNGs' own ink bands). If the first word alone is already too wide (an
+// edge case with no real content example today), it's placed on its own
+// line rather than split mid-word; fitFontSize() is the final line of
+// defense against an unreasonably long single token.
+function wrapTitle(ctx: CanvasRenderingContext2D, text: string, family: string, fontSize: number, maxWidth: number): string[] {
+  ctx.font = `${fontSize}px ${family}`;
+  if (ctx.measureText(text).width <= maxWidth) return [text];
+  const words = text.split(' ');
+  let line1 = '';
+  let i = 0;
+  for (; i < words.length; i++) {
+    const candidate = line1 ? `${line1} ${words[i]}` : words[i];
+    if (line1 && ctx.measureText(candidate).width > maxWidth) break;
+    line1 = candidate;
   }
-  // Canvas text has no native letter-spacing -- measured and drawn
-  // character by character, centered as a whole block, so condensed-caps
-  // eyebrows/footers read with the same deliberate tracking the rest of
-  // the app's Barlow Condensed labels use.
-  let totalWidth = 0;
-  for (const ch of text) totalWidth += ctx.measureText(ch).width + letterSpacing;
-  totalWidth -= letterSpacing;
-  let x = centerX - totalWidth / 2;
-  for (const ch of text) {
-    ctx.fillText(ch, x, y);
-    x += ctx.measureText(ch).width + letterSpacing;
-  }
+  const line2 = words.slice(i).join(' ');
+  if (!line2) return [line1];
+  return [line1, line2];
 }
 
 export type LifetimeProgress = {
@@ -212,62 +351,49 @@ export type ShareCardPayload = StandardCardPayload | DeckCardPayload;
 const FOOTER_LINE_1 = "DOC'S FITNESS APP";
 const FOOTER_LINE_2 = '@docsfitness_nj';
 
-function drawFooter(ctx: CanvasRenderingContext2D, color: string, mutedColor: string) {
-  const centerX = CARD_WIDTH / 2;
-  drawCenteredText(ctx, FOOTER_LINE_1, centerX, CARD_HEIGHT - 86, `700 26px ${fonts.labelBold}`, color, 2);
-  drawCenteredText(ctx, FOOTER_LINE_2, centerX, CARD_HEIGHT - 52, `22px ${fonts.body}`, mutedColor, 0.5);
-}
+// ---------------------------------------------------------------------
+// Shared layout constants -- every one of these was measured directly off
+// the committed reference PNGs (design-references/) via row-band pixel
+// scans, cross-checked against the round's own written "multiply by 3.6"
+// spec (which matched almost everywhere; see this file's own top comment
+// for the two places the images won out). They are IDENTICAL between the
+// standard and deck card -- confirmed directly: every single gap measured
+// off the deck references (a 2-line-title case) matches its standard-card
+// counterpart (a 1-line-title case) within 1px, which is what makes a
+// single, uniform, top-down additive layout correct for both variants with
+// no special-cased "flex" branch anywhere in this file.
+// ---------------------------------------------------------------------
+const BORDER_WIDTH = 7;
+const BORDER_RADIUS = 79;
+const CONTENT_INSET = 93; // card edge to content edge, padding(86) + border(7)
+const CONTENT_WIDTH = CARD_WIDTH - CONTENT_INSET * 2; // 894 -- matches the measured progress-bar width exactly
+const BACKDROP_COLOR = '#000000'; // fills the canvas outside the rounded card -- baked into the real exported PNG, confirmed directly against the reference images' own corner pixels
 
-// The progress bar + "N of 100 · Road to Hundred Down" line, or -- once
-// the target is cleared -- the raw counter plus a small HUNDRED DOWN
-// mark instead, per the approved spec ("After workout 100 the bar
-// retires").
-function drawProgressBlock(
-  ctx: CanvasRenderingContext2D,
-  workoutNumber: number,
-  centerX: number,
-  y: number,
-  accent: string,
-  text: string,
-  muted: string,
-  trackColor: string
-) {
-  const cleared = workoutNumber >= HUNDRED_DOWN_TARGET;
-  if (!cleared) {
-    const barWidth = 560;
-    const barHeight = 10;
-    const left = centerX - barWidth / 2;
-    const pct = Math.max(0, Math.min(1, workoutNumber / HUNDRED_DOWN_TARGET));
-    ctx.fillStyle = trackColor;
-    roundRect(ctx, left, y, barWidth, barHeight, barHeight / 2);
-    ctx.fill();
-    ctx.fillStyle = accent;
-    roundRect(ctx, left, y, Math.max(barHeight, barWidth * pct), barHeight, barHeight / 2);
-    ctx.fill();
-    drawCenteredText(
-      ctx,
-      `${workoutNumber} OF ${HUNDRED_DOWN_TARGET} · ROAD TO HUNDRED DOWN`,
-      centerX,
-      y + 42,
-      `600 24px ${fonts.labelSemiBold}`,
-      muted,
-      1
-    );
-  } else {
-    drawCenteredText(ctx, `WORKOUT No. ${workoutNumber}`.toUpperCase(), centerX, y + 10, `700 26px ${fonts.labelBold}`, text, 1);
-    ctx.save();
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 2;
-    const pillW = 230;
-    const pillH = 40;
-    const pillX = centerX - pillW / 2;
-    const pillY = y + 30;
-    roundRect(ctx, pillX, pillY, pillW, pillH, pillH / 2);
-    ctx.stroke();
-    drawCenteredText(ctx, 'HUNDRED DOWN', centerX, pillY + 27, `700 20px ${fonts.labelBold}`, accent, 2);
-    ctx.restore();
-  }
-}
+const EYEBROW_INK_TOP = 121;
+const GAP_EYEBROW_WAVE = 71;
+const WAVE_HEIGHT = 332;
+const GAP_WAVE_TITLE = 67;
+const TITLE_FONT_SIZE = 158;
+const TITLE_LINE_ADVANCE = 148; // ink-top of line 2 minus ink-top of line 1, measured directly off a wrapped deck reference
+const GAP_TITLE_DATE = 60; // from the LAST title line's own ink bottom
+const GAP_DATE_NO = 26; // "the No. line" -- WORKOUT No. X on the standard card, CARD X OF 52 on the deck card
+const GAP_NO_BAR = 67;
+const BAR_HEIGHT = 18;
+const GAP_BAR_ROAD = 35;
+const GAP_ROAD_BRAND = 68;
+const GAP_BRAND_HANDLE = 34;
+
+const EYEBROW_FONT = 40;
+const EYEBROW_LETTER_SPACING = 8; // 0.2em of 40px
+const DATE_FONT = 40;
+const DATE_LETTER_SPACING = 6.4; // 0.16em of 40px
+const NO_FONT = 108;
+const ROAD_FONT = 36;
+const ROAD_LETTER_SPACING = 5; // 0.14em of 36px
+const BRAND_FONT = 54;
+const BRAND_LETTER_SPACING = 7.6; // 0.14em of 54px
+const HANDLE_FONT = 36;
+const HANDLE_LETTER_SPACING = 6.5; // 0.18em of 36px
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
@@ -279,34 +405,146 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
+function drawProgressBar(ctx: CanvasRenderingContext2D, topY: number, fraction: number, track: string, fill: string): number {
+  const left = (CARD_WIDTH - CONTENT_WIDTH) / 2;
+  const pct = Math.max(0, Math.min(1, fraction));
+  ctx.fillStyle = track;
+  roundRect(ctx, left, topY, CONTENT_WIDTH, BAR_HEIGHT, BAR_HEIGHT / 2);
+  ctx.fill();
+  ctx.fillStyle = fill;
+  roundRect(ctx, left, topY, Math.max(BAR_HEIGHT, CONTENT_WIDTH * pct), BAR_HEIGHT, BAR_HEIGHT / 2);
+  ctx.fill();
+  return topY + BAR_HEIGHT;
+}
+
+// The "No." line: "WORKOUT No. X" on a standard card, "CARD X OF 52" on a
+// deck card -- both pass their own already-formatted text in. Past 100,
+// restyled to the same type scale as this line itself (per spec: "the
+// counter shows the raw number... restyled to the same type scale as the
+// WORKOUT No. line") plus a small outlined HUNDRED DOWN mark beside/below
+// it, instead of the progress bar.
+function drawNoAndProgress(
+  ctx: CanvasRenderingContext2D,
+  noText: string,
+  workoutNumber: number,
+  topY: number,
+  centerX: number,
+  noColor: string,
+  accent: string,
+  track: string,
+  fill: string,
+  roadColor: string,
+  roadPrefix: string
+): number {
+  const y = drawCenteredInkTop(ctx, noText, centerX, topY, `${NO_FONT}px ${fonts.headline}`, noColor);
+  const cleared = workoutNumber >= HUNDRED_DOWN_TARGET;
+  if (!cleared) {
+    const barY = y + GAP_NO_BAR;
+    const barBottom = drawProgressBar(ctx, barY, workoutNumber / HUNDRED_DOWN_TARGET, track, fill);
+    const roadText = `${roadPrefix}${workoutNumber} OF ${HUNDRED_DOWN_TARGET} · ROAD TO HUNDRED DOWN`;
+    return drawCenteredInkTop(ctx, roadText, centerX, barBottom + GAP_BAR_ROAD, `${ROAD_FONT}px ${fonts.labelSemiBold}`, roadColor, ROAD_LETTER_SPACING);
+  }
+  // Cleared: a small outlined HUNDRED DOWN pill sits where the bar would
+  // have been, same vertical rhythm (GAP_NO_BAR then GAP_BAR_ROAD-ish
+  // spacing before whatever follows).
+  const pillTop = y + GAP_NO_BAR;
+  const pillH = 48;
+  const pillW = 260;
+  const pillX = centerX - pillW / 2;
+  ctx.save();
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 3;
+  roundRect(ctx, pillX, pillTop, pillW, pillH, pillH / 2);
+  ctx.stroke();
+  ctx.restore();
+  drawCenteredInkTop(ctx, 'HUNDRED DOWN', centerX, pillTop + 15, `${ROAD_FONT}px ${fonts.labelBold}`, accent, ROAD_LETTER_SPACING);
+  return pillTop + pillH;
+}
+
+function drawFooter(ctx: CanvasRenderingContext2D, topY: number, centerX: number, brandColor: string, handleColor: string) {
+  const brandBottom = drawCenteredInkTop(ctx, FOOTER_LINE_1, centerX, topY, `${BRAND_FONT}px ${fonts.headline}`, brandColor, BRAND_LETTER_SPACING);
+  drawCenteredInkTop(ctx, FOOTER_LINE_2, centerX, brandBottom + GAP_BRAND_HANDLE, `${HANDLE_FONT}px ${fonts.labelSemiBold}`, handleColor, HANDLE_LETTER_SPACING);
+}
+
+// Clips the canvas to a rounded rect and fills the exterior with the real
+// exported image's own black backdrop -- confirmed directly against the
+// reference PNGs' own corner pixels, which show a solid dark fill outside
+// the rounded card, not transparency (these are flat RGB PNGs with no
+// alpha channel at all). The on-screen preview's own DOM wrapper no longer
+// needs its own CSS rounding -- this canvas now bakes the real card shape
+// into the bitmap itself, so the exported/shared/saved image already has
+// the correct rounded-corner-on-black look without any further processing.
+function clipToRoundedCard(ctx: CanvasRenderingContext2D, height: number) {
+  ctx.fillStyle = BACKDROP_COLOR;
+  ctx.fillRect(0, 0, CARD_WIDTH, height);
+  roundRect(ctx, 0, 0, CARD_WIDTH, height, BORDER_RADIUS);
+  ctx.clip();
+}
+
+// The card's own thin edge border -- inset by half the stroke width so the
+// full stroke stays inside the rounded-rect clip region (a stroke centers
+// on its own path, so an un-inset path would paint half the stroke outside
+// the clip and get silently cut off).
+function strokeRoundedBorder(ctx: CanvasRenderingContext2D, color: string, height: number) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = BORDER_WIDTH;
+  roundRect(ctx, BORDER_WIDTH / 2, BORDER_WIDTH / 2, CARD_WIDTH - BORDER_WIDTH, height - BORDER_WIDTH, BORDER_RADIUS);
+  ctx.stroke();
+}
+
 async function drawStandardCard(ctx: CanvasRenderingContext2D, payload: StandardCardPayload) {
   const { colorway, title, date, workoutNumber } = payload;
   const centerX = CARD_WIDTH / 2;
 
+  clipToRoundedCard(ctx, CARD_HEIGHT);
   ctx.fillStyle = colorway.background;
   ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+  strokeRoundedBorder(ctx, colorway.border, CARD_HEIGHT);
 
-  const borderInset = 28;
-  ctx.strokeStyle = colorway.border;
-  ctx.lineWidth = 6;
-  ctx.strokeRect(borderInset, borderInset, CARD_WIDTH - borderInset * 2, CARD_HEIGHT - borderInset * 2);
+  let y = EYEBROW_INK_TOP;
+  y = drawCenteredInkTop(ctx, 'WORKOUT COMPLETE', centerX, y, `${EYEBROW_FONT}px ${fonts.labelSemiBold}`, colorway.eyebrow, EYEBROW_LETTER_SPACING);
 
-  drawCenteredText(ctx, 'WORKOUT COMPLETE', centerX, 150, `700 28px ${fonts.labelBold}`, colorway.textMuted, 3);
-
-  const titleSize = fitFontSize(ctx, title.toUpperCase(), fonts.headline, 92, 48, CARD_WIDTH - 140);
-  drawCenteredText(ctx, title.toUpperCase(), centerX, 150 + 110, `${titleSize}px ${fonts.headline}`, colorway.text);
-
-  drawCenteredText(ctx, formatShareCardDate(date), centerX, 150 + 170, `500 30px ${fonts.label}`, colorway.textMuted, 1);
-
+  const waveTop = y + GAP_EYEBROW_WAVE;
   const wave = await getTintedKettlewave(colorway.wave);
-  const waveHeight = 360;
-  const waveWidth = waveHeight * (wave.width / wave.height);
-  ctx.drawImage(wave, centerX - waveWidth / 2, 470, waveWidth, waveHeight);
+  const waveWidth = WAVE_HEIGHT * (wave.width / wave.height);
+  ctx.drawImage(wave, centerX - waveWidth / 2, waveTop, waveWidth, WAVE_HEIGHT);
+  y = waveTop + WAVE_HEIGHT;
 
-  const standardTrack = colorway.id === 'bright-yellow' ? 'rgba(5,76,61,0.16)' : 'rgba(255,255,255,0.22)';
-  drawProgressBlock(ctx, workoutNumber, centerX, 1000, colorway.border, colorway.text, colorway.textMuted, standardTrack);
+  const titleTop = y + GAP_WAVE_TITLE;
+  const titleMaxWidth = CONTENT_WIDTH - 40;
+  const titleLines = wrapTitle(ctx, title.toUpperCase(), fonts.headline, TITLE_FONT_SIZE, titleMaxWidth);
+  let titleFont = TITLE_FONT_SIZE;
+  if (titleLines.length === 1) {
+    titleFont = fitFontSize(ctx, titleLines[0], fonts.headline, TITLE_FONT_SIZE, 72, titleMaxWidth);
+  } else {
+    for (const line of titleLines) titleFont = Math.min(titleFont, fitFontSize(ctx, line, fonts.headline, titleFont, 72, titleMaxWidth));
+  }
+  let titleY = titleTop;
+  titleLines.forEach((line, i) => {
+    const bottom = drawCenteredInkTop(ctx, line, centerX, titleY, `${titleFont}px ${fonts.headline}`, colorway.name);
+    if (i < titleLines.length - 1) titleY = titleTop + TITLE_LINE_ADVANCE;
+    else y = bottom;
+  });
 
-  drawFooter(ctx, colorway.text, colorway.textMuted);
+  const dateTop = y + GAP_TITLE_DATE;
+  y = drawCenteredInkTop(ctx, formatShareCardDate(date), centerX, dateTop, `${DATE_FONT}px ${fonts.labelSemiBold}`, colorway.date, DATE_LETTER_SPACING);
+
+  const noTop = y + GAP_DATE_NO;
+  y = drawNoAndProgress(
+    ctx,
+    `WORKOUT No. ${workoutNumber}`.toUpperCase(),
+    workoutNumber,
+    noTop,
+    centerX,
+    colorway.no,
+    colorway.border,
+    colorway.barTrack,
+    colorway.barFill,
+    colorway.road,
+    ''
+  );
+
+  drawFooter(ctx, y + GAP_ROAD_BRAND, centerX, colorway.brand, colorway.handle);
 }
 
 // Shared by the renderer and the overlay's own hidden test-readable debug
@@ -315,67 +553,109 @@ async function drawStandardCard(ctx: CanvasRenderingContext2D, payload: Standard
 // suite makes is checking the exact value the canvas was actually drawn
 // with, never a second, possibly-drifted copy of the same logic.
 export function deckInkColor(card: DeckCardData): string {
-  if (card.joker) return card.joker === 'red' ? colors.playingCardRed : BLACK;
-  return isRedSuit(card.suit) ? colors.playingCardRed : BLACK;
+  if (card.joker) return card.joker === 'red' ? colors.playingCardRed : colors.text;
+  return isRedSuit(card.suit) ? colors.playingCardRed : colors.text;
+}
+
+const CORNER_INSET_LEFT = 58;
+const CORNER_INSET_TOP = 50;
+const CORNER_RANK_FONT = 144;
+const CORNER_SUIT_FONT = 101;
+const CORNER_GAP = 101;
+
+function drawCornerIndex(ctx: CanvasRenderingContext2D, rank: string, suit: string, ink: string, cardWidth: number, cardHeight: number) {
+  const draw = () => {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = ink;
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `${CORNER_RANK_FONT}px ${fonts.headline}`;
+    const rankAscent = measureAscent(ctx, rank);
+    ctx.fillText(rank, 0, rankAscent);
+    if (suit) {
+      ctx.font = `${CORNER_SUIT_FONT}px ${fonts.headline}`;
+      const suitAscent = measureAscent(ctx, suit);
+      ctx.fillText(suit, 0, rankAscent + CORNER_GAP + suitAscent);
+    }
+  };
+  ctx.save();
+  ctx.translate(CORNER_INSET_LEFT, CORNER_INSET_TOP);
+  draw();
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(cardWidth - CORNER_INSET_LEFT, cardHeight - CORNER_INSET_TOP);
+  ctx.rotate(Math.PI);
+  draw();
+  ctx.restore();
 }
 
 async function drawDeckCard(ctx: CanvasRenderingContext2D, payload: DeckCardPayload) {
   const { card, date, workoutNumber, deckCardNumber } = payload;
   const centerX = CARD_WIDTH / 2;
   const ink = deckInkColor(card);
-  const label = deckCardLabel(card);
+  const rank = card.joker ? 'JOKER' : card.rank;
+  const suit = card.joker ? '' : card.suit ?? '';
 
+  clipToRoundedCard(ctx, DECK_CARD_HEIGHT);
   ctx.fillStyle = colors.white;
-  ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+  ctx.fillRect(0, 0, CARD_WIDTH, DECK_CARD_HEIGHT);
 
-  const borderInset = 28;
-  ctx.strokeStyle = ink;
-  ctx.lineWidth = 4;
-  ctx.strokeRect(borderInset, borderInset, CARD_WIDTH - borderInset * 2, CARD_HEIGHT - borderInset * 2);
+  strokeRoundedBorder(ctx, ink, DECK_CARD_HEIGHT);
 
-  // Big corner indices, like a real playing card -- top-left as drawn,
-  // bottom-right as the same block rotated 180 degrees.
-  const drawIndex = () => {
-    ctx.textAlign = 'left';
-    ctx.fillStyle = ink;
-    ctx.font = `64px ${fonts.headline}`;
-    ctx.fillText(label, 0, 0);
-  };
-  ctx.save();
-  ctx.translate(64, 110);
-  drawIndex();
-  ctx.restore();
+  drawCornerIndex(ctx, rank, suit, ink, CARD_WIDTH, DECK_CARD_HEIGHT);
 
-  ctx.save();
-  ctx.translate(CARD_WIDTH - 64, CARD_HEIGHT - 110);
-  ctx.rotate(Math.PI);
-  drawIndex();
-  ctx.restore();
+  let y = EYEBROW_INK_TOP;
+  y = drawCenteredInkTop(ctx, "DOC'S DECK OF WODS", centerX, y, `${EYEBROW_FONT}px ${fonts.labelSemiBold}`, colors.green, EYEBROW_LETTER_SPACING);
 
-  drawCenteredText(ctx, "DOC'S DECK OF WODS", centerX, 150, `700 26px ${fonts.labelBold}`, ink, 3);
-
-  const titleSize = fitFontSize(ctx, card.title.toUpperCase(), fonts.headline, 84, 44, CARD_WIDTH - 260);
-  drawCenteredText(ctx, card.title.toUpperCase(), centerX, 150 + 110, `${titleSize}px ${fonts.headline}`, colors.text);
-
-  drawCenteredText(ctx, formatShareCardDate(date), centerX, 150 + 170, `500 30px ${fonts.label}`, colors.textMuted, 1);
-
+  const waveTop = y + GAP_EYEBROW_WAVE;
   // The green kettlewave center -- deliberately the real native color,
   // never suit-recolored, per the approved spec.
   const wave = await getTintedKettlewave(KETTLEWAVE_NATIVE_HEX);
-  const waveHeight = 340;
-  const waveWidth = waveHeight * (wave.width / wave.height);
-  ctx.drawImage(wave, centerX - waveWidth / 2, 470, waveWidth, waveHeight);
+  const waveWidth = WAVE_HEIGHT * (wave.width / wave.height);
+  ctx.drawImage(wave, centerX - waveWidth / 2, waveTop, waveWidth, WAVE_HEIGHT);
+  y = waveTop + WAVE_HEIGHT;
 
-  drawCenteredText(ctx, `CARD ${deckCardNumber} OF 52`, centerX, 900, `700 30px ${fonts.labelBold}`, ink, 2);
+  const titleTop = y + GAP_WAVE_TITLE;
+  const titleMaxWidth = CONTENT_WIDTH - 160; // extra clearance so the title never collides with the corner indices
+  const titleLines = wrapTitle(ctx, card.title.toUpperCase(), fonts.headline, TITLE_FONT_SIZE, titleMaxWidth);
+  let titleFont = TITLE_FONT_SIZE;
+  if (titleLines.length === 1) {
+    titleFont = fitFontSize(ctx, titleLines[0], fonts.headline, TITLE_FONT_SIZE, 72, titleMaxWidth);
+  } else {
+    for (const line of titleLines) titleFont = Math.min(titleFont, fitFontSize(ctx, line, fonts.headline, titleFont, 72, titleMaxWidth));
+  }
+  let titleY = titleTop;
+  titleLines.forEach((line, i) => {
+    const bottom = drawCenteredInkTop(ctx, line, centerX, titleY, `${titleFont}px ${fonts.headline}`, colors.text);
+    if (i < titleLines.length - 1) titleY = titleTop + TITLE_LINE_ADVANCE;
+    else y = bottom;
+  });
 
-  drawProgressBlock(ctx, workoutNumber, centerX, 960, colors.green, colors.text, colors.textMuted, 'rgba(7,102,82,0.14)');
+  const dateTop = y + GAP_TITLE_DATE;
+  y = drawCenteredInkTop(ctx, formatShareCardDate(date), centerX, dateTop, `${DATE_FONT}px ${fonts.labelSemiBold}`, colors.textMuted, DATE_LETTER_SPACING);
 
-  drawFooter(ctx, colors.text, colors.textMuted);
+  const noTop = y + GAP_DATE_NO;
+  y = drawNoAndProgress(
+    ctx,
+    `CARD ${deckCardNumber} OF 52`,
+    workoutNumber,
+    noTop,
+    centerX,
+    colors.green,
+    colors.green,
+    'rgba(7,102,82,0.16)',
+    colors.green,
+    colors.textMuted,
+    'WORKOUT '
+  );
+
+  drawFooter(ctx, y + GAP_ROAD_BRAND, centerX, colors.text, colors.textMuted);
 }
 
 export async function drawShareCard(canvas: HTMLCanvasElement, payload: ShareCardPayload): Promise<void> {
+  const height = payload.variant === 'deck' ? DECK_CARD_HEIGHT : CARD_HEIGHT;
   canvas.width = CARD_WIDTH;
-  canvas.height = CARD_HEIGHT;
+  canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
