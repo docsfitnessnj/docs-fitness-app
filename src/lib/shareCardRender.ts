@@ -364,7 +364,6 @@ const FOOTER_LINE_2 = '@docsfitness_nj';
 // no special-cased "flex" branch anywhere in this file.
 // ---------------------------------------------------------------------
 const BORDER_WIDTH = 7;
-const BORDER_RADIUS = 79;
 const CONTENT_INSET = 93; // card edge to content edge, padding(86) + border(7)
 const CONTENT_WIDTH = CARD_WIDTH - CONTENT_INSET * 2; // 894 -- matches the measured progress-bar width exactly
 
@@ -465,27 +464,23 @@ function drawFooter(ctx: CanvasRenderingContext2D, topY: number, centerX: number
   drawCenteredInkTop(ctx, FOOTER_LINE_2, centerX, brandBottom + GAP_BRAND_HANDLE, `${HANDLE_FONT}px ${fonts.labelSemiBold}`, handleColor, HANDLE_LETTER_SPACING);
 }
 
-// Round 33 corners (owner decision, final): the exported canvas is now a
-// plain, full-bleed rectangle filled edge-to-edge with the card's own
-// background color -- no clip, no separate backdrop fill. The black
-// corner notches the "polish" round baked in were a misreading of the
-// reference PNGs: that black was the owner's own dark gallery page
-// showing through a screenshot, not part of the approved card design.
-// There is nothing left for a clip-to-rounded-rect step to do -- the
-// rounded-CARD impression comes entirely from strokeRoundedBorder()
-// below, inset from the edge; the corners beyond that stroke simply
-// continue in the same background color as the rest of the card, for
-// every variant (including the two black colorways, where this is
-// invisible, and the deck card, whose "background" is white).
+// Round 33 corners: the exported canvas is a plain, full-bleed rectangle
+// filled edge-to-edge with the card's own background color -- no clip, no
+// separate backdrop fill. The corners beyond the border stroke below
+// simply continue in that same background color, for every variant.
 
-// The card's own thin edge border, inset by half the stroke width (a
-// stroke centers on its own path, so an un-inset path would paint half
-// the stroke outside the canvas and get silently clipped by it).
-function strokeRoundedBorder(ctx: CanvasRenderingContext2D, color: string, height: number) {
+// Round 33 "final touch" (owner decision, final): the border is now a
+// plain SQUARE frame, not a rounded-rect path -- same stroke width, same
+// inset, same colors, only the corner geometry changed. With the
+// background already filling the canvas edge to edge (see above), a
+// square frame leaves no corner region outside the border at all, which
+// is the point: the saved/shared image reads as a clean framed card with
+// nothing stray in the corners, and there's no rounded-vs-square seam to
+// keep in sync between the canvas and anything else.
+function strokeBorder(ctx: CanvasRenderingContext2D, color: string, height: number) {
   ctx.strokeStyle = color;
   ctx.lineWidth = BORDER_WIDTH;
-  roundRect(ctx, BORDER_WIDTH / 2, BORDER_WIDTH / 2, CARD_WIDTH - BORDER_WIDTH, height - BORDER_WIDTH, BORDER_RADIUS);
-  ctx.stroke();
+  ctx.strokeRect(BORDER_WIDTH / 2, BORDER_WIDTH / 2, CARD_WIDTH - BORDER_WIDTH, height - BORDER_WIDTH);
 }
 
 async function drawStandardCard(ctx: CanvasRenderingContext2D, payload: StandardCardPayload) {
@@ -494,7 +489,7 @@ async function drawStandardCard(ctx: CanvasRenderingContext2D, payload: Standard
 
   ctx.fillStyle = colorway.background;
   ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
-  strokeRoundedBorder(ctx, colorway.border, CARD_HEIGHT);
+  strokeBorder(ctx, colorway.border, CARD_HEIGHT);
 
   let y = EYEBROW_INK_TOP;
   y = drawCenteredInkTop(ctx, 'WORKOUT COMPLETE', centerX, y, `${EYEBROW_FONT}px ${fonts.labelSemiBold}`, colorway.eyebrow, EYEBROW_LETTER_SPACING);
@@ -594,7 +589,7 @@ async function drawDeckCard(ctx: CanvasRenderingContext2D, payload: DeckCardPayl
   ctx.fillStyle = colors.white;
   ctx.fillRect(0, 0, CARD_WIDTH, DECK_CARD_HEIGHT);
 
-  strokeRoundedBorder(ctx, ink, DECK_CARD_HEIGHT);
+  strokeBorder(ctx, ink, DECK_CARD_HEIGHT);
 
   drawCornerIndex(ctx, rank, suit, ink, CARD_WIDTH, DECK_CARD_HEIGHT);
 
