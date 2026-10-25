@@ -17,6 +17,17 @@ export function showAlert(title: string, message?: string, buttons: AlertButton[
   setStateRef?.({ title, message, buttons });
 }
 
+// Round 31: this module-level state is independent of auth state by
+// design (AlertHost is mounted once near the app root, above the signed
+// in/out branch, so showAlert() works no matter which screen is up) --
+// but that also means signing out never clears whatever alert happened
+// to be showing. Call this from AuthContext's signOut() so a free-tier
+// upgrade nudge (or any other showAlert() call) can never survive onto
+// the signed-out welcome screen.
+export function dismissAlert() {
+  setStateRef?.(null);
+}
+
 export function useAlertState() {
   const [state, setState] = useState<AlertState>(null);
   useEffect(() => {

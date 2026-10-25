@@ -1029,7 +1029,23 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
               />
             </View>
           )}
-          <AlertHost />
+          {/* Round 31: a real-device report found UNLOCK EVERYTHING
+              rendered on top of the signed-out welcome/About page after
+              signing out of a free account -- showAlert()'s own state
+              (alert.ts) is module-level, independent of auth, so an
+              already-showing popup survived the screen underneath
+              switching away with nothing clearing it. signOut() now
+              dismisses it immediately (see AuthContext.tsx) -- that
+              alone already fixes the reported bug -- but gating the
+              render here too is the structural half specifically for
+              the public welcome/About page: it is NOT gated on
+              `signedUp` generally, since real pre-signup screens
+              (PricingScreen, OnlineStartScreen, InPersonPlansScreen) use
+              showAlert() for genuine checkout confirmations and must
+              keep working. Only the one screen the brief named stays
+              permanently incapable of showing one, regardless of
+              whatever alert.ts happens to be holding. */}
+          {!(!signedUp && onboardingStep === 'about') && <AlertHost />}
           <StatusBar style="dark" />
         </ModalRootProvider>
       </View>
