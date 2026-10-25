@@ -58,12 +58,14 @@ import { TourOverlay } from './src/components/TourOverlay';
 import { PurchaseCelebrationOverlay } from './src/components/PurchaseCelebrationOverlay';
 import { CheckoutRedirectLoadingScreen } from './src/components/CheckoutRedirectLoadingScreen';
 import { MemberStateErrorScreen } from './src/components/MemberStateErrorScreen';
+import { CompletionShareCardOverlay } from './src/components/CompletionShareCardOverlay';
 import { DeckCardDetailModal } from './src/components/DeckCardDetailModal';
 import { PostDetailModal } from './src/components/PostDetailModal';
 import { DECK_CARDS } from './src/data/deckCards';
 import { useScheduleModalState } from './src/lib/scheduleModal';
 import { useMovementVaultModalState } from './src/lib/movementVaultModal';
 import { useDeckCardModalState } from './src/lib/deckCardModal';
+import { openCompletionShareCard } from './src/lib/completionShareCard';
 import { usePostDetailModalState } from './src/lib/postDetailModal';
 import { useMemberProfileModalState } from './src/lib/memberProfileModal';
 import { openMemberships, useMembershipsModalState } from './src/lib/membershipsModal';
@@ -720,9 +722,19 @@ function MainApp({
         card={deckCardId ? DECK_CARDS.find((c) => c.id === deckCardId) ?? null : null}
         onClose={() => setDeckCardId(null)}
         isComplete={deckCardId ? isDeckCardComplete(deckCardId) : false}
-        onToggleComplete={() => deckCardId && toggleDeckCardComplete(deckCardId)}
+        onToggleComplete={() => {
+          if (!deckCardId) return;
+          // Round 33: THE COMPLETION SHARE CARD opens only on the
+          // incomplete -> complete transition, never on un-completing --
+          // checked before the toggle itself flips it.
+          const card = DECK_CARDS.find((c) => c.id === deckCardId);
+          const wasComplete = isDeckCardComplete(deckCardId);
+          toggleDeckCardComplete(deckCardId);
+          if (card && !wasComplete) openCompletionShareCard({ kind: 'deck', card, date: new Date() });
+        }}
         locked={!fullContentAccess}
       />
+      <CompletionShareCardOverlay />
       <PostDetailModal
         post={searchPostId ? posts.find((p) => p.id === searchPostId) ?? null : null}
         onClose={() => setSearchPostId(null)}

@@ -5629,6 +5629,396 @@ async function run() {
     await context.close();
   }
 
+  // Round 33: THE COMPLETION SHARE CARD. Reads CompletionShareCardOverlay's
+  // own hidden, zero-footprint `completion-share-card-debug` text node
+  // (a real DOM element, JSON-stringified) for content assertions a canvas
+  // has no DOM text for -- same spirit as DebugOverlay.web.tsx's own
+  // "expose a real fact as plain text for exactly what a screenshot can't
+  // verify," scoped to just this feature. Pixel sampling on the real
+  // canvas backs up the two assertions that matter most (background color,
+  // suit ink color) so a bug in the draw function itself, not just in this
+  // debug mirror, would still be caught.
+  const readShareCardDebug = async (page) => {
+    const text = await page.getByTestId('completion-share-card-debug').innerText({ timeout: 5000 }).catch(() => null);
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  };
+  const sampleCanvasPixel = async (page, x, y) => {
+    return page.evaluate(
+      ({ x, y }) => {
+        const canvas = document.querySelector('#completion-share-card-canvas-host canvas');
+        if (!canvas) return null;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        const data = ctx.getImageData(x, y, 1, 1).data;
+        return [data[0], data[1], data[2]];
+      },
+      { x, y }
+    );
+  };
+  const closeToRgb = (sample, [r, g, b], tolerance = 12) =>
+    !!sample && Math.abs(sample[0] - r) <= tolerance && Math.abs(sample[1] - g) <= tolerance && Math.abs(sample[2] - b) <= tolerance;
+  // drawShareCard() is async -- it awaits the kettlewave asset's own
+  // decode before drawing the mark/counter/progress block, so a fixed
+  // waitForTimeout after tapping MARK COMPLETE can land before that
+  // promise resolves (caught directly: a first screenshot pass captured
+  // every card mid-draw, loading spinner still up, kettlewave/counter/
+  // progress bar all missing). CompletionShareCardOverlay's own `ready`
+  // state flips true only once drawShareCard() resolves, mirrored here
+  // via the loading overlay's testID -- wait for it to detach before any
+  // screenshot or pixel sample that needs the finished card.
+  const waitForShareCardReady = async (page) => {
+    await page.getByTestId('completion-share-card-loading').waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});
+  };
+  // Mirrors STANDARD_COLORWAYS' own order in shareCardRender.ts exactly --
+  // a plain Node script can't import that TS module directly, so this is
+  // the one place that order has to be kept in sync by hand.
+  const STANDARD_COLORWAY_IDS = ['augusta-green', 'bright-yellow', 'black', 'green-yellow-wave', 'black-yellow-wave'];
+
+  // [share-card/wod]: real MARK COMPLETE on a Doc's WOD via DayPanel (the
+  // Community tab's own default landing), a fresh full-access account with
+  // zero prior completions -- end to end, not a forced mock, so the
+  // counter assertion (workoutNumber === 1) is a genuine proof the card
+  // reads the same totalWorkoutsLogged the HUNDRED DOWN badge itself
+  // counts from, not a second, possibly-drifted number.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    // A fresh completion crossing totalWorkoutsLogged from 0 to 1 makes
+    // BadgeContext's own effect try to grant "day one doug" -- answered
+    // directly here so its own `grants` dependency doesn't keep changing
+    // reference and re-fire forever (the same documented gap this file's
+    // own search-deep-link fixture already works around).
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } }]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+
+    await page.getByTestId(`date-strip-cell-${offsetToWeekday(1)}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const wodTitle = await page.getByTestId('day-panel-wod-title').innerText({ timeout: 5000 }).catch(() => null);
+    await page.getByTestId('day-panel-complete').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const cardVisible = await page.getByTestId('completion-share-card').isVisible().catch(() => false);
+    record('[share-card/wod] the card appears immediately after marking a Doc\'s WOD complete', cardVisible, JSON.stringify({ cardVisible }));
+    await waitForShareCardReady(page);
+
+    const debugInfo = await readShareCardDebug(page);
+    record(
+      '[share-card/wod] standard variant, real workout title, and the lifetime counter reads exactly 1 (a fresh account\'s first-ever completion)',
+      !!debugInfo && debugInfo.variant === 'standard' && debugInfo.title === wodTitle && debugInfo.workoutNumber === 1,
+      JSON.stringify({ debugInfo, wodTitle })
+    );
+
+    const buttonsPresent =
+      (await page.getByTestId('share-to-story').isVisible().catch(() => false)) &&
+      (await page.getByTestId('save-card').isVisible().catch(() => false)) &&
+      (await page.getByTestId('completion-share-card-close').isVisible().catch(() => false));
+    record('[share-card/wod] SHARE TO STORY, SAVE, and the close X are all present', buttonsPresent, JSON.stringify({ buttonsPresent }));
+
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'share-card-modal.png') }).catch(() => {});
+
+    // [share-card/close]: the standing popup rule -- X closes with zero
+    // side effects on the completion itself, and never reappears on its
+    // own for this same completion.
+    await page.getByTestId('completion-share-card-close').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const cardGoneAfterClose = !(await page.getByTestId('completion-share-card').isVisible().catch(() => true));
+    const stillCompletedText = await page.getByTestId('day-panel-complete').innerText().catch(() => '');
+    record(
+      '[share-card/close] the X closes the card, the WOD stays marked complete, and the card does not reappear on its own',
+      cardGoneAfterClose && stillCompletedText.includes('COMPLETED'),
+      JSON.stringify({ cardGoneAfterClose, stillCompletedText })
+    );
+
+    await context.close();
+  }
+
+  // [share-card/logged]: SAVE RESULTS in LogResultsModal -- its own
+  // distinct trigger per the approved spec, independent of the plain
+  // MARK COMPLETE path above.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } }]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId(`date-strip-cell-${offsetToWeekday(1)}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    // useActionCompletion's own SAVED acknowledgment holds for ~900ms
+    // before onSettled (close the modal, then open the share card) runs.
+    await page.waitForTimeout(1500);
+
+    const logModalClosed = !(await page.getByTestId('close-log-results').isVisible().catch(() => false));
+    const cardVisible = await page.getByTestId('completion-share-card').isVisible().catch(() => false);
+    const debugInfo = await readShareCardDebug(page);
+    record(
+      '[share-card/logged] saving logged results closes the modal and opens the share card',
+      logModalClosed && cardVisible && !!debugInfo && debugInfo.variant === 'standard',
+      JSON.stringify({ logModalClosed, cardVisible, debugInfo })
+    );
+
+    await context.close();
+  }
+
+  // [share-card/deck]: a real MARK COMPLETE on a Doc's Deck of WODs card,
+  // for both a black-suit and a red-suit card -- the suit-ink-color
+  // assertion is backed by a real pixel sample on the card's own border
+  // stroke, not just the debug mirror, so a bug in drawDeckCard's own ink
+  // logic (not just a copy-paste of it) would still fail this.
+  for (const fixture of [
+    { id: 'A-spade', expectedInk: [0, 0, 0], label: 'black suit' },
+    { id: 'A-heart', expectedInk: [200, 16, 46], label: 'red suit' },
+  ]) {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } }]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /THE DECK/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByText('BROWSE DECK', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId(`browse-card-${fixture.id}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('deck-card-complete-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const cardVisible = await page.getByTestId('completion-share-card').isVisible().catch(() => false);
+    const debugInfo = await readShareCardDebug(page);
+    // Samples the left border stroke at mid-height. shareCardRender.ts's
+    // drawDeckCard strokes a rect at x=28 (borderInset) with lineWidth=4 --
+    // canvas centers a stroke ON its path, so the painted stroke spans
+    // x=26 to x=30; x=28 (the path's own center) is the most solidly
+    // painted pixel, while the original x=30 attempt landed right on the
+    // stroke's own outer edge and sampled background instead (the real
+    // bug this comment update fixes -- confirmed directly, not guessed,
+    // by the first run's own [255,255,255] white result). y=675 is
+    // CARD_HEIGHT/2, well clear of the corner indices.
+    await waitForShareCardReady(page);
+    const inkSample = await sampleCanvasPixel(page, 28, 675);
+    const expectedInkHex = fixture.expectedInk[0] === 0 ? '#000000' : '#c8102e';
+    record(
+      `[share-card/deck-${fixture.label.replace(' ', '-')}] completing a ${fixture.label} Deck card opens the white playing-card variant with the correct suit ink`,
+      cardVisible &&
+        !!debugInfo &&
+        debugInfo.variant === 'deck' &&
+        debugInfo.deckCardNumber === 1 &&
+        debugInfo.suitInk.toLowerCase() === expectedInkHex &&
+        closeToRgb(inkSample, fixture.expectedInk),
+      JSON.stringify({ cardVisible, debugInfo, inkSample, fixture })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, `share-card-deck-${fixture.label.replace(' ', '-')}.png`) }).catch(() => {});
+
+    await context.close();
+  }
+
+  // [share-card/colorways]: all five standard colorways, forced
+  // deterministically via window.__shareCardForceColorwayIndex (the same
+  // "force what the real mechanism would produce" technique this suite
+  // already uses throughout) rather than retrying Math.random(). Driven
+  // through five real MARK COMPLETE actions on five distinct weekdays
+  // (Mon-Fri) rather than the COW score path -- a first attempt at this
+  // block used repeated COW submissions instead, and failed outright
+  // (cardVisible:false for all five): root-caused directly, not guessed
+  // at -- DocsCowsScreen only renders EntryForm when the REAL weekly
+  // challenge cycle is currently open (getChallengeCycle(), real wall
+  // clock), so a check that happens to run during the real
+  // Saturday-noon-to-Sunday-6pm closed window can never reach EntryForm
+  // at all regardless of what this suite seeds into Content Library. Five
+  // distinct real weekdays sidesteps that real-time dependency entirely,
+  // the same lesson this file's own Round 29 writeup already drew for a
+  // different check.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.addInitScript(() => {
+      window.__shareCardForceColorwayIndex = 0;
+    });
+    // A fresh completion crossing totalWorkoutsLogged from 0 to 1 makes
+    // BadgeContext's own effect try to grant "day one doug" -- answered
+    // directly, same gap documented on the [share-card/wod] block above.
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } }]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+
+    const expectedBackgrounds = [
+      [7, 102, 82], // Augusta Green
+      [229, 184, 11], // Bright Yellow
+      [0, 0, 0], // Black
+      [7, 102, 82], // Green with the yellow wave
+      [0, 0, 0], // Black with the yellow wave
+    ];
+    const weekdayTargets = [1, 2, 3, 4, 5]; // Mon-Fri, each a distinct real WOD day
+
+    for (let i = 0; i < 5; i++) {
+      await page.evaluate((idx) => {
+        window.__shareCardForceColorwayIndex = idx;
+      }, i);
+      await page.getByTestId(`date-strip-cell-${offsetToWeekday(weekdayTargets[i])}`).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await page.getByTestId('day-panel-complete').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(600);
+
+      const cardVisible = await page.getByTestId('completion-share-card').isVisible().catch(() => false);
+      const debugInfo = await readShareCardDebug(page);
+      await waitForShareCardReady(page);
+      const bgSample = await sampleCanvasPixel(page, 60, 60);
+      record(
+        `[share-card/colorway-${i}] colorway ${STANDARD_COLORWAY_IDS[i]} renders the real background color on the canvas`,
+        cardVisible && !!debugInfo && debugInfo.colorwayId === STANDARD_COLORWAY_IDS[i] && closeToRgb(bgSample, expectedBackgrounds[i]),
+        JSON.stringify({ cardVisible, debugInfo, bgSample })
+      );
+      if (SCREENSHOT_DIR)
+        await page.screenshot({ path: path.join(SCREENSHOT_DIR, `share-card-colorway-${STANDARD_COLORWAY_IDS[i]}.png`) }).catch(() => {});
+
+      await page.getByTestId('completion-share-card-close').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      // Each weekday is a fresh day -- close the WOD bar back down so the
+      // next iteration's own wod-bar-toggle tap has a clean, consistent
+      // starting state to expand from.
+      await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+    }
+
+    await context.close();
+  }
+
+  // [share-card/post-100]: the progress bar retires once the target is
+  // cleared -- a real wod_completions fixture seeded at 99 rows, then one
+  // more real MARK COMPLETE crosses the threshold to exactly 100.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const ninetyNineRows = Array.from({ length: 99 }, (_, i) => ({
+      day_key: `share-card-fixture-${i}`,
+      workout_title: `Fixture Workout ${i}`,
+      date_label: 'A day',
+      workout_timestamp: Date.now() - (99 - i) * 86400000,
+      rounds: '5',
+      time_taken: '—',
+      kettlebell_kg: '16',
+      notes: '',
+      media_url: null,
+      media_type: null,
+      completed_at: new Date(Date.now() - (99 - i) * 86400000).toISOString(),
+    }));
+    await page.route('**/rest/v1/wod_completions*', (route) => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ninetyNineRows) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+    // Crossing from 99 to 100 would otherwise trip BOTH the day_one_doug
+    // and hundred_down upsert-loop gap (see the earlier blocks' own
+    // comment) -- both answered directly here from the start.
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } },
+          { user_id: USER_ID, badge_id: 'hundred_down', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId(`date-strip-cell-${offsetToWeekday(1)}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('day-panel-complete').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    // "HUNDRED DOWN" itself is canvas pixels, not DOM text -- `cleared`
+    // is CompletionShareCardOverlay's own debug mirror of exactly the
+    // same workoutNumber >= HUNDRED_DOWN_TARGET check drawProgressBlock
+    // uses to decide between the bar and the pill.
+    const debugInfo = await readShareCardDebug(page);
+    record(
+      '[share-card/post-100] crossing 100 shows the raw counter + a HUNDRED DOWN mark, not the progress bar',
+      !!debugInfo && debugInfo.workoutNumber === 100 && debugInfo.cleared === true,
+      JSON.stringify({ debugInfo })
+    );
+    await waitForShareCardReady(page);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'share-card-post-100.png') }).catch(() => {});
+
+    await context.close();
+  }
+
   // --- Screenshot: the schedule with the gold Pilates card. The inert
   // CLASS FULL state, the first-class-free question's new copy/X, and
   // the post-cancelled-checkout schedule are already captured by the

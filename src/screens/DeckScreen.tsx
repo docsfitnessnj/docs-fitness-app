@@ -9,6 +9,7 @@ import { CardBack } from '../components/CardBack';
 import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { useDeckProgress } from '../context/DeckProgressContext';
 import { DECK_CARDS, DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
+import { openCompletionShareCard } from '../lib/completionShareCard';
 import { DECK_STORE_URL } from '../lib/links';
 import { colors, fonts } from '../theme';
 
@@ -217,7 +218,14 @@ function DeckOfWods() {
         card={selectedCard}
         onClose={() => setSelectedCard(null)}
         isComplete={selectedCard ? isComplete(selectedCard.id) : false}
-        onToggleComplete={() => selectedCard && toggleComplete(selectedCard.id)}
+        onToggleComplete={() => {
+          if (!selectedCard) return;
+          // Round 33: THE COMPLETION SHARE CARD opens only on the
+          // incomplete -> complete transition, never on un-completing.
+          const wasComplete = isComplete(selectedCard.id);
+          toggleComplete(selectedCard.id);
+          if (!wasComplete) openCompletionShareCard({ kind: 'deck', card: selectedCard, date: new Date() });
+        }}
       />
 
       <DeckUpsellModal visible={upsellVisible} onDismiss={() => setUpsellVisible(false)} />
