@@ -9,6 +9,7 @@ import { useCompletionShareCardState } from '../lib/completionShareCard';
 import {
   CARD_HEIGHT,
   CARD_WIDTH,
+  DECK_CARD_HEIGHT,
   ShareCardPayload,
   canvasToBlob,
   deckInkColor,
@@ -159,6 +160,11 @@ export function CompletionShareCardOverlay() {
       ? { variant: 'deck', title: payload.card.title, workoutNumber: payload.workoutNumber, deckCardNumber: payload.deckCardNumber, suitInk: deckInkColor(payload.card), cleared }
       : { variant: 'standard', title: payload.title, workoutNumber: payload.workoutNumber, colorwayId: payload.colorway.id, cleared };
 
+  // The deck card is a true 5:7 playing-card ratio, taller than the
+  // standard card's own ~4:5 -- the preview box has to size itself per
+  // variant or a deck card would render squashed/stretched on screen.
+  const previewHeight = (PREVIEW_MAX_WIDTH * (payload.variant === 'deck' ? DECK_CARD_HEIGHT : CARD_HEIGHT)) / CARD_WIDTH;
+
   return (
     <View style={styles.root} testID="completion-share-card">
       <Text style={styles.hiddenDebugText} testID="completion-share-card-debug">
@@ -168,7 +174,7 @@ export function CompletionShareCardOverlay() {
         <Ionicons name="close" size={26} color={colors.white} />
       </AppPressable>
 
-      <View style={styles.cardWrap}>
+      <View style={[styles.cardWrap, { height: previewHeight }]}>
         <View nativeID="completion-share-card-canvas-host" style={styles.canvasHost} testID="completion-share-card-canvas" />
         {!ready && (
           <View style={styles.loadingOverlay} testID="completion-share-card-loading">
@@ -203,8 +209,6 @@ export function CompletionShareCardOverlay() {
   );
 }
 
-const PREVIEW_HEIGHT = (PREVIEW_MAX_WIDTH * CARD_HEIGHT) / CARD_WIDTH;
-
 const styles = StyleSheet.create({
   root: {
     position: 'absolute',
@@ -236,10 +240,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.14)',
   },
   cardWrap: {
+    // No borderRadius/overflow:hidden here anymore -- the canvas itself now
+    // bakes the real rounded-card shape (and its own black backdrop
+    // outside the rounded corners) directly into the bitmap, matching the
+    // real exported/shared/saved image exactly. See shareCardRender.ts's
+    // clipToRoundedCard().
     width: PREVIEW_MAX_WIDTH,
-    height: PREVIEW_HEIGHT,
-    borderRadius: 14,
-    overflow: 'hidden',
     backgroundColor: '#000000',
   },
   canvasHost: {
