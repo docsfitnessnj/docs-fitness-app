@@ -18,6 +18,7 @@ import {
 } from '../context/ChallengeContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { formatEtTime } from '../lib/challengeSchedule';
+import { openCompletionShareCard } from '../lib/completionShareCard';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { colors, fonts } from '../theme';
 
@@ -305,6 +306,12 @@ function DocsCowsContent() {
       reps: entry.reps,
       time: entry.time,
     });
+    // Round 33: THE COMPLETION SHARE CARD opens after posting a COW score
+    // -- addChallengeEntry (ChallengeContext.addEntry) is itself fire-
+    // and-forget by design, so this fires immediately, the same
+    // optimistic convention every other completion path in this app
+    // already follows.
+    openCompletionShareCard({ kind: 'cow', title: current.title, date: new Date() });
   };
 
   // "Coming this week" only ever describes an OPEN cycle with nothing

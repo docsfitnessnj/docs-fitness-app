@@ -21,6 +21,7 @@ import {
 import { LOCATION_NAME, rowsForDate } from '../data/schedule';
 import { LOCATION_MAPS_URL } from '../lib/links';
 import { ExternalLinkPressable } from './ExternalLinkPressable';
+import { openCompletionShareCard } from '../lib/completionShareCard';
 import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useIsDesktop } from '../lib/responsive';
@@ -87,10 +88,16 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
   const barLabel = isSaturday ? STEADY_STATE_SATURDAY_NAME : isSunday ? SUNDAY_SETUP_NAME : "DOC'S WORKOUT OF THE DAY";
 
   const toggleComplete = () => {
+    // Round 33: THE COMPLETION SHARE CARD opens only on the incomplete ->
+    // complete transition, never on un-completing -- `isComplete` above
+    // already reflects the PRE-toggle state.
+    const wasComplete = isComplete;
     if (wod) {
       toggleCompleted(dayKey, wod.title, dateLabel, day.date.getTime());
+      if (!wasComplete) openCompletionShareCard({ kind: 'wod', title: wod.title, date: day.date });
     } else if (isSaturday) {
       toggleCompleted(dayKey, STEADY_STATE_SATURDAY_NAME, dateLabel, day.date.getTime());
+      if (!wasComplete) openCompletionShareCard({ kind: 'wod', title: STEADY_STATE_SATURDAY_NAME, date: day.date });
     }
   };
 
@@ -256,7 +263,9 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                 </View>
               ) : (
               <View style={styles.card}>
-                <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>{wod.title}</Text>
+                <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]} testID="day-panel-wod-title">
+                  {wod.title}
+                </Text>
                 <WatchVideoBreakdownButton videoUrl={wod.videoUrl} />
                 {wod.moves.map((move, index) => {
                   const parsed = parseMoveRow(move);

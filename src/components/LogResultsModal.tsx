@@ -11,6 +11,7 @@ import { useDisplayName } from '../context/ProfileContext';
 import { formatResultsLine, useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatShortDate, parseMoveRow } from '../data/content';
 import { showAlert } from '../lib/alert';
+import { openCompletionShareCard } from '../lib/completionShareCard';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useActionCompletion } from '../lib/useActionCompletion';
 import { colors, fonts } from '../theme';
@@ -64,10 +65,19 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
   const { status: saveStatus, run: runSave } = useActionCompletion();
   const { status: postStatus, run: runPost } = useActionCompletion();
 
+  // Round 33: THE COMPLETION SHARE CARD opens after saving or posting
+  // logged results -- its own distinct trigger per the approved spec,
+  // independent of whether this day was already marked complete before
+  // this save/post.
+  const openShareCard = () => openCompletionShareCard({ kind: 'logged', title: workoutTitle, date });
+
   const handleSaveResults = () => {
     runSave(() => {
       markCompleteIfNeeded();
-    }, onClose);
+    }, () => {
+      onClose();
+      openShareCard();
+    });
   };
 
   const handlePostToCommunity = () => {
@@ -89,7 +99,10 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
               { workoutTitle, dateLabel, notes: log.notes.trim(), resultsLine: formatResultsLine(log) },
               log.media
             );
-          }, onClose);
+          }, () => {
+            onClose();
+            openShareCard();
+          });
         },
       },
     ]);

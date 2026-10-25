@@ -20,6 +20,7 @@ import {
   STEADY_STATE_SATURDAY_NAME,
   SUNDAY_SETUP_NAME,
 } from '../data/content';
+import { openCompletionShareCard } from '../lib/completionShareCard';
 import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useSteadyStateSaturday, useSundaySetup, useTomorrowsWorkoutHidden, useWeekdayWod } from '../lib/weekendContent';
@@ -87,10 +88,16 @@ export default function DocsWodsScreen() {
   const isComplete = wod ? isCompleted(dayKey) : isSaturday ? isCompleted(STEADY_STATE_SATURDAY_KEY) : false;
 
   const toggleComplete = () => {
+    // Round 33: THE COMPLETION SHARE CARD opens only on the incomplete ->
+    // complete transition, never on un-completing -- `isComplete` above
+    // already reflects the PRE-toggle state.
+    const wasComplete = isComplete;
     if (wod) {
       toggleCompleted(dayKey, wod.title, formatFullDate(selectedDay.date), selectedDay.date.getTime());
+      if (!wasComplete) openCompletionShareCard({ kind: 'wod', title: wod.title, date: selectedDay.date });
     } else if (isSaturday) {
       toggleCompleted(dayKey, STEADY_STATE_SATURDAY_NAME, formatFullDate(selectedDay.date), selectedDay.date.getTime());
+      if (!wasComplete) openCompletionShareCard({ kind: 'wod', title: STEADY_STATE_SATURDAY_NAME, date: selectedDay.date });
     }
   };
 
