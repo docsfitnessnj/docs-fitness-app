@@ -1595,7 +1595,7 @@ async function run() {
   await checkScreen('Community tab', async () => {}, { expectBottomFill: true, topId: 'safe-area-top-fill' });
 
   // --- the other three tabs ---
-  for (const tabLabel of ['WORKOUT OF THE DAY', "DOC'S COWS", 'THE DECK']) {
+  for (const tabLabel of ['YOUR WORKOUTS', "DOC'S COWS", 'THE DECK']) {
     await checkScreen(
       `${tabLabel} tab`,
       async (page) => {
@@ -2633,7 +2633,7 @@ async function run() {
     // all), silently reintroducing the exact date-dependent flakiness this
     // fix exists to remove. A plain literal 0 is the only correct index.
     await page
-      .getByRole('tab', { name: /WORKOUT OF THE DAY/i })
+      .getByRole('tab', { name: /YOUR WORKOUTS/i })
       .first()
       .click({ timeout: 5000 })
       .catch(() => {});
@@ -2719,10 +2719,11 @@ async function run() {
     // name the real, current tab labels -- never a tab name that no
     // longer exists.
     record(
-      '[tab-rename/tour-four-rooms] stop 4\'s body names the real current tab labels, not the old "Doc\'s WODs"/"Challenge of the Week" ones',
-      tourCardText.includes('Workout of the Day') &&
+      '[tab-rename/tour-four-rooms] stop 4\'s body names the real current tab labels, not the old "Doc\'s WODs"/"Workout of the Day"/"Challenge of the Week" ones',
+      tourCardText.includes('Your Workouts') &&
         tourCardText.includes("Doc's COWS + Live Leaderboard") &&
         !tourCardText.includes("Doc's WODs,") &&
+        !tourCardText.includes('Workout of the Day') &&
         !tourCardText.includes('The Challenge of the Week'),
       JSON.stringify({ tourCardText })
     );
@@ -3871,6 +3872,19 @@ async function run() {
     // challenge at all and shows the no-challenge notice instead. Seed one
     // directly, bypassing the admin publish flow, the same way a real
     // member's device would have one after Doc publishes.
+    //
+    // Round 32 follow-up: a "Date.now() - 86400000" (24h-ago) releaseAt was
+    // found genuinely flaky here, root-caused directly, not assumed -- it's
+    // unrelated to any tab-rename change. useCurrentChallenge()'s own
+    // asOf is cycle.closeAt (Saturday 12pm ET) whenever the current cycle
+    // is CLOSED (Saturday 12pm ET through the following Sunday 6pm ET,
+    // challengeSchedule.ts), and that gap between closeAt and "now" can be
+    // up to ~30 hours (right before the Sunday 6pm reopen). A seed dated
+    // exactly 24h in the past can land AFTER closeAt in that window,
+    // making useCurrentChallenge() find no live entry at all -- exactly
+    // what happened here, confirmed by reading the real cycle math rather
+    // than guessing. 2 days (48h) comfortably clears that 30-hour max gap
+    // regardless of what day or time the suite runs.
     await page.addInitScript(() => {
       try {
         window.localStorage.setItem(
@@ -3887,11 +3901,11 @@ async function run() {
               videoUrl: '',
               notes: '',
               scoringType: 'rounds',
-              releaseAt: Date.now() - 86400000,
+              releaseAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
               status: 'published',
               scheduled: true,
-              createdAt: Date.now() - 86400000,
-              updatedAt: Date.now() - 86400000,
+              createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+              updatedAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
             },
           ])
         );
@@ -5059,7 +5073,7 @@ async function run() {
 
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'movement-vault-appears-in-before.png') }).catch(() => {});
 
-    await page.getByRole('tab', { name: /WORKOUT OF THE DAY/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.getByRole('tab', { name: /YOUR WORKOUTS/i }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
     // Index 0 is always Monday: DocsWodsScreen's own DateStrip is fed by
     // getCurrentWeek() (content.ts), a FIXED Monday-indexed week of today
@@ -5199,7 +5213,7 @@ async function run() {
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(900);
 
-    await page.getByRole('tab', { name: /WORKOUT OF THE DAY/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.getByRole('tab', { name: /YOUR WORKOUTS/i }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
     await page.evaluate((idx) => {
       const nodes = Array.from(document.querySelectorAll(`[data-testid="date-strip-cell-${idx}"]`));
@@ -5360,7 +5374,7 @@ async function run() {
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(900);
 
-    await page.getByRole('tab', { name: /WORKOUT OF THE DAY/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.getByRole('tab', { name: /YOUR WORKOUTS/i }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
     await page.evaluate((idx) => {
       const nodes = Array.from(document.querySelectorAll(`[data-testid="date-strip-cell-${idx}"]`));
@@ -5440,7 +5454,7 @@ async function run() {
       await page.waitForTimeout(400);
     }
 
-    await page.getByRole('tab', { name: /WORKOUT OF THE DAY/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.getByRole('tab', { name: /YOUR WORKOUTS/i }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
     await page.evaluate((idx) => {
       const nodes = Array.from(document.querySelectorAll(`[data-testid="date-strip-cell-${idx}"]`));
@@ -5545,8 +5559,11 @@ async function run() {
   // Round 32: the two bottom tab label renames. "DOC'S WODS" -> "WORKOUT OF
   // THE DAY" and "WEEKLY CHALLENGE" -> "DOC'S COWS" are label-only changes
   // (TabConfig.navLabel in App.tsx) -- the type treatment (font, size,
-  // spacing, single line) is untouched, and WORKOUT OF THE DAY is accepted
-  // to truncate on the smallest phones rather than wrap or shrink. Checked
+  // spacing, single line) is untouched, and WORKOUT OF THE DAY was accepted
+  // to truncate on the smallest phones rather than wrap or shrink.
+  // Round 32 follow-up: WORKOUT OF THE DAY truncated on real iPhones, so it
+  // was replaced with YOUR WORKOUTS -- same label-only change, same type
+  // treatment untouched. Checked
   // on both a full-access account (all 4 tabs unlocked) and a
   // limited-access account (COWS/Deck locked, but the label text itself is
   // identical regardless of lock state).
@@ -5566,13 +5583,14 @@ async function run() {
       Array.from(document.querySelectorAll('[role="tab"]')).map((el) => (el.textContent || '').trim())
     );
     record(
-      '[tab-rename/full-access] the bottom bar reads COMMUNITY, WORKOUT OF THE DAY, DOC\'S COWS, THE DECK (full access)',
+      "[tab-rename/full-access] the bottom bar reads COMMUNITY, YOUR WORKOUTS, DOC'S COWS, THE DECK (full access)",
       fullTabNames.some((t) => t.includes('COMMUNITY')) &&
-        fullTabNames.some((t) => t.includes('WORKOUT OF THE DAY')) &&
+        fullTabNames.some((t) => t.includes('YOUR WORKOUTS')) &&
         fullTabNames.some((t) => t.includes("DOC'S COWS")) &&
         fullTabNames.some((t) => t.includes('THE DECK')) &&
         !fullTabNames.some((t) => t.includes("DOC'S WODS")) &&
-        !fullTabNames.some((t) => t.includes('WEEKLY CHALLENGE')),
+        !fullTabNames.some((t) => t.includes('WEEKLY CHALLENGE')) &&
+        !fullTabNames.some((t) => t.includes('WORKOUT OF THE DAY')),
       JSON.stringify({ fullTabNames })
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tab-bar-full-access.png') }).catch(() => {});
@@ -5599,11 +5617,12 @@ async function run() {
     record(
       "[tab-rename/limited] the bottom bar reads the same renamed labels for a limited-access (booking-only) account, lock icon aside",
       limitedTabNames.some((t) => t.includes('COMMUNITY')) &&
-        limitedTabNames.some((t) => t.includes('WORKOUT OF THE DAY')) &&
+        limitedTabNames.some((t) => t.includes('YOUR WORKOUTS')) &&
         limitedTabNames.some((t) => t.includes("DOC'S COWS")) &&
         limitedTabNames.some((t) => t.includes('THE DECK')) &&
         !limitedTabNames.some((t) => t.includes("DOC'S WODS")) &&
-        !limitedTabNames.some((t) => t.includes('WEEKLY CHALLENGE')),
+        !limitedTabNames.some((t) => t.includes('WEEKLY CHALLENGE')) &&
+        !limitedTabNames.some((t) => t.includes('WORKOUT OF THE DAY')),
       JSON.stringify({ limitedTabNames })
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tab-bar-limited.png') }).catch(() => {});
