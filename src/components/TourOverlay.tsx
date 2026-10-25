@@ -40,7 +40,7 @@ const FULL_STOPS: Stop[] = [
     title: 'THE FOUR ROOMS',
     body: (
       <>
-        {"Community, Doc's WODs, The Challenge of the Week + Live Leaderboard and The Deck "}
+        {"Community, Workout of the Day, Doc's COWS + Live Leaderboard and The Deck "}
         <Text style={{ color: colors.playingCardRed }}>♦</Text>
         <Text style={{ color: colors.text }}>♠</Text>
         <Text style={{ color: colors.playingCardRed }}>♥</Text>

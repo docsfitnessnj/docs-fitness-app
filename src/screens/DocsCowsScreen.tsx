@@ -33,7 +33,7 @@ function ChallengeHero({ current }: { current: CurrentChallenge }) {
       <Text style={styles.ghostWatermark}>COW</Text>
       <View style={styles.badge}>
         <Ionicons name="flame" size={14} color={colors.greenDeep} />
-        <Text style={styles.badgeText}>THIS WEEK'S CHALLENGE OF THE WEEK</Text>
+        <Text style={styles.badgeText}>COW = CHALLENGE OF THE WEEK</Text>
       </View>
       <Text style={styles.heroTitle}>{current.title}</Text>
       <WatchVideoBreakdownButton videoUrl={current.videoUrl} />

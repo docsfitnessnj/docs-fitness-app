@@ -1595,7 +1595,7 @@ async function run() {
   await checkScreen('Community tab', async () => {}, { expectBottomFill: true, topId: 'safe-area-top-fill' });
 
   // --- the other three tabs ---
-  for (const tabLabel of ["DOC'S WODS", 'WEEKLY CHALLENGE', 'THE DECK']) {
+  for (const tabLabel of ['WORKOUT OF THE DAY', "DOC'S COWS", 'THE DECK']) {
     await checkScreen(
       `${tabLabel} tab`,
       async (page) => {
@@ -2633,7 +2633,7 @@ async function run() {
     // all), silently reintroducing the exact date-dependent flakiness this
     // fix exists to remove. A plain literal 0 is the only correct index.
     await page
-      .getByRole('tab', { name: /DOC'?S WODS/i })
+      .getByRole('tab', { name: /WORKOUT OF THE DAY/i })
       .first()
       .click({ timeout: 5000 })
       .catch(() => {});
@@ -2709,9 +2709,21 @@ async function run() {
       await page.waitForTimeout(600);
     }
     const tourCardText = await page.getByTestId('tour-card').innerText().catch(() => '');
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tour-full-access-stop-4-four-rooms.png') }).catch(() => {});
     record(
       '[tab-bar-integrity/tour-stop-4] three NEXT taps from a fresh start land on "THE FOUR ROOMS" (tab-bar stop)',
       tourCardText.includes('THE FOUR ROOMS'),
+      JSON.stringify({ tourCardText })
+    );
+    // Round 32: the room names listed in this stop's own body copy must
+    // name the real, current tab labels -- never a tab name that no
+    // longer exists.
+    record(
+      '[tab-rename/tour-four-rooms] stop 4\'s body names the real current tab labels, not the old "Doc\'s WODs"/"Challenge of the Week" ones',
+      tourCardText.includes('Workout of the Day') &&
+        tourCardText.includes("Doc's COWS + Live Leaderboard") &&
+        !tourCardText.includes("Doc's WODs,") &&
+        !tourCardText.includes('The Challenge of the Week'),
       JSON.stringify({ tourCardText })
     );
     // Visibility only, not tappability -- the tour's own full-screen root
@@ -3889,9 +3901,19 @@ async function run() {
     await seedSignedInSession(page);
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(900);
-    const tabButton = page.getByRole('tab', { name: /WEEKLY CHALLENGE/i }).first();
+    const tabButton = page.getByRole('tab', { name: /DOC'?S COWS/i }).first();
     await tabButton.click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
+    // Round 32: the small green badge above the challenge title now spells
+    // out what COW stands for, rather than the old redundant "THIS WEEK'S
+    // CHALLENGE OF THE WEEK".
+    const cowBadgeVisible = await page.getByText('COW = CHALLENGE OF THE WEEK', { exact: true }).first().isVisible().catch(() => false);
+    record(
+      '[tab-rename/cow-badge] the COWS screen badge reads exactly "COW = CHALLENGE OF THE WEEK"',
+      cowBadgeVisible,
+      JSON.stringify({ cowBadgeVisible })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'cows-screen-badge.png') }).catch(() => {});
     const openTiming = await page.getByTestId('challenge-open-timing').innerText({ timeout: 3000 }).catch(() => null);
     const closedTiming = await page.getByTestId('challenge-closed-timing').innerText({ timeout: 3000 }).catch(() => null);
     const timingText = openTiming ?? closedTiming ?? '';
@@ -5037,7 +5059,7 @@ async function run() {
 
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'movement-vault-appears-in-before.png') }).catch(() => {});
 
-    await page.getByRole('tab', { name: /DOC'?S WODS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.getByRole('tab', { name: /WORKOUT OF THE DAY/i }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
     // Index 0 is always Monday: DocsWodsScreen's own DateStrip is fed by
     // getCurrentWeek() (content.ts), a FIXED Monday-indexed week of today
@@ -5177,7 +5199,7 @@ async function run() {
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(900);
 
-    await page.getByRole('tab', { name: /DOC'?S WODS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.getByRole('tab', { name: /WORKOUT OF THE DAY/i }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
     await page.evaluate((idx) => {
       const nodes = Array.from(document.querySelectorAll(`[data-testid="date-strip-cell-${idx}"]`));
@@ -5338,7 +5360,7 @@ async function run() {
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(900);
 
-    await page.getByRole('tab', { name: /DOC'?S WODS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.getByRole('tab', { name: /WORKOUT OF THE DAY/i }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
     await page.evaluate((idx) => {
       const nodes = Array.from(document.querySelectorAll(`[data-testid="date-strip-cell-${idx}"]`));
@@ -5418,7 +5440,7 @@ async function run() {
       await page.waitForTimeout(400);
     }
 
-    await page.getByRole('tab', { name: /DOC'?S WODS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.getByRole('tab', { name: /WORKOUT OF THE DAY/i }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
     await page.evaluate((idx) => {
       const nodes = Array.from(document.querySelectorAll(`[data-testid="date-strip-cell-${idx}"]`));
@@ -5517,6 +5539,74 @@ async function run() {
       JSON.stringify({ alertVisibleAfter, aboutVisible })
     );
 
+    await context.close();
+  }
+
+  // Round 32: the two bottom tab label renames. "DOC'S WODS" -> "WORKOUT OF
+  // THE DAY" and "WEEKLY CHALLENGE" -> "DOC'S COWS" are label-only changes
+  // (TabConfig.navLabel in App.tsx) -- the type treatment (font, size,
+  // spacing, single line) is untouched, and WORKOUT OF THE DAY is accepted
+  // to truncate on the smallest phones rather than wrap or shrink. Checked
+  // on both a full-access account (all 4 tabs unlocked) and a
+  // limited-access account (COWS/Deck locked, but the label text itself is
+  // identical regardless of lock state).
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    const fullTabNames = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[role="tab"]')).map((el) => (el.textContent || '').trim())
+    );
+    record(
+      '[tab-rename/full-access] the bottom bar reads COMMUNITY, WORKOUT OF THE DAY, DOC\'S COWS, THE DECK (full access)',
+      fullTabNames.some((t) => t.includes('COMMUNITY')) &&
+        fullTabNames.some((t) => t.includes('WORKOUT OF THE DAY')) &&
+        fullTabNames.some((t) => t.includes("DOC'S COWS")) &&
+        fullTabNames.some((t) => t.includes('THE DECK')) &&
+        !fullTabNames.some((t) => t.includes("DOC'S WODS")) &&
+        !fullTabNames.some((t) => t.includes('WEEKLY CHALLENGE')),
+      JSON.stringify({ fullTabNames })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tab-bar-full-access.png') }).catch(() => {});
+    await context.close();
+  }
+
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+    await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible2 = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible2) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    const limitedTabNames = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[role="tab"]')).map((el) => (el.textContent || '').trim())
+    );
+    record(
+      "[tab-rename/limited] the bottom bar reads the same renamed labels for a limited-access (booking-only) account, lock icon aside",
+      limitedTabNames.some((t) => t.includes('COMMUNITY')) &&
+        limitedTabNames.some((t) => t.includes('WORKOUT OF THE DAY')) &&
+        limitedTabNames.some((t) => t.includes("DOC'S COWS")) &&
+        limitedTabNames.some((t) => t.includes('THE DECK')) &&
+        !limitedTabNames.some((t) => t.includes("DOC'S WODS")) &&
+        !limitedTabNames.some((t) => t.includes('WEEKLY CHALLENGE')),
+      JSON.stringify({ limitedTabNames })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tab-bar-limited.png') }).catch(() => {});
     await context.close();
   }
 

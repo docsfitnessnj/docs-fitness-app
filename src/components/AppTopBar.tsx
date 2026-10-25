@@ -80,7 +80,7 @@ export function AppTopBar({ subtitle, onOpenSidebar, onOpenSearch, onOpenGroupCh
             <Text style={styles.title}>DOC'S FITNESS</Text>
           </AppPressable>
           {/* A sibling of titleRow (not nested inside it) so its own width —
-              which varies a lot by tab ("COMMUNITY" vs "WEEKLY CHALLENGE")
+              which varies a lot by tab ("COMMUNITY" vs "DOC'S COWS + LIVE LEADERBOARD")
               — can never influence titleRow's width and shift the mark +
               wordmark lockup itself; titleWrap's alignItems:'center' centers
               each of them independently. */}
