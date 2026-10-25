@@ -152,7 +152,7 @@ const TABS: TabConfig[] = [
   {
     name: 'DocsWods',
     title: "DOC'S WODS",
-    navLabel: 'WORKOUT OF THE DAY',
+    navLabel: 'YOUR WORKOUTS',
     renderIcon: ({ color, size }) => <Ionicons name="flame-outline" size={size} color={color} />,
     component: DocsWodsScreen,
     isLocked: (m) => m.wodAccessLevel === 'none',
