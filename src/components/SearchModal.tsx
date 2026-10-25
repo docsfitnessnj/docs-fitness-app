@@ -4,6 +4,7 @@ import { AppPressable } from './AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { useCommunity } from '../context/CommunityContext';
 import { useDeckProgress } from '../context/DeckProgressContext';
+import { useMembership } from '../context/MembershipContext';
 import { getCurrentWeek, WEEKDAY_WODS } from '../data/content';
 import { DECK_CARDS, deckCardLabel } from '../data/deckCards';
 import { MOVEMENTS } from '../data/movements';
@@ -42,6 +43,7 @@ export function SearchModal({ visible, onClose, query, onQueryChange }: Props) {
   const focusRing = useFocusRing();
   const { posts } = useCommunity();
   const { isComplete } = useDeckProgress();
+  const { fullContentAccess } = useMembership();
 
   const results = useMemo<Result[]>(() => {
     const q = query.trim().toLowerCase();
@@ -56,15 +58,26 @@ export function SearchModal({ visible, onClose, query, onQueryChange }: Props) {
       (w) => matchesWordStart(w.title, q) || w.moves.some((m) => matchesWordStart(m, q))
     ).map((w) => ({ id: `wod-${w.key}`, section: 'WORKOUTS', title: w.title, subtitle: w.moves[0], wodKey: w.key }));
 
-    // Uncompleted cards are face-down by design everywhere in the app (the
-    // shuffle/mystery mechanic) -- a search result naming one would leak
-    // its identity and spoil the shuffle, so they're excluded from the
-    // index entirely, not just softened in how they're shown.
-    const deckResults: Result[] = DECK_CARDS.filter(
-      (c) => isComplete(c.id) && (matchesWordStart(deckCardLabel(c), q) || matchesWordStart(c.title, q))
-    )
-      .slice(0, 8)
-      .map((c) => ({ id: `deck-${c.id}`, section: 'DECK CARDS', title: `${deckCardLabel(c)} — ${c.title}`, subtitle: c.format, cardId: c.id }));
+    // Round 31, owner decision: deck cards do not appear in search results
+    // for a limited-access tier at all -- consistent with APPEARS IN being
+    // hidden for them (Round 30, MovementVaultScreen.tsx). A real device
+    // showed no deck result ever rendering for a limited account, which the
+    // suite's own prior check missed because it mocked a deck_completions
+    // row directly over the network -- a shape that can't occur on a real
+    // device, since reaching DeckCardDetailModal's own MARK COMPLETE button
+    // (the only way a completion is ever written) has been gated to
+    // fullContentAccess since Round 30 too. Rather than rely on that as the
+    // only enforcement (a member who completes cards on a full-access tier
+    // and later downgrades would keep their old completions), this checks
+    // access directly. Uncompleted cards are ALSO excluded, for a full
+    // access account, same as before -- face-down by design everywhere in
+    // the app (the shuffle/mystery mechanic); a search result naming one
+    // would leak its identity and spoil the shuffle.
+    const deckResults: Result[] = fullContentAccess
+      ? DECK_CARDS.filter((c) => isComplete(c.id) && (matchesWordStart(deckCardLabel(c), q) || matchesWordStart(c.title, q)))
+          .slice(0, 8)
+          .map((c) => ({ id: `deck-${c.id}`, section: 'DECK CARDS', title: `${deckCardLabel(c)} — ${c.title}`, subtitle: c.format, cardId: c.id }))
+      : [];
 
     const communityResults: Result[] = posts
       .filter(
@@ -99,7 +112,7 @@ export function SearchModal({ visible, onClose, query, onQueryChange }: Props) {
       .map((m) => ({ id: `movement-${m.id}`, section: 'MOVEMENTS', title: m.name, movementId: m.id }));
 
     return [...wodResults, ...deckResults, ...communityResults, ...memberResults, ...movementResults];
-  }, [query, posts, isComplete]);
+  }, [query, posts, isComplete, fullContentAccess]);
 
   // Every result opens its exact destination, never just the tab it lives
   // in. Deck card / post / member / movement destinations are their own

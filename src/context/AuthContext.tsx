@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { dismissAlert } from '../lib/alert';
+import { releaseAllInterruptions } from '../lib/interruptionGate';
 import { markSignedUpThisSession } from '../lib/signupSessionFlag';
 import { supabase } from '../lib/supabaseClient';
 
@@ -140,6 +142,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null };
       },
       signOut: async () => {
+        // Round 31: AlertHost and the shared interruption gate
+        // (interruptionGate.ts) are both module-level state, mounted/
+        // read above the signed-in/out branch -- a free-tier upgrade
+        // nudge (or anything else self-launching) that happened to be
+        // showing stays showing right through the auth state flipping
+        // and the screen underneath switching to the signed-out welcome
+        // page, since nothing about that transition touches either of
+        // them. Dismissed here, synchronously, before the actual sign-
+        // out call even starts, so there's no race with how fast the
+        // auth listener happens to propagate.
+        dismissAlert();
+        releaseAllInterruptions();
         await supabase.auth.signOut();
       },
       sendPasswordReset: async (email) => {

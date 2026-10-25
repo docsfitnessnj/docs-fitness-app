@@ -5202,31 +5202,36 @@ async function run() {
   }
 
   // ---------------------------------------------------------------------
-  // Round 30, check (b): the real door audit this round's brief asked
-  // for -- every existing caller of openDeckCard()/DeckCardDetailModal
-  // for a limited-access account. DeckScreen's own local usage is already
-  // safe by construction (behind MembershipGate -- never mounts for a
-  // limited tier at all). Movement Vault's APPEARS IN door is covered by
-  // the check directly above (the section isn't there to tap at all).
-  // The one remaining real door is Search's own DECK CARDS result, which
-  // (unlike APPEARS IN) is NOT hidden for a limited account -- the result
-  // row itself is a visible teaser (same house pattern as Doc's Daily
-  // Story's own ring staying visible for a locked tier), but tapping it
-  // must show the same "JOIN THE BOATHOUSE" lock treatment the Deck tab
-  // itself already shows, never the real card content. Both doors
-  // ultimately open the SAME global DeckCardDetailModal (App.tsx), gated
-  // once via its own `locked` prop -- this check proves that gate holds
-  // from the door a limited account can actually still reach.
+  // Round 31, check (c): deck cards do not appear in search results for a
+  // limited-access tier AT ALL -- owner decision, replacing Round 30's own
+  // "visible teaser, locked on tap" behavior, which a real device
+  // contradicted outright (searching a deck card name as a limited account
+  // returned no deck result whatsoever, not a tappable locked row).
+  //
+  // Root cause of why Round 30's own check passed anyway: that check
+  // mocked a `deck_completions` row directly over the network to force a
+  // result into existence, bypassing the UI entirely -- a shape that can
+  // never occur on a real device, since the only way a completion is ever
+  // WRITTEN is DeckCardDetailModal's own MARK COMPLETE button, which Round
+  // 30's own fix had already gated to fullContentAccess in the same PR.
+  // A limited-access account's real `deck_completions` is therefore always
+  // empty in practice, so `deckResults` was always going to be empty on a
+  // real device regardless of what this check's own mock said -- the mock
+  // just asserted a world that couldn't exist, and the check never
+  // actually drove a real limited-access deckResults computation at all.
+  // `SearchModal.tsx`'s own `deckResults` now checks `fullContentAccess`
+  // directly instead of relying on that structural accident as the only
+  // enforcement (a member who completes cards on a full-access tier and
+  // later downgrades would otherwise keep showing their old completions in
+  // search) -- this check's own mocked completion row is deliberately kept
+  // AND still blocked, to prove the explicit access check is what's doing
+  // the work, not an absence of fixture data.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
     await setupMocks(page, USER_ID);
     await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
     await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
-    // deckResults in SearchModal.tsx only indexes COMPLETED cards (the
-    // shuffle/mystery "face-down by design" rule) -- a completion row for
-    // the real '6-spade' ("The Uni Life") card is what makes it show up
-    // as a result to tap at all.
     await page.route('**/rest/v1/deck_completions*', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ card_id: '6-spade', completed_at: new Date().toISOString() }]) })
     );
@@ -5254,30 +5259,61 @@ async function run() {
     await page.waitForTimeout(400);
     await page.getByPlaceholder(/search/i).first().fill('uni').catch(() => {});
     await page.waitForTimeout(500);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'search-deck-limited.png') }).catch(() => {});
 
     const resultVisible = await page.locator('#search-screen-container').getByText('Uni Life', { exact: false }).first().isVisible().catch(() => false);
     record(
-      '[deck-gate/search-door] a limited-access account still sees the DECK CARDS result row in search (a visible teaser, not hidden)',
+      '[deck-gate/search-door] a limited-access account gets NO deck card result at all for "uni", even with a completion row mocked',
+      !resultVisible,
+      JSON.stringify({ resultVisible })
+    );
+
+    await context.close();
+  }
+
+  // ---------------------------------------------------------------------
+  // Round 31, check (c), other half: a full access account's search
+  // results are completely unaffected by the new access check -- the same
+  // completed card still appears and still opens the real content.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/deck_completions*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ card_id: '6-spade', completed_at: new Date().toISOString() }]) })
+    );
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } }]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    await page.getByTestId('open-search').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByPlaceholder(/search/i).first().fill('uni').catch(() => {});
+    await page.waitForTimeout(500);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'search-deck-full-access.png') }).catch(() => {});
+
+    const resultVisible = await page.locator('#search-screen-container').getByText('Uni Life', { exact: false }).first().isVisible().catch(() => false);
+    record(
+      '[deck-gate/search-door] a full access account still sees the completed deck card result for "uni", unaffected',
       resultVisible,
       JSON.stringify({ resultVisible })
     );
     if (resultVisible) {
       await page.locator('#search-screen-container').getByText('Uni Life', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(600);
-      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-gate-search-door-locked.png') }).catch(() => {});
-      const lockVisible = await page.getByText('JOIN THE BOATHOUSE', { exact: false }).isVisible().catch(() => false);
       const markCompleteVisible = await page.getByTestId('deck-card-complete-toggle').isVisible().catch(() => false);
       record(
-        '[deck-gate/search-door] tapping it shows the JOIN THE BOATHOUSE lock treatment, never the real card content or its own MARK COMPLETE',
-        lockVisible && !markCompleteVisible,
-        JSON.stringify({ lockVisible, markCompleteVisible })
+        '[deck-gate/search-door] tapping it opens the real card content (MARK COMPLETE), not a lock',
+        markCompleteVisible,
+        JSON.stringify({ markCompleteVisible })
       );
-      const closeVisible = await page.getByTestId('deck-card-close').isVisible().catch(() => false);
-      record('[deck-gate/search-door] the locked card still has its own close X (an escape hatch, not a second dead end)', closeVisible, JSON.stringify({ closeVisible }));
-      await page.getByTestId('deck-card-close').click({ timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(400);
-      const backToSearchVisible = await page.locator('#search-screen-container').isVisible().catch(() => false);
-      record('[deck-gate/search-door] closing it reveals search again, exactly as it was', backToSearchVisible, JSON.stringify({ backToSearchVisible }));
     }
 
     await context.close();
@@ -5328,6 +5364,157 @@ async function run() {
       '[tab-dismiss/movement-vault] tapping COMMUNITY closes Movement Vault AND reveals the real Community content underneath -- not just a gold-lit tab with no visible change',
       !vaultOpenAfter && communityComposerVisible,
       JSON.stringify({ vaultOpenAfter, communityComposerVisible })
+    );
+
+    await context.close();
+  }
+
+  // ---------------------------------------------------------------------
+  // Round 31, check (a): Movement Vault's video renders -- a real iframe
+  // with the correct src, not the placeholder/retry fallback -- for both a
+  // limited-access and a full-access account, cold start. A real device
+  // report found every movement video rendering as a solid black box; this
+  // is the exact color `playerWrap`'s own background paints when nothing
+  // inside it ever renders. Reproduced directly (this suite's own earlier,
+  // throwaway diagnostic, not kept here) that this is NOT connected to
+  // Round 29/30's overlay-dismissal or modal-gating changes -- opening the
+  // vault, cold and warm, as both tiers, with the real youtube-nocookie.com
+  // request stubbed to succeed, renders the player correctly every time,
+  // with exactly one embed request per open and no unexpected reload. The
+  // real failure is the YouTube embed itself: a request that genuinely
+  // hangs (blocked, offline, slow) fires no iframe `load` event at all --
+  // no error, no signal of any kind, cross-origin -- which is why
+  // MovementVideoPlayer.tsx now races a timeout against `load` and forces
+  // a fresh iframe (new `key`) on expiry, up to a few automatic attempts,
+  // before showing an actionable "couldn't load, tap to retry" card
+  // instead of a silent black box forever. This sandboxed environment's
+  // own outbound network cannot reach youtube-nocookie.com at all
+  // (confirmed directly) -- the same category of "can't drive the real
+  // mechanism from this harness" gap already documented elsewhere in this
+  // file for Stripe/YouTube -- so this check stubs that one request to
+  // succeed and asserts the real, unmodified player renders off it, never
+  // falling back to the retry card.
+  for (const tierLabel of ['limited', 'full-access']) {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    if (tierLabel === 'limited') {
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+      await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+    } else {
+      await setupMocks(page, USER_ID);
+    }
+    let embedRequestCount = 0;
+    await page.route('https://www.youtube-nocookie.com/embed/**', (route) => {
+      embedRequestCount++;
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body style="background:#111"></body></html>' });
+    });
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+
+    await page.getByRole('tab', { name: /DOC'?S WODS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.evaluate((idx) => {
+      const nodes = Array.from(document.querySelectorAll(`[data-testid="date-strip-cell-${idx}"]`));
+      const target = nodes.find((el) => !el.closest('[aria-hidden="true"]'));
+      if (target) target.setAttribute('data-r31-video-cell', 'true');
+    }, 0);
+    await page.locator('[data-r31-video-cell="true"]').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('Kettlebell Swings', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, `movement-video-${tierLabel}.png`) }).catch(() => {});
+
+    const playerVisible = await page.getByTestId('movement-video-player').isVisible().catch(() => false);
+    const retryVisible = await page.getByTestId('movement-video-retry').isVisible().catch(() => false);
+    const iframeSrc = await page
+      .locator('[data-testid="movement-video-player"] iframe')
+      .first()
+      .getAttribute('src')
+      .catch(() => null);
+    record(
+      `[movement-video/${tierLabel}] the real video player renders with the correct embed src, never the black-box retry fallback`,
+      playerVisible && !retryVisible && !!iframeSrc && iframeSrc.includes('youtube-nocookie.com/embed/'),
+      JSON.stringify({ playerVisible, retryVisible, iframeSrc, embedRequestCount })
+    );
+    const reloadButtonVisible = await page.getByTestId('movement-video-reload').isVisible().catch(() => false);
+    record(
+      `[movement-video/${tierLabel}] the always-available reload control is present even on a successful load`,
+      reloadButtonVisible,
+      JSON.stringify({ reloadButtonVisible })
+    );
+
+    await context.close();
+  }
+
+  // ---------------------------------------------------------------------
+  // Round 31, check (b): a real-device report found the UNLOCK EVERYTHING
+  // upgrade nudge rendered on top of the signed-out welcome/About page
+  // right after signing out of a free-tier account -- that popup must
+  // only ever appear for a signed-in account on the free plan, inside the
+  // app. `AlertHost`'s own state (alert.ts) and the shared interruption
+  // gate (interruptionGate.ts) are both module-level, independent of auth
+  // state -- `AuthContext.tsx`'s `signOut()` now dismisses/releases both
+  // immediately, and `App.tsx` additionally refuses to render `AlertHost`
+  // at all while on the signed-out About step specifically (gated on
+  // `!(!signedUp && onboardingStep === 'about')`, not on `signedUp`
+  // generally -- real pre-signup screens like PricingScreen use
+  // showAlert() for genuine checkout confirmations and must keep
+  // working). This check drives the real flow end to end: a fresh
+  // online_free session shows the nudge, it's dismissed normally (the
+  // realistic path -- a full-screen modal blocks reaching Settings while
+  // it's still up), then Settings' real SIGN OUT confirm-and-sign-out
+  // flow runs, and the welcome screen that lands afterward shows zero
+  // popups of any kind.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+    await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+    // upgradeNudge.ts skips firing entirely for `how_train === 'boathouse'`
+    // until a real booking exists -- setupMocks()'s own generic profile
+    // default IS 'boathouse', which would silently skip the nudge here and
+    // leave this check with nothing real to clear. 'online' is the real
+    // shape a free-tier WOD/Deck member has.
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ display_name: 'Test Member', instagram_handle: '', favorite_quote: '', avatar_url: null, how_train: 'online', is_admin: false, show_tomorrows_workout: true, tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(), group_chat_muted: false }]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    record('[signout/alert-cleared] a fresh online_free session shows the upgrade nudge, confirming there is something real to clear', nudgeVisible, JSON.stringify({ nudgeVisible }));
+    await page.getByText('Not now', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    await page.getByTestId('open-sidebar').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('SETTINGS', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sign-out').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByText('Sign Out', { exact: true }).last().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'signout-welcome-clean.png') }).catch(() => {});
+
+    const alertVisibleAfter = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    const aboutVisible = await page.getByText("DOC'S FITNESS", { exact: false }).first().isVisible().catch(() => false);
+    record(
+      '[signout/alert-cleared] the signed-out welcome screen renders with zero popups after sign-out',
+      !alertVisibleAfter && aboutVisible,
+      JSON.stringify({ alertVisibleAfter, aboutVisible })
     );
 
     await context.close();

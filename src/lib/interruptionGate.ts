@@ -76,6 +76,18 @@ export function releaseInterruption(kind: InterruptionKind): void {
   notify();
 }
 
+// Round 31: force-clears the slot regardless of who currently holds it --
+// unlike releaseInterruption(kind), which only clears a slot the caller
+// itself still owns. Call this from AuthContext's signOut(), where the
+// whole signed-in session (and whatever self-launching popup happened to
+// have claimed the slot) is ending; there's no "stale release clobbering
+// the real current owner" risk to guard against here, because nothing
+// legitimately owns this slot once the member is signed out.
+export function releaseAllInterruptions(): void {
+  owner = null;
+  notify();
+}
+
 export function subscribeInterruptionGate(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
