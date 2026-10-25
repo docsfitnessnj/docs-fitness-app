@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 import { ModalHeader } from '../components/ModalHeader';
 import { MovementVideoPlayer } from '../components/movement/MovementVideoPlayer';
+import { getCurrentWeek } from '../data/content';
 import { deckCardLabel } from '../data/deckCards';
 import { Movement, getMovementById, searchMovements } from '../data/movements';
+import { openDeckCard } from '../lib/deckCardModal';
 import { findReferencesForMovement } from '../lib/movementMatcher';
+import { navigateToTab } from '../lib/navigationRef';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -42,7 +44,6 @@ function buildSections(movements: Movement[]): Section[] {
 }
 
 export function MovementVaultScreen({ visible, onClose, initialMovementId, initialReturnLabel }: Props) {
-  const navigation = useNavigation<any>();
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | undefined>(initialMovementId);
   // True while the detail view on screen is still the one the vault was
@@ -131,8 +132,33 @@ export function MovementVaultScreen({ visible, onClose, initialMovementId, initi
                   key={index}
                   style={styles.referenceRow}
                   onPress={() => {
+                    if (ref.type === 'deck') {
+                      // Opens as its own true Modal stacked ON TOP of this
+                      // vault (same mechanism Search's own DECK CARDS result
+                      // already uses) -- the vault stays mounted, unclosed,
+                      // underneath it. Closing the card (its own X or a
+                      // backdrop tap, both already wired) reveals this
+                      // detail view again exactly as it was; its own BACK
+                      // button then retraces to the original workout. This
+                      // was the real dead end: the old `onClose()` +
+                      // `navigation.navigate('Deck')` discarded the vault's
+                      // own stack and dropped a limited-access member onto
+                      // the Deck tab's full-screen "JOIN THE BOATHOUSE"
+                      // paywall with no way back to what they were doing.
+                      openDeckCard(ref.card.id);
+                      return;
+                    }
+                    // A WOD reference has no overlay of its own to stack on
+                    // (same structural gap Search's own WORKOUTS result
+                    // already has, and already resolves the same way --
+                    // see SearchModal.tsx's handleSelect) -- reaching it
+                    // means closing the vault to reveal the real tab
+                    // underneath. jumpToDate (missing before this fix) is
+                    // what makes it land on the exact referenced day, not
+                    // whichever day the WODs tab happened to have selected.
+                    const day = getCurrentWeek().find((d) => d.wod?.key === ref.wod.key);
                     onClose();
-                    navigation.navigate(ref.type === 'deck' ? 'Deck' : 'DocsWods');
+                    if (day) navigateToTab('DocsWods', { jumpToDate: day.date.getTime() });
                   }}
                   testID={`movement-reference-${index}`}
                 >

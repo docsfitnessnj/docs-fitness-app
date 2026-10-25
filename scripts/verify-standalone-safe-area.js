@@ -2610,11 +2610,49 @@ async function run() {
     // sidebarOpen still true (fullBleed={sidebarOpen} -- see App.tsx),
     // which is a different, already-fullBleed path. This entry point is
     // the plain, non-fullBleed case the real-device report was about.
+    //
+    // Round 29: "LOOK UP A MOVEMENT" only exists on a real weekday WOD
+    // card -- DocsWodsScreen's own Saturday (Steady State) and Sunday
+    // (Sunday Setup) branches never render it at all. This block used to
+    // rely on DocsWodsScreen's own defaultIndex landing on "today" (true
+    // for this fully-unlocked account, isDayWodUnlocked always true), which
+    // silently broke every time this suite happened to run on a real
+    // Saturday or Sunday -- today's own wall-clock date, not an app
+    // regression (confirmed directly: Sunday Setup correctly has no
+    // movement to look up, since nothing was logged). Explicitly selecting
+    // Monday first makes this check's own precondition date-independent
+    // instead of leaving it to chance. DocsWodsScreen's own DateStrip is
+    // fed by getCurrentWeek() (content.ts), a FIXED Monday-indexed week of
+    // today -- index 0 is always Monday, 1 Tuesday, ... 6 Sunday, regardless
+    // of what today's own weekday is (never a rolling "N days from today"
+    // strip, unlike the booking calendar elsewhere in this file). An
+    // earlier draft of this fix used offsetToWeekday(1) here, which only
+    // coincidentally lands on index 0 when the suite happens to run ON a
+    // real Monday -- any other day it indexes into the wrong weekday
+    // entirely (even a weekend index 5/6 with no lookup-movement button at
+    // all), silently reintroducing the exact date-dependent flakiness this
+    // fix exists to remove. A plain literal 0 is the only correct index.
     await page
       .getByRole('tab', { name: /DOC'?S WODS/i })
       .first()
       .click({ timeout: 5000 })
       .catch(() => {});
+    await page.waitForTimeout(400);
+    // DateStrip's own `date-strip-cell-${index}` testID isn't scoped per
+    // screen -- Community's own date strip is still mounted (react-
+    // navigation keeps a visited tab's screen alive, aria-hidden rather
+    // than unmounted), so a plain getByTestId here resolves to TWO
+    // elements once both tabs have been visited: a strict-mode violation
+    // that silently swallows this click via the existing .catch(() => {}),
+    // never actually landing on Monday at all. Mark the one NOT inside an
+    // aria-hidden ancestor (the real, currently-active tab's own cell) and
+    // click that specific node instead of trusting DOM order.
+    await page.evaluate((idx) => {
+      const nodes = Array.from(document.querySelectorAll(`[data-testid="date-strip-cell-${idx}"]`));
+      const target = nodes.find((el) => !el.closest('[aria-hidden="true"]'));
+      if (target) target.setAttribute('data-r29-active-cell', 'true');
+    }, 0);
+    await page.locator('[data-r29-active-cell="true"]').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
     await page.getByTestId('lookup-movement').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(500);
@@ -3931,14 +3969,6 @@ async function run() {
   // mock server actually does and does not prove -- the atomicity
   // guarantee itself was proven directly against real Postgres, not here.
   const MONDAY_OFFSET = offsetToWeekday(1);
-  // || 7 (never 0): AdminRosterScreen's own "upcoming" filter excludes
-  // anything more than 1 hour in the past, so a fixture dated TODAY would
-  // flip in and out of that window purely based on what time of day this
-  // suite happens to run -- always landing on a future day sidesteps that
-  // entirely, same reasoning as MONDAY_OFFSET needing no such guard (its
-  // own fixtures are only ever read by the admin roster block, never a
-  // schedule check gated on "has this already happened today").
-  const SATURDAY_OFFSET = offsetToWeekday(6) || 7;
   const IN_PERSON_UNLIMITED_SUBSCRIPTION = [
     { user_id: USER_ID, plan: 'in_person_monthly', status: 'active', current_period_end: new Date(Date.now() + 20 * 86400000).toISOString(), trial_end: null, cancel_at_period_end: false, stripe_customer_id: 'cus_test' },
   ];
@@ -4544,7 +4574,27 @@ async function run() {
   // sees real Pilates revenue. Round 25: the waitlist section this block
   // used to check is gone -- see AGENTS.md's own Round 25 section for why.
   {
-    const rosterSession = makeSessionFixture({ id: 'sess-admin-roster', classKey: 'sat-815a', className: 'Savage Saturday', classType: 'Hybrid', capacity: 50, date: dateAtOffsetDays(SATURDAY_OFFSET, 8, 15) });
+    // Round 29: this used to date the fixture with dateAtOffsetDays(
+    // SATURDAY_OFFSET, 8, 15) -- SATURDAY_OFFSET's own "never today"
+    // fallback (`offsetToWeekday(6) || 7`) deliberately jumps a full 7
+    // days out whenever the suite happens to run ON a real Saturday, to
+    // sidestep "today" ambiguity elsewhere in this file. But
+    // AdminRosterScreen's own "upcoming" filter is exactly a 7-day
+    // (ROSTER_DAYS_AHEAD_MS) lookahead window -- a fixture placed exactly
+    // 7 days out at a fixed 8:15 AM clock time lands right on that
+    // boundary, and falls outside it the moment "now" (whatever time of
+    // day the suite actually runs) is past 8:15 AM on the day it starts.
+    // Confirmed directly: Round 28's own failing run happened on a real
+    // Saturday, which is exactly this case -- not an app regression, a
+    // test fixture dated right at (and sometimes past) a window edge by
+    // construction. This block doesn't actually need a real calendar
+    // Saturday at all (the "Savage Saturday" class/display names are just
+    // realistic flavor text, never validated against the real day of
+    // week) -- a flat 3-days-from-now, preserving the real current
+    // time-of-day rather than pinning a fixed clock hour, keeps it
+    // comfortably inside the 7-day window with a full 4-day margin no
+    // matter what day or time this suite runs.
+    const rosterSession = makeSessionFixture({ id: 'sess-admin-roster', classKey: 'sat-815a', className: 'Savage Saturday', classType: 'Hybrid', capacity: 50, date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) });
     const pilatesSession = makeSessionFixture({
       id: 'sess-admin-pilates',
       classKey: 'pilates-wed-830a',
@@ -4954,6 +5004,145 @@ async function run() {
       !!spotlightOnComposer && spotlightOnComposer.close,
       JSON.stringify({ spotlightOnComposer })
     );
+
+    await context.close();
+  }
+
+  // ---------------------------------------------------------------------
+  // Round 29: the real, confirmed dead end -- Movement Vault's own
+  // APPEARS IN list. Reproduced directly: an online_free (limited-access)
+  // account opens an unlocked WOD, taps a movement name, scrolls to
+  // APPEARS IN, and taps a reference. The old `onClose()` +
+  // `navigation.navigate(ref.type === 'deck' ? 'Deck' : 'DocsWods')`
+  // discarded the vault's own stack and jumped blind -- a deck reference
+  // landed on THE DECK tab's full "JOIN THE BOATHOUSE" paywall with
+  // nothing to do with what was tapped, and a WOD reference ignored which
+  // day was actually referenced, landing on whatever day the WODs tab
+  // happened to have selected. Fixed: a deck reference now opens via
+  // `openDeckCard()`, stacking the SAME DeckCardDetailModal Search's own
+  // DECK CARDS result already uses on top of the vault (never closing
+  // it) -- its own X/backdrop close reveals the vault detail again, whose
+  // existing BACK TO WORKOUT then retraces to the original workout. A WOD
+  // reference now resolves the real referenced day and calls
+  // `navigateToTab('DocsWods', { jumpToDate })`, the same accepted
+  // tab-hand-off shape Search's own WORKOUTS result and
+  // FullScheduleScreen's day tap already use -- landing on the EXACT
+  // referenced day (locked or not) instead of an arbitrary one.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    // online_free: no subscriptions row, no active class pack -- the real
+    // limited-access shape the real-device report was filed against.
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+    await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'movement-vault-appears-in-before.png') }).catch(() => {});
+
+    await page.getByRole('tab', { name: /DOC'?S WODS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    // Monday is one of online_free's own 2 unlocked weekday WODs
+    // (FREE_UNLOCKED_WOD_KEYS) -- "open any unlocked workout" from the
+    // brief. Index 0, not offsetToWeekday(1): DocsWodsScreen's own
+    // DateStrip is fed by getCurrentWeek() (content.ts), a FIXED
+    // Monday-indexed week of today (0=Mon..6=Sun), never a rolling
+    // "N days from today" strip -- see the matching fix+comment on
+    // [tab-bar-integrity/movement-vault] above, which had the identical
+    // latent bug. Same aria-hidden-aware disambiguation as that block:
+    // DateStrip's own `date-strip-cell-N` testID isn't scoped per screen,
+    // and Community's own date strip is still mounted (aria-hidden, not
+    // unmounted) the moment this tab has been visited.
+    await page.evaluate((idx) => {
+      const nodes = Array.from(document.querySelectorAll(`[data-testid="date-strip-cell-${idx}"]`));
+      const target = nodes.find((el) => !el.closest('[aria-hidden="true"]'));
+      if (target) target.setAttribute('data-r29-active-cell', 'true');
+    }, 0);
+    await page.locator('[data-r29-active-cell="true"]').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    // THE GAUNTLET's own "Kettlebell Swings" -- matches the "Swings"
+    // movement, whose own APPEARS IN list carries both deck card AND WOD
+    // references (see movementMatcher.ts).
+    await page.getByText('Kettlebell Swings', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    // --- The deck reference: full back-chain. ---
+    const deckRefs = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[data-testid^="movement-reference-"]'))
+        .filter((el) => !el.closest('[aria-hidden="true"]'))
+        .map((el) => el.getAttribute('data-testid'))
+    );
+    if (deckRefs.length > 0) {
+      await page.locator(`[data-testid="${deckRefs[0]}"]`).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(600);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'movement-vault-appears-in-deck-stacked.png') }).catch(() => {});
+      const deckCardCloseVisible = await page.getByTestId('deck-card-close').isVisible().catch(() => false);
+      record(
+        '[nav/movement-vault-appears-in] a deck card reference opens stacked on top (its own close X), never jumping blind to THE DECK tab\'s paywall',
+        deckCardCloseVisible,
+        JSON.stringify({ deckCardCloseVisible })
+      );
+      await page.getByTestId('deck-card-close').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const backToWorkoutVisible = await page.getByTestId('movement-detail-back').isVisible().catch(() => false);
+      record(
+        '[nav/movement-vault-appears-in] closing the stacked deck card reveals the vault detail again, with its own BACK TO WORKOUT intact',
+        backToWorkoutVisible,
+        JSON.stringify({ backToWorkoutVisible })
+      );
+      await page.getByTestId('movement-detail-back').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const originalWorkoutVisible = await page.getByText('THE GAUNTLET', { exact: false }).first().isVisible().catch(() => false);
+      record(
+        '[nav/movement-vault-appears-in] backing out from there returns to the original workout -- the full retrace chain',
+        originalWorkoutVisible,
+        JSON.stringify({ originalWorkoutVisible })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'movement-vault-appears-in-after.png') }).catch(() => {});
+    } else {
+      record('[nav/movement-vault-appears-in] a deck card reference exists in APPEARS IN to test against', false, JSON.stringify({ deckRefs }));
+    }
+
+    // --- The WOD reference: lands on the exact referenced day. ---
+    await page.getByText('Kettlebell Swings', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const wodRefs = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[data-testid^="movement-reference-"]'))
+        .filter((el) => !el.closest('[aria-hidden="true"]') && /SWING SET/i.test(el.textContent || ''))
+        .map((el) => el.getAttribute('data-testid'))
+    );
+    if (wodRefs.length > 0) {
+      await page.locator(`[data-testid="${wodRefs[0]}"]`).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(600);
+      // THU is the real referenced day (SWING SET) -- locked for
+      // online_free, so the correct landing is the LockedDay card on
+      // Thursday specifically, not Monday (the old untargeted bug) or any
+      // other day. DateStrip has no aria-selected attribute at all -- the
+      // one real, stable signal of "which cell is selected" is its own
+      // `cellSelected` style actually applying (backgroundColor:
+      // colors.green, '#076652'), read via getComputedStyle rather than
+      // guessing at a react-native-web-generated class name (which is an
+      // implementation detail that shifts across builds, not a contract).
+      const thursdaySelected = await page.evaluate(() => {
+        const cells = Array.from(document.querySelectorAll('[data-testid^="date-strip-cell-"]')).filter((el) => !el.closest('[aria-hidden="true"]'));
+        const active = cells.find((el) => {
+          const bg = window.getComputedStyle(el).backgroundColor;
+          return bg === 'rgb(7, 102, 82)';
+        });
+        return active ? active.textContent : null;
+      });
+      const lockedCtaVisible = await page.getByTestId('wods-locked-day-unlock').isVisible().catch(() => false);
+      record(
+        '[nav/movement-vault-appears-in] a WOD reference lands on the exact referenced day (Thursday, SWING SET), not an arbitrary default',
+        lockedCtaVisible && !!thursdaySelected && /THU/.test(thursdaySelected),
+        JSON.stringify({ thursdaySelected, lockedCtaVisible })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'movement-vault-appears-in-wod-landed.png') }).catch(() => {});
+    } else {
+      record('[nav/movement-vault-appears-in] a WOD reference (SWING SET) exists in APPEARS IN to test against', false, JSON.stringify({ wodRefs }));
+    }
 
     await context.close();
   }
