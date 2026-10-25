@@ -5784,28 +5784,25 @@ async function run() {
 
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'share-card-modal.png') }).catch(() => {});
 
-    // Round 33 corners: the on-screen PREVIEW's own DOM wrapper
-    // (cardWrap, testID completion-share-card-wrap) must round its own
-    // corners via CSS and show the modal's green backdrop through them --
-    // the canvas bitmap inside it is now a plain rectangle by design, so
-    // nothing but this wrapper's own clip gives the preview a rounded
-    // look any more. Checked two ways: the wrapper's own computed style
-    // actually clips (borderRadius>0, overflow hidden) and paints the
-    // modal's real green, not black; and a cropped screenshot of just the
-    // wrapper's own corner pixel (outside any possible card content) for
+    // Round 33 "final touch": the card's own border is now a square frame
+    // (shareCardRender.ts's strokeBorder()), so the on-screen PREVIEW's
+    // DOM wrapper (cardWrap, testID completion-share-card-wrap) must NOT
+    // round its own corners any more -- doing so would show the modal's
+    // green bleeding in at the corners OUTSIDE the canvas's own square
+    // frame, a mismatch between what the preview shows and what SHARE/SAVE
+    // actually export. Checked two ways: the wrapper's own computed style
+    // carries no clip (borderRadius effectively 0, overflow not hidden);
+    // and a cropped screenshot of just the wrapper's own corner pixel for
     // direct visual proof, saved alongside the full-modal screenshot above.
     const wrapStyle = await page.evaluate(() => {
       const el = document.querySelector('[data-testid="completion-share-card-wrap"]');
       if (!el) return null;
       const cs = window.getComputedStyle(el);
-      return { borderRadius: cs.borderRadius, overflow: cs.overflow, backgroundColor: cs.backgroundColor };
+      return { borderRadius: cs.borderRadius, overflow: cs.overflow };
     });
     record(
-      '[share-card/preview-corners] the preview wrapper rounds its own corners via CSS and shows the modal\'s green backdrop, never black',
-      !!wrapStyle &&
-        parseFloat(wrapStyle.borderRadius) > 0 &&
-        wrapStyle.overflow === 'hidden' &&
-        wrapStyle.backgroundColor === 'rgb(5, 76, 61)',
+      '[share-card/preview-square] the preview wrapper carries no CSS corner-rounding -- it matches the square-cornered export exactly',
+      !!wrapStyle && (parseFloat(wrapStyle.borderRadius) || 0) === 0 && wrapStyle.overflow !== 'hidden',
       JSON.stringify({ wrapStyle })
     );
     if (SCREENSHOT_DIR) {
@@ -5920,16 +5917,15 @@ async function run() {
     const cardVisible = await page.getByTestId('completion-share-card').isVisible().catch(() => false);
     const debugInfo = await readShareCardDebug(page);
     // Samples the left border stroke at mid-height. shareCardRender.ts's
-    // strokeRoundedBorder() strokes the rounded-rect path inset by
-    // BORDER_WIDTH/2 (3.5px) with lineWidth=BORDER_WIDTH (7) -- canvas
-    // centers a stroke ON its path, so the painted stroke spans x=0 to
-    // x=7 along a straight edge; x=4 (near the path's own center) is the
-    // most solidly painted pixel. y=756 is DECK_CARD_HEIGHT/2 (the deck
-    // card's own true 5:7-ratio center, 1512/2 -- NOT the standard card's
-    // CARD_HEIGHT/2, which this deck card no longer shares since the
-    // round 33 polish gave the deck its own real playing-card aspect
-    // ratio), well clear of both the rounded corners and the corner
-    // indices.
+    // strokeBorder() strokes a plain square rect inset by BORDER_WIDTH/2
+    // (3.5px) with lineWidth=BORDER_WIDTH (7) -- canvas centers a stroke
+    // ON its path, so the painted stroke spans x=0 to x=7 along a straight
+    // edge; x=4 (near the path's own center) is the most solidly painted
+    // pixel. y=756 is DECK_CARD_HEIGHT/2 (the deck card's own true
+    // 5:7-ratio center, 1512/2 -- NOT the standard card's CARD_HEIGHT/2,
+    // which this deck card no longer shares since the round 33 polish gave
+    // the deck its own real playing-card aspect ratio), well clear of both
+    // the square corners and the corner indices.
     await waitForShareCardReady(page);
     const inkSample = await sampleCanvasPixel(page, 4, 756);
     const expectedInkHex = fixture.expectedInk[0] === 18 ? '#12211c' : '#c8102e';
@@ -5945,13 +5941,15 @@ async function run() {
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, `share-card-deck-${fixture.label.replace(' ', '-')}.png`) }).catch(() => {});
 
-    // Round 33 corners: the deck card's own notch (same BORDER_RADIUS,
-    // same top-left corner geometry as the standard card -- only the
-    // canvas HEIGHT differs between variants) must be white, matching its
-    // own card background, never black.
-    const deckCornerSample = await sampleCanvasPixel(page, 3, 3);
+    // Round 33 "final touch": the border is now a plain square frame
+    // (strokeBorder(), lineWidth 7, inset 3.5) -- the literal corner pixel
+    // (0,0)-(7,7) is the border's own two strokes meeting, not the card's
+    // background, so (20,20) is the right sample point: safely past the
+    // frame on both axes, confirming the fill reaches right up to the
+    // square border with nothing stray (never black) between them.
+    const deckCornerSample = await sampleCanvasPixel(page, 20, 20);
     record(
-      `[share-card/corner-deck-${fixture.label.replace(' ', '-')}] the deck card's corner notch is white, never black`,
+      `[share-card/corner-deck-${fixture.label.replace(' ', '-')}] the deck card's fill reaches its square corner as white, never black`,
       closeToRgb(deckCornerSample, [255, 255, 255]),
       JSON.stringify({ deckCornerSample })
     );
@@ -6035,15 +6033,15 @@ async function run() {
         cardVisible && !!debugInfo && debugInfo.colorwayId === STANDARD_COLORWAY_IDS[i] && closeToRgb(bgSample, expectedBackgrounds[i]),
         JSON.stringify({ cardVisible, debugInfo, bgSample })
       );
-      // Round 33 corners: (3,3) sits outside BORDER_RADIUS's own rounded
-      // arc (center (79,79), radius 79 -- (3,3) is ~107px from that
-      // center) -- exactly the notch the "polish" round's clipToRoundedCard
-      // painted solid black. It must now read the card's own background
-      // color, continuing edge to edge with zero clip, same as everywhere
-      // else on the card.
-      const cornerSample = await sampleCanvasPixel(page, 3, 3);
+      // Round 33 "final touch": the border is a plain square frame
+      // (strokeBorder(), lineWidth 7, inset 3.5) -- the literal corner
+      // pixel (0,0)-(7,7) is the border's own two strokes meeting, not
+      // background, so (20,20) is the right sample point: safely past the
+      // frame on both axes, confirming the fill reaches right up to the
+      // square border with nothing stray (never black) between them.
+      const cornerSample = await sampleCanvasPixel(page, 20, 20);
       record(
-        `[share-card/corner-${i}] colorway ${STANDARD_COLORWAY_IDS[i]}'s corner notch is the card's own background, never black`,
+        `[share-card/corner-${i}] colorway ${STANDARD_COLORWAY_IDS[i]}'s fill reaches its square corner as the card's own background, never black`,
         closeToRgb(cornerSample, expectedBackgrounds[i]),
         JSON.stringify({ cornerSample, expected: expectedBackgrounds[i] })
       );

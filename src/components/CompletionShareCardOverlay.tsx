@@ -240,16 +240,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.14)',
   },
   cardWrap: {
-    // Round 33 corners: the exported canvas bitmap is now a plain
-    // full-bleed rectangle (see shareCardRender.ts) -- it no longer bakes
-    // its own rounded-corner clip into the bitmap. The on-screen preview
-    // rounds it here instead, purely as CSS, so the modal's own green
-    // backdrop (styles.root) shows through the corners rather than black.
-    // This is cosmetic-only: the real exported/shared/saved PNG is already
-    // correct on its own (no black notches) regardless of this wrapper.
+    // Round 33 "final touch": the card's own border is now a square frame
+    // (see shareCardRender.ts's strokeBorder()), so there's no rounded
+    // shape left for this wrapper to match -- no borderRadius/overflow
+    // here, on purpose, so the on-screen preview is exactly the exported
+    // bitmap's own square-cornered rectangle, not a CSS-rounded version
+    // of it.
     width: PREVIEW_MAX_WIDTH,
-    borderRadius: 22,
-    overflow: 'hidden',
     backgroundColor: colors.greenDeep,
   },
   canvasHost: {
