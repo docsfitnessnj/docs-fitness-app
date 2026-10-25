@@ -5009,33 +5009,28 @@ async function run() {
   }
 
   // ---------------------------------------------------------------------
-  // Round 29: the real, confirmed dead end -- Movement Vault's own
-  // APPEARS IN list. Reproduced directly: an online_free (limited-access)
-  // account opens an unlocked WOD, taps a movement name, scrolls to
-  // APPEARS IN, and taps a reference. The old `onClose()` +
-  // `navigation.navigate(ref.type === 'deck' ? 'Deck' : 'DocsWods')`
-  // discarded the vault's own stack and jumped blind -- a deck reference
-  // landed on THE DECK tab's full "JOIN THE BOATHOUSE" paywall with
-  // nothing to do with what was tapped, and a WOD reference ignored which
-  // day was actually referenced, landing on whatever day the WODs tab
-  // happened to have selected. Fixed: a deck reference now opens via
-  // `openDeckCard()`, stacking the SAME DeckCardDetailModal Search's own
-  // DECK CARDS result already uses on top of the vault (never closing
-  // it) -- its own X/backdrop close reveals the vault detail again, whose
-  // existing BACK TO WORKOUT then retraces to the original workout. A WOD
-  // reference now resolves the real referenced day and calls
-  // `navigateToTab('DocsWods', { jumpToDate })`, the same accepted
-  // tab-hand-off shape Search's own WORKOUTS result and
-  // FullScheduleScreen's day tap already use -- landing on the EXACT
-  // referenced day (locked or not) instead of an arbitrary one.
+  // Round 29 fixed Movement Vault's own APPEARS IN dead end (a deck
+  // reference blind-jumping to THE DECK tab's paywall; a WOD reference
+  // landing on an arbitrary day). Round 30 found that fix had shipped a
+  // NEW leak: a limited-access account's deck reference opened the real
+  // DeckCardDetailModal with full workout content and a working MARK
+  // COMPLETE button -- that account has no Deck access at all. Owner
+  // decision, final: APPEARS IN is now shown ONLY to accounts with full
+  // workout access (paid online, in person unlimited, active trial,
+  // admin) -- see `fullContentAccess &&` in MovementVaultScreen.tsx. This
+  // block now covers check (c) from Round 30's own brief: AS A FULL
+  // ACCESS ACCOUNT, APPEARS IN still renders and both reference types
+  // still open correctly -- the exact Round 29 behavior, unchanged for
+  // the tier it was always meant for. The limited-access checks that used
+  // to live in this block moved to their own `[deck-gate/*]` blocks below
+  // (checks (a) and (b)).
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
+    // Plain setupMocks (no subscriptions/class_packs override) is a full
+    // workout access account -- the same default every earlier round's
+    // "fully unlocked account" check already relies on.
     await setupMocks(page, USER_ID);
-    // online_free: no subscriptions row, no active class pack -- the real
-    // limited-access shape the real-device report was filed against.
-    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
-    await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
     await seedSignedInSession(page, USER_ID);
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(900);
@@ -5044,17 +5039,15 @@ async function run() {
 
     await page.getByRole('tab', { name: /DOC'?S WODS/i }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
-    // Monday is one of online_free's own 2 unlocked weekday WODs
-    // (FREE_UNLOCKED_WOD_KEYS) -- "open any unlocked workout" from the
-    // brief. Index 0, not offsetToWeekday(1): DocsWodsScreen's own
-    // DateStrip is fed by getCurrentWeek() (content.ts), a FIXED
-    // Monday-indexed week of today (0=Mon..6=Sun), never a rolling
-    // "N days from today" strip -- see the matching fix+comment on
-    // [tab-bar-integrity/movement-vault] above, which had the identical
-    // latent bug. Same aria-hidden-aware disambiguation as that block:
-    // DateStrip's own `date-strip-cell-N` testID isn't scoped per screen,
-    // and Community's own date strip is still mounted (aria-hidden, not
-    // unmounted) the moment this tab has been visited.
+    // Index 0 is always Monday: DocsWodsScreen's own DateStrip is fed by
+    // getCurrentWeek() (content.ts), a FIXED Monday-indexed week of today
+    // (0=Mon..6=Sun), never a rolling "N days from today" strip -- see the
+    // matching fix+comment on [tab-bar-integrity/movement-vault] above,
+    // which had the identical latent bug. Same aria-hidden-aware
+    // disambiguation as that block: DateStrip's own `date-strip-cell-N`
+    // testID isn't scoped per screen, and Community's own date strip is
+    // still mounted (aria-hidden, not unmounted) the moment this tab has
+    // been visited.
     await page.evaluate((idx) => {
       const nodes = Array.from(document.querySelectorAll(`[data-testid="date-strip-cell-${idx}"]`));
       const target = nodes.find((el) => !el.closest('[aria-hidden="true"]'));
@@ -5068,7 +5061,14 @@ async function run() {
     await page.getByText('Kettlebell Swings', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(600);
 
-    // --- The deck reference: full back-chain. ---
+    const appearsInVisible = await page.getByText('APPEARS IN', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[nav/movement-vault-appears-in] a full access account still sees the APPEARS IN section',
+      appearsInVisible,
+      JSON.stringify({ appearsInVisible })
+    );
+
+    // --- The deck reference: full back-chain, and genuinely real content. ---
     const deckRefs = await page.evaluate(() =>
       Array.from(document.querySelectorAll('[data-testid^="movement-reference-"]'))
         .filter((el) => !el.closest('[aria-hidden="true"]'))
@@ -5083,6 +5083,18 @@ async function run() {
         '[nav/movement-vault-appears-in] a deck card reference opens stacked on top (its own close X), never jumping blind to THE DECK tab\'s paywall',
         deckCardCloseVisible,
         JSON.stringify({ deckCardCloseVisible })
+      );
+      // Round 30: a full access account must still reach the REAL card
+      // content through this exact door -- the gate added this round is
+      // keyed on `fullContentAccess`, not on the door itself, so this is
+      // the one assertion that would catch an over-eager fix that locked
+      // the modal for everyone instead of just limited tiers.
+      const markCompleteVisible = await page.getByTestId('deck-card-complete-toggle').isVisible().catch(() => false);
+      const lockVisible = await page.getByText('JOIN THE BOATHOUSE', { exact: false }).isVisible().catch(() => false);
+      record(
+        '[nav/movement-vault-appears-in] a full access account sees the REAL deck card content (MARK COMPLETE), never the lock treatment',
+        markCompleteVisible && !lockVisible,
+        JSON.stringify({ markCompleteVisible, lockVisible })
       );
       await page.getByTestId('deck-card-close').click({ timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(400);
@@ -5105,7 +5117,7 @@ async function run() {
       record('[nav/movement-vault-appears-in] a deck card reference exists in APPEARS IN to test against', false, JSON.stringify({ deckRefs }));
     }
 
-    // --- The WOD reference: lands on the exact referenced day. ---
+    // --- The WOD reference: lands on the exact referenced day, unlocked. ---
     await page.getByText('Kettlebell Swings', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(600);
     const wodRefs = await page.evaluate(() =>
@@ -5116,15 +5128,15 @@ async function run() {
     if (wodRefs.length > 0) {
       await page.locator(`[data-testid="${wodRefs[0]}"]`).click({ timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(600);
-      // THU is the real referenced day (SWING SET) -- locked for
-      // online_free, so the correct landing is the LockedDay card on
-      // Thursday specifically, not Monday (the old untargeted bug) or any
-      // other day. DateStrip has no aria-selected attribute at all -- the
-      // one real, stable signal of "which cell is selected" is its own
-      // `cellSelected` style actually applying (backgroundColor:
-      // colors.green, '#076652'), read via getComputedStyle rather than
-      // guessing at a react-native-web-generated class name (which is an
-      // implementation detail that shifts across builds, not a contract).
+      // THU is the real referenced day (SWING SET), unlocked for a full
+      // access account -- the correct landing shows the real SWING SET
+      // card, not a LockedDay CTA. DateStrip has no aria-selected
+      // attribute at all -- the one real, stable signal of "which cell is
+      // selected" is its own `cellSelected` style actually applying
+      // (backgroundColor: colors.green, '#076652'), read via
+      // getComputedStyle rather than guessing at a react-native-web-
+      // generated class name (which is an implementation detail that
+      // shifts across builds, not a contract).
       const thursdaySelected = await page.evaluate(() => {
         const cells = Array.from(document.querySelectorAll('[data-testid^="date-strip-cell-"]')).filter((el) => !el.closest('[aria-hidden="true"]'));
         const active = cells.find((el) => {
@@ -5133,16 +5145,190 @@ async function run() {
         });
         return active ? active.textContent : null;
       });
-      const lockedCtaVisible = await page.getByTestId('wods-locked-day-unlock').isVisible().catch(() => false);
+      const swingSetVisible = await page.getByText('SWING SET', { exact: false }).first().isVisible().catch(() => false);
       record(
-        '[nav/movement-vault-appears-in] a WOD reference lands on the exact referenced day (Thursday, SWING SET), not an arbitrary default',
-        lockedCtaVisible && !!thursdaySelected && /THU/.test(thursdaySelected),
-        JSON.stringify({ thursdaySelected, lockedCtaVisible })
+        '[nav/movement-vault-appears-in] a WOD reference lands on the exact referenced day (Thursday, SWING SET), unlocked, not an arbitrary default',
+        swingSetVisible && !!thursdaySelected && /THU/.test(thursdaySelected),
+        JSON.stringify({ thursdaySelected, swingSetVisible })
       );
       if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'movement-vault-appears-in-wod-landed.png') }).catch(() => {});
     } else {
       record('[nav/movement-vault-appears-in] a WOD reference (SWING SET) exists in APPEARS IN to test against', false, JSON.stringify({ wodRefs }));
     }
+
+    await context.close();
+  }
+
+  // ---------------------------------------------------------------------
+  // Round 30, check (a): a limited-access account (online free, ten pack,
+  // drop in, guest, booking only) gets NO APPEARS IN section at all on
+  // movement detail -- no locked rows, no teaser list, the section simply
+  // isn't there, regardless of reference type. Reproduced the same real
+  // path as the full-access block above (Monday's GAUNTLET -> Kettlebell
+  // Swings, a movement whose APPEARS IN list genuinely carries both deck
+  // and WOD references), just as online_free instead.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+    await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    await page.getByRole('tab', { name: /DOC'?S WODS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.evaluate((idx) => {
+      const nodes = Array.from(document.querySelectorAll(`[data-testid="date-strip-cell-${idx}"]`));
+      const target = nodes.find((el) => !el.closest('[aria-hidden="true"]'));
+      if (target) target.setAttribute('data-r30-active-cell', 'true');
+    }, 0);
+    await page.locator('[data-r30-active-cell="true"]').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('Kettlebell Swings', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-gate-limited-no-appears-in.png') }).catch(() => {});
+
+    const movementDetailOpen = await page.getByTestId('movement-detail-back').isVisible().catch(() => false);
+    const appearsInVisible = await page.getByText('APPEARS IN', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[deck-gate/limited-no-appears-in] a limited-access account reaches movement detail, but APPEARS IN is not there at all',
+      movementDetailOpen && !appearsInVisible,
+      JSON.stringify({ movementDetailOpen, appearsInVisible })
+    );
+
+    await context.close();
+  }
+
+  // ---------------------------------------------------------------------
+  // Round 30, check (b): the real door audit this round's brief asked
+  // for -- every existing caller of openDeckCard()/DeckCardDetailModal
+  // for a limited-access account. DeckScreen's own local usage is already
+  // safe by construction (behind MembershipGate -- never mounts for a
+  // limited tier at all). Movement Vault's APPEARS IN door is covered by
+  // the check directly above (the section isn't there to tap at all).
+  // The one remaining real door is Search's own DECK CARDS result, which
+  // (unlike APPEARS IN) is NOT hidden for a limited account -- the result
+  // row itself is a visible teaser (same house pattern as Doc's Daily
+  // Story's own ring staying visible for a locked tier), but tapping it
+  // must show the same "JOIN THE BOATHOUSE" lock treatment the Deck tab
+  // itself already shows, never the real card content. Both doors
+  // ultimately open the SAME global DeckCardDetailModal (App.tsx), gated
+  // once via its own `locked` prop -- this check proves that gate holds
+  // from the door a limited account can actually still reach.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+    await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+    // deckResults in SearchModal.tsx only indexes COMPLETED cards (the
+    // shuffle/mystery "face-down by design" rule) -- a completion row for
+    // the real '6-spade' ("The Uni Life") card is what makes it show up
+    // as a result to tap at all.
+    await page.route('**/rest/v1/deck_completions*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ card_id: '6-spade', completed_at: new Date().toISOString() }]) })
+    );
+    // Same badge-grant infinite-upsert gap documented at the [search-deep-
+    // link/*] fixture above: a nonzero deck_completions row makes
+    // BadgeContext try to grant "day one doug" on every render until
+    // badge_grants reflects it -- answer it directly to stop the loop.
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } }]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+
+    await page.getByTestId('open-search').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByPlaceholder(/search/i).first().fill('uni').catch(() => {});
+    await page.waitForTimeout(500);
+
+    const resultVisible = await page.locator('#search-screen-container').getByText('Uni Life', { exact: false }).first().isVisible().catch(() => false);
+    record(
+      '[deck-gate/search-door] a limited-access account still sees the DECK CARDS result row in search (a visible teaser, not hidden)',
+      resultVisible,
+      JSON.stringify({ resultVisible })
+    );
+    if (resultVisible) {
+      await page.locator('#search-screen-container').getByText('Uni Life', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(600);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-gate-search-door-locked.png') }).catch(() => {});
+      const lockVisible = await page.getByText('JOIN THE BOATHOUSE', { exact: false }).isVisible().catch(() => false);
+      const markCompleteVisible = await page.getByTestId('deck-card-complete-toggle').isVisible().catch(() => false);
+      record(
+        '[deck-gate/search-door] tapping it shows the JOIN THE BOATHOUSE lock treatment, never the real card content or its own MARK COMPLETE',
+        lockVisible && !markCompleteVisible,
+        JSON.stringify({ lockVisible, markCompleteVisible })
+      );
+      const closeVisible = await page.getByTestId('deck-card-close').isVisible().catch(() => false);
+      record('[deck-gate/search-door] the locked card still has its own close X (an escape hatch, not a second dead end)', closeVisible, JSON.stringify({ closeVisible }));
+      await page.getByTestId('deck-card-close').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const backToSearchVisible = await page.locator('#search-screen-container').isVisible().catch(() => false);
+      record('[deck-gate/search-door] closing it reveals search again, exactly as it was', backToSearchVisible, JSON.stringify({ backToSearchVisible }));
+    }
+
+    await context.close();
+  }
+
+  // ---------------------------------------------------------------------
+  // Round 30, check (d): a real-device bug -- while Movement Vault's
+  // detail view was open, tapping any bottom tab lit it gold
+  // (react-navigation genuinely switched its own active route) but
+  // nothing on screen changed, since Movement Vault (a non-fullBleed
+  // ScreenOverlay, deliberately left visible/tappable underneath) kept
+  // covering the newly-active tab's content with nothing closing it. Now
+  // wired via Tab.Navigator's own `tabPress` screenListener -> App.tsx's
+  // `closeAllOverlays()`. A full access account, so Movement Vault's
+  // "LOOK UP A MOVEMENT" entry (not APPEARS IN, which this round gated to
+  // full access only) is reachable without any extra setup.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    await page.getByRole('tab', { name: /DOC'?S WODS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.evaluate((idx) => {
+      const nodes = Array.from(document.querySelectorAll(`[data-testid="date-strip-cell-${idx}"]`));
+      const target = nodes.find((el) => !el.closest('[aria-hidden="true"]'));
+      if (target) target.setAttribute('data-r30-tab-dismiss-cell', 'true');
+    }, 0);
+    await page.locator('[data-r30-tab-dismiss-cell="true"]').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('lookup-movement').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tab-dismiss-vault-open-before.png') }).catch(() => {});
+
+    const vaultOpenBefore = await page.getByTestId('movement-vault-close').isVisible().catch(() => false);
+    record('[tab-dismiss/movement-vault] Movement Vault is genuinely open before the tab tap', vaultOpenBefore, JSON.stringify({ vaultOpenBefore }));
+
+    await page.getByRole('tab', { name: /COMMUNITY/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'tab-dismiss-after-community.png') }).catch(() => {});
+
+    const vaultOpenAfter = await page.getByTestId('movement-vault-close').isVisible().catch(() => false);
+    const communityComposerVisible = await page.getByTestId('composer-bar').isVisible().catch(() => false);
+    record(
+      '[tab-dismiss/movement-vault] tapping COMMUNITY closes Movement Vault AND reveals the real Community content underneath -- not just a gold-lit tab with no visible change',
+      !vaultOpenAfter && communityComposerVisible,
+      JSON.stringify({ vaultOpenAfter, communityComposerVisible })
+    );
 
     await context.close();
   }

@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
+import { JoinBoathouseLock } from './JoinBoathouseLock';
 import { WatchVideoBreakdownButton } from './WatchVideoBreakdownButton';
 import { TappableMovementText } from './movement/TappableMovementText';
 import { DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
@@ -13,14 +14,43 @@ type Props = {
   onClose: () => void;
   isComplete: boolean;
   onToggleComplete: () => void;
+  // Round 30: every door that can open this modal (Movement Vault's own
+  // APPEARS IN -- gated to not even reach here anymore, see
+  // MovementVaultScreen.tsx -- and Search's DECK CARDS result, which still
+  // can) funnels through this ONE global instance (see its single render
+  // site in App.tsx). Gating here, once, is what makes every door safe by
+  // construction instead of needing the same check repeated at each call
+  // site, including any future one. True for a limited tier (online free,
+  // ten pack, drop in, guest, booking only), which has no Deck access —
+  // defaults false so DeckScreen's own local, in-tab usage (reached only
+  // from inside MembershipGate, which already means fullContentAccess is
+  // true there) never has to pass it.
+  locked?: boolean;
 };
 
-export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplete }: Props) {
+export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplete, locked = false }: Props) {
   if (!card) return null;
 
   const jokerColor = card.joker === 'red' ? colors.scoreboardRed : colors.green;
   const suitColor = card.joker ? jokerColor : isRedSuit(card.suit) ? colors.scoreboardRed : colors.green;
   const label = deckCardLabel(card);
+
+  if (locked) {
+    return (
+      <AppModal visible transparent animationType="fade" onRequestClose={onClose}>
+        <Pressable style={styles.backdrop} onPress={onClose}>
+          <Pressable style={styles.card} onPress={() => {}}>
+            <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton} testID="deck-card-close">
+              <Ionicons name="close" size={22} color={colors.textMuted} />
+            </Pressable>
+            <View style={styles.lockedBody}>
+              <JoinBoathouseLock subtext="This card is part of The Deck of WODs — for members." onUnlock={onClose} />
+            </View>
+          </Pressable>
+        </Pressable>
+      </AppModal>
+    );
+  }
 
   return (
     <AppModal visible transparent animationType="fade" onRequestClose={onClose}>
@@ -83,6 +113,9 @@ export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplet
 }
 
 const styles = StyleSheet.create({
+  lockedBody: {
+    minHeight: 280,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(18,33,28,0.65)',
