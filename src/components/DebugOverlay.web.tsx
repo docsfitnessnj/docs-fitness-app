@@ -62,6 +62,33 @@ type KeyboardShellState = {
   translateVar: string;
 } | null;
 
+// Round 35's own LIVE EDITOR panel -- written continuously by
+// updateLiveEditorState() (public/index.html) whenever a multiline
+// editor (a TEXTAREA with a scrollable ancestor) is focused, null
+// otherwise. The real-device bug this round fixes (losing the tapped
+// caret, and a scroll-position fight once the keyboard is open) needed
+// real numbers off a real device to confirm, not another screenshot
+// reconstructed after the fact -- this is the live counterpart to that,
+// readable the instant it's happening rather than only after.
+type LastCorrectionLog = {
+  at: string;
+  trigger: string;
+  corrected: boolean;
+  delta: number;
+} | null;
+
+type LiveEditorState = {
+  shellMode: 'at-rest' | 'keyboard';
+  vvHeight: number | null;
+  vvOffsetTop: number | null;
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  caretTop: number | null;
+  isUserScrolling: boolean;
+  lastCorrection: LastCorrectionLog;
+} | null;
+
 type Snapshot = {
   innerHeight: number;
   innerWidth: number;
@@ -88,6 +115,7 @@ type Snapshot = {
   rnDimensionsHeight: number;
   lastKeyboardSnapshot: KeyboardSnapshot;
   keyboardShellState: KeyboardShellState;
+  liveEditorState: LiveEditorState;
 };
 
 function rectOf(el: Element | null): Rect {
@@ -128,6 +156,7 @@ function take(rnWindowHeight: number): Snapshot {
     rnDimensionsHeight: rnWindowHeight,
     lastKeyboardSnapshot: (window as any).__lastKeyboardSnapshot || null,
     keyboardShellState: (window as any).__keyboardShellState || null,
+    liveEditorState: (window as any).__liveEditorState || null,
   };
 }
 
@@ -162,6 +191,21 @@ function snapshotToText(s: Snapshot, rnHookHeight: number): string {
           fmtRect('#root', s.rootRect),
         ].join('\n')
       : '(not measured yet)',
+    '--- LIVE EDITOR (while a multiline field is focused) ---',
+    s.liveEditorState
+      ? [
+          `shell mode: ${s.liveEditorState.shellMode}`,
+          `visualViewport.height / offsetTop: ${s.liveEditorState.vvHeight ?? '(none)'} / ${s.liveEditorState.vvOffsetTop ?? '(none)'}`,
+          `editor scrollTop / scrollHeight / clientHeight: ${s.liveEditorState.scrollTop} / ${s.liveEditorState.scrollHeight} / ${s.liveEditorState.clientHeight}`,
+          `computed caret top (viewport coords): ${s.liveEditorState.caretTop ?? '(unknown)'}`,
+          `touch currently driving the scroll: ${s.liveEditorState.isUserScrolling}`,
+          `last correction: ${
+            s.liveEditorState.lastCorrection
+              ? `${s.liveEditorState.lastCorrection.trigger} at ${s.liveEditorState.lastCorrection.at} (corrected=${s.liveEditorState.lastCorrection.corrected}, delta=${s.liveEditorState.lastCorrection.delta}px)`
+              : '(none yet)'
+          }`,
+        ].join('\n')
+      : '(no multiline editor focused)',
     '--- LAST KEYBOARD SNAPSHOT ---',
     s.lastKeyboardSnapshot
       ? [

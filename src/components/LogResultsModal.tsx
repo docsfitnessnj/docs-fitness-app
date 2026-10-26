@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { AppPressable } from './AppPressable';
 import { AppModal } from './AppModal';
 import { MediaAttachmentPicker } from './MediaAttachmentPicker';
@@ -10,7 +9,6 @@ import { useCommunity } from '../context/CommunityContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { formatResultsLine, useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatShortDate, parseMoveRow } from '../data/content';
-import { showAlert } from '../lib/alert';
 import { openCompletionShareCard } from '../lib/completionShareCard';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useActionCompletion } from '../lib/useActionCompletion';
@@ -43,13 +41,42 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
   // member can append their own note before posting to the community.
   const defaultTitle = `${workoutTitle} · ${formatShortDate(date)}`;
   const [title, setTitle] = useState(defaultTitle);
+
+  // Round 35: SAVE RESULTS/POST TO COMMUNITY are now IN-PLACE
+  // confirmations -- the button itself transforms to SAVED/POSTED and the
+  // member stays on this screen (no onClose(), no navigation), exactly
+  // the house's own COMPLETED button pattern (DayPanel.tsx's
+  // completeButtonDone/completeButtonTextDone). These are plain local
+  // state, not persisted anywhere, and reset the instant any field
+  // changes (including switching to a different day's log while this
+  // same modal instance stays mounted) -- the member re-saves/re-posts
+  // the same way they always have, there's just no longer a forced exit.
+  const [saved, setSaved] = useState(false);
+  const [posted, setPosted] = useState(false);
+
   useEffect(() => {
     setTitle(defaultTitle);
+    setSaved(false);
+    setPosted(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayKey]);
 
+  const handleTitleChange = (value: string) => {
+    setTitle(value);
+    setSaved(false);
+    setPosted(false);
+  };
+
   const updateLog = (field: 'rounds' | 'time' | 'kettlebell' | 'notes', value: string) => {
     updateLogEntry(dayKey, field, value);
+    setSaved(false);
+    setPosted(false);
+  };
+
+  const handleMediaChange = (media: Parameters<typeof setLogMedia>[1]) => {
+    setLogMedia(dayKey, media);
+    setSaved(false);
+    setPosted(false);
   };
 
   // The Trophy Case counts a workout the moment it's logged, not only when
@@ -78,43 +105,42 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
   // first, so this holds across app restarts and sign-outs for free.
   const openShareCard = () => openCompletionShareCard({ kind: 'logged', title: workoutTitle, date });
 
+  // Round 35: no more onClose() here -- SAVE RESULTS/POST TO COMMUNITY are
+  // in-place confirmations now, the owner's own explicit decision. The
+  // share card (a separate, global overlay) still opens on a genuine
+  // first completion and layers on top of this still-open screen; closing
+  // the card reveals this screen again, already showing the transformed
+  // SAVED/POSTED button underneath, since it was never actually closed.
   const handleSaveResults = () => {
     const wasComplete = isCompleted(dayKey);
     runSave(() => {
       markCompleteIfNeeded();
     }, () => {
-      onClose();
+      setSaved(true);
       if (!wasComplete) openShareCard();
     });
   };
 
+  // The pre-post "Post to Community?" confirmation dialog is gone, by
+  // owner decision -- one tap, POSTED, the button itself says so.
   const handlePostToCommunity = () => {
-    showAlert('Post to Community?', 'Your result will be visible to everyone in the community.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Post',
-        onPress: () => {
-          const wasComplete = isCompleted(dayKey);
-          runPost(() => {
-            markCompleteIfNeeded();
-            // Awaited by useActionCompletion's own run() -- see
-            // CommunityContext.tsx's addWodResultPost, which now uploads a
-            // locally-picked photo/video to real Storage before writing
-            // the post, so POSTED (and the modal closing) waits for that
-            // to actually finish.
-            return addWodResultPost(
-              displayName,
-              title,
-              { workoutTitle, dateLabel, notes: log.notes.trim(), resultsLine: formatResultsLine(log) },
-              log.media
-            );
-          }, () => {
-            onClose();
-            if (!wasComplete) openShareCard();
-          });
-        },
-      },
-    ]);
+    const wasComplete = isCompleted(dayKey);
+    runPost(() => {
+      markCompleteIfNeeded();
+      // Awaited by useActionCompletion's own run() -- see
+      // CommunityContext.tsx's addWodResultPost, which now uploads a
+      // locally-picked photo/video to real Storage before writing the
+      // post, so POSTED waits for that to actually finish.
+      return addWodResultPost(
+        displayName,
+        title,
+        { workoutTitle, dateLabel, notes: log.notes.trim(), resultsLine: formatResultsLine(log) },
+        log.media
+      );
+    }, () => {
+      setPosted(true);
+      if (!wasComplete) openShareCard();
+    });
   };
 
   return (
@@ -148,7 +174,7 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
           <TextInput
             style={styles.input}
             value={title}
-            onChangeText={setTitle}
+            onChangeText={handleTitleChange}
             placeholder="Post title"
             placeholderTextColor={colors.textMuted}
             autoCapitalize="sentences"
@@ -224,39 +250,29 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
 
           <Text style={styles.label}>PHOTO / VIDEO</Text>
           <View style={styles.mediaWrap}>
-            <MediaAttachmentPicker media={log.media} onChange={(media) => setLogMedia(dayKey, media)} />
+            <MediaAttachmentPicker media={log.media} onChange={handleMediaChange} />
           </View>
 
           <View style={styles.actionRow}>
             <AppPressable
-              style={styles.saveButton}
+              style={[styles.saveButton, (saveStatus === 'completed' || saved) && styles.saveButtonDone]}
               pressedStyle={styles.saveButtonPressed}
               onPress={handleSaveResults}
               testID="save-results"
             >
-              {saveStatus === 'completed' ? (
-                <View style={styles.completedRow}>
-                  <Ionicons name="checkmark" size={14} color={colors.green} />
-                  <Text style={styles.saveButtonText}>SAVED</Text>
-                </View>
-              ) : (
-                <Text style={styles.saveButtonText}>SAVE RESULTS</Text>
-              )}
+              <Text style={[styles.saveButtonText, (saveStatus === 'completed' || saved) && styles.saveButtonTextDone]}>
+                {saveStatus === 'completed' || saved ? 'SAVED ✓' : 'SAVE RESULTS'}
+              </Text>
             </AppPressable>
             <AppPressable
-              style={styles.postButton}
+              style={[styles.postButton, (postStatus === 'completed' || posted) && styles.postButtonDone]}
               pressedStyle={styles.postButtonPressed}
               onPress={handlePostToCommunity}
               testID="post-to-community"
             >
-              {postStatus === 'completed' ? (
-                <View style={styles.completedRow}>
-                  <Ionicons name="checkmark" size={14} color={colors.white} />
-                  <Text style={styles.postButtonText}>POSTED</Text>
-                </View>
-              ) : (
-                <Text style={styles.postButtonText}>POST TO COMMUNITY</Text>
-              )}
+              <Text style={[styles.postButtonText, (postStatus === 'completed' || posted) && styles.postButtonTextDone]}>
+                {postStatus === 'completed' || posted ? 'POSTED ✓' : 'POST TO COMMUNITY'}
+              </Text>
             </AppPressable>
           </View>
         </ScrollView>
@@ -378,6 +394,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 1,
   },
+  // Round 35: the in-place SAVED confirmation -- a filled gold button,
+  // deliberately a different fill color from POSTED's own filled deep
+  // green (postButtonDone below), so the two confirmations read as
+  // distinct at a glance per the owner's own instruction. The same
+  // "mirrors the house COMPLETED pattern" structure (filled button + a
+  // past-tense label + a checkmark glyph) as DayPanel.tsx's own
+  // completeButtonDone/completeButtonTextDone, just its own color.
+  saveButtonDone: {
+    backgroundColor: colors.gold,
+    borderColor: colors.gold,
+  },
+  saveButtonTextDone: {
+    color: colors.greenDeep,
+  },
   postButton: {
     flex: 1,
     backgroundColor: colors.green,
@@ -394,9 +424,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 1,
   },
-  completedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
+  // The in-place POSTED confirmation -- the exact same filled-deep-green
+  // + gold-text combination DayPanel.tsx's own completeButtonDone/
+  // completeButtonTextDone already uses for COMPLETED, reused verbatim
+  // rather than invented fresh, since this is the same "a result is now
+  // permanently recorded" moment.
+  postButtonDone: {
+    backgroundColor: colors.greenDeep,
+  },
+  postButtonTextDone: {
+    color: colors.goldBright,
   },
 });

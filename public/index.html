@@ -401,7 +401,14 @@
         // the settle-rescue below) without fighting typing or a deliberate
         // manual scroll: it only ever acts on a caret that has genuinely
         // left the visible area, never "recenters" one that hasn't.
-        function keepElementCaretVisible(el, scrollParent) {
+        // Round 35: the debug overlay's own LIVE EDITOR panel reads this --
+        // a one-line record of the last time this function was CALLED
+        // (not just the last time it actually moved anything), so a real
+        // device's own COPY ALL can show exactly what triggered a
+        // correction and when, rather than the owner having to guess from
+        // a screenshot alone.
+        window.__lastCorrectionLog = null;
+        function keepElementCaretVisible(el, scrollParent, reason) {
           var tag = el.tagName;
           var scrollRect = scrollParent.getBoundingClientRect();
           var elRect = el.getBoundingClientRect();
@@ -423,6 +430,12 @@
             delta = caretTop - scrollRect.top - margin;
           }
           if (delta !== 0) scrollParent.scrollTop += delta;
+          window.__lastCorrectionLog = {
+            at: new Date().toISOString(),
+            trigger: reason || '(unspecified)',
+            corrected: delta !== 0,
+            delta: Math.round(delta),
+          };
         }
         // The three bottom-anchored composers already position themselves
         // correctly via the shell's own flex reflow above -- they are not
@@ -431,14 +444,89 @@
         function isInsideKeyboardRiseRow(el) {
           return !!el.closest(KEYBOARD_RISE_ROW_SELECTOR);
         }
-        function keepFocusedFieldVisible() {
+        function keepFocusedFieldVisible(reason) {
           var el = document.activeElement;
           if (!el) return;
           if (el.tagName !== 'TEXTAREA' && el.tagName !== 'INPUT') return;
           if (isInsideKeyboardRiseRow(el)) return;
           var scrollParent = findScrollAncestor(el);
           if (!scrollParent) return;
-          keepElementCaretVisible(el, scrollParent);
+          keepElementCaretVisible(el, scrollParent, reason);
+        }
+        // Round 35: distinguishing a scroll the BROWSER produced (its own
+        // native "scroll the focused control into view" animation, see
+        // scheduleCaretRescue's own comment below) from a scroll the
+        // MEMBER produced with their own finger -- the real-device bug
+        // this round fixes: a correction that treats every scroll-settle
+        // as something to fix cannot tell "the browser is fighting us"
+        // apart from "the member just finished scrolling on purpose", and
+        // the old code snapped the view back to the caret the instant a
+        // deliberate user scroll went quiet, which read on a real iPhone
+        // as "I pull the view up and it jumps back down on release."
+        // Touch tracking, not timing, is what the brief asks for: a touch
+        // currently in progress, or one that ended within
+        // TOUCH_SCROLL_GRACE_MS (momentum/inertial scrolling very
+        // commonly continues for a few hundred ms after the finger lifts,
+        // so a scroll event arriving in that window is still genuinely
+        // the member's own gesture, not a fresh browser-driven one), means
+        // ANY scroll happening right now is the member's, never the
+        // browser's own competing animation.
+        var touchActive = false;
+        var lastTouchEndAt = 0;
+        var TOUCH_SCROLL_GRACE_MS = 500;
+        document.addEventListener('touchstart', function () { touchActive = true; }, { passive: true, capture: true });
+        document.addEventListener('touchend', function () { touchActive = false; lastTouchEndAt = Date.now(); }, { passive: true, capture: true });
+        document.addEventListener('touchcancel', function () { touchActive = false; lastTouchEndAt = Date.now(); }, { passive: true, capture: true });
+        function isUserScrolling() {
+          return touchActive || Date.now() - lastTouchEndAt < TOUCH_SCROLL_GRACE_MS;
+        }
+        // Round 35's own LIVE EDITOR debug-overlay panel: window.__liveEditorState
+        // is null whenever no multiline editor is focused, and otherwise a
+        // plain snapshot of every number this mechanism actually reasons
+        // about for the currently-focused one -- refreshed from inside
+        // syncKeyboardShellMode() below, which already runs on every
+        // relevant trigger (visualViewport resize/scroll, window resize/
+        // orientationchange/load/pageshow, focusin, focusout, visibility-
+        // change, and an always-on 250ms interval), so this needs no
+        // listeners of its own. If a real device still loses the caret
+        // after this round's fix, COPY ALL from the debug overlay while
+        // the KEYBOARD TEST input (or the real field) is focused gives the
+        // next round actual numbers -- shell mode, the visual viewport,
+        // the editor's own scroll geometry, the computed caret position,
+        // whether a touch is currently driving the scroll, and exactly
+        // what the last correction attempt did -- instead of another
+        // guess.
+        window.__liveEditorState = null;
+        function updateLiveEditorState() {
+          var el = document.activeElement;
+          if (!el || el.tagName !== 'TEXTAREA') {
+            window.__liveEditorState = null;
+            return;
+          }
+          var scrollParent = findScrollAncestor(el);
+          if (!scrollParent) {
+            window.__liveEditorState = null;
+            return;
+          }
+          var vv = window.visualViewport;
+          var caretTop = null;
+          if (typeof el.selectionStart === 'number') {
+            var caret = caretRectInTextArea(el);
+            var elRect = el.getBoundingClientRect();
+            var padTop = parseFloat(getComputedStyle(el).paddingTop) || 0;
+            caretTop = Math.round(elRect.top + padTop + caret.top - el.scrollTop);
+          }
+          window.__liveEditorState = {
+            shellMode: keyboardShellMode,
+            vvHeight: vv ? Math.round(vv.height) : null,
+            vvOffsetTop: vv ? Math.round(vv.offsetTop) : null,
+            scrollTop: Math.round(scrollParent.scrollTop),
+            scrollHeight: scrollParent.scrollHeight,
+            clientHeight: scrollParent.clientHeight,
+            caretTop: caretTop,
+            isUserScrolling: isUserScrolling(),
+            lastCorrection: window.__lastCorrectionLog,
+          };
         }
         // Round 34's own real-device-shaped finding: Chromium (and
         // presumably WebKit, since this is a cross-engine "bring the
@@ -459,15 +547,29 @@
         // fix is the house's own established answer to exactly this shape
         // of problem (Round 16's self-healing guard, Round 17's interval
         // backstop): don't fight it head-on, let it finish, then correct
-        // whatever it left behind. A short-lived 'scroll' listener (time-
-        // boxed to CARET_RESCUE_WINDOW_MS, removed the instant it fires
-        // once or the window elapses) waits for scrolling to settle (120ms
-        // of silence) and re-runs the exact same correction ONCE -- time-
-        // boxed specifically so a user's own LATER, deliberate manual
-        // scroll (requirement 2: must be able to freely scroll to a
-        // different spot) is never touched; only scroll activity in the
-        // brief window right after a focus/selection change is ever
-        // corrected.
+        // whatever it left behind.
+        //
+        // Round 35's own real-device finding: the first version of this
+        // rescue treated EVERY scroll-settle inside its own window as
+        // something to correct, with no way to tell "the browser is
+        // fighting us" apart from "the member just finished a deliberate
+        // scroll of their own" -- a real iPhone reported this as pulling
+        // the editor up and having it snap back down the instant a finger
+        // lifted. The fix is the touch tracking isUserScrolling() defines
+        // above, applied here as a hard, PERMANENT handoff: the moment any
+        // scroll event arrives while the member is touching (or just
+        // finished touching), this rescue gives up for good -- it never
+        // corrects anything for this trigger again, window or no window,
+        // because the member now owns the scroll position completely
+        // (requirement 1). Only once a scroll-settle is confirmed to have
+        // NOTHING to do with the member's own touch does
+        // keepElementCaretVisible() ever run from here -- and because a
+        // real native "scroll into view" animation isn't guaranteed to be
+        // one smooth, single-phase motion, this stays armed for more than
+        // one browser-driven settle within CARET_RESCUE_WINDOW_MS (still a
+        // hard cap -- "at most briefly thereafter"), rather than
+        // insisting on exactly one correction and then going deaf to any
+        // further browser-driven settle in the same window.
         var CARET_RESCUE_WINDOW_MS = 900;
         var CARET_RESCUE_SETTLE_MS = 120;
         function scheduleCaretRescue() {
@@ -480,22 +582,41 @@
 
           var settleTimer = null;
           var deadline = Date.now() + CARET_RESCUE_WINDOW_MS;
+          var handedOff = false;
           function cleanup() {
             scrollParent.removeEventListener('scroll', onScroll);
             if (settleTimer) clearTimeout(settleTimer);
           }
+          function handOffToUser() {
+            handedOff = true;
+            window.__lastCorrectionLog = { at: new Date().toISOString(), trigger: 'rescue-handoff-user-scroll', corrected: false, delta: 0 };
+            cleanup();
+          }
           function onScroll() {
+            if (handedOff) return;
+            if (isUserScrolling()) {
+              handOffToUser();
+              return;
+            }
             if (Date.now() > deadline) {
               cleanup();
               return;
             }
             if (settleTimer) clearTimeout(settleTimer);
             settleTimer = setTimeout(function () {
+              if (handedOff) return;
+              if (isUserScrolling()) {
+                handOffToUser();
+                return;
+              }
               // Re-check focus hasn't moved elsewhere in the meantime --
               // this correction is only ever for the field it was
               // scheduled for.
-              if (document.activeElement === el) keepElementCaretVisible(el, scrollParent);
-              cleanup();
+              if (document.activeElement === el) keepElementCaretVisible(el, scrollParent, 'rescue-settle');
+              // Deliberately NOT cleanup() here -- stays armed for a
+              // further browser-driven settle within the same window,
+              // bounded only by the deadline check above or a real user
+              // scroll handing off control.
             }, CARET_RESCUE_SETTLE_MS);
           }
           scrollParent.addEventListener('scroll', onScroll);
@@ -545,7 +666,7 @@
           // own new height is live in the DOM, so this reads real,
           // up-to-date geometry rather than predicting ahead of it.
           if (nextMode === 'keyboard' && keyboardShellMode !== 'keyboard') {
-            keepFocusedFieldVisible();
+            keepFocusedFieldVisible('shell-transition');
             scheduleCaretRescue();
           }
           keyboardShellMode = nextMode;
@@ -572,6 +693,7 @@
             shellHeightVar: getComputedStyle(document.documentElement).getPropertyValue('--shell-keyboard-height').trim() || '(unset)',
             translateVar: getComputedStyle(document.documentElement).getPropertyValue('--app-offset-top').trim() || '0px',
           };
+          updateLiveEditorState();
         }
 
         // A "last keyboard snapshot" of the shell-level state, for the same
@@ -672,7 +794,7 @@
             // straight from one field into another, keyboard never
             // closing in between, must still land the new caret in view.
             if (keyboardShellMode === 'keyboard') {
-              keepFocusedFieldVisible();
+              keepFocusedFieldVisible('focusin');
               scheduleCaretRescue();
             }
           },
@@ -695,7 +817,7 @@
         // a caret that has actually left the visible area.
         document.addEventListener('selectionchange', function () {
           if (keyboardShellMode === 'keyboard') {
-            keepFocusedFieldVisible();
+            keepFocusedFieldVisible('selectionchange');
             scheduleCaretRescue();
           }
         });
