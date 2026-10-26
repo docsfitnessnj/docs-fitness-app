@@ -2524,6 +2524,91 @@ async function run() {
       JSON.stringify({ dragResult })
     );
 
+    // Round 37: this is the exact scenario the owner's own real device
+    // LAST EDITOR SESSION log captured -- eight consecutive
+    // [correction:selectionchange] entries over ~1.3 seconds, every one
+    // reporting the SAME unchanged selectionStart/selectionEnd, arriving
+    // AFTER TOUCH_SCROLL_GRACE_MS (500ms) had already elapsed since
+    // touchend (iOS momentum scrolling genuinely outlasts that window).
+    // Round 36's own isUserScrolling() touch-timing gate could not catch
+    // this: by the time these events arrive, the touch is long over and
+    // the grace window has expired, so isUserScrolling() reports false
+    // and the old code re-corrected on every single one of these -- the
+    // rubber band. Reproduced here against a FRESH shell cycle (past the
+    // prior checks' own 1300ms+ waits) with a real drag (touchstart ->
+    // touchmove -> scroll -> touchend), then an explicit wait PAST the
+    // 500ms grace window, then the 8-event burst with genuinely UNCHANGED
+    // indices (no setSelectionRange call anywhere in this sequence) --
+    // the fix must recognize these as scroll noise (WebKit firing
+    // selectionchange on a focused textarea's own scroll, independent of
+    // any actual selection change) and never correct, regardless of touch
+    // timing.
+    await resetInnerHeight(page);
+    await resetVisualViewport(page);
+    await page.waitForTimeout(200);
+    await forceInnerHeight(page, KEYBOARD_SHELL_REGIMES[0].innerHeight);
+    await forceVisualViewport(page, { height: KEYBOARD_SHELL_REGIMES[0].vvHeight, offsetTop: KEYBOARD_SHELL_REGIMES[0].offsetTop });
+    await page.waitForTimeout(1300);
+    await page.evaluate((id) => {
+      const el = document.getElementById(id);
+      let node = el.parentElement;
+      while (node && node !== document.body) {
+        if (getComputedStyle(node).overflowY === 'auto' || getComputedStyle(node).overflowY === 'scroll') break;
+        node = node.parentElement;
+      }
+      document.dispatchEvent(new Event('touchstart'));
+      document.dispatchEvent(new Event('touchmove'));
+      node.scrollTop = 349; // the exact device-log scroll value
+      node.dispatchEvent(new Event('scroll'));
+      document.dispatchEvent(new Event('touchend'));
+      window.__r37Node = node;
+    }, 'compose-post-body-input');
+    await page.waitForTimeout(700); // past TOUCH_SCROLL_GRACE_MS (500ms) -- the real momentum-glide gap
+    const noiseResult = await page.evaluate(() => {
+      const node = window.__r37Node;
+      const scrolls = [];
+      for (let i = 0; i < 8; i++) {
+        document.dispatchEvent(new Event('selectionchange'));
+        scrolls.push(node.scrollTop);
+      }
+      return { scrolls, finalScroll: node.scrollTop };
+    });
+    record(
+      '[edit-post/selectionchange-noise-ignored] eight selectionchange events with unchanged indices, arriving past the touch grace window (the exact device-log capture), produce zero corrections -- the scroll position sticks',
+      noiseResult.scrolls.every((s) => s === 349) && noiseResult.finalScroll === 349,
+      JSON.stringify({ noiseResult })
+    );
+
+    // A selectionchange WITH genuinely changed indices (a real caret move
+    // -- a tap placing the caret somewhere new, or typing) must still
+    // correct, exactly as before -- the fix only suppresses NOISE, never
+    // a real reason to re-center.
+    const needle2 = 'Paragraph 2.';
+    const idx2 = await page.evaluate((n) => {
+      const el = document.getElementById('compose-post-body-input');
+      return el ? el.value.indexOf(n) : -1;
+    }, needle2);
+    const realChangeResult = await page.evaluate(
+      ({ id, newIdx }) => {
+        const el = document.getElementById(id);
+        let node = el.parentElement;
+        while (node && node !== document.body) {
+          if (getComputedStyle(node).overflowY === 'auto' || getComputedStyle(node).overflowY === 'scroll') break;
+          node = node.parentElement;
+        }
+        const scrollBefore = node.scrollTop;
+        el.setSelectionRange(newIdx, newIdx);
+        document.dispatchEvent(new Event('selectionchange'));
+        return { scrollBefore, scrollAfter: node.scrollTop };
+      },
+      { id: 'compose-post-body-input', newIdx: idx2 }
+    );
+    record(
+      '[edit-post/selectionchange-real-change-corrects] a selectionchange WITH genuinely changed indices still corrects the view -- the noise fix never suppresses a real caret move',
+      realChangeResult.scrollBefore === 349 && realChangeResult.scrollAfter !== realChangeResult.scrollBefore,
+      JSON.stringify({ realChangeResult })
+    );
+
     await resetInnerHeight(page);
     await resetVisualViewport(page);
     await context.close();
