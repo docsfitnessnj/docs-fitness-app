@@ -436,6 +436,7 @@
             corrected: delta !== 0,
             delta: Math.round(delta),
           };
+          recordEditorSession('correction:' + (reason || '(unspecified)'));
         }
         // The three bottom-anchored composers already position themselves
         // correctly via the shell's own flex reflow above -- they are not
@@ -449,6 +450,22 @@
           if (!el) return;
           if (el.tagName !== 'TEXTAREA' && el.tagName !== 'INPUT') return;
           if (isInsideKeyboardRiseRow(el)) return;
+          // Round 36: reproduced directly against the real, unmodified
+          // mechanism -- a 'selectionchange' event can fire while the
+          // member is mid-drag (scrolling a focused <textarea> on mobile
+          // WebKit can recompute its own selection range as a side effect,
+          // independent of whatever actually caused the scroll), and this
+          // function's own correction, called from that trigger with no
+          // gate at all, snapped the scroll position straight back to the
+          // stale caret -- fighting the very scroll the member was
+          // performing ("I scroll up and it rubber-bands back down"). A
+          // real drag now always wins, for every trigger that reaches
+          // here, not just the settle-phase rescue below -- the one
+          // trigger this must never block is a plain TAP (focusin/
+          // shell-transition following a tap that hasn't moved), which
+          // isUserScrolling() no longer counts as "scrolling" after this
+          // round's fix (see its own comment above).
+          if (isUserScrolling()) return;
           var scrollParent = findScrollAncestor(el);
           if (!scrollParent) return;
           keepElementCaretVisible(el, scrollParent, reason);
@@ -463,22 +480,96 @@
         // the old code snapped the view back to the caret the instant a
         // deliberate user scroll went quiet, which read on a real iPhone
         // as "I pull the view up and it jumps back down on release."
-        // Touch tracking, not timing, is what the brief asks for: a touch
-        // currently in progress, or one that ended within
-        // TOUCH_SCROLL_GRACE_MS (momentum/inertial scrolling very
-        // commonly continues for a few hundred ms after the finger lifts,
-        // so a scroll event arriving in that window is still genuinely
-        // the member's own gesture, not a fresh browser-driven one), means
-        // ANY scroll happening right now is the member's, never the
-        // browser's own competing animation.
+        //
+        // Round 36: Round 35's own version tracked "a touch is or was
+        // recently active" -- which also covers a plain TAP (touchstart
+        // then touchend with no movement, exactly what focuses a field and
+        // places a caret). Reproduced directly against the real,
+        // unmodified mechanism: when the browser's own competing
+        // scroll-into-view animation fires its first 'scroll' event within
+        // TOUCH_SCROLL_GRACE_MS of that SAME tap's own touchend (easily
+        // true -- the whole focus -> keyboard-animate -> visualViewport-
+        // resize -> competing-scroll sequence is well under 500ms on a
+        // real device), isUserScrolling() wrongly reports true and
+        // scheduleCaretRescue() hands off on that very first event --
+        // before ever correcting the browser's own interference. This is
+        // the real mechanism behind "the tapped spot is still lost when
+        // the keyboard opens": the rescue gave up because of the SAME tap
+        // that caused the correction to be needed in the first place, not
+        // because of anything the member actually scrolled.
+        //
+        // The fix: track whether a REAL DRAG happened (touchmove fired
+        // during the current touch), not merely "a touch happened."
+        // isUserScrolling() now means "the member is actively dragging,"
+        // which a plain tap never satisfies (touchMoved stays false
+        // through its own touchend) -- so a tap's own touchend can no
+        // longer cause a false handoff of the correction it itself
+        // triggered, while a genuine one-finger drag still wins exactly as
+        // before.
         var touchActive = false;
-        var lastTouchEndAt = 0;
+        var touchMoved = false;
+        var lastTouchDragEndAt = 0;
         var TOUCH_SCROLL_GRACE_MS = 500;
-        document.addEventListener('touchstart', function () { touchActive = true; }, { passive: true, capture: true });
-        document.addEventListener('touchend', function () { touchActive = false; lastTouchEndAt = Date.now(); }, { passive: true, capture: true });
-        document.addEventListener('touchcancel', function () { touchActive = false; lastTouchEndAt = Date.now(); }, { passive: true, capture: true });
+        document.addEventListener('touchstart', function () { touchActive = true; touchMoved = false; }, { passive: true, capture: true });
+        document.addEventListener('touchmove', function () { touchMoved = true; }, { passive: true, capture: true });
+        document.addEventListener('touchend', function () { touchActive = false; if (touchMoved) lastTouchDragEndAt = Date.now(); }, { passive: true, capture: true });
+        document.addEventListener('touchcancel', function () { touchActive = false; if (touchMoved) lastTouchDragEndAt = Date.now(); }, { passive: true, capture: true });
         function isUserScrolling() {
-          return touchActive || Date.now() - lastTouchEndAt < TOUCH_SCROLL_GRACE_MS;
+          return (touchActive && touchMoved) || Date.now() - lastTouchDragEndAt < TOUCH_SCROLL_GRACE_MS;
+        }
+        // Round 36: LAST EDITOR SESSION -- the debug overlay lives on the
+        // Community screen (5 taps on the wordmark), which CreatePostModal's
+        // own edit-post body field is never reachable from while it's open
+        // (AppModal portals a full-screen, position:absolute,
+        // zIndex:1000 layer that covers the wordmark entirely -- confirmed
+        // directly, not assumed) -- so the owner can never have the panel
+        // open WHILE actually focused in that editor. Opening the overlay
+        // necessarily means leaving the editor first, which blurs it,
+        // which is exactly why window.__liveEditorState (a LIVE-only
+        // reading) always shows "(no multiline editor focused)" by the
+        // time anyone can read it there, regardless of whether the
+        // mechanism itself is working.
+        //
+        // The fix: an automatic, rolling log -- the same "capture now,
+        // read later" shape Round 14's own LAST KEYBOARD SNAPSHOT already
+        // established for the shell itself -- written at the four moments
+        // that actually matter for diagnosing this bug (editor focus, the
+        // keyboard-open shell transition, every correction this mechanism
+        // fires, and the first real user scroll that hands control back),
+        // so the owner can reproduce the bug blind, then open the overlay
+        // afterward and COPY ALL to read real numbers from the session
+        // that just happened. Capped at a fixed length so a long editing
+        // session doesn't grow this without bound.
+        window.__lastEditorSession = null;
+        var editorSessionLog = [];
+        var EDITOR_SESSION_MAX_ENTRIES = 24;
+        function recordEditorSession(trigger) {
+          var el = document.activeElement;
+          if (!el || el.tagName !== 'TEXTAREA') return;
+          var scrollParent = findScrollAncestor(el);
+          if (!scrollParent) return;
+          var vv = window.visualViewport;
+          var caretTop = null;
+          if (typeof el.selectionStart === 'number') {
+            var caret = caretRectInTextArea(el);
+            var elRect = el.getBoundingClientRect();
+            var padTop = parseFloat(getComputedStyle(el).paddingTop) || 0;
+            caretTop = Math.round(elRect.top + padTop + caret.top - el.scrollTop);
+          }
+          editorSessionLog.push({
+            at: new Date().toISOString(),
+            trigger: trigger,
+            shellMode: keyboardShellMode,
+            vvHeight: vv ? Math.round(vv.height) : null,
+            vvOffsetTop: vv ? Math.round(vv.offsetTop) : null,
+            scrollTop: Math.round(scrollParent.scrollTop),
+            scrollHeight: scrollParent.scrollHeight,
+            clientHeight: scrollParent.clientHeight,
+            caretTop: caretTop,
+            isUserScrolling: isUserScrolling(),
+          });
+          if (editorSessionLog.length > EDITOR_SESSION_MAX_ENTRIES) editorSessionLog.shift();
+          window.__lastEditorSession = editorSessionLog.slice();
         }
         // Round 35's own LIVE EDITOR debug-overlay panel: window.__liveEditorState
         // is null whenever no multiline editor is focused, and otherwise a
@@ -590,6 +681,7 @@
           function handOffToUser() {
             handedOff = true;
             window.__lastCorrectionLog = { at: new Date().toISOString(), trigger: 'rescue-handoff-user-scroll', corrected: false, delta: 0 };
+            recordEditorSession('user-scroll-handoff');
             cleanup();
           }
           function onScroll() {
@@ -668,6 +760,7 @@
           if (nextMode === 'keyboard' && keyboardShellMode !== 'keyboard') {
             keepFocusedFieldVisible('shell-transition');
             scheduleCaretRescue();
+            recordEditorSession('keyboard-open');
           }
           keyboardShellMode = nextMode;
           // Live debug state -- DebugOverlay.web.tsx's KEYBOARD SHELL STATE
@@ -797,6 +890,11 @@
               keepFocusedFieldVisible('focusin');
               scheduleCaretRescue();
             }
+            // Round 36: record the real moment of focus itself, not just
+            // the keyboard-open/correction moments -- this is the one
+            // snapshot a real device could compare against "the tapped
+            // spot" before anything else has had a chance to run.
+            recordEditorSession('focus');
           },
           true
         );

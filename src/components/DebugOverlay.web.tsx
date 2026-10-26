@@ -89,6 +89,37 @@ type LiveEditorState = {
   lastCorrection: LastCorrectionLog;
 } | null;
 
+// Round 36: the owner can never have this overlay open WHILE actually
+// focused in CreatePostModal's own edit-post body -- that screen is a
+// full-screen AppModal (position:absolute, zIndex:1000) that covers the
+// wordmark this overlay's own 5-tap gesture needs, confirmed directly by
+// reading AppModal.web.tsx/ModalRootContext.tsx, not assumed. Opening this
+// overlay necessarily means leaving that editor first, which blurs it --
+// exactly why the LIVE EDITOR panel above always reads "(no multiline
+// editor focused)" by the time anyone can read it there, regardless of
+// whether the mechanism itself worked. This is the automatic fix: a
+// rolling log written by public/index.html's recordEditorSession() at the
+// four moments that actually matter (editor focus, the keyboard-open
+// shell transition, every correction this mechanism fires, and the first
+// real user scroll that hands control back) -- so the owner can reproduce
+// the bug blind, then open this overlay afterward and COPY ALL to read
+// real numbers from the session that just happened, the same "capture
+// now, read later" shape Round 14's own LAST KEYBOARD SNAPSHOT already
+// established for the shell itself.
+type EditorSessionEntry = {
+  at: string;
+  trigger: string;
+  shellMode: 'at-rest' | 'keyboard';
+  vvHeight: number | null;
+  vvOffsetTop: number | null;
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  caretTop: number | null;
+  isUserScrolling: boolean;
+};
+type LastEditorSession = EditorSessionEntry[] | null;
+
 type Snapshot = {
   innerHeight: number;
   innerWidth: number;
@@ -116,6 +147,7 @@ type Snapshot = {
   lastKeyboardSnapshot: KeyboardSnapshot;
   keyboardShellState: KeyboardShellState;
   liveEditorState: LiveEditorState;
+  lastEditorSession: LastEditorSession;
 };
 
 function rectOf(el: Element | null): Rect {
@@ -157,6 +189,7 @@ function take(rnWindowHeight: number): Snapshot {
     lastKeyboardSnapshot: (window as any).__lastKeyboardSnapshot || null,
     keyboardShellState: (window as any).__keyboardShellState || null,
     liveEditorState: (window as any).__liveEditorState || null,
+    lastEditorSession: (window as any).__lastEditorSession || null,
   };
 }
 
@@ -206,6 +239,16 @@ function snapshotToText(s: Snapshot, rnHookHeight: number): string {
           }`,
         ].join('\n')
       : '(no multiline editor focused)',
+    '--- LAST EDITOR SESSION (auto-captured, survives leaving the editor) ---',
+    s.lastEditorSession && s.lastEditorSession.length > 0
+      ? s.lastEditorSession
+          .map(
+            (e, i) =>
+              `${i + 1}. [${e.trigger}] at ${e.at} -- shell=${e.shellMode} vv=${e.vvHeight ?? '(none)'}/${e.vvOffsetTop ?? '(none)'} ` +
+              `scroll=${e.scrollTop}/${e.scrollHeight}/${e.clientHeight} caretTop=${e.caretTop ?? '(unknown)'} userScrolling=${e.isUserScrolling}`
+          )
+          .join('\n')
+      : '(none recorded yet -- focus the long-post editor, let the keyboard open, then come back here)',
     '--- LAST KEYBOARD SNAPSHOT ---',
     s.lastKeyboardSnapshot
       ? [

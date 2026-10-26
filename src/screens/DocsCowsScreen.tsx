@@ -7,7 +7,6 @@ import { MembershipGate } from '../components/MembershipGate';
 import { Avatar } from '../components/Avatar';
 import { WatchVideoBreakdownButton } from '../components/WatchVideoBreakdownButton';
 import { TappableMovementText } from '../components/movement/TappableMovementText';
-import { useAuth } from '../context/AuthContext';
 import { useBadges } from '../context/BadgeContext';
 import { ContentCowScoringType } from '../context/ContentLibraryContext';
 import {
@@ -19,7 +18,6 @@ import {
 } from '../context/ChallengeContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { formatEtTime } from '../lib/challengeSchedule';
-import { openCompletionShareCard } from '../lib/completionShareCard';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { colors, fonts } from '../theme';
 
@@ -295,21 +293,14 @@ function ClosedNoChallengeNotice({ current }: { current: CurrentChallenge }) {
 }
 
 function DocsCowsContent() {
-  const { user } = useAuth();
-  const { addEntry: addChallengeEntry, entries: myEntries, error } = useChallenge();
+  const { addEntry: addChallengeEntry, error } = useChallenge();
   const current = useCurrentChallenge();
   const entries = useChallengeLeaderboard();
 
-  // Round 34: THE COMPLETION SHARE CARD must fire only on the real
-  // not-entered -> entered transition for THIS cycle's challenge, exactly
-  // once, same rule as every other completion path -- never on a second
-  // score submitted for a challenge this account already has an entry for
-  // (the leaderboard allows more than one entry per account per challenge;
-  // only the FIRST one is a completion). Computed from `myEntries` --
-  // useChallenge()'s own raw ChallengeEntry[], which carries `userId`,
-  // unlike useChallengeLeaderboard()'s derived, display-only rows.
-  const alreadyEnteredThisCycle = myEntries.some((e) => e.challengeTitle === current.title && e.userId === user?.id);
-
+  // Round 36: the completion share card no longer opens from a COW entry
+  // at all, by owner decision -- the card is reserved exclusively for a
+  // real MARK COMPLETE button press (a Doc's WOD or a deck card), and the
+  // COW has no such button. See AGENTS.md's "Round 36" section.
   const addEntry = (entry: Omit<Entry, 'rank' | 'tag'>) => {
     addChallengeEntry({
       challengeTitle: current.title,
@@ -318,11 +309,6 @@ function DocsCowsContent() {
       reps: entry.reps,
       time: entry.time,
     });
-    // addChallengeEntry (ChallengeContext.addEntry) is itself fire-and-
-    // forget by design, so this fires immediately off the state captured
-    // BEFORE the call above, the same optimistic convention every other
-    // completion path in this app already follows.
-    if (!alreadyEnteredThisCycle) openCompletionShareCard({ kind: 'cow', title: current.title, date: new Date() });
   };
 
   // "Coming this week" only ever describes an OPEN cycle with nothing
