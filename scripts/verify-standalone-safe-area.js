@@ -1143,6 +1143,87 @@ async function runKeyboardShellRegimeCheck(page, regime, record, { composerRiseI
   );
 }
 
+// Round 34 Part 2's own measurement/correction helper for an in-flow,
+// scrollable multiline field's caret -- duplicates index.html's own
+// mirror-div caretRectInTextArea()/keepElementCaretVisible() technique
+// (no module system exists to import it from here; kept in sync by hand,
+// the same documented convention as this file's own STANDARD_COLORWAY_IDS
+// above). With `correct: true`, nudges the scroll container's own
+// scrollTop to bring an out-of-view caret back in -- simulating the
+// native "scroll the tapped spot into view" a real tap already performs
+// BEFORE the keyboard shell mechanism (the thing this round's own fix
+// touches) ever runs -- and is a no-op whenever the caret is already
+// visible, same as the production keepElementCaretVisible() itself.
+async function readOrFixCaretVisibility(page, elId, correct) {
+  return page.evaluate(
+    ({ id, correct }) => {
+      const el = document.getElementById(id);
+      if (!el) return null;
+      let node = el.parentElement;
+      let scrollParent = null;
+      while (node && node !== document.body) {
+        const overflowY = getComputedStyle(node).overflowY;
+        if (overflowY === 'auto' || overflowY === 'scroll') {
+          scrollParent = node;
+          break;
+        }
+        node = node.parentElement;
+      }
+      if (!scrollParent) return null;
+      function caretRect() {
+        const style = getComputedStyle(el);
+        const mirror = document.createElement('div');
+        [
+          'boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+          'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+          'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing',
+        ].forEach((p) => {
+          mirror.style[p] = style[p];
+        });
+        mirror.style.position = 'absolute';
+        mirror.style.visibility = 'hidden';
+        mirror.style.top = '0';
+        mirror.style.left = '-9999px';
+        mirror.style.whiteSpace = 'pre-wrap';
+        mirror.style.wordWrap = 'break-word';
+        mirror.style.overflowWrap = 'break-word';
+        const pos = el.selectionStart == null ? el.value.length : el.selectionStart;
+        mirror.appendChild(document.createTextNode(el.value.substring(0, pos)));
+        const marker = document.createElement('span');
+        marker.textContent = el.value.substring(pos, pos + 1) || '.';
+        mirror.appendChild(marker);
+        document.body.appendChild(mirror);
+        const top = marker.offsetTop;
+        const height = marker.offsetHeight || parseFloat(style.lineHeight) || 20;
+        document.body.removeChild(mirror);
+        return { top, height };
+      }
+      function measure() {
+        const elRect = el.getBoundingClientRect();
+        const padTop = parseFloat(getComputedStyle(el).paddingTop) || 0;
+        const c = caretRect();
+        const caretTop = elRect.top + padTop + c.top - el.scrollTop;
+        return { top: caretTop, bottom: caretTop + c.height };
+      }
+      let scrollRect = scrollParent.getBoundingClientRect();
+      let caret = measure();
+      if (correct && (caret.bottom > scrollRect.bottom || caret.top < scrollRect.top)) {
+        const delta = caret.bottom > scrollRect.bottom ? caret.bottom - scrollRect.bottom + 40 : caret.top - scrollRect.top - 40;
+        scrollParent.scrollTop += delta;
+        caret = measure();
+        scrollRect = scrollParent.getBoundingClientRect();
+      }
+      return {
+        visible: caret.top >= scrollRect.top - 2 && caret.bottom <= scrollRect.bottom + 2,
+        caretTop: Math.round(caret.top),
+        caretBottom: Math.round(caret.bottom),
+        scrollRect: { top: Math.round(scrollRect.top), bottom: Math.round(scrollRect.bottom) },
+      };
+    },
+    { id: elId, correct: !!correct }
+  );
+}
+
 // Round 14's own regression guard: the keyboard-inset-based "last keyboard
 // snapshot" (see public/index.html's captureLastKeyboardSnapshot(), fired
 // from visualViewport's own 'resize' listener whenever its height shrinks
@@ -1923,6 +2004,196 @@ async function run() {
       composerRiseId: 'doc-thread-composer-keyboard-rise',
       inputSelector: '#message-draft-input',
     });
+
+    await context.close();
+  }
+
+  // --- Round 34 Part 2: editing a long, pinned post must never lose the
+  // tapped caret position when the keyboard shell resizes #root, and the
+  // editor must keep scrolling normally while the shell is open. Root
+  // cause (the browser's own native scroll-into-view firing once at focus
+  // time, before the shell's later visualViewport-driven resize crops the
+  // already-scrolled content from the bottom up, plus a SECOND, async
+  // competing native "focus into view" animation discovered only via
+  // direct scroll-event logging) and the two-layer fix
+  // (keepFocusedFieldVisible's synchronous correction on the shell's own
+  // at-rest -> keyboard transition, focusin, and selectionchange, plus
+  // scheduleCaretRescue's settle-debounced follow-up) are documented at
+  // length in AGENTS.md's own Round 34 section. Driven through the real,
+  // unmodified production listener exactly like every other
+  // [keyboard-shell/*] check in this file -- forceStandaloneDisplayMode()
+  // + forceInnerHeight/forceVisualViewport (Regime A), not a second
+  // test-only code path.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await forceStandaloneDisplayMode(page);
+    await setupMocks(page);
+    // Admin, so the kebab menu's own EDIT option is offered (PostCard's
+    // openMenu(), gated on isAdmin || isOwn, plus post.kind === 'text').
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Admin',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: true,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+          },
+        ]),
+      })
+    );
+    const longBody = Array.from(
+      { length: 24 },
+      (_, i) => `Paragraph ${i + 1}. Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt.`
+    ).join('\n\n');
+    await page.route('**/rest/v1/community_posts*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'post-r34-edit',
+            title: 'A Long Pinned Post',
+            body: longBody,
+            category: 'General',
+            kind: 'text',
+            media_url: null,
+            media_type: null,
+            workout_title: null,
+            workout_notes: null,
+            workout_results_line: null,
+            pinned: true,
+            created_at: new Date().toISOString(),
+            author_id: USER_ID,
+            profiles: { display_name: 'Test Admin' },
+            community_comments: [],
+            community_reactions: [],
+          },
+        ]),
+      })
+    );
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    await page.getByTestId('post-menu-post-r34-edit').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByText('Edit', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const bodyVisible = await page.locator('#compose-post-body-input').isVisible().catch(() => false);
+    record(
+      "[edit-post/opens] the kebab menu's EDIT option opens the composer on the long pinned post's own body",
+      bodyVisible,
+      JSON.stringify({ bodyVisible })
+    );
+
+    // Requirement 1: tapping anywhere in the post text places the caret
+    // there, and that spot stays visible when the keyboard opens.
+    // setSelectionRange (not a real mouse click, which can't reliably land
+    // on a specific character inside a tall, auto-growing textarea) places
+    // the caret deep in the 24-paragraph body; the scroll-into-view
+    // correction below simulates the native behavior a real tap already
+    // triggers, before the keyboard shell mechanism (what this round's own
+    // fix actually touches) ever runs.
+    const targetNeedle = 'Paragraph 18.';
+    const charIndex = await page.evaluate((needle) => {
+      const el = document.getElementById('compose-post-body-input');
+      return el ? el.value.indexOf(needle) : -1;
+    }, targetNeedle);
+    await page.evaluate((idx) => {
+      const el = document.getElementById('compose-post-body-input');
+      if (el && idx >= 0) {
+        el.focus();
+        el.setSelectionRange(idx, idx);
+      }
+    }, charIndex);
+    const beforeShell = await readOrFixCaretVisibility(page, 'compose-post-body-input', true);
+    record(
+      '[edit-post/caret-before-shell] the tapped caret (deep in a 24-paragraph post) is visible before the keyboard shell opens',
+      charIndex >= 0 && !!beforeShell && beforeShell.visible,
+      JSON.stringify({ charIndex, beforeShell })
+    );
+
+    // The real bug: forcing the shell open (Regime A, the primary
+    // reported regime) used to leave the caret outside the visible area,
+    // with no recovery short of typing. This drives the real, unmodified
+    // production listener end to end.
+    await forceInnerHeight(page, KEYBOARD_SHELL_REGIMES[0].innerHeight);
+    await forceVisualViewport(page, { height: KEYBOARD_SHELL_REGIMES[0].vvHeight, offsetTop: KEYBOARD_SHELL_REGIMES[0].offsetTop });
+    // scheduleCaretRescue's own window is up to CARET_RESCUE_WINDOW_MS
+    // (900) + CARET_RESCUE_SETTLE_MS (120) -- long enough to let the
+    // browser's own competing animated "focus into view" scroll finish
+    // and be corrected a second time (see AGENTS.md's own Round 34
+    // root-cause narrative).
+    await page.waitForTimeout(1300);
+
+    const afterShell = await readOrFixCaretVisibility(page, 'compose-post-body-input', false);
+    record(
+      '[edit-post/caret-after-shell] the same caret is still visible once the keyboard shell has opened and settled -- no jump to the top, no caret off screen',
+      !!afterShell && afterShell.visible,
+      JSON.stringify({ afterShell })
+    );
+
+    // Requirement 2: the editor must still scroll normally WHILE the
+    // shell is open, so the member can move to a different spot -- not
+    // just that the one originally-tapped spot happens to stay correct.
+    const findScrollTop = () =>
+      page.evaluate(() => {
+        const el = document.getElementById('compose-post-body-input');
+        let node = el && el.parentElement;
+        while (node && node !== document.body) {
+          const overflowY = getComputedStyle(node).overflowY;
+          if (overflowY === 'auto' || overflowY === 'scroll') return node.scrollTop;
+          node = node.parentElement;
+        }
+        return null;
+      });
+    const scrollBefore = await findScrollTop();
+    await page.evaluate(() => {
+      const el = document.getElementById('compose-post-body-input');
+      let node = el && el.parentElement;
+      while (node && node !== document.body) {
+        const overflowY = getComputedStyle(node).overflowY;
+        if (overflowY === 'auto' || overflowY === 'scroll') {
+          node.scrollTop += 150;
+          return;
+        }
+        node = node.parentElement;
+      }
+    });
+    await page.waitForTimeout(200);
+    const scrollAfter = await findScrollTop();
+    record(
+      "[edit-post/scrolls-while-open] the editor's own scroll container still moves on a deliberate manual scroll while the keyboard shell is open",
+      scrollBefore !== null && scrollAfter !== null && scrollAfter > scrollBefore,
+      JSON.stringify({ scrollBefore, scrollAfter })
+    );
+
+    // Requirement 3: typing keeps working exactly as before. Focus is
+    // already on the body field from the setSelectionRange call above, so
+    // this types directly rather than clicking (which could scroll the
+    // very tall, mostly-off-screen textarea in a way that fights the
+    // scroll check just above it).
+    await page.keyboard.type(' EDITED', { delay: 15 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const typedValue = await page.evaluate(() => document.getElementById('compose-post-body-input')?.value ?? '');
+    record(
+      '[edit-post/typing-still-works] typing into the editor while the keyboard shell is open still works exactly as before',
+      typedValue.includes('EDITED'),
+      JSON.stringify({ typedIncludesEdited: typedValue.includes('EDITED') })
+    );
+
+    await resetInnerHeight(page);
+    await resetVisualViewport(page);
+    await page.waitForTimeout(200);
 
     await context.close();
   }
@@ -5830,6 +6101,224 @@ async function run() {
       JSON.stringify({ cardGoneAfterClose, stillCompletedText })
     );
 
+    // Round 34's own real bug, reproduced exactly: complete a workout, see
+    // the card, close it, open LOG RESULTS for that SAME already-complete
+    // workout, hit SAVE RESULTS -- and the card used to pop a second time,
+    // with a fresh random colorway, on every re-save. `wasComplete` is now
+    // captured in LogResultsModal.tsx BEFORE the save runs, so a day that
+    // was already complete the moment SAVE was tapped never reopens the
+    // card, regardless of how many times results get re-saved.
+    await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    // useActionCompletion's own SAVED acknowledgment holds for ~900ms
+    // before onClose() (and the card's own open-if-needed check) runs.
+    await page.waitForTimeout(1500);
+    const noCardOnResave = !(await page.getByTestId('completion-share-card').isVisible().catch(() => true));
+    const logClosedAfterResave = !(await page.getByTestId('close-log-results').isVisible().catch(() => false));
+    record(
+      '[share-card/no-repeat] saving results a second time for an already-complete workout shows no card -- just the quiet save confirmation',
+      noCardOnResave && logClosedAfterResave,
+      JSON.stringify({ noCardOnResave, logClosedAfterResave })
+    );
+
+    await context.close();
+  }
+
+  // [share-card/no-repeat-restart]: the completion itself lives in the
+  // database (wod_completions), never in any client-side "already showed
+  // this" flag -- so a completion seeded as already-persisted from a cold
+  // start (simulating the app being closed and reopened, or a different
+  // sign-in, with no live MARK COMPLETE step anywhere in THIS test run at
+  // all) must never show the card on a later save. Monday's own WOD key is
+  // the plain literal 'mon' (data/content.ts) -- the exact row the existing
+  // [share-card/wod] block above reaches via date-strip-cell-${offsetToWeekday(1)}.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const alreadyCompletedMonday = [
+      {
+        day_key: 'mon',
+        workout_title: 'THE GAUNTLET',
+        date_label: 'Monday',
+        workout_timestamp: Date.now() - 86400000,
+        rounds: '5',
+        time_taken: '9:30',
+        kettlebell_kg: '16',
+        notes: '',
+        media_url: null,
+        media_type: null,
+        completed_at: new Date(Date.now() - 86400000).toISOString(),
+      },
+    ];
+    await page.route('**/rest/v1/wod_completions*', (route) => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(alreadyCompletedMonday) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+    // This account's totalWorkoutsLogged is 1 from the start (the seeded
+    // row above) -- without this, BadgeContext's own effect sees
+    // totalWorkoutsLogged >= 1 and loops forever trying to upsert
+    // day_one_doug against the generic empty-array badge_grants default,
+    // which never satisfies its own condition (the exact documented gap
+    // the [share-card/wod]/[share-card/post-100] blocks above already
+    // answer directly for the same reason).
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } }]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId(`date-strip-cell-${offsetToWeekday(1)}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const completeLabelOnLoad = await page.getByTestId('day-panel-complete').innerText().catch(() => '');
+    await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    const noCardFreshLoad = !(await page.getByTestId('completion-share-card').isVisible().catch(() => true));
+    record(
+      '[share-card/no-repeat-restart] a completion already persisted in the database (fresh app load, no live MARK COMPLETE in this run) never opens the card on save -- the transition lives in the DB, not client state',
+      noCardFreshLoad && completeLabelOnLoad.includes('COMPLETED'),
+      JSON.stringify({ noCardFreshLoad, completeLabelOnLoad })
+    );
+    await context.close();
+  }
+
+  // [share-card/cow-first-entry] + [share-card/cow-no-repeat]: "The same
+  // transition rule applies to...COW scores" (Round 34's own rule, item
+  // 4) -- a second COW score posted this same cycle must not reopen the
+  // card. Whether the real weekly cycle is open or closed is itself a
+  // function of today's actual wall-clock weekday (Sat noon ET - Sun 6pm
+  // ET is closed, see challengeSchedule.ts), which no fixture date alone
+  // can control -- Round 33 documented abandoning the COW path for the
+  // colorway sweep for exactly this reason. This context's own clock is
+  // pinned to a fixed, deliberately mid-week instant (a Wednesday noon ET,
+  // far from both cycle boundaries) via Playwright's clock API -- which
+  // fakes only Date/performance.now, never setTimeout/setInterval, so
+  // every real app timer (useActionCompletion's own SAVED hold, etc.)
+  // keeps running on real wall-clock time underneath it.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await page.clock.setFixedTime(new Date('2027-01-20T17:00:00.000Z'));
+    await setupMocks(page, USER_ID);
+    const insertedCowEntries = [];
+    await page.route('**/rest/v1/challenge_entries*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'POST') {
+        let payload = {};
+        try {
+          payload = JSON.parse(req.postData() || '{}');
+        } catch {}
+        const row = {
+          id: `cow-entry-${insertedCowEntries.length + 1}`,
+          user_id: payload.user_id ?? USER_ID,
+          challenge_title: payload.challenge_title ?? '',
+          kettlebell_kg: payload.kettlebell_kg ?? '',
+          rounds: payload.rounds ?? '',
+          reps: payload.reps ?? null,
+          time_taken: payload.time_taken ?? '',
+          created_at: new Date().toISOString(),
+          profiles: { display_name: 'Test Member', how_train: 'boathouse' },
+        };
+        insertedCowEntries.push(row);
+        // ChallengeContext.addEntry calls .select(ENTRY_SELECT).single() --
+        // unlike community_posts' bare .insert() elsewhere in this file,
+        // .single() does NOT unwrap an array response client-side
+        // (confirmed directly in postgrest-js's own processResponse(): the
+        // array->object unwrap only runs when isMaybeSingle is true, which
+        // only .maybeSingle() sets, never .single()) -- a real PostgREST
+        // server honors .single()'s own Accept header server-side and
+        // returns a bare object, so the mock must too, the same convention
+        // useGroupChat.ts's own .single() insert mock already uses. The
+        // first version of this mock returned [row] here, which silently
+        // made `data` the ARRAY itself (still truthy, so `if (data)`
+        // passed) -- rowToEntry(data) then read `.user_id` off an array,
+        // producing a real entry with userId: undefined that never matched
+        // `user?.id`, so alreadyEnteredThisCycle stayed false forever and
+        // this exact check failed before this fix.
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(row) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(insertedCowEntries) });
+    });
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem(
+          'contentLibraryDrafts.v1',
+          JSON.stringify([
+            {
+              id: 'test-r34-cow',
+              name: 'Round 34 Test COW',
+              originalTitle: 'Round 34 Test COW',
+              type: 'cow',
+              format: '10min AMRAP',
+              formatDescription: '',
+              movements: ['Kettlebell Swings'],
+              videoUrl: '',
+              notes: '',
+              scoringType: 'rounds',
+              releaseAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+              status: 'published',
+              scheduled: true,
+              createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+              updatedAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+            },
+          ])
+        );
+        window.localStorage.setItem('contentLibraryDrafts.v1.seedVersion', '1');
+      } catch {}
+    });
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /DOC'?S COWS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    await page.locator('#cowkiller-rounds-input').fill('12').catch(() => {});
+    await page.locator('#cowkiller-kettlebell-input').fill('16').catch(() => {});
+    await page.getByText('POST SCORE', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const cardVisibleFirstEntry = await page.getByTestId('completion-share-card').isVisible().catch(() => false);
+    record(
+      '[share-card/cow-first-entry] the card appears on the first COW score posted this cycle',
+      cardVisibleFirstEntry,
+      JSON.stringify({ cardVisibleFirstEntry })
+    );
+    await waitForShareCardReady(page);
+    await page.getByTestId('completion-share-card-close').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    // A second score this same cycle (editing/re-posting a result) must
+    // not reopen the card.
+    await page.locator('#cowkiller-rounds-input').fill('14').catch(() => {});
+    await page.locator('#cowkiller-kettlebell-input').fill('16').catch(() => {});
+    await page.getByText('POST SCORE', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const noCardSecondEntry = !(await page.getByTestId('completion-share-card').isVisible().catch(() => true));
+    record(
+      '[share-card/cow-no-repeat] a second COW score posted this same cycle shows no card -- the transition rule applies to COW scores too',
+      noCardSecondEntry,
+      JSON.stringify({ noCardSecondEntry })
+    );
     await context.close();
   }
 

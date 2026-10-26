@@ -316,6 +316,195 @@
         // ordinary CSS flexbox, the same way they already reflow to
         // #root's normal height the rest of the time. No composer id is
         // read, measured, or special-cased anywhere in this mechanism.
+        // Round 34: a caret deep inside a tall, IN-FLOW scrollable field
+        // (e.g. CreatePostModal's edit-mode body, a long multi-paragraph
+        // post) needs its own visibility kept correct when the shell
+        // resizes #root -- the mechanism above was built and verified
+        // against the three BOTTOM-ANCHORED composers, where plain CSS
+        // flex-reflow is the whole fix (nothing to scroll, they're not
+        // in-flow content). A caret inside a ScrollView is a genuinely
+        // different shape of problem: shrinking #root's own height crops
+        // the already-scrolled content from the BOTTOM up, with nothing to
+        // compensate for where the caret itself now lands -- root-caused
+        // directly: the browser's own native "scroll the focused control
+        // into view" fires once, synchronously, against the viewport
+        // geometry at the INSTANT of focus/tap -- before the keyboard has
+        // actually opened and before this file's own resize (driven by
+        // visualViewport's resize event, which only fires once the
+        // keyboard animation has finished) has run. That later resize
+        // shrinks the scroll container's own visible height out from under
+        // an already-settled scroll position, with nothing to re-scroll it
+        // -- exactly "the view scrolls away from the tapped spot."
+        //
+        // The fix measures, never predicts (Round 15's own lesson,
+        // reapplied here): a `<textarea>` exposes no DOM API for its own
+        // caret's pixel position, so a hidden mirror element -- styled
+        // identically (font, padding, border, width, white-space) -- gets
+        // the text up to the caret plus a marker span; the marker's own
+        // offsetTop/offsetHeight IS the caret's real Y position within the
+        // textarea, immune to assuming a fixed line height or character
+        // width (wrapped lines, blank lines, anything).
+        var KEYBOARD_RISE_ROW_SELECTOR =
+          '#group-chat-composer-keyboard-rise, #doc-thread-composer-keyboard-rise, #post-detail-composer-keyboard-rise';
+        var CARET_MIRROR_STYLE_PROPS = [
+          'boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+          'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+          'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing'
+        ];
+        function caretRectInTextArea(el) {
+          var style = getComputedStyle(el);
+          var mirror = document.createElement('div');
+          for (var i = 0; i < CARET_MIRROR_STYLE_PROPS.length; i++) {
+            var prop = CARET_MIRROR_STYLE_PROPS[i];
+            mirror.style[prop] = style[prop];
+          }
+          mirror.style.position = 'absolute';
+          mirror.style.visibility = 'hidden';
+          mirror.style.top = '0';
+          mirror.style.left = '-9999px';
+          mirror.style.whiteSpace = 'pre-wrap';
+          mirror.style.wordWrap = 'break-word';
+          mirror.style.overflowWrap = 'break-word';
+          var caretPos = el.selectionStart == null ? el.value.length : el.selectionStart;
+          mirror.appendChild(document.createTextNode(el.value.substring(0, caretPos)));
+          var marker = document.createElement('span');
+          // A real character, not an empty span -- an empty inline element
+          // at the very end of wrapped text can report a 0-height
+          // offsetHeight in some engines, which would silently collapse
+          // the measured caret rect to nothing.
+          marker.textContent = el.value.substring(caretPos, caretPos + 1) || '.';
+          mirror.appendChild(marker);
+          document.body.appendChild(mirror);
+          var top = marker.offsetTop;
+          var height = marker.offsetHeight || parseFloat(style.lineHeight) || 20;
+          document.body.removeChild(mirror);
+          return { top: top, height: height };
+        }
+        // react-native-web's own ScrollView renders as a plain
+        // overflow-y: auto/scroll div -- walks up from `el` to the nearest
+        // one, or returns null if `el` isn't inside a scrollable ancestor
+        // at all (the three bottom-anchored composer rows aren't).
+        function findScrollAncestor(el) {
+          var node = el.parentElement;
+          while (node && node !== document.body) {
+            var overflowY = getComputedStyle(node).overflowY;
+            if (overflowY === 'auto' || overflowY === 'scroll') return node;
+            node = node.parentElement;
+          }
+          return null;
+        }
+        // Scrolls `scrollParent` just enough to bring `el`'s own caret back
+        // inside view -- a no-op whenever the caret is already visible
+        // (ordinary typing, a caret near the top of a short field, or
+        // nothing left to correct), which is what makes this safe to call
+        // repeatedly (a same-element reposition, a shell mode transition,
+        // the settle-rescue below) without fighting typing or a deliberate
+        // manual scroll: it only ever acts on a caret that has genuinely
+        // left the visible area, never "recenters" one that hasn't.
+        function keepElementCaretVisible(el, scrollParent) {
+          var tag = el.tagName;
+          var scrollRect = scrollParent.getBoundingClientRect();
+          var elRect = el.getBoundingClientRect();
+          var caretTop, caretBottom;
+          if (tag === 'TEXTAREA' && typeof el.selectionStart === 'number') {
+            var caret = caretRectInTextArea(el);
+            var padTop = parseFloat(getComputedStyle(el).paddingTop) || 0;
+            caretTop = elRect.top + padTop + caret.top - el.scrollTop;
+            caretBottom = caretTop + caret.height;
+          } else {
+            caretTop = elRect.top;
+            caretBottom = elRect.bottom;
+          }
+          var delta = 0;
+          var margin = 8; // small breathing room, not flush against the edge
+          if (caretBottom > scrollRect.bottom) {
+            delta = caretBottom - scrollRect.bottom + margin;
+          } else if (caretTop < scrollRect.top) {
+            delta = caretTop - scrollRect.top - margin;
+          }
+          if (delta !== 0) scrollParent.scrollTop += delta;
+        }
+        // The three bottom-anchored composers already position themselves
+        // correctly via the shell's own flex reflow above -- they are not
+        // in-flow scrolled content and must never be dragged into this
+        // mechanism.
+        function isInsideKeyboardRiseRow(el) {
+          return !!el.closest(KEYBOARD_RISE_ROW_SELECTOR);
+        }
+        function keepFocusedFieldVisible() {
+          var el = document.activeElement;
+          if (!el) return;
+          if (el.tagName !== 'TEXTAREA' && el.tagName !== 'INPUT') return;
+          if (isInsideKeyboardRiseRow(el)) return;
+          var scrollParent = findScrollAncestor(el);
+          if (!scrollParent) return;
+          keepElementCaretVisible(el, scrollParent);
+        }
+        // Round 34's own real-device-shaped finding: Chromium (and
+        // presumably WebKit, since this is a cross-engine "bring the
+        // focused control into view on resize" behavior, not a Chromium
+        // quirk) runs its OWN async, animated scroll correction in
+        // response to the very same visualViewport resize this file reacts
+        // to -- confirmed directly, not guessed, by logging every 'scroll'
+        // event on the scroll container after the shell transition: a
+        // smooth ~60fps scroll animation, entirely outside this file's own
+        // code (keepFocusedFieldVisible's own correction is a single,
+        // instant scrollTop write, never animated), started a few ms after
+        // the synchronous fix above already ran and already measured the
+        // caret as correctly visible -- and the browser's own animation
+        // ends with the caret OUTSIDE the visible area again, because it's
+        // aligning the TEXTAREA ELEMENT's own box (likely centering or
+        // top-aligning it), not the caret's own sub-element position within
+        // it. There is no API to opt a focused control out of this, so the
+        // fix is the house's own established answer to exactly this shape
+        // of problem (Round 16's self-healing guard, Round 17's interval
+        // backstop): don't fight it head-on, let it finish, then correct
+        // whatever it left behind. A short-lived 'scroll' listener (time-
+        // boxed to CARET_RESCUE_WINDOW_MS, removed the instant it fires
+        // once or the window elapses) waits for scrolling to settle (120ms
+        // of silence) and re-runs the exact same correction ONCE -- time-
+        // boxed specifically so a user's own LATER, deliberate manual
+        // scroll (requirement 2: must be able to freely scroll to a
+        // different spot) is never touched; only scroll activity in the
+        // brief window right after a focus/selection change is ever
+        // corrected.
+        var CARET_RESCUE_WINDOW_MS = 900;
+        var CARET_RESCUE_SETTLE_MS = 120;
+        function scheduleCaretRescue() {
+          var el = document.activeElement;
+          if (!el) return;
+          if (el.tagName !== 'TEXTAREA' && el.tagName !== 'INPUT') return;
+          if (isInsideKeyboardRiseRow(el)) return;
+          var scrollParent = findScrollAncestor(el);
+          if (!scrollParent) return;
+
+          var settleTimer = null;
+          var deadline = Date.now() + CARET_RESCUE_WINDOW_MS;
+          function cleanup() {
+            scrollParent.removeEventListener('scroll', onScroll);
+            if (settleTimer) clearTimeout(settleTimer);
+          }
+          function onScroll() {
+            if (Date.now() > deadline) {
+              cleanup();
+              return;
+            }
+            if (settleTimer) clearTimeout(settleTimer);
+            settleTimer = setTimeout(function () {
+              // Re-check focus hasn't moved elsewhere in the meantime --
+              // this correction is only ever for the field it was
+              // scheduled for.
+              if (document.activeElement === el) keepElementCaretVisible(el, scrollParent);
+              cleanup();
+            }, CARET_RESCUE_SETTLE_MS);
+          }
+          scrollParent.addEventListener('scroll', onScroll);
+          // A hard stop in case no 'scroll' event ever fires at all (the
+          // browser's own correction either never engages or already
+          // finished before this listener attached).
+          setTimeout(cleanup, CARET_RESCUE_WINDOW_MS + CARET_RESCUE_SETTLE_MS);
+        }
+
         var KEYBOARD_SHELL_SHRINK_THRESHOLD = 100;
         var keyboardShellMode = 'at-rest';
         function syncKeyboardShellMode() {
@@ -346,6 +535,18 @@
             // with nothing left over to reset by hand.
             document.documentElement.removeAttribute('data-keyboard-shell');
             document.documentElement.style.removeProperty('--shell-keyboard-height');
+          }
+          // Round 34: on the real not-open -> open TRANSITION only (never
+          // on this function's own 250ms backstop interval, which must
+          // stay a pure #root-height sync with no other side effect, or it
+          // would fight a member's own deliberate manual scroll every
+          // quarter second) -- the moment the shell has just shrunk is
+          // exactly when the keyboard animation has settled and #root's
+          // own new height is live in the DOM, so this reads real,
+          // up-to-date geometry rather than predicting ahead of it.
+          if (nextMode === 'keyboard' && keyboardShellMode !== 'keyboard') {
+            keepFocusedFieldVisible();
+            scheduleCaretRescue();
           }
           keyboardShellMode = nextMode;
           // Live debug state -- DebugOverlay.web.tsx's KEYBOARD SHELL STATE
@@ -460,7 +661,23 @@
         // the 50ms delay gives the OS a moment to do that resize first,
         // rather than reading a stale vv.height synchronously in the same
         // event-handling turn as the blur itself.
-        document.addEventListener('focusin', syncKeyboardShellMode, true);
+        document.addEventListener(
+          'focusin',
+          function () {
+            syncKeyboardShellMode();
+            // Round 34: a NEW field gaining focus while the shell is
+            // ALREADY in keyboard mode is not a mode TRANSITION (the check
+            // inside syncKeyboardShellMode() above only fires on at-rest ->
+            // keyboard), so it needs this explicit call too -- tapping
+            // straight from one field into another, keyboard never
+            // closing in between, must still land the new caret in view.
+            if (keyboardShellMode === 'keyboard') {
+              keepFocusedFieldVisible();
+              scheduleCaretRescue();
+            }
+          },
+          true
+        );
         document.addEventListener(
           'focusout',
           function () {
@@ -468,6 +685,20 @@
           },
           true
         );
+        // selectionchange: the one case neither focusin nor the mode-
+        // transition hook above can catch -- tapping a NEW spot WITHIN the
+        // SAME already-focused field (focus never changes element, so
+        // focusin never refires). Gated to keyboard mode only, and a
+        // genuine no-op whenever the caret is already visible (see
+        // keepFocusedFieldVisible()'s own comment), so this never fights
+        // ordinary typing or a deliberate manual scroll -- it only rescues
+        // a caret that has actually left the visible area.
+        document.addEventListener('selectionchange', function () {
+          if (keyboardShellMode === 'keyboard') {
+            keepFocusedFieldVisible();
+            scheduleCaretRescue();
+          }
+        });
         // The self-healing backstop: an always-on poll (not started/stopped
         // based on current mode -- Round 16's start/stop guard was itself
         // one more piece of state that could in principle drift, and this
