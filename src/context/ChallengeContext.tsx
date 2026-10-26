@@ -62,6 +62,12 @@ const EMPTY_CHALLENGE: Omit<CurrentChallenge, 'closeAt' | 'nextRevealAt' | 'isCl
 
 export type ChallengeEntry = {
   id: string;
+  // The real auth user id that posted this entry -- not exposed in the UI
+  // anywhere (the leaderboard shows `author`, a display name), kept purely
+  // so Round 34's "already entered this cycle" check (see DocsCowsScreen's
+  // own wasComplete) can identify MY entries reliably, unlike matching on
+  // `author`, which two members could share.
+  userId: string;
   author: string;
   challengeTitle: string;
   kettlebell: string;
@@ -76,7 +82,7 @@ type ChallengeContextValue = {
   loading: boolean;
   error: string | null;
   entries: ChallengeEntry[];
-  addEntry: (entry: Omit<ChallengeEntry, 'id' | 'createdAt' | 'author' | 'tag'>) => void;
+  addEntry: (entry: Omit<ChallengeEntry, 'id' | 'userId' | 'createdAt' | 'author' | 'tag'>) => void;
 };
 
 const ChallengeContext = createContext<ChallengeContextValue | undefined>(undefined);
@@ -96,6 +102,7 @@ function tagFromHowTrain(howTrain: string | null | undefined): ChallengeTag {
 
 type ChallengeEntryRow = {
   id: string;
+  user_id: string;
   challenge_title: string;
   // Free text (migration_021) — "2x24", "16/20", "24kg", or pounds, stored
   // and displayed exactly as typed. Never parsed as a number.
@@ -111,6 +118,7 @@ function rowToEntry(row: ChallengeEntryRow): ChallengeEntry {
   const profile = profileOf(row.profiles);
   return {
     id: row.id,
+    userId: row.user_id,
     author: profile?.display_name?.trim() || 'Member',
     challengeTitle: row.challenge_title,
     kettlebell: row.kettlebell_kg,
@@ -122,7 +130,7 @@ function rowToEntry(row: ChallengeEntryRow): ChallengeEntry {
   };
 }
 
-const ENTRY_SELECT = 'id, challenge_title, kettlebell_kg, rounds, reps, time_taken, created_at, profiles(display_name, how_train)';
+const ENTRY_SELECT = 'id, user_id, challenge_title, kettlebell_kg, rounds, reps, time_taken, created_at, profiles(display_name, how_train)';
 
 // Weekly Challenge (COWs) submissions — every member's entries, read from
 // the shared `challenge_entries` table, so the leaderboard is the same for

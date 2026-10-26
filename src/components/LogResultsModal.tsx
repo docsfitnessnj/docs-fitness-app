@@ -65,18 +65,26 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
   const { status: saveStatus, run: runSave } = useActionCompletion();
   const { status: postStatus, run: runPost } = useActionCompletion();
 
-  // Round 33: THE COMPLETION SHARE CARD opens after saving or posting
-  // logged results -- its own distinct trigger per the approved spec,
-  // independent of whether this day was already marked complete before
-  // this save/post.
+  // Round 34: THE COMPLETION SHARE CARD must fire only on the real
+  // not-complete -> complete TRANSITION, never on every save/post of an
+  // already-complete day -- the real bug this round fixes (saving results
+  // a second time for the same already-complete workout was re-opening the
+  // card, with a fresh random colorway each time). `wasComplete` is
+  // captured at the moment the action STARTS, before markCompleteIfNeeded()
+  // can flip it, so a day that was already complete when SAVE/POST was
+  // tapped never opens the card, regardless of how many times results get
+  // re-saved -- the completion itself (and therefore the one-time card) is
+  // already recorded in the database from whichever action completed it
+  // first, so this holds across app restarts and sign-outs for free.
   const openShareCard = () => openCompletionShareCard({ kind: 'logged', title: workoutTitle, date });
 
   const handleSaveResults = () => {
+    const wasComplete = isCompleted(dayKey);
     runSave(() => {
       markCompleteIfNeeded();
     }, () => {
       onClose();
-      openShareCard();
+      if (!wasComplete) openShareCard();
     });
   };
 
@@ -86,6 +94,7 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
       {
         text: 'Post',
         onPress: () => {
+          const wasComplete = isCompleted(dayKey);
           runPost(() => {
             markCompleteIfNeeded();
             // Awaited by useActionCompletion's own run() -- see
@@ -101,7 +110,7 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             );
           }, () => {
             onClose();
-            openShareCard();
+            if (!wasComplete) openShareCard();
           });
         },
       },
