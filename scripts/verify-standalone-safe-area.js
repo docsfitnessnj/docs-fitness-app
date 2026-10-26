@@ -1247,15 +1247,24 @@ async function getEditorScrollTop(page, elId) {
   }, elId);
 }
 
-// Dispatches touchstart -> sets scrollTop -> dispatches a real 'scroll'
-// event -> touchend, all synchronously -- the exact shape a real finger
-// drag produces from this mechanism's own point of view (a scroll event
-// arriving while index.html's own touchActive flag is true). This is
-// deliberately a plain synthetic Event, not a real TouchEvent -- the
-// production listeners only ever check the event's own `type`, never read
-// touch-point data off it, so this is a legitimate way to drive the real,
-// unmodified isUserScrolling() logic, not a workaround for something it
-// actually needs.
+// Dispatches touchstart -> touchmove -> sets scrollTop -> dispatches a
+// real 'scroll' event -> touchend, all synchronously -- the exact shape a
+// real finger DRAG produces from this mechanism's own point of view (a
+// scroll event arriving while index.html's own touchActive/touchMoved
+// flags report an active drag). This is deliberately a plain synthetic
+// Event, not a real TouchEvent -- the production listeners only ever
+// check the event's own `type`, never read touch-point data off it, so
+// this is a legitimate way to drive the real, unmodified isUserScrolling()
+// logic, not a workaround for something it actually needs.
+//
+// Round 36: the touchmove dispatch is the one addition -- Round 35's own
+// version only sent touchstart/touchend (no movement), which this round
+// found is indistinguishable from a plain TAP under the real, unmodified
+// mechanism's own (corrected) isUserScrolling() definition. A plain tap
+// must NOT count as "the user is scrolling" (that was the real bug behind
+// "the tapped spot is still lost when the keyboard opens" -- see
+// AGENTS.md's Round 36 writeup), so this helper now simulates a genuine
+// drag, which is what isUserScrolling() is actually supposed to detect.
 async function simulateUserTouchScroll(page, elId, targetScrollTop) {
   return page.evaluate(
     ({ id, target }) => {
@@ -1272,6 +1281,7 @@ async function simulateUserTouchScroll(page, elId, targetScrollTop) {
       }
       if (!scrollParent) return false;
       document.dispatchEvent(new Event('touchstart'));
+      document.dispatchEvent(new Event('touchmove'));
       scrollParent.scrollTop = target;
       scrollParent.dispatchEvent(new Event('scroll'));
       document.dispatchEvent(new Event('touchend'));
@@ -1279,6 +1289,17 @@ async function simulateUserTouchScroll(page, elId, targetScrollTop) {
     },
     { id: elId, target: targetScrollTop }
   );
+}
+
+// A plain TAP -- touchstart then touchend with NO touchmove in between --
+// the exact shape of the touch that focuses a field and places a caret.
+// Round 36's own regression check for the real bug this round fixes: this
+// must never be mistaken for "the user is scrolling."
+async function simulateUserTap(page) {
+  return page.evaluate(() => {
+    document.dispatchEvent(new Event('touchstart'));
+    document.dispatchEvent(new Event('touchend'));
+  });
 }
 
 // Round 14's own regression guard: the keyboard-inset-based "last keyboard
@@ -2305,10 +2326,206 @@ async function run() {
       JSON.stringify({ typedIncludesEdited: typedValue.includes('EDITED') })
     );
 
+    // Round 36 Part 4: the owner's own hypothesis -- that this screen's
+    // multiline field renders as something the detector doesn't match --
+    // is investigated and DISPROVEN here directly against the real field,
+    // not assumed. document.activeElement really is a TEXTAREA, and
+    // window.__liveEditorState genuinely reports live numbers for it
+    // while focused -- confirming every Round 34/35 correction DID attach
+    // to this screen all along; the "(no multiline editor focused)"
+    // report traces to a different cause entirely (see the
+    // [edit-post/last-editor-session] check below).
+    const detectionCheck = await page.evaluate(() => {
+      const el = document.activeElement;
+      return {
+        activeTagName: el ? el.tagName : null,
+        activeId: el ? el.id : null,
+        liveEditorStateNonNull: !!(window).__liveEditorState,
+      };
+    });
+    record(
+      '[edit-post/detection-matches-real-field] the edit-post body field genuinely is a <textarea> and document.activeElement/window.__liveEditorState both match it while focused',
+      detectionCheck.activeTagName === 'TEXTAREA' &&
+        detectionCheck.activeId === 'compose-post-body-input' &&
+        detectionCheck.liveEditorStateNonNull,
+      JSON.stringify({ detectionCheck })
+    );
+
+    // Round 36 Part 4: the real instrumentation gap -- the debug overlay
+    // lives on the Community screen (5 taps on the wordmark), which this
+    // full-screen edit-post modal covers entirely (AppModal.web.tsx's own
+    // position:absolute, zIndex:1000 portal layer), so the owner can never
+    // have the overlay open while actually focused here. The fix is the
+    // automatic LAST EDITOR SESSION rolling log, captured at focus/
+    // keyboard-open/correction/first-user-scroll-handoff with no overlay
+    // needed -- proven here by reading window.__lastEditorSession
+    // directly and confirming it actually captured real entries from this
+    // same test run, including at least one 'focus' entry and one
+    // 'keyboard-open' entry (the two moments this round's own brief named
+    // explicitly), each carrying real numbers, not placeholders.
+    const lastSession = await page.evaluate(() => (window).__lastEditorSession);
+    const sessionHasFocus = Array.isArray(lastSession) && lastSession.some((e) => e.trigger === 'focus');
+    const sessionHasKeyboardOpen = Array.isArray(lastSession) && lastSession.some((e) => e.trigger === 'keyboard-open');
+    const sessionHasCorrection = Array.isArray(lastSession) && lastSession.some((e) => typeof e.trigger === 'string' && e.trigger.indexOf('correction:') === 0);
+    const sessionEntriesLookReal =
+      Array.isArray(lastSession) &&
+      lastSession.length > 0 &&
+      lastSession.every((e) => typeof e.at === 'string' && typeof e.scrollHeight === 'number' && e.scrollHeight > 0);
+    record(
+      '[edit-post/last-editor-session] window.__lastEditorSession auto-captured real entries for focus, keyboard-open, and at least one correction -- readable without the overlay ever being open on this screen',
+      sessionHasFocus && sessionHasKeyboardOpen && sessionHasCorrection && sessionEntriesLookReal,
+      JSON.stringify({ sessionLength: Array.isArray(lastSession) ? lastSession.length : lastSession, sessionHasFocus, sessionHasKeyboardOpen, sessionHasCorrection, sessionEntriesLookReal })
+    );
+
     await resetInnerHeight(page);
     await resetVisualViewport(page);
     await page.waitForTimeout(200);
 
+    await context.close();
+  }
+
+  // [edit-post/tap-then-keyboard-open] + [edit-post/drag-not-fought]:
+  // Round 36's own two root-caused regressions, reproduced directly
+  // against the real, unmodified-by-this-check production mechanism
+  // before any fix existed, and now proven fixed. Root cause 1: a genuine
+  // TAP's own touchend (no touchmove) landing within the 500ms grace
+  // window of the browser's OWN competing "scroll focused element into
+  // view" animation made the old isUserScrolling() wrongly report true,
+  // so scheduleCaretRescue() handed off on the very first scroll event it
+  // saw -- before ever correcting the browser's own interference. This is
+  // "the tapped spot is still lost when the keyboard opens." Root cause 2:
+  // keepFocusedFieldVisible('selectionchange') was entirely ungated
+  // against touch state, so a 'selectionchange' event firing mid-drag
+  // (confirmed directly: scrolling a focused <textarea> on mobile WebKit
+  // can recompute its own selection range as a side effect, independent
+  // of what caused the scroll) snapped the scroll position straight back
+  // to the stale caret -- fighting the very scroll the member was
+  // performing. This is "scrolling while the keyboard is open still
+  // rubber bands back." The fix tracks whether a real DRAG happened
+  // (touchmove fired during the touch), not merely "a touch happened" --
+  // a plain tap no longer satisfies isUserScrolling(), so it can't falsely
+  // hand off the correction it itself triggered; a real drag still wins
+  // against every correction trigger, not just the settle-phase rescue.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await forceStandaloneDisplayMode(page);
+    await setupMocks(page);
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Admin', instagram_handle: '', favorite_quote: '', avatar_url: null,
+            how_train: 'boathouse', is_admin: true, show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(), group_chat_muted: false,
+          },
+        ]),
+      })
+    );
+    const longBody = Array.from(
+      { length: 24 },
+      (_, i) => `Paragraph ${i + 1}. Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt.`
+    ).join('\n\n');
+    await page.route('**/rest/v1/community_posts*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{
+          id: 'post-r36-edit', title: 'A Long Pinned Post', body: longBody, category: 'General', kind: 'text',
+          media_url: null, media_type: null, workout_title: null, workout_notes: null, workout_results_line: null,
+          pinned: true, created_at: new Date().toISOString(), author_id: USER_ID,
+          profiles: { display_name: 'Test Admin' }, community_comments: [], community_reactions: [],
+        }]),
+      })
+    );
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('post-menu-post-r36-edit').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByText('Edit', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    const needle = 'Paragraph 18.';
+    const charIndex = await page.evaluate((n) => {
+      const el = document.getElementById('compose-post-body-input');
+      return el ? el.value.indexOf(n) : -1;
+    }, needle);
+    await page.evaluate((idx) => {
+      const el = document.getElementById('compose-post-body-input');
+      if (el && idx >= 0) { el.focus(); el.setSelectionRange(idx, idx); }
+    }, charIndex);
+
+    // Root cause 1: force the keyboard-open shell transition, simulate the
+    // SAME real tap that caused this focus (touchstart -> touchend, no
+    // touchmove), then simulate the browser's own competing scroll-into-
+    // view animation firing shortly after (per Round 34's own finding,
+    // a few ms after the sync fix, well within the 500ms grace window of
+    // the tap's own touchend) -- scrolling AWAY from the caret, the way the
+    // real competing animation does.
+    await forceInnerHeight(page, KEYBOARD_SHELL_REGIMES[0].innerHeight);
+    await forceVisualViewport(page, { height: KEYBOARD_SHELL_REGIMES[0].vvHeight, offsetTop: KEYBOARD_SHELL_REGIMES[0].offsetTop });
+    await page.evaluate(() => {
+      document.dispatchEvent(new Event('touchstart'));
+      document.dispatchEvent(new Event('touchend'));
+    });
+    await page.waitForTimeout(150);
+    await page.evaluate((id) => {
+      const el = document.getElementById(id);
+      let node = el.parentElement;
+      while (node && node !== document.body) {
+        if (getComputedStyle(node).overflowY === 'auto' || getComputedStyle(node).overflowY === 'scroll') break;
+        node = node.parentElement;
+      }
+      node.scrollTop = 0;
+      node.dispatchEvent(new Event('scroll'));
+    }, 'compose-post-body-input');
+    await page.waitForTimeout(300);
+    const afterCompetingScroll = await readOrFixCaretVisibility(page, 'compose-post-body-input', false);
+    record(
+      '[edit-post/tap-then-keyboard-open] a plain tap followed by the browser\'s own competing scroll-into-view animation no longer loses the tapped caret',
+      !!afterCompetingScroll && afterCompetingScroll.visible,
+      JSON.stringify({ afterCompetingScroll })
+    );
+
+    // Root cause 2: a fresh shell cycle, well past the first rescue's own
+    // window, then a REAL drag (touchstart -> touchmove -> scroll ->
+    // selectionchange -> touchend) -- the scroll position the drag left
+    // things at must survive the selectionchange event, not get snapped
+    // back toward the stale caret.
+    await resetInnerHeight(page);
+    await resetVisualViewport(page);
+    await page.waitForTimeout(200);
+    await forceInnerHeight(page, KEYBOARD_SHELL_REGIMES[0].innerHeight);
+    await forceVisualViewport(page, { height: KEYBOARD_SHELL_REGIMES[0].vvHeight, offsetTop: KEYBOARD_SHELL_REGIMES[0].offsetTop });
+    await page.waitForTimeout(1300);
+    const dragResult = await page.evaluate((id) => {
+      const el = document.getElementById(id);
+      let node = el.parentElement;
+      while (node && node !== document.body) {
+        if (getComputedStyle(node).overflowY === 'auto' || getComputedStyle(node).overflowY === 'scroll') break;
+        node = node.parentElement;
+      }
+      document.dispatchEvent(new Event('touchstart'));
+      document.dispatchEvent(new Event('touchmove'));
+      node.scrollTop = 50;
+      node.dispatchEvent(new Event('scroll'));
+      const afterScroll = node.scrollTop;
+      document.dispatchEvent(new Event('selectionchange'));
+      const afterSelectionChange = node.scrollTop;
+      document.dispatchEvent(new Event('touchend'));
+      return { afterScroll, afterSelectionChange };
+    }, 'compose-post-body-input');
+    record(
+      '[edit-post/drag-not-fought] a real drag\'s own scroll position survives a mid-drag selectionchange event instead of being snapped back to the stale caret',
+      dragResult.afterScroll === 50 && dragResult.afterSelectionChange === 50,
+      JSON.stringify({ dragResult })
+    );
+
+    await resetInnerHeight(page);
+    await resetVisualViewport(page);
     await context.close();
   }
 
@@ -3529,7 +3746,9 @@ async function run() {
 
       await page.getByTestId('post-to-community').click({ timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(400);
-      await page.getByText('Post', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+      // Round 36 restored POST TO COMMUNITY's pre-confirmation popup with
+      // its own exact copy -- POST IT, not the old pre-Round-35 "Post".
+      await page.getByText('POST IT', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(1500);
 
       const wodPost = insertedPosts.find((p) => p.kind === 'wod' && p.media_url);
@@ -3679,7 +3898,7 @@ async function run() {
     record('[debug-overlay] opens after 5 taps on the wordmark within 2s', contentCount === 1, JSON.stringify({ contentCount }));
 
     const text = contentCount === 1 ? await page.getByTestId('debug-overlay-content').innerText() : '';
-    const mustContain = ['visualViewport.height', 'scale', '100svh', '100lvh', '100dvh', '100vh', '--keyboard-inset', 'window.scrollY', '--real-safe-top', 'tab bar', 'LAST KEYBOARD SNAPSHOT', 'LIVE EDITOR'];
+    const mustContain = ['visualViewport.height', 'scale', '100svh', '100lvh', '100dvh', '100vh', '--keyboard-inset', 'window.scrollY', '--real-safe-top', 'tab bar', 'LAST KEYBOARD SNAPSHOT', 'LIVE EDITOR', 'LAST EDITOR SESSION'];
     const missing = mustContain.filter((s) => !text.includes(s));
     record('[debug-overlay] reports every field this round added', missing.length === 0, JSON.stringify({ missing, textLength: text.length }));
 
@@ -5313,10 +5532,11 @@ async function run() {
     await page.waitForTimeout(400);
     await page.locator('#log-results-rounds-input').fill('5');
     await page.locator('#log-results-kettlebell-input').fill('16');
-    // Round 35: POST TO COMMUNITY no longer opens a confirmation dialog at
-    // all -- one tap, POSTED, in place -- so there's no "Post" button to
-    // click afterward any more.
+    // Round 36: the pre-post confirmation is back -- tap POST TO COMMUNITY,
+    // then POST IT on the real popup, matching the owner's own exact copy.
     await page.getByTestId('post-to-community').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByText('POST IT', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
     // useActionCompletion()'s own "POSTED" acknowledgment holds for 900ms
     // before setPosted(true) runs -- wait past that, not up to it, same
     // convention as every other check in this file against the identical
@@ -6216,17 +6436,13 @@ async function run() {
       JSON.stringify({ cardGoneAfterClose, stillCompletedText })
     );
 
-    // Round 34's own real bug, reproduced exactly: complete a workout, see
-    // the card, close it, open LOG RESULTS for that SAME already-complete
-    // workout, hit SAVE RESULTS -- and the card used to pop a second time,
-    // with a fresh random colorway, on every re-save. `wasComplete` is now
-    // captured in LogResultsModal.tsx BEFORE the save runs, so a day that
-    // was already complete the moment SAVE was tapped never reopens the
-    // card, regardless of how many times results get re-saved. Round 35:
-    // SAVE RESULTS is now an in-place confirmation (see [log-results/*]
-    // below) -- the modal staying open is the new CORRECT behavior, not
-    // something to assert against; this check's own job is still just the
-    // Round 34 rule (no card on a re-save).
+    // Round 34 found SAVE RESULTS re-opening the card on a re-save of an
+    // already-complete workout. Round 36 (owner decision, final) removed
+    // SAVE RESULTS as a card trigger entirely -- the card now fires only
+    // from a real MARK COMPLETE button press -- so this check's own job is
+    // the stronger, simpler version of the same guarantee: SAVE RESULTS
+    // never opens the card, on a re-save or otherwise. See [log-results/*]
+    // below for the dedicated first-save assertion.
     await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
     await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
@@ -6315,13 +6531,20 @@ async function run() {
     await context.close();
   }
 
-  // [share-card/cow-first-entry] + [share-card/cow-no-repeat]: "The same
-  // transition rule applies to...COW scores" (Round 34's own rule, item
-  // 4) -- a second COW score posted this same cycle must not reopen the
-  // card. Whether the real weekly cycle is open or closed is itself a
-  // function of today's actual wall-clock weekday (Sat noon ET - Sun 6pm
-  // ET is closed, see challengeSchedule.ts), which no fixture date alone
-  // can control -- Round 33 documented abandoning the COW path for the
+  // [share-card/cow-never]: Round 36, owner decision, final -- the card
+  // fires ONLY from a real MARK COMPLETE button press (a Doc's WOD or a
+  // deck card). The COW has no MARK COMPLETE button at all, so Round 34's
+  // own "same transition rule applies to COW scores" gating was removed
+  // entirely (not just tightened) -- a COW score, even a genuine first
+  // entry this cycle, must NEVER open the card, full stop. This check
+  // replaces Round 34's own [share-card/cow-first-entry]/
+  // [share-card/cow-no-repeat] pair, which asserted the opposite (that a
+  // first entry DOES open it) -- deleted rather than inverted in place,
+  // since the old pass condition is now the bug this round fixes. Whether
+  // the real weekly cycle is open or closed is itself a function of
+  // today's actual wall-clock weekday (Sat noon ET - Sun 6pm ET is
+  // closed, see challengeSchedule.ts), which no fixture date alone can
+  // control -- Round 33 documented abandoning the COW path for the
   // colorway sweep for exactly this reason. This context's own clock is
   // pinned to a fixed, deliberately mid-week instant (a Wednesday noon ET,
   // far from both cycle boundaries) via Playwright's clock API -- which
@@ -6414,89 +6637,29 @@ async function run() {
     await page.locator('#cowkiller-kettlebell-input').fill('16').catch(() => {});
     await page.getByText('POST SCORE', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(600);
-    const cardVisibleFirstEntry = await page.getByTestId('completion-share-card').isVisible().catch(() => false);
+    const noCardOnFirstEntry = !(await page.getByTestId('completion-share-card').isVisible().catch(() => true));
+    const entryPosted = insertedCowEntries.length === 1;
     record(
-      '[share-card/cow-first-entry] the card appears on the first COW score posted this cycle',
-      cardVisibleFirstEntry,
-      JSON.stringify({ cardVisibleFirstEntry })
-    );
-    await waitForShareCardReady(page);
-    await page.getByTestId('completion-share-card-close').click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(400);
-
-    // A second score this same cycle (editing/re-posting a result) must
-    // not reopen the card.
-    await page.locator('#cowkiller-rounds-input').fill('14').catch(() => {});
-    await page.locator('#cowkiller-kettlebell-input').fill('16').catch(() => {});
-    await page.getByText('POST SCORE', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(600);
-    const noCardSecondEntry = !(await page.getByTestId('completion-share-card').isVisible().catch(() => true));
-    record(
-      '[share-card/cow-no-repeat] a second COW score posted this same cycle shows no card -- the transition rule applies to COW scores too',
-      noCardSecondEntry,
-      JSON.stringify({ noCardSecondEntry })
+      '[share-card/cow-never] a genuine first COW entry this cycle posts successfully but never opens the share card -- the COW has no MARK COMPLETE button',
+      noCardOnFirstEntry && entryPosted,
+      JSON.stringify({ noCardOnFirstEntry, entryPosted, insertedCowEntries })
     );
     await context.close();
   }
 
-  // [share-card/logged]: SAVE RESULTS in LogResultsModal -- its own
-  // distinct trigger per the approved spec, independent of the plain
-  // MARK COMPLETE path above.
-  {
-    const context = await browser.newContext({ viewport: VIEWPORT });
-    const page = await context.newPage();
-    await setupMocks(page, USER_ID);
-    await page.route('**/rest/v1/badge_grants*', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify([{ user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } }]),
-      })
-    );
-    await seedSignedInSession(page, USER_ID);
-    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(900);
-    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
-    if (nudgeVisible) {
-      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(400);
-    }
-    await page.getByTestId(`date-strip-cell-${offsetToWeekday(1)}`).click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(500);
-    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(400);
-    await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(400);
-    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
-    // useActionCompletion's own SAVED acknowledgment holds for ~900ms
-    // before onSettled (setSaved(true), then open the share card) runs.
-    // Round 35: the modal itself never closes any more -- the share card
-    // (a separate, global overlay) opens layered on top of this still-open
-    // screen.
-    await page.waitForTimeout(1500);
-
-    const logModalStillOpen = await page.getByTestId('close-log-results').isVisible().catch(() => false);
-    const cardVisible = await page.getByTestId('completion-share-card').isVisible().catch(() => false);
-    const debugInfo = await readShareCardDebug(page);
-    record(
-      '[share-card/logged] saving logged results opens the share card, layered on top of the still-open Log Results screen',
-      logModalStillOpen && cardVisible && !!debugInfo && debugInfo.variant === 'standard',
-      JSON.stringify({ logModalStillOpen, cardVisible, debugInfo })
-    );
-
-    await context.close();
-  }
-
-  // [log-results/*]: Round 35's own explicit ask -- SAVE RESULTS and POST
-  // TO COMMUNITY are in-place confirmations now, mirroring the house's own
-  // COMPLETED button pattern (DayPanel.tsx's completeButtonDone/
-  // completeButtonTextDone), with the member staying on this screen the
-  // whole time (no onClose(), no navigation, they leave with the back
-  // button whenever they choose). One context, walked through the full
-  // lifecycle in order: save (in-place, card on the real first
-  // completion), editing a field reverts SAVED, re-saving shows SAVED
-  // again with no new card, posting skips the old confirmation dialog
-  // entirely and shows POSTED in place, and editing again reverts POSTED.
+  // [log-results/*]: Round 36, owner decisions, final. Part 1 supersedes
+  // Round 34's own transition rule -- the share card now fires ONLY from a
+  // real MARK COMPLETE button press, never from SAVE RESULTS or POST TO
+  // COMMUNITY, even on a genuine first completion (this context's WOD
+  // starts not-yet-complete, so every assertion below that no card
+  // appeared is a real test of the rule, not a vacuous one). Part 2 makes
+  // SAVE RESULTS a true toggle: tapping it again un-saves, the member
+  // edits freely, and the latest save simply overwrites the previous one.
+  // Part 3 restores POST TO COMMUNITY's pre-confirmation popup with the
+  // owner's own exact copy, Cancel/X leaving everything untouched, POST IT
+  // actually posting and transforming the button in place (Round 35's own
+  // POSTED treatment, kept verbatim). One context, walked through the
+  // full lifecycle in order.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -6536,68 +6699,131 @@ async function run() {
     await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
 
-    // 1. SAVE RESULTS transforms to SAVED in place; the screen never exits.
+    // 1. SAVE RESULTS (a genuine first completion) transforms to SAVED in
+    // place, the screen never exits -- and per Part 1, no card ever opens.
     await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(1200);
     const saveButtonTextAfterSave = await page.getByTestId('save-results').innerText().catch(() => '');
     const logStillOpenAfterSave = await page.getByTestId('close-log-results').isVisible().catch(() => false);
-    const cardVisibleFirstSave = await page.getByTestId('completion-share-card').isVisible().catch(() => false);
+    const noCardOnFirstSave = !(await page.getByTestId('completion-share-card').isVisible().catch(() => true));
     record(
-      '[log-results/save-in-place] SAVE RESULTS transforms to SAVED in place, the screen stays open, and the share card opens for this real first completion',
-      saveButtonTextAfterSave.includes('SAVED') && logStillOpenAfterSave && cardVisibleFirstSave,
-      JSON.stringify({ saveButtonTextAfterSave, logStillOpenAfterSave, cardVisibleFirstSave })
-    );
-    await waitForShareCardReady(page);
-    await page.getByTestId('completion-share-card-close').click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(400);
-    const saveButtonTextAfterCardClose = await page.getByTestId('save-results').innerText().catch(() => '');
-    record(
-      '[log-results/save-in-place] closing the share card reveals the Log Results screen again, already showing the transformed SAVED button',
-      saveButtonTextAfterCardClose.includes('SAVED'),
-      JSON.stringify({ saveButtonTextAfterCardClose })
+      '[log-results/save-no-card] SAVE RESULTS transforms to SAVED in place and the screen stays open, but the share card never opens, even on a genuine first completion',
+      saveButtonTextAfterSave.includes('SAVED') && logStillOpenAfterSave && noCardOnFirstSave,
+      JSON.stringify({ saveButtonTextAfterSave, logStillOpenAfterSave, noCardOnFirstSave })
     );
 
-    // 2. Editing any field reverts SAVED back to SAVE RESULTS -- exercised
-    // here via the ROUNDS field (updateLog()'s own reset path).
-    await page.locator('#log-results-rounds-input').fill('99').catch(() => {});
+    // 2. Part 2: tapping SAVED again is a TOGGLE -- it un-saves, reverting
+    // straight back to the editable SAVE RESULTS state with no network
+    // call and no card.
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const saveButtonTextAfterToggleOff = await page.getByTestId('save-results').innerText().catch(() => '');
+    const noCardAfterToggleOff = !(await page.getByTestId('completion-share-card').isVisible().catch(() => true));
+    record(
+      '[log-results/save-toggle-unsaves] tapping SAVED a second time un-saves it, reverting to the editable SAVE RESULTS state',
+      saveButtonTextAfterToggleOff.includes('SAVE RESULTS') && !saveButtonTextAfterToggleOff.includes('SAVED') && noCardAfterToggleOff,
+      JSON.stringify({ saveButtonTextAfterToggleOff, noCardAfterToggleOff })
+    );
+
+    // 3. While un-saved, edit a field and save again -- the latest edited
+    // value is what gets saved (latest wins, one saved result per
+    // workout, no stale value left behind).
+    await page.locator('#log-results-rounds-input').fill('77').catch(() => {});
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    const saveButtonTextAfterLatestSave = await page.getByTestId('save-results').innerText().catch(() => '');
+    const roundsValueAfterLatestSave = await page.locator('#log-results-rounds-input').inputValue().catch(() => '');
+    const noCardOnLatestSave = !(await page.getByTestId('completion-share-card').isVisible().catch(() => true));
+    record(
+      '[log-results/save-edit-latest-wins] editing after un-saving and re-saving shows SAVED with the latest typed value, overwriting the previous save, still no card',
+      saveButtonTextAfterLatestSave.includes('SAVED') && roundsValueAfterLatestSave === '77' && noCardOnLatestSave,
+      JSON.stringify({ saveButtonTextAfterLatestSave, roundsValueAfterLatestSave, noCardOnLatestSave })
+    );
+
+    // 4. Editing any field reverts SAVED back to SAVE RESULTS -- the
+    // existing Round 35 rule, untouched by this round, exercised here via
+    // the KETTLEBELL field.
+    await page.locator('#log-results-kettlebell-input').fill('20').catch(() => {});
     const saveButtonTextAfterEdit = await page.getByTestId('save-results').innerText().catch(() => '');
     record(
-      '[log-results/save-edit-reverts] editing the rounds field reverts the SAVED button back to SAVE RESULTS',
+      '[log-results/save-edit-reverts] editing the kettlebell field reverts the SAVED button back to SAVE RESULTS',
       saveButtonTextAfterEdit.includes('SAVE RESULTS') && !saveButtonTextAfterEdit.includes('SAVED'),
       JSON.stringify({ saveButtonTextAfterEdit })
     );
 
-    // 3. Re-saving the edited result (an already-complete workout) shows
-    // SAVED again, with no new share card -- Round 34's own transition
-    // rule, now expressed through the Round 35 in-place button.
+    // 5. Re-saving this already-complete workout shows SAVED again -- and
+    // still no card, confirming Part 1's rule holds on every subsequent
+    // save, not just the first.
     await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(1200);
     const saveButtonTextAfterResave = await page.getByTestId('save-results').innerText().catch(() => '');
     const noCardOnResave = !(await page.getByTestId('completion-share-card').isVisible().catch(() => true));
     const logStillOpenAfterResave = await page.getByTestId('close-log-results').isVisible().catch(() => false);
     record(
-      '[log-results/save-resave] re-saving an already-complete workout shows SAVED again with no new share card, and the screen stays open',
+      '[log-results/save-resave-no-card] re-saving an already-complete workout shows SAVED again with no share card, and the screen stays open',
       saveButtonTextAfterResave.includes('SAVED') && noCardOnResave && logStillOpenAfterResave,
       JSON.stringify({ saveButtonTextAfterResave, noCardOnResave, logStillOpenAfterResave })
     );
 
-    // 4. POST TO COMMUNITY: the old "Post to Community?" confirmation
-    // dialog is gone entirely -- one tap, POSTED, in place -- the owner's
-    // own explicit decision.
-    const alertVisibleBeforePost = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    // 6. Part 3: POST TO COMMUNITY now opens the restored confirmation
+    // popup with the owner's own exact copy -- nothing posted yet.
     await page.getByTestId('post-to-community').click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(200);
-    const alertVisibleRightAfterPostTap = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
-    await page.waitForTimeout(1200);
-    const postButtonTextAfterPost = await page.getByTestId('post-to-community').innerText().catch(() => '');
-    const logStillOpenAfterPost = await page.getByTestId('close-log-results').isVisible().catch(() => false);
+    await page.waitForTimeout(300);
+    const popupTitle = await page.getByText('POST TO THE COMMUNITY?', { exact: true }).first().innerText().catch(() => '');
+    const popupBody = await page
+      .getByText('Your results will post to the community board for the crew to see. You can always edit or delete your post later.', { exact: true })
+      .first()
+      .innerText()
+      .catch(() => '');
+    const postItVisible = await page.getByText('POST IT', { exact: true }).first().isVisible().catch(() => false);
+    const cancelVisible = await page.getByText('CANCEL', { exact: true }).first().isVisible().catch(() => false);
     record(
-      '[log-results/post-in-place] POST TO COMMUNITY skips the old confirmation dialog entirely and transforms straight to POSTED in place, with the screen staying open',
-      !alertVisibleBeforePost && !alertVisibleRightAfterPostTap && postButtonTextAfterPost.includes('POSTED') && logStillOpenAfterPost,
-      JSON.stringify({ alertVisibleBeforePost, alertVisibleRightAfterPostTap, postButtonTextAfterPost, logStillOpenAfterPost, insertedPostsCount: insertedPosts.length })
+      '[log-results/post-popup-appears] POST TO COMMUNITY opens the restored confirmation popup with the exact title, body, and both buttons',
+      !!popupTitle && !!popupBody && postItVisible && cancelVisible,
+      JSON.stringify({ popupTitle, popupBody, postItVisible, cancelVisible })
     );
 
-    // 5. Editing a field after posting reverts POSTED back to POST TO
+    // 7. CANCEL leaves everything untouched -- no post, button unchanged.
+    await page.getByText('CANCEL', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const popupGoneAfterCancel = !(await page.getByText('POST TO THE COMMUNITY?', { exact: true }).first().isVisible().catch(() => true));
+    const postButtonTextAfterCancel = await page.getByTestId('post-to-community').innerText().catch(() => '');
+    record(
+      '[log-results/post-popup-cancel-unchanged] CANCEL closes the popup with nothing posted and the button still reading POST TO COMMUNITY',
+      popupGoneAfterCancel && postButtonTextAfterCancel.includes('POST TO COMMUNITY') && insertedPosts.length === 0,
+      JSON.stringify({ popupGoneAfterCancel, postButtonTextAfterCancel, insertedPostsCount: insertedPosts.length })
+    );
+
+    // 8. The X also leaves everything untouched -- AlertHost's own
+    // standing escape-hatch guarantee, never a button's own onPress.
+    await page.getByTestId('post-to-community').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByTestId('alert-close').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const popupGoneAfterX = !(await page.getByText('POST TO THE COMMUNITY?', { exact: true }).first().isVisible().catch(() => true));
+    const postButtonTextAfterX = await page.getByTestId('post-to-community').innerText().catch(() => '');
+    record(
+      '[log-results/post-popup-x-unchanged] the X also closes the popup with nothing posted and the button still reading POST TO COMMUNITY',
+      popupGoneAfterX && postButtonTextAfterX.includes('POST TO COMMUNITY') && insertedPosts.length === 0,
+      JSON.stringify({ popupGoneAfterX, postButtonTextAfterX, insertedPostsCount: insertedPosts.length })
+    );
+
+    // 9. POST IT actually posts and transforms the button in place -- and
+    // per Part 1, still no card, even on this genuine first post.
+    await page.getByTestId('post-to-community').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByText('POST IT', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    const postButtonTextAfterConfirm = await page.getByTestId('post-to-community').innerText().catch(() => '');
+    const logStillOpenAfterPost = await page.getByTestId('close-log-results').isVisible().catch(() => false);
+    const noCardAfterPost = !(await page.getByTestId('completion-share-card').isVisible().catch(() => true));
+    record(
+      '[log-results/post-confirm-posts] POST IT actually posts, transforms the button to POSTED in place, the screen stays open, and no card opens',
+      postButtonTextAfterConfirm.includes('POSTED') && logStillOpenAfterPost && noCardAfterPost && insertedPosts.length === 1,
+      JSON.stringify({ postButtonTextAfterConfirm, logStillOpenAfterPost, noCardAfterPost, insertedPostsCount: insertedPosts.length })
+    );
+
+    // 10. Editing a field after posting reverts POSTED back to POST TO
     // COMMUNITY the same way SAVED reverts -- exercised here via the
     // title field (handleTitleChange()'s own, separate reset path).
     await page.getByTestId('log-results-title').fill('Edited after posting').catch(() => {});

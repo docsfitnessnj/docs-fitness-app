@@ -9,7 +9,7 @@ import { useCommunity } from '../context/CommunityContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { formatResultsLine, useWorkoutLog } from '../context/WorkoutLogContext';
 import { formatShortDate, parseMoveRow } from '../data/content';
-import { openCompletionShareCard } from '../lib/completionShareCard';
+import { showAlert } from '../lib/alert';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useActionCompletion } from '../lib/useActionCompletion';
 import { colors, fonts } from '../theme';
@@ -92,55 +92,73 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
   const { status: saveStatus, run: runSave } = useActionCompletion();
   const { status: postStatus, run: runPost } = useActionCompletion();
 
-  // Round 34: THE COMPLETION SHARE CARD must fire only on the real
-  // not-complete -> complete TRANSITION, never on every save/post of an
-  // already-complete day -- the real bug this round fixes (saving results
-  // a second time for the same already-complete workout was re-opening the
-  // card, with a fresh random colorway each time). `wasComplete` is
-  // captured at the moment the action STARTS, before markCompleteIfNeeded()
-  // can flip it, so a day that was already complete when SAVE/POST was
-  // tapped never opens the card, regardless of how many times results get
-  // re-saved -- the completion itself (and therefore the one-time card) is
-  // already recorded in the database from whichever action completed it
-  // first, so this holds across app restarts and sign-outs for free.
-  const openShareCard = () => openCompletionShareCard({ kind: 'logged', title: workoutTitle, date });
+  // Round 36 (owner decision, final, supersedes Round 34's transition
+  // rule): THE COMPLETION SHARE CARD fires ONLY from a real MARK COMPLETE
+  // button press (a Doc's WOD or a deck card) -- never from SAVE RESULTS,
+  // POST TO COMMUNITY, or a COW entry, even on a genuine first completion.
+  // markCompleteIfNeeded() below calls WorkoutLogContext's own
+  // toggleCompleted() directly, which has never itself opened the card --
+  // the card trigger has always lived in DayPanel.tsx's/DocsWodsScreen.tsx's
+  // own toggleComplete() wrapper around that same function, not inside it
+  // -- so this screen marking a day complete as a side effect of saving/
+  // posting results was never going to open the card on its own; the only
+  // thing this round removes is the explicit openCompletionShareCard()
+  // calls that used to sit alongside markCompleteIfNeeded() here.
 
-  // Round 35: no more onClose() here -- SAVE RESULTS/POST TO COMMUNITY are
-  // in-place confirmations now, the owner's own explicit decision. The
-  // share card (a separate, global overlay) still opens on a genuine
-  // first completion and layers on top of this still-open screen; closing
-  // the card reveals this screen again, already showing the transformed
-  // SAVED/POSTED button underneath, since it was never actually closed.
+  // Round 36: SAVE RESULTS is a toggle, by owner decision -- tapping it a
+  // second time (while `saved` is true) UNSAVES: it flips straight back to
+  // the editable SAVE RESULTS state with no network call, since nothing
+  // server-side needs undoing (the day's own completion status is left
+  // alone; only the "saved this exact version" UI flag reverts). The member
+  // edits whatever they like (which also resets `saved`, same as any other
+  // field edit) and re-saves, and the latest save simply overwrites the
+  // previous one -- there is only ever one saved log per workout.
   const handleSaveResults = () => {
-    const wasComplete = isCompleted(dayKey);
+    if (saved) {
+      setSaved(false);
+      return;
+    }
     runSave(() => {
       markCompleteIfNeeded();
     }, () => {
       setSaved(true);
-      if (!wasComplete) openShareCard();
     });
   };
 
-  // The pre-post "Post to Community?" confirmation dialog is gone, by
-  // owner decision -- one tap, POSTED, the button itself says so.
+  // Round 36: the pre-post confirmation is back, by owner decision -- one
+  // more tap than Round 35 shipped, with reassurance copy so nobody feels
+  // trapped by a mistaken or unfinished post. Cancel/X leave everything
+  // untouched (AlertHost's own standing escape-hatch guarantee -- neither
+  // ever calls a button's own onPress); only POST IT actually runs the
+  // post and transforms the button to the in-place POSTED confirmation.
   const handlePostToCommunity = () => {
-    const wasComplete = isCompleted(dayKey);
-    runPost(() => {
-      markCompleteIfNeeded();
-      // Awaited by useActionCompletion's own run() -- see
-      // CommunityContext.tsx's addWodResultPost, which now uploads a
-      // locally-picked photo/video to real Storage before writing the
-      // post, so POSTED waits for that to actually finish.
-      return addWodResultPost(
-        displayName,
-        title,
-        { workoutTitle, dateLabel, notes: log.notes.trim(), resultsLine: formatResultsLine(log) },
-        log.media
-      );
-    }, () => {
-      setPosted(true);
-      if (!wasComplete) openShareCard();
-    });
+    showAlert(
+      'POST TO THE COMMUNITY?',
+      'Your results will post to the community board for the crew to see. You can always edit or delete your post later.',
+      [
+        { text: 'CANCEL', style: 'cancel' },
+        {
+          text: 'POST IT',
+          onPress: () => {
+            runPost(() => {
+              markCompleteIfNeeded();
+              // Awaited by useActionCompletion's own run() -- see
+              // CommunityContext.tsx's addWodResultPost, which now uploads
+              // a locally-picked photo/video to real Storage before writing
+              // the post, so POSTED waits for that to actually finish.
+              return addWodResultPost(
+                displayName,
+                title,
+                { workoutTitle, dateLabel, notes: log.notes.trim(), resultsLine: formatResultsLine(log) },
+                log.media
+              );
+            }, () => {
+              setPosted(true);
+            });
+          },
+        },
+      ]
+    );
   };
 
   return (
