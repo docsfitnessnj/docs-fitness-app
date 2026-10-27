@@ -510,12 +510,41 @@
         var touchMoved = false;
         var lastTouchDragEndAt = 0;
         var TOUCH_SCROLL_GRACE_MS = 500;
+        // Round 37: a real device's own LAST EDITOR SESSION log (captured
+        // by the telemetry Round 36 added) showed iOS momentum scrolling
+        // continuing well past TOUCH_SCROLL_GRACE_MS (500ms) after
+        // touchend -- eight consecutive selectionchange events over ~1.3
+        // seconds, all arriving once the time-boxed grace window above had
+        // already expired. A pure time window can never cover momentum of
+        // arbitrary duration, so `editorOwnedByUser` is a SECOND, untimed
+        // signal: set the moment a real drag starts (the same touchmove
+        // that sets touchMoved) and held true with no expiry at all, until
+        // a genuine caret move or a refocus explicitly releases it (see
+        // the selectionchange listener and the focusin handler below) --
+        // "the user's own gesture" doesn't end on a clock, it ends when
+        // the editor has an actual reason to reclaim control.
+        var editorOwnedByUser = false;
         document.addEventListener('touchstart', function () { touchActive = true; touchMoved = false; }, { passive: true, capture: true });
-        document.addEventListener('touchmove', function () { touchMoved = true; }, { passive: true, capture: true });
+        document.addEventListener('touchmove', function () { touchMoved = true; editorOwnedByUser = true; }, { passive: true, capture: true });
         document.addEventListener('touchend', function () { touchActive = false; if (touchMoved) lastTouchDragEndAt = Date.now(); }, { passive: true, capture: true });
         document.addEventListener('touchcancel', function () { touchActive = false; if (touchMoved) lastTouchDragEndAt = Date.now(); }, { passive: true, capture: true });
         function isUserScrolling() {
-          return (touchActive && touchMoved) || Date.now() - lastTouchDragEndAt < TOUCH_SCROLL_GRACE_MS;
+          return editorOwnedByUser || (touchActive && touchMoved) || Date.now() - lastTouchDragEndAt < TOUCH_SCROLL_GRACE_MS;
+        }
+        // Round 37: the one further piece this round's fix needs --
+        // tracking the focused field's own LAST KNOWN selection indices,
+        // so a 'selectionchange' event can be checked against whether the
+        // selection actually changed, not merely whether the event fired.
+        // Synced on every trigger that's allowed to correct regardless of
+        // this check (focusin, the keyboard-open shell transition) so the
+        // NEXT selectionchange's comparison has the right baseline, and on
+        // every genuine caret move inside the selectionchange listener
+        // itself.
+        var lastKnownSelection = { el: null, start: null, end: null };
+        function syncLastKnownSelection(el) {
+          if (el && typeof el.selectionStart === 'number') {
+            lastKnownSelection = { el: el, start: el.selectionStart, end: el.selectionEnd };
+          }
         }
         // Round 36: LAST EDITOR SESSION -- the debug overlay lives on the
         // Community screen (5 taps on the wordmark), which CreatePostModal's
@@ -761,6 +790,12 @@
             keepFocusedFieldVisible('shell-transition');
             scheduleCaretRescue();
             recordEditorSession('keyboard-open');
+            // Round 37: this is a legitimate correction trigger regardless
+            // of the selection's own indices -- sync the baseline so the
+            // NEXT selectionchange event (which may well be pure scroll
+            // noise once the keyboard animation settles) is compared
+            // against the right starting point.
+            syncLastKnownSelection(document.activeElement);
           }
           keyboardShellMode = nextMode;
           // Live debug state -- DebugOverlay.web.tsx's KEYBOARD SHELL STATE
@@ -879,6 +914,14 @@
         document.addEventListener(
           'focusin',
           function () {
+            // Round 37: a refocus -- a new field gaining focus, or the
+            // same field regaining it -- always releases any standing
+            // "user owns the scroll" state and resyncs the selection
+            // baseline against whatever this element's indices actually
+            // are right now. A fresh focus is itself a legitimate reason
+            // for the mechanism to reclaim control.
+            editorOwnedByUser = false;
+            syncLastKnownSelection(document.activeElement);
             syncKeyboardShellMode();
             // Round 34: a NEW field gaining focus while the shell is
             // ALREADY in keyboard mode is not a mode TRANSITION (the check
@@ -913,11 +956,48 @@
         // keepFocusedFieldVisible()'s own comment), so this never fights
         // ordinary typing or a deliberate manual scroll -- it only rescues
         // a caret that has actually left the visible area.
+        //
+        // Round 37: a real device's own LAST EDITOR SESSION log caught
+        // eight consecutive 'selectionchange' events firing over ~1.3
+        // seconds while the member was dragging to scroll -- every one
+        // reporting the SAME, unchanged selectionStart/selectionEnd.
+        // WebKit genuinely fires this event when a focused <textarea> is
+        // merely SCROLLED, with no change to the selection at all -- pure
+        // scroll noise wearing the shape of a caret-move trigger. Round
+        // 36's own isUserScrolling() gate caught the cases where the drag
+        // was still recent enough to be touch-active or within the 500ms
+        // grace window, but the device's own momentum glide outlasted
+        // that window, so by the time these events arrived the gate had
+        // already closed and every one re-corrected the view straight
+        // back to the stale caret -- the rubber band.
+        //
+        // The required fix: never key a correction to the event FIRING,
+        // key it to the selection ACTUALLY CHANGING. The indices are
+        // compared against lastKnownSelection (synced on every legitimate
+        // trigger elsewhere in this file); an event reporting the exact
+        // same start/end as last known is scroll noise and is ignored
+        // outright -- no call to keepFocusedFieldVisible, no call to
+        // scheduleCaretRescue, nothing. Only a genuine caret move --
+        // typing (which advances selectionStart every keystroke) or a tap
+        // placing the caret somewhere new -- reaches the correction at
+        // all, which is also what the brief itself names as the only two
+        // legitimate causes. This supersedes isUserScrolling() as the
+        // gate for this one trigger; scroll position alone can never
+        // trigger a correction here regardless of touch/momentum state.
         document.addEventListener('selectionchange', function () {
-          if (keyboardShellMode === 'keyboard') {
-            keepFocusedFieldVisible('selectionchange');
-            scheduleCaretRescue();
-          }
+          if (keyboardShellMode !== 'keyboard') return;
+          var el = document.activeElement;
+          if (!el || (el.tagName !== 'TEXTAREA' && el.tagName !== 'INPUT') || typeof el.selectionStart !== 'number') return;
+          var unchanged = lastKnownSelection.el === el && lastKnownSelection.start === el.selectionStart && lastKnownSelection.end === el.selectionEnd;
+          if (unchanged) return;
+          syncLastKnownSelection(el);
+          // A genuine caret move is exactly the signal that re-acquires
+          // control from a standing "user owns the scroll" state -- the
+          // member typed, or tapped a new spot, either of which is a real
+          // reason for the mechanism to correct again.
+          editorOwnedByUser = false;
+          keepFocusedFieldVisible('selectionchange');
+          scheduleCaretRescue();
         });
         // The self-healing backstop: an always-on poll (not started/stopped
         // based on current mode -- Round 16's start/stop guard was itself
