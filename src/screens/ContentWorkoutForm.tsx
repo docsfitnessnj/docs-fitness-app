@@ -8,6 +8,7 @@ import {
   ContentWorkoutInput,
   ContentWorkoutStatus,
   ContentWorkoutType,
+  KettlebellLevels,
   SCORING_TYPE_LABELS,
   useContentLibrary,
 } from '../context/ContentLibraryContext';
@@ -93,6 +94,21 @@ function defaultReleaseAtForType(type: ContentWorkoutType): number {
   return d.getTime();
 }
 
+// Round 39: one "Rx / Scaled / Modified" line round-trips a whole
+// KettlebellLevels group — "32kg / 28kg / 24kg" in, {rx:'32kg',
+// scaled:'28kg', modified:'24kg'} out. Blank (or fewer than 3 parts)
+// means the admin hasn't filled this group in at all, matching every
+// other optional COW field's own "nothing typed = undefined" convention.
+function formatLevelsLine(levels: KettlebellLevels | undefined): string {
+  return levels ? `${levels.rx} / ${levels.scaled} / ${levels.modified}` : '';
+}
+
+function parseLevelsLine(line: string): KettlebellLevels | undefined {
+  const parts = line.split('/').map((p) => p.trim()).filter((p) => p.length > 0);
+  if (parts.length !== 3) return undefined;
+  return { rx: parts[0], scaled: parts[1], modified: parts[2] };
+}
+
 function weekdayNameFor(type: ContentWorkoutType): string | null {
   if (type === 'steady_state') return 'Saturday';
   if (type === 'sunday_setup') return 'Sunday';
@@ -119,6 +135,17 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
   const [scoringType, setScoringType] = useState<ContentCowScoringType | null>(workout?.scoringType ?? null);
   const [quoteOverrideIndex, setQuoteOverrideIndex] = useState<number | null>(workout?.quoteOverrideIndex ?? null);
   const [dateError, setDateError] = useState<string | null>(null);
+  // Round 39: THE COW's own structured body — see ContentWorkout's own
+  // fields for what each means. Kettlebell levels round-trip through one
+  // "Rx / Scaled / Modified" text line per group, same free-text-not-a-
+  // number convention as every other kettlebell field in this app.
+  const [kettlebellsDudesStr, setKettlebellsDudesStr] = useState(formatLevelsLine(workout?.kettlebellsDudes));
+  const [kettlebellsFemalesStr, setKettlebellsFemalesStr] = useState(formatLevelsLine(workout?.kettlebellsFemales));
+  const [theWork, setTheWork] = useState(workout?.theWork ?? '');
+  const [catchIntro, setCatchIntro] = useState(workout?.catchIntro ?? '');
+  const [catchPenaltiesText, setCatchPenaltiesText] = useState(workout?.catchPenalties?.join('\n') ?? '');
+  const [catchFollowUp, setCatchFollowUp] = useState(workout?.catchFollowUp ?? '');
+  const [finishNote, setFinishNote] = useState(workout?.finishNote ?? '');
 
   const movementLines = movementsText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
   const isSaturday = type === 'steady_state';
@@ -173,6 +200,13 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
       videoUrl: isSunday ? '' : videoUrl.trim(),
       notes: notes.trim(),
       scoringType: type === 'cow' ? scoringType ?? undefined : undefined,
+      kettlebellsDudes: type === 'cow' ? parseLevelsLine(kettlebellsDudesStr) : undefined,
+      kettlebellsFemales: type === 'cow' ? parseLevelsLine(kettlebellsFemalesStr) : undefined,
+      theWork: type === 'cow' ? theWork.trim() || undefined : undefined,
+      catchIntro: type === 'cow' ? catchIntro.trim() || undefined : undefined,
+      catchPenalties: type === 'cow' ? catchPenaltiesText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0) : undefined,
+      catchFollowUp: type === 'cow' ? catchFollowUp.trim() || undefined : undefined,
+      finishNote: type === 'cow' ? finishNote.trim() || undefined : undefined,
       quoteOverrideIndex: isSunday ? quoteOverrideIndex ?? undefined : undefined,
       releaseAt,
       status,
@@ -386,6 +420,110 @@ export function ContentWorkoutForm({ workout, defaultType, onSave, onDelete, onB
             <Text style={styles.hint}>
               Overriding here only changes this one week's quote — the cycle keeps its place for every other week.
             </Text>
+          </>
+        )}
+
+        {type === 'cow' && (
+          <>
+            <Text style={styles.label}>DOC'S PRESCRIBED KETTLEBELLS — DUDES (RX / SCALED / MODIFIED)</Text>
+            <TextInput
+              style={styles.input}
+              value={kettlebellsDudesStr}
+              onChangeText={setKettlebellsDudesStr}
+              placeholder="e.g. 32kg / 28kg / 24kg"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
+              aria-label="Dudes kettlebell levels"
+              testID="content-form-kettlebells-dudes"
+            />
+            <Text style={styles.label}>DOC'S PRESCRIBED KETTLEBELLS — FEMALES (RX / SCALED / MODIFIED)</Text>
+            <TextInput
+              style={styles.input}
+              value={kettlebellsFemalesStr}
+              onChangeText={setKettlebellsFemalesStr}
+              placeholder="e.g. 24kg / 20kg / 16kg"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
+              aria-label="Females kettlebell levels"
+              testID="content-form-kettlebells-females"
+            />
+
+            <Text style={styles.label}>THE WORK</Text>
+            <TextInput
+              style={[styles.input, styles.multilineInput]}
+              value={theWork}
+              onChangeText={setTheWork}
+              placeholder={'50 Pull Ups, for time.\nSubs: ...'}
+              placeholderTextColor={colors.textMuted}
+              multiline
+              autoCapitalize="sentences"
+              autoCorrect
+              spellCheck
+              aria-label="The work"
+              testID="content-form-the-work"
+            />
+            <Text style={styles.hint}>Members see the first line bold, exactly as typed.</Text>
+
+            <Text style={styles.label}>THE CATCH — INTRO LINE</Text>
+            <TextInput
+              style={styles.input}
+              value={catchIntro}
+              onChangeText={setCatchIntro}
+              placeholder="Every time you drop off the bar, pay the toll:"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="sentences"
+              autoCorrect
+              spellCheck
+              aria-label="The catch intro line"
+              testID="content-form-catch-intro"
+            />
+            <Text style={styles.label}>THE CATCH — PENALTY LIST (ONE PER LINE)</Text>
+            <TextInput
+              style={[styles.input, styles.multilineInput]}
+              value={catchPenaltiesText}
+              onChangeText={setCatchPenaltiesText}
+              placeholder={'8 Swings\n6 Thrusters\n4/4 Goblet Reverse Lunges\n2 Burpees'}
+              placeholderTextColor={colors.textMuted}
+              multiline
+              autoCapitalize="sentences"
+              autoCorrect
+              spellCheck
+              aria-label="The catch penalty list, one per line"
+              testID="content-form-catch-penalties"
+            />
+            <Text style={styles.label}>THE CATCH — FOLLOW-UP LINE</Text>
+            <TextInput
+              style={styles.input}
+              value={catchFollowUp}
+              onChangeText={setCatchFollowUp}
+              placeholder="Then get back on the bar right where you left off."
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="sentences"
+              autoCorrect
+              spellCheck
+              aria-label="The catch follow-up line"
+              testID="content-form-catch-followup"
+            />
+
+            <Text style={styles.label}>FINISH NOTE</Text>
+            <TextInput
+              style={[styles.input, styles.multilineInput]}
+              value={finishNote}
+              onChangeText={setFinishNote}
+              placeholder="Your time stops when you finish the toll after your final pull up."
+              placeholderTextColor={colors.textMuted}
+              multiline
+              autoCapitalize="sentences"
+              autoCorrect
+              spellCheck
+              aria-label="Finish note"
+              testID="content-form-finish-note"
+            />
+            <Text style={styles.hint}>Members see the first sentence bold, exactly as typed.</Text>
           </>
         )}
 

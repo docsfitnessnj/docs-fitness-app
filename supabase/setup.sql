@@ -476,6 +476,9 @@ create table if not exists public.challenge_entries (
   -- than dropped, since removing a column is a bigger, less reversible
   -- change than just not using one.
   tag text not null default 'Online' check (tag in ('Boathouse Crew', 'Online')),
+  -- Round 39 / migration_027 — optional, free pick at score-entry time.
+  -- Null means the member didn't say; the leaderboard then omits it.
+  level text check (level in ('Rx', 'Scaled', 'Modified')),
   created_at timestamptz not null default now()
 );
 
