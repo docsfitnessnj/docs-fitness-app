@@ -1291,6 +1291,30 @@ async function simulateUserTouchScroll(page, elId, targetScrollTop) {
   );
 }
 
+// Round 38: a GENUINE native touch drag, via CDP Input.dispatchTouchEvent --
+// unlike simulateUserTouchScroll() above (a synthetic Event('touchmove')
+// plus a direct `.scrollTop =` write, which only exercises index.html's own
+// JS listeners and never drives the browser's actual native touch-scroll
+// pipeline), this goes through Chromium's real input pipeline and produces
+// a genuine native scroll on whichever element the browser's own gesture-
+// ownership logic actually hands the drag to -- which is exactly the
+// question Round 38's own brief needed answered ("who owns the gesture"),
+// and exactly why every earlier round's own synthetic-event helper could
+// never have caught this bug: it always assumed the answer rather than
+// producing it. touchType values are CDP's own ('touchStart'/'touchMove'/
+// 'touchEnd'), not DOM event names.
+async function simulateRealTouchDrag(page, startX, startY, endY, steps = 2) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: startX, y: startY, id: 1 }] });
+  for (let i = 1; i <= steps; i++) {
+    const y = startY + ((endY - startY) * i) / steps;
+    await page.waitForTimeout(16);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: startX, y, id: 1 }] });
+  }
+  await page.waitForTimeout(16);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
 // A plain TAP -- touchstart then touchend with NO touchmove in between --
 // the exact shape of the touch that focuses a field and places a caret.
 // Round 36's own regression check for the real bug this round fixes: this
@@ -2607,6 +2631,166 @@ async function run() {
       '[edit-post/selectionchange-real-change-corrects] a selectionchange WITH genuinely changed indices still corrects the view -- the noise fix never suppresses a real caret move',
       realChangeResult.scrollBefore === 349 && realChangeResult.scrollAfter !== realChangeResult.scrollBefore,
       JSON.stringify({ realChangeResult })
+    );
+
+    await resetInnerHeight(page);
+    await resetVisualViewport(page);
+    await context.close();
+  }
+
+  // Round 38: a real device report said the Round 37 fix did not hold --
+  // the rubber band persisted even though the owner's own LAST EDITOR
+  // SESSION log for the same period showed ZERO corrections firing (no
+  // selectionchange noise, no rescue settles), confirming Round 37's own
+  // fix was working exactly as designed and was never the cause. A real
+  // CDP touch-drag diagnostic (Input.dispatchTouchEvent, which drives
+  // Chromium's actual native touch-scroll pipeline -- unlike every earlier
+  // round's own synthetic Event('touchmove') + direct `.scrollTop =`
+  // write, which only ever exercised index.html's JS listeners and never
+  // the real gesture-to-scroll mechanism at all) found the real cause: a
+  // plain HTML <textarea> is a scroll container by the browser's own
+  // default stylesheet (overflow-y: auto) regardless of whether its
+  // content actually overflows, and CreatePostModal's own body field is
+  // auto-grown to exactly match its content height (onContentSizeChange)
+  // specifically so it never needs internal scrolling at all -- but the
+  // browser still tried to scroll the (already-full) textarea FIRST, and
+  // the house's own universal `* { overscroll-behavior-y: contain }` rule
+  // (index.html) then stopped that immediately-exhausted gesture from ever
+  // chaining up to the real scrollable ancestor (composeScroll's own
+  // ScrollView). The fix is a single `overflow: 'hidden'` on
+  // composeBodyInput (CreatePostModal.tsx) -- removing the textarea from
+  // being a scroll-chaining candidate at all, so the exact same real drag
+  // reaches composeScroll immediately. This check drives that real drag
+  // end to end against the real, unmodified production mechanism (no
+  // forced CSS, no stubbed scrollTop) and is the one check in this file
+  // that would have caught this bug on its own, since every pre-existing
+  // [edit-post/*] check above uses the synthetic-scroll helper that always
+  // assumed the gesture already reached the right element.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await forceStandaloneDisplayMode(page);
+    await setupMocks(page);
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Admin', instagram_handle: '', favorite_quote: '', avatar_url: null,
+            how_train: 'boathouse', is_admin: true, show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(), group_chat_muted: false,
+          },
+        ]),
+      })
+    );
+    const longBody38 = Array.from(
+      { length: 24 },
+      (_, i) => `Paragraph ${i + 1}. Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt.`
+    ).join('\n\n');
+    await page.route('**/rest/v1/community_posts*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{
+          id: 'post-r38-edit', title: 'A Long Pinned Post', body: longBody38, category: 'General', kind: 'text',
+          media_url: null, media_type: null, workout_title: null, workout_notes: null, workout_results_line: null,
+          pinned: true, created_at: new Date().toISOString(), author_id: USER_ID,
+          profiles: { display_name: 'Test Admin' }, community_comments: [], community_reactions: [],
+        }]),
+      })
+    );
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('post-menu-post-r38-edit').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByText('Edit', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    // Place the caret deep in the post and scroll it into view, same setup
+    // as every other [edit-post/*] check, then force the keyboard shell
+    // open (Regime A) and let it settle well past the rescue window.
+    const needle38 = 'Paragraph 18.';
+    const charIndex38 = await page.evaluate((n) => {
+      const el = document.getElementById('compose-post-body-input');
+      return el ? el.value.indexOf(n) : -1;
+    }, needle38);
+    await page.evaluate((idx) => {
+      const el = document.getElementById('compose-post-body-input');
+      if (el && idx >= 0) { el.focus(); el.setSelectionRange(idx, idx); }
+    }, charIndex38);
+    await readOrFixCaretVisibility(page, 'compose-post-body-input', true);
+    await forceInnerHeight(page, KEYBOARD_SHELL_REGIMES[0].innerHeight);
+    await forceVisualViewport(page, { height: KEYBOARD_SHELL_REGIMES[0].vvHeight, offsetTop: KEYBOARD_SHELL_REGIMES[0].offsetTop });
+    await page.waitForTimeout(1300);
+
+    const scrollTopBeforeDrag = await getEditorScrollTop(page, 'compose-post-body-input');
+    const textareaRect38 = await page.evaluate(() => {
+      const el = document.getElementById('compose-post-body-input');
+      const r = el.getBoundingClientRect();
+      return { left: r.left, width: r.width, top: r.top, bottom: r.bottom };
+    });
+    // A real touch point inside the on-screen portion of the textarea --
+    // its own bounding box is far taller than the viewport (the field is
+    // auto-grown to its full content height), so the touch point is
+    // clamped into the visible window rather than taken from its (mostly
+    // off-screen) geometric center.
+    const dragX = textareaRect38.left + Math.min(textareaRect38.width / 2, 180);
+    const dragStartY = Math.min(Math.max(textareaRect38.top + 40, 500), 700);
+    const dragEndY = dragStartY - 300; // drag the finger up by 300px
+
+    await simulateRealTouchDrag(page, dragX, dragStartY, dragEndY, 3);
+    await page.waitForTimeout(500); // let the real native scroll (and any momentum) settle
+
+    const scrollTopAfterDrag = await getEditorScrollTop(page, 'compose-post-body-input');
+    const scrolledDuringRealDrag = scrollTopAfterDrag !== null && scrollTopBeforeDrag !== null && scrollTopAfterDrag !== scrollTopBeforeDrag;
+    record(
+      '[edit-post/real-touch-drag] a genuine native touch drag (CDP, not a synthetic scrollTop write) over the focused post text actually scrolls the real ScrollView ancestor while the keyboard shell is open',
+      scrolledDuringRealDrag,
+      JSON.stringify({ scrollTopBeforeDrag, scrollTopAfterDrag })
+    );
+
+    // "Stays where released" -- no elastic snap-back once the gesture ends.
+    const scrollTopAtRelease = scrollTopAfterDrag;
+    await page.waitForTimeout(400);
+    const scrollTopAfterSettling = await getEditorScrollTop(page, 'compose-post-body-input');
+    record(
+      '[edit-post/real-touch-drag-no-bounce] the scroll position from a real drag stays where it was released -- no rubber-band snap-back afterward',
+      scrollTopAfterSettling === scrollTopAtRelease,
+      JSON.stringify({ scrollTopAtRelease, scrollTopAfterSettling })
+    );
+
+    // The new Round 38 drag telemetry (STEP 1 of the brief): a real drag
+    // over the focused textarea must land one compact entry in the SAME
+    // LAST EDITOR SESSION log, naming the real touch target and showing
+    // the real scroll-ancestor position actually moving across the drag.
+    const dragEntries = await page.evaluate(() => {
+      const log = (window).__lastEditorSession;
+      return Array.isArray(log) ? log.filter((e) => e.trigger === 'drag') : [];
+    });
+    const lastDragEntry = dragEntries[dragEntries.length - 1];
+    record(
+      '[edit-post/drag-telemetry] window.__lastEditorSession recorded a real drag entry naming the textarea as the touch target, with the scroll ancestor position moving from start to end',
+      !!lastDragEntry &&
+        lastDragEntry.targetTag === 'TEXTAREA' &&
+        lastDragEntry.targetId === 'compose-post-body-input' &&
+        !!lastDragEntry.start &&
+        !!lastDragEntry.end &&
+        lastDragEntry.end.scrollParentScrollTop !== lastDragEntry.start.scrollParentScrollTop,
+      JSON.stringify({ lastDragEntry })
+    );
+
+    // Requirement from the brief: typing still works perfectly after a
+    // real drag -- the fix must not have cost the textarea its own normal
+    // text-editing behavior.
+    await page.keyboard.type(' R38EDITED', { delay: 15 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const typedValue38 = await page.evaluate(() => document.getElementById('compose-post-body-input')?.value ?? '');
+    record(
+      '[edit-post/real-touch-drag-typing-still-works] typing into the editor still works normally after a real touch drag',
+      typedValue38.includes('R38EDITED'),
+      JSON.stringify({ typedIncludesEdited: typedValue38.includes('R38EDITED') })
     );
 
     await resetInnerHeight(page);

@@ -585,7 +585,7 @@
             var padTop = parseFloat(getComputedStyle(el).paddingTop) || 0;
             caretTop = Math.round(elRect.top + padTop + caret.top - el.scrollTop);
           }
-          editorSessionLog.push({
+          pushEditorSessionEntry({
             at: new Date().toISOString(),
             trigger: trigger,
             shellMode: keyboardShellMode,
@@ -597,9 +597,101 @@
             caretTop: caretTop,
             isUserScrolling: isUserScrolling(),
           });
+        }
+        // Round 38, STEP 1 of the brief: a per-drag diagnostic, one
+        // compact entry per real touch drag while a multiline editor is
+        // focused, pushed into this SAME rolling log. The owner's own
+        // device log for the reported bounce showed ZERO corrections
+        // firing at all during the drags -- no selectionchange noise, no
+        // rescue settles -- confirming Round 37's fix was working exactly
+        // as designed and was never the cause of this bounce. The only way
+        // to find out who DOES own the gesture is to record, for the drag
+        // itself: which element the touch actually landed on, and which
+        // scroll positions moved (or didn't) at drag start, mid-drag, and
+        // after release -- the textarea's own scrollTop, its scrollable
+        // ScrollView ancestor's scrollTop, window.scrollY, and
+        // visualViewport.offsetTop. Only entries with an actual touchmove
+        // are recorded (a plain tap isn't a drag and would just be noise
+        // in this log).
+        var activeDragEntry = null;
+        function snapshotDragPositions(el, scrollParent) {
+          var vv = window.visualViewport;
+          return {
+            textareaScrollTop: Math.round(el.scrollTop),
+            scrollParentScrollTop: scrollParent ? Math.round(scrollParent.scrollTop) : null,
+            windowScrollY: Math.round(window.scrollY),
+            vvOffsetTop: vv ? Math.round(vv.offsetTop) : null,
+          };
+        }
+        function pushEditorSessionEntry(entry) {
+          editorSessionLog.push(entry);
           if (editorSessionLog.length > EDITOR_SESSION_MAX_ENTRIES) editorSessionLog.shift();
           window.__lastEditorSession = editorSessionLog.slice();
         }
+        document.addEventListener(
+          'touchstart',
+          function (e) {
+            // isTrusted excludes this suite's own synthetic
+            // document.dispatchEvent(new Event('touchstart')) calls
+            // (used elsewhere in this file purely to drive
+            // isUserScrolling()'s touch-timing logic, which only ever
+            // checks an event's own type, never its trust or point data)
+            // from ever landing in this diagnostic -- a real device event
+            // and a CDP-dispatched one (Input.dispatchTouchEvent, which
+            // goes through Chromium's actual input pipeline) are both
+            // genuinely trusted; a plain JS-constructed Event is not.
+            // Without this, a synthetic touchstart/touchmove/touchend
+            // sequence used by an unrelated check elsewhere in this same
+            // editor session would land a 'drag'-shaped entry in this log
+            // with no scrollHeight/caretTop fields, which is a real,
+            // different shape than every other entry here on purpose --
+            // but exactly what broke [edit-post/last-editor-session]'s own
+            // "every entry looks real" check before this filter existed.
+            if (!e.isTrusted) return;
+            var el = document.activeElement;
+            if (!el || el.tagName !== 'TEXTAREA') return;
+            var scrollParent = findScrollAncestor(el);
+            var target = e.target;
+            activeDragEntry = {
+              at: new Date().toISOString(),
+              trigger: 'drag',
+              shellMode: keyboardShellMode,
+              targetTag: target && target.tagName ? target.tagName : null,
+              targetId: target && target.id ? target.id : null,
+              start: snapshotDragPositions(el, scrollParent),
+              mid: null,
+              end: null,
+            };
+          },
+          { passive: true, capture: true }
+        );
+        document.addEventListener(
+          'touchmove',
+          function () {
+            if (!activeDragEntry || activeDragEntry.mid) return;
+            var el = document.activeElement;
+            if (!el || el.tagName !== 'TEXTAREA') return;
+            activeDragEntry.mid = snapshotDragPositions(el, findScrollAncestor(el));
+          },
+          { passive: true, capture: true }
+        );
+        function finalizeDragEntry() {
+          if (!activeDragEntry) return;
+          if (!activeDragEntry.mid) {
+            // No touchmove ever fired -- this was a tap, not a drag.
+            activeDragEntry = null;
+            return;
+          }
+          var el = document.activeElement;
+          if (el && el.tagName === 'TEXTAREA') {
+            activeDragEntry.end = snapshotDragPositions(el, findScrollAncestor(el));
+          }
+          pushEditorSessionEntry(activeDragEntry);
+          activeDragEntry = null;
+        }
+        document.addEventListener('touchend', finalizeDragEntry, { passive: true, capture: true });
+        document.addEventListener('touchcancel', finalizeDragEntry, { passive: true, capture: true });
+
         // Round 35's own LIVE EDITOR debug-overlay panel: window.__liveEditorState
         // is null whenever no multiline editor is focused, and otherwise a
         // plain snapshot of every number this mechanism actually reasons

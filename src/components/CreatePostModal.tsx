@@ -291,6 +291,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
     textAlignVertical: 'top',
+    // Round 38: a plain HTML <textarea> is a scroll container by the
+    // browser's own default stylesheet (overflow-y: auto) regardless of
+    // whether its content actually overflows -- and this field's own
+    // height is kept exactly equal to its content height by
+    // onContentSizeChange above, so it NEVER has anything of its own to
+    // scroll. That default still made Chromium treat the textarea as the
+    // primary target for a touch drag, and the house's own universal
+    // `* { overscroll-behavior-y: contain }` rule (index.html) then
+    // stopped that gesture from ever chaining up to the real scrollable
+    // ancestor (composeScroll's own ScrollView) once the textarea
+    // immediately hit its own (nonexistent) scroll limit -- confirmed
+    // directly via a real CDP touch-drag diagnostic: with this left at
+    // the browser default, composeScroll's own scrollTop never moved
+    // during a real drag over the post text, only the textarea's own
+    // scrollTop nudged by a couple of noise pixels (the visible "rubber
+    // band" bounce). `overflow: 'hidden'` removes the textarea from
+    // being a scroll-chaining candidate at all, so the same real drag
+    // reaches composeScroll immediately, confirmed by the same
+    // diagnostic. See AGENTS.md's Round 38 writeup.
+    overflow: 'hidden',
   },
   composeDivider: {
     height: 1,

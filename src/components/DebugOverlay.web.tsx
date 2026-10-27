@@ -118,7 +118,32 @@ type EditorSessionEntry = {
   caretTop: number | null;
   isUserScrolling: boolean;
 };
-type LastEditorSession = EditorSessionEntry[] | null;
+// Round 38: a per-drag diagnostic entry, pushed into the SAME rolling log
+// as the entry shape above but with its own fields -- "who owns the
+// gesture" is a question about which scroll position actually moved at
+// drag start/mid/release, not about a caret or a correction, so this is a
+// genuinely different shape rather than forcing it through the other
+// entry's fields.
+type DragPositions = {
+  textareaScrollTop: number;
+  scrollParentScrollTop: number | null;
+  windowScrollY: number;
+  vvOffsetTop: number | null;
+};
+type DragSessionEntry = {
+  at: string;
+  trigger: 'drag';
+  shellMode: 'at-rest' | 'keyboard';
+  targetTag: string | null;
+  targetId: string | null;
+  start: DragPositions;
+  mid: DragPositions | null;
+  end: DragPositions | null;
+};
+type LastEditorSession = (EditorSessionEntry | DragSessionEntry)[] | null;
+function isDragSessionEntry(e: EditorSessionEntry | DragSessionEntry): e is DragSessionEntry {
+  return e.trigger === 'drag';
+}
 
 type Snapshot = {
   innerHeight: number;
@@ -242,11 +267,24 @@ function snapshotToText(s: Snapshot, rnHookHeight: number): string {
     '--- LAST EDITOR SESSION (auto-captured, survives leaving the editor) ---',
     s.lastEditorSession && s.lastEditorSession.length > 0
       ? s.lastEditorSession
-          .map(
-            (e, i) =>
+          .map((e, i) => {
+            if (isDragSessionEntry(e)) {
+              const fmtPos = (p: DragPositions | null) =>
+                p
+                  ? `textarea=${p.textareaScrollTop} scrollParent=${p.scrollParentScrollTop ?? '(none)'} windowY=${p.windowScrollY} vvOffsetTop=${p.vvOffsetTop ?? '(none)'}`
+                  : '(not captured)';
+              return (
+                `${i + 1}. [drag] at ${e.at} -- shell=${e.shellMode} target=${e.targetTag ?? '?'}#${e.targetId ?? '?'}\n` +
+                `   start: ${fmtPos(e.start)}\n` +
+                `   mid:   ${fmtPos(e.mid)}\n` +
+                `   end:   ${fmtPos(e.end)}`
+              );
+            }
+            return (
               `${i + 1}. [${e.trigger}] at ${e.at} -- shell=${e.shellMode} vv=${e.vvHeight ?? '(none)'}/${e.vvOffsetTop ?? '(none)'} ` +
               `scroll=${e.scrollTop}/${e.scrollHeight}/${e.clientHeight} caretTop=${e.caretTop ?? '(unknown)'} userScrolling=${e.isUserScrolling}`
-          )
+            );
+          })
           .join('\n')
       : '(none recorded yet -- focus the long-post editor, let the keyboard open, then come back here)',
     '--- LAST KEYBOARD SNAPSHOT ---',
