@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './AuthContext';
-import { ContentCowScoringType, useContentLibrary } from './ContentLibraryContext';
+import { ContentCowScoringType, KettlebellLevels, useContentLibrary } from './ContentLibraryContext';
 import { getChallengeCycle } from '../lib/challengeSchedule';
 import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
 
@@ -10,9 +10,17 @@ import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
 // tagFromHowTrain below).
 export type ChallengeTag = 'Boathouse Crew' | 'Online';
 
+// Round 39, Part 5: an OPTIONAL Rx/Scaled/Modified pick alongside a score —
+// omitted (undefined) means the member didn't say, which the leaderboard
+// then simply doesn't show rather than guessing.
+export type ChallengeScoreLevel = 'Rx' | 'Scaled' | 'Modified';
+
 export type LeaderboardEntry = {
   rank: number;
   name: string;
+  // The real auth user id this entry belongs to — not shown anywhere, used
+  // only so DocsCowsScreen can highlight the signed-in member's own row.
+  userId: string;
   kettlebell: string;
   rounds: string;
   // Only meaningful for scoringType 'rounds_reps' — the partial round's
@@ -20,6 +28,7 @@ export type LeaderboardEntry = {
   reps?: string;
   time: string;
   tag: ChallengeTag;
+  level?: ChallengeScoreLevel;
 };
 
 // What the Weekly Challenge tab (and the sidebar's preview module) actually
@@ -39,6 +48,17 @@ export type CurrentChallenge = {
   // see ContentCowScoringType. Only null for a legacy/unset Content
   // Library entry saved before scoring type was required.
   scoringType: ContentCowScoringType | null;
+  // Round 39: THE COW's own structured body, carried straight through from
+  // the live Content Library entry — see ContentWorkout's own fields for
+  // what each means. All optional; a Challenge with none of these set
+  // falls back to the plain format/movements display.
+  kettlebellsDudes?: KettlebellLevels;
+  kettlebellsFemales?: KettlebellLevels;
+  theWork?: string;
+  catchIntro?: string;
+  catchPenalties?: string[];
+  catchFollowUp?: string;
+  finishNote?: string;
   // null when no real challenge is live for the current cycle.
   sourceId: string | null;
   // Saturday 12:00pm ET this cycle's scores lock, and the Sunday 6:00pm ET
@@ -75,6 +95,7 @@ export type ChallengeEntry = {
   reps?: string;
   time: string;
   tag: ChallengeTag;
+  level?: ChallengeScoreLevel;
   createdAt: number;
 };
 
@@ -110,6 +131,8 @@ type ChallengeEntryRow = {
   rounds: string;
   reps: string | null;
   time_taken: string;
+  // Round 39, migration_027 — optional, free pick at score-entry time.
+  level: string | null;
   created_at: string;
   profiles: ProfileRef;
 };
@@ -126,11 +149,13 @@ function rowToEntry(row: ChallengeEntryRow): ChallengeEntry {
     reps: row.reps ?? undefined,
     time: row.time_taken,
     tag: tagFromHowTrain(profile?.how_train),
+    level: (row.level as ChallengeScoreLevel | null) ?? undefined,
     createdAt: new Date(row.created_at).getTime(),
   };
 }
 
-const ENTRY_SELECT = 'id, user_id, challenge_title, kettlebell_kg, rounds, reps, time_taken, created_at, profiles(display_name, how_train)';
+const ENTRY_SELECT =
+  'id, user_id, challenge_title, kettlebell_kg, rounds, reps, time_taken, level, created_at, profiles(display_name, how_train)';
 
 // Weekly Challenge (COWs) submissions — every member's entries, read from
 // the shared `challenge_entries` table, so the leaderboard is the same for
@@ -180,6 +205,7 @@ export function ChallengeProvider({ children }: { children: React.ReactNode }) {
             rounds: entry.rounds,
             reps: entry.reps ?? null,
             time_taken: entry.time,
+            level: entry.level ?? null,
           })
           .select(ENTRY_SELECT)
           .single()
@@ -239,6 +265,13 @@ export function useCurrentChallenge(): CurrentChallenge {
     movements: live.movements,
     videoUrl: live.videoUrl,
     scoringType: live.scoringType ?? null,
+    kettlebellsDudes: live.kettlebellsDudes,
+    kettlebellsFemales: live.kettlebellsFemales,
+    theWork: live.theWork,
+    catchIntro: live.catchIntro,
+    catchPenalties: live.catchPenalties,
+    catchFollowUp: live.catchFollowUp,
+    finishNote: live.finishNote,
     sourceId: live.id,
     ...cycleFields,
   };
@@ -286,10 +319,12 @@ export function useChallengeLeaderboard(): LeaderboardEntry[] {
   return sorted.map((e, i) => ({
     rank: i + 1,
     name: e.author,
+    userId: e.userId,
     kettlebell: e.kettlebell,
     rounds: e.rounds,
     reps: e.reps,
     time: e.time,
     tag: e.tag,
+    level: e.level,
   }));
 }

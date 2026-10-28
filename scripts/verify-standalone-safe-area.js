@@ -6902,6 +6902,11 @@ async function run() {
     await page.getByRole('tab', { name: /DOC'?S COWS/i }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(500);
 
+    // Round 39, Part 5: the entry form is now collapsed behind a
+    // "POST YOUR SCORE" teaser (PostScoreCard) -- tap it open before the
+    // real fields exist in the DOM.
+    await page.getByTestId('cow-post-score-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
     await page.locator('#cowkiller-rounds-input').fill('12').catch(() => {});
     await page.locator('#cowkiller-kettlebell-input').fill('16').catch(() => {});
     await page.getByText('POST SCORE', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
@@ -7388,6 +7393,213 @@ async function run() {
     await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(600);
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'schedule-pilates-gold-card.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // ============================================================================
+  // Round 39: THE GOLD COW ROOM + PULL YOURSELF TOGETHER + VIDEO IN THE
+  // DAILY WORKOUT. [cow-screen/*] drives the real, bundled seed entry (no
+  // localStorage override -- a fresh account always gets it, since
+  // CONTENT_LIBRARY_SEED_VERSION was bumped and "Pull Yourself Together" is
+  // the only published `cow` entry in the seed) through every Part 1-5
+  // element end to end.
+  // ============================================================================
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const insertedCowEntries = [];
+    await page.route('**/rest/v1/challenge_entries*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'POST') {
+        let payload = {};
+        try {
+          payload = JSON.parse(req.postData() || '{}');
+        } catch {}
+        const row = {
+          id: `r39-cow-entry-${insertedCowEntries.length + 1}`,
+          user_id: payload.user_id ?? USER_ID,
+          challenge_title: payload.challenge_title ?? '',
+          kettlebell_kg: payload.kettlebell_kg ?? '',
+          rounds: payload.rounds ?? '',
+          reps: payload.reps ?? null,
+          time_taken: payload.time_taken ?? '',
+          level: payload.level ?? null,
+          created_at: new Date().toISOString(),
+          profiles: { display_name: 'Test Member', how_train: 'boathouse' },
+        };
+        insertedCowEntries.push(row);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(row) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(insertedCowEntries) });
+    });
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /DOC'?S COWS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    // Wait for the hero itself to actually be visible, rather than a
+    // fixed delay, before reading anything out of it.
+    await page.getByTestId('cow-hero').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(300);
+
+    // Part 4: the real, seeded "PULL YOURSELF TOGETHER" content, word for
+    // word, end to end -- title, Rx/Scaled/Modified kettlebells for both
+    // DUDES and FEMALES, THE WORK's own subs line, THE CATCH's own penalty
+    // list + follow-up line, and the finish note -- all read straight off
+    // the real rendered DOM, not a mock.
+    const heroText = await page.getByTestId('cow-hero').innerText().catch(() => '');
+    const hasTitle = heroText.includes('PULL YOURSELF TOGETHER');
+    const hasFormat = heroText.includes('FOR TIME');
+    const hasDudesKettlebells = heroText.includes('32kg') && heroText.includes('28kg') && heroText.includes('24kg');
+    const hasFemalesKettlebells = heroText.includes('24kg') && heroText.includes('20kg') && heroText.includes('16kg');
+    const hasTheWork = heroText.includes('50 Pull Ups, for time.') && heroText.includes('75 Band Assisted Pull Ups');
+    const hasCatchIntro = heroText.includes('Every time you drop off the bar, pay the toll');
+    const hasCatchFollowUp = heroText.includes('Then get back on the bar right where you left off');
+    const hasFinishNote = heroText.includes('Your time stops when you finish the toll');
+    record(
+      '[cow-screen/full-content] the real seeded PULL YOURSELF TOGETHER content renders every section word for word',
+      hasTitle && hasFormat && hasDudesKettlebells && hasFemalesKettlebells && hasTheWork && hasCatchIntro && hasCatchFollowUp && hasFinishNote,
+      JSON.stringify({ hasTitle, hasFormat, hasDudesKettlebells, hasFemalesKettlebells, hasTheWork, hasCatchIntro, hasCatchFollowUp, hasFinishNote })
+    );
+
+    // Part 1: gold hero border, filled gold badge, translucent gold ghost
+    // watermark -- read as real computed styles, not assumed from the
+    // source.
+    const heroBorder = await page.getByTestId('cow-hero').evaluate((el) => getComputedStyle(el).borderColor).catch(() => '');
+    const badgeBg = await page.getByTestId('cow-badge').evaluate((el) => getComputedStyle(el).backgroundColor).catch(() => '');
+    const watermarkColor = await page.getByTestId('cow-ghost-watermark').evaluate((el) => getComputedStyle(el).color).catch(() => '');
+    record(
+      '[cow-screen/gold-styling] the hero border, badge fill, and ghost watermark all use the real brand gold',
+      heroBorder === 'rgb(229, 184, 11)' && badgeBg === 'rgb(229, 184, 11)' && watermarkColor === 'rgba(255, 213, 32, 0.14)',
+      JSON.stringify({ heroBorder, badgeBg, watermarkColor })
+    );
+
+    // Part 3: a real movement inside THE CATCH's penalty box links to the
+    // Movement Vault, exactly like every other workout's movements --
+    // "Swings" has a real vault entry (movements.ts), so it must render as
+    // a tappable span, not plain text.
+    const swingsLinkVisible = await page.getByTestId('movement-link-swings').first().isVisible().catch(() => false);
+    record(
+      '[cow-screen/catch-movement-link] a real movement name inside THE CATCH box (Swings) is tappable to the Movement Vault',
+      swingsLinkVisible,
+      JSON.stringify({ swingsLinkVisible })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'cow-screen-full.png'), fullPage: true }).catch(() => {});
+
+    // Part 2: tapping the gold video cover plays the real video using the
+    // same in-app treatment (MovementVideoPlayer) the rest of the app
+    // already uses, never a new, cover-specific player.
+    await page.getByTestId('challenge-video-cover').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const playerVisible = await page.getByTestId('challenge-video-playing').isVisible().catch(() => false);
+    const iframeSrc = await page.locator('iframe').first().getAttribute('src').catch(() => null);
+    record(
+      '[cow-screen/video-cover] tapping the gold cover plays the real challenge video in-app',
+      playerVisible && !!iframeSrc && iframeSrc.includes('uYRgU5aM4MU'),
+      JSON.stringify({ playerVisible, iframeSrc })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'cow-video-cover.png') }).catch(() => {});
+
+    // Part 5: POST YOUR SCORE teaser -> real entry form (scoringType
+    // 'time' for this COW, so TIME + KETTLEBELL + LEVEL, no ROUNDS) -> the
+    // new optional Rx/Scaled/Modified picker -> submit.
+    await page.getByTestId('cow-post-score-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.locator('#cowkiller-time-input').fill('42:17').catch(() => {});
+    await page.locator('#cowkiller-kettlebell-input').fill('24').catch(() => {});
+    await page.getByTestId('cowkiller-level-rx').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'cow-score-entry-picker.png') }).catch(() => {});
+    await page.getByTestId('cow-submit-score').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(700);
+
+    const ownRowVisible = await page.getByTestId('cow-leaderboard-own-row').isVisible().catch(() => false);
+    const ownRowText = await page.getByTestId('cow-leaderboard-own-row').innerText().catch(() => '');
+    const ownRowBorder = await page.getByTestId('cow-leaderboard-own-row').evaluate((el) => getComputedStyle(el).borderColor).catch(() => '');
+    record(
+      '[cow-screen/score-entry] submitting a score with a Level picked posts it with that level, scoringType time (no Rounds field)',
+      insertedCowEntries.length === 1 && insertedCowEntries[0].time_taken === '42:17' && insertedCowEntries[0].kettlebell_kg === '24' && insertedCowEntries[0].level === 'Rx',
+      JSON.stringify({ insertedCowEntries })
+    );
+    record(
+      '[cow-screen/leaderboard-own-row] the signed-in member\'s own leaderboard row shows RX · 24KG, the time badge, and a gold border',
+      ownRowVisible && ownRowText.includes('RX') && ownRowText.includes('24KG') && ownRowText.includes('42:17') && ownRowBorder === 'rgb(229, 184, 11)',
+      JSON.stringify({ ownRowVisible, ownRowText, ownRowBorder })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'cow-leaderboard-own-row.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [community/wod-video]: Part 6 -- the Community tab's own expanded
+  // "DOC'S WORKOUT OF THE DAY" (DayPanel, shared verbatim with the WODS
+  // tab) must show the workout's real video breakdown thumbnail above the
+  // movements, not just the caption and movements list. Seeds a published
+  // `wod` Content Library override for TODAY's own calendar date (the only
+  // way a weekday WOD carries a real videoUrl at all -- see
+  // lib/weekendContent.ts's useWeekdayWod) with a real video, then
+  // confirms the thumbnail renders and tapping it plays in-app.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const todayReleaseAt = dateAtOffsetDays(0, 6, 0).getTime();
+    await page.addInitScript((releaseAt) => {
+      try {
+        window.localStorage.setItem(
+          'contentLibraryDrafts.v1',
+          JSON.stringify([
+            {
+              id: 'r39-wod-video-test',
+              name: 'ROUND 39 VIDEO TEST WOD',
+              originalTitle: 'ROUND 39 VIDEO TEST WOD',
+              type: 'wod',
+              format: '5 Rounds For Time',
+              formatDescription: '',
+              movements: ['Kettlebell Swings', 'Push-Ups'],
+              videoUrl: 'https://youtu.be/uYRgU5aM4MU',
+              notes: '',
+              releaseAt,
+              status: 'published',
+              scheduled: true,
+              createdAt: releaseAt,
+              updatedAt: releaseAt,
+            },
+          ])
+        );
+        window.localStorage.setItem('contentLibraryDrafts.v1.seedVersion', '999');
+      } catch {}
+    }, todayReleaseAt);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const videoThumbVisible = await page.getByTestId('watch-video-breakdown').isVisible().catch(() => false);
+    const wodTitleVisible = await page.getByText('ROUND 39 VIDEO TEST WOD', { exact: true }).first().isVisible().catch(() => false);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'community-wod-video.png') }).catch(() => {});
+    await page.getByTestId('watch-video-breakdown').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const iframeSrc = await page.locator('iframe').first().getAttribute('src').catch(() => null);
+    record(
+      '[community/wod-video] the expanded DOC\'S WORKOUT OF THE DAY on Community shows the real video breakdown thumbnail above the movements',
+      videoThumbVisible && wodTitleVisible,
+      JSON.stringify({ videoThumbVisible, wodTitleVisible })
+    );
+    record(
+      '[community/wod-video-plays] tapping the thumbnail plays the real video in-app, same treatment as the rest of the app',
+      !!iframeSrc && iframeSrc.includes('uYRgU5aM4MU'),
+      JSON.stringify({ iframeSrc })
+    );
     await context.close();
   }
 

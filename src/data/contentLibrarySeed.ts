@@ -6,7 +6,7 @@ import { ContentWorkout } from '../context/ContentLibraryContext';
 // the first versioned seed (the 125-workout import); it starts at 1 so any
 // pre-existing, unversioned local data (which reads as version 0) merges
 // with it on next load instead of shadowing it forever.
-export const CONTENT_LIBRARY_SEED_VERSION = 1;
+export const CONTENT_LIBRARY_SEED_VERSION = 2;
 
 // Seeded from the "Doc's App Workouts" YouTube playlist (125 items — see the
 // PR description for the fetch/parse/schedule details, since the fetch itself
@@ -18,6 +18,36 @@ export const CONTENT_LIBRARY_SEED_VERSION = 1;
 // SCHEDULE tab), as opposed to a manually-added entry still sitting unassigned
 // in the WODS/COWS inventory list.
 export const CONTENT_LIBRARY_SEED: ContentWorkout[] = [
+  // Round 39: the first real COW built on the new structured content model
+  // (DOC'S PRESCRIBED KETTLEBELLS / THE WORK / THE CATCH / finish note) —
+  // seeded PUBLISHED, with a releaseAt already in the past, so it's live
+  // as the current Weekly Challenge the moment this ships, with no admin
+  // step required to see the real screen working end to end. Every field
+  // below is the owner's own final, authoritative copy — word for word.
+  {
+    id: 'pull-yourself-together',
+    name: 'PULL YOURSELF TOGETHER',
+    originalTitle: 'PULL YOURSELF TOGETHER',
+    type: 'cow',
+    format: 'FOR TIME',
+    formatDescription: '',
+    movements: ['Pull Ups', 'Band Assisted Pull Ups', 'TRX Table Top Rows', 'Bent Rows', 'Swings', 'Thrusters', 'Goblet Reverse Lunges', 'Burpees'],
+    videoUrl: 'https://youtu.be/uYRgU5aM4MU',
+    notes: '',
+    scoringType: 'time',
+    kettlebellsDudes: { rx: '32kg', scaled: '28kg', modified: '24kg' },
+    kettlebellsFemales: { rx: '24kg', scaled: '20kg', modified: '16kg' },
+    theWork: '50 Pull Ups, for time.\nSubs: 75 Band Assisted Pull Ups · 100 TRX Table Top Rows · 150 Bent Rows (75/75)',
+    catchIntro: 'Every time you drop off the bar, pay the toll:',
+    catchPenalties: ['8 Swings', '6 Thrusters', '4/4 Goblet Reverse Lunges', '2 Burpees'],
+    catchFollowUp: 'Then get back on the bar right where you left off. Bent rows: the toll fires every time you finish one side.',
+    finishNote: 'Your time stops when you finish the toll after your final pull up. The last move you do is a burpee.',
+    releaseAt: 1792972800000,
+    status: 'published',
+    scheduled: true,
+    createdAt: 1792972800000,
+    updatedAt: 1792972800000,
+  },
   {
     id: 'weapon-x',
     name: 'Weapon X',

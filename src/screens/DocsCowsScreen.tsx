@@ -5,11 +5,13 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { MembershipGate } from '../components/MembershipGate';
 import { Avatar } from '../components/Avatar';
-import { WatchVideoBreakdownButton } from '../components/WatchVideoBreakdownButton';
+import { ChallengeVideoCover } from '../components/cows/ChallengeVideoCover';
 import { TappableMovementText } from '../components/movement/TappableMovementText';
+import { useAuth } from '../context/AuthContext';
 import { useBadges } from '../context/BadgeContext';
-import { ContentCowScoringType } from '../context/ContentLibraryContext';
+import { ContentCowScoringType, KettlebellLevels } from '../context/ContentLibraryContext';
 import {
+  ChallengeScoreLevel,
   CurrentChallenge,
   LeaderboardEntry,
   useChallenge,
@@ -27,40 +29,178 @@ const KETTLEBELL_SIZE_MAX_LENGTH = 40;
 
 type Entry = LeaderboardEntry;
 
-function ChallengeHero({ current }: { current: CurrentChallenge }) {
+const LEVEL_OPTIONS: ChallengeScoreLevel[] = ['Rx', 'Scaled', 'Modified'];
+
+// "SATURDAY 12 PM ET" (formatEtTime's own output) -> "SCORES CLOSE
+// SATURDAY · 12 PM ET" — reuses the one shared, real-data-derived
+// formatter rather than hardcoding a weekday/time, inserting the
+// mockup's own "·" separator after the weekday word.
+function scoresCloseLine(closeAtMs: number): string {
+  const formatted = formatEtTime(closeAtMs);
+  const firstSpace = formatted.indexOf(' ');
+  if (firstSpace === -1) return `SCORES CLOSE ${formatted}`;
+  return `SCORES CLOSE ${formatted.slice(0, firstSpace)} · ${formatted.slice(firstSpace + 1)}`;
+}
+
+// "Rx 32kg · Scaled 28kg · Modified 24kg" with only the weights bold.
+function KettlebellLine({ levels }: { levels: KettlebellLevels }) {
   return (
-    <View style={styles.hero}>
-      <Text style={styles.ghostWatermark}>COW</Text>
-      <View style={styles.badge}>
-        <Ionicons name="flame" size={14} color={colors.greenDeep} />
+    <Text style={styles.kettlebellLine}>
+      <Text>Rx </Text>
+      <Text style={styles.kettlebellWeight}>{levels.rx}</Text>
+      <Text> · Scaled </Text>
+      <Text style={styles.kettlebellWeight}>{levels.scaled}</Text>
+      <Text> · Modified </Text>
+      <Text style={styles.kettlebellWeight}>{levels.modified}</Text>
+    </Text>
+  );
+}
+
+// THE WORK's own first line bold, every following line (if any) regular —
+// a plain structural rule, not markup embedded in the stored copy.
+function FirstLineBoldText({ text, style, boldStyle }: { text: string; style: object; boldStyle: object }) {
+  const lines = text.split('\n');
+  return (
+    <Text style={style}>
+      <Text style={boldStyle}>{lines[0]}</Text>
+      {lines.length > 1 ? `\n${lines.slice(1).join('\n')}` : ''}
+    </Text>
+  );
+}
+
+// The finish note's own key phrase (its first sentence) bold, the rest
+// regular — same structural rule as FirstLineBoldText, just split on the
+// first sentence boundary instead of the first line break.
+function FirstSentenceBoldText({ text, style, boldStyle }: { text: string; style: object; boldStyle: object }) {
+  const boundary = text.indexOf('. ');
+  if (boundary === -1) {
+    return (
+      <Text style={style}>
+        <Text style={boldStyle}>{text}</Text>
+      </Text>
+    );
+  }
+  const firstSentence = text.slice(0, boundary + 1);
+  const rest = text.slice(boundary + 1);
+  return (
+    <Text style={style}>
+      <Text style={boldStyle}>{firstSentence}</Text>
+      {rest}
+    </Text>
+  );
+}
+
+function ChallengeHero({ current }: { current: CurrentChallenge }) {
+  // A Challenge authored with the new structured body (any one of these
+  // set) gets the full DOC'S PRESCRIBED KETTLEBELLS / THE WORK / THE CATCH
+  // / finish note treatment; an older or simpler Challenge (none of this
+  // set) falls back to the plain format description + movements list this
+  // screen always had, never a half-rendered new section with nothing in
+  // it.
+  const hasRichBody = !!(current.theWork || current.catchIntro || current.kettlebellsDudes || current.kettlebellsFemales);
+
+  return (
+    <View style={styles.hero} testID="cow-hero">
+      <Text style={styles.ghostWatermark} testID="cow-ghost-watermark">COW</Text>
+      <View style={styles.badge} testID="cow-badge">
+        <Ionicons name="flame" size={14} color={colors.text} />
         <Text style={styles.badgeText}>COW = CHALLENGE OF THE WEEK</Text>
       </View>
       <Text style={styles.heroTitle}>{current.title}</Text>
-      <WatchVideoBreakdownButton videoUrl={current.videoUrl} />
+      <ChallengeVideoCover videoUrl={current.videoUrl} title={current.title} />
       {!!current.format && <Text style={styles.heroFormat}>{current.format.toUpperCase()}</Text>}
-      {!!current.formatDescription && (
-        <TappableMovementText
-          style={styles.heroSubtext}
-          linkStyle={styles.heroSubtextLink}
-          text={current.formatDescription}
-          onOpenMovement={(movementId) => openMovementVault(movementId, 'CHALLENGE')}
-        />
-      )}
-      {current.movements.length > 0 && (
-        <View style={styles.heroMovements}>
-          {current.movements.map((move, i) => (
-            <View key={i} style={styles.heroMoveRow}>
-              <View style={styles.heroMoveDot} />
-              <TappableMovementText
-                style={styles.heroMoveText}
-                linkStyle={styles.heroSubtextLink}
-                text={move}
-                onOpenMovement={(movementId) => openMovementVault(movementId, 'CHALLENGE')}
+      <Text style={styles.scoresCloseLine}>{scoresCloseLine(current.closeAt)}</Text>
+
+      {hasRichBody ? (
+        <>
+          {(current.kettlebellsDudes || current.kettlebellsFemales) && (
+            <View style={styles.kettlebellBox} testID="cow-kettlebells-box">
+              <Text style={styles.sectionHeading}>DOC'S PRESCRIBED KETTLEBELLS</Text>
+              {current.kettlebellsDudes && (
+                <View style={styles.kettlebellRow}>
+                  <Text style={styles.kettlebellLevelLabel}>DUDES: </Text>
+                  <KettlebellLine levels={current.kettlebellsDudes} />
+                </View>
+              )}
+              {current.kettlebellsFemales && (
+                <View style={styles.kettlebellRow}>
+                  <Text style={styles.kettlebellLevelLabel}>FEMALES: </Text>
+                  <KettlebellLine levels={current.kettlebellsFemales} />
+                </View>
+              )}
+            </View>
+          )}
+
+          {!!current.theWork && (
+            <View style={styles.bodySection}>
+              <Text style={styles.sectionHeading}>THE WORK</Text>
+              <FirstLineBoldText
+                text={current.theWork}
+                style={styles.bodyText}
+                boldStyle={styles.bodyTextBold}
               />
             </View>
-          ))}
-        </View>
+          )}
+
+          {!!current.catchIntro && (
+            <View style={styles.bodySection}>
+              <Text style={styles.sectionHeading}>THE CATCH</Text>
+              <Text style={styles.bodyText}>{current.catchIntro}</Text>
+              {current.catchPenalties && current.catchPenalties.length > 0 && (
+                <View style={styles.catchBox} testID="cow-catch-box">
+                  {current.catchPenalties.map((line, i) => (
+                    <TappableMovementText
+                      key={i}
+                      style={styles.catchLine}
+                      linkStyle={styles.catchLineLink}
+                      text={line}
+                      onOpenMovement={(movementId) => openMovementVault(movementId, 'CHALLENGE')}
+                    />
+                  ))}
+                </View>
+              )}
+              {!!current.catchFollowUp && <Text style={styles.followUpLine}>{current.catchFollowUp}</Text>}
+            </View>
+          )}
+
+          {!!current.finishNote && (
+            <View style={styles.finishNoteBox} testID="cow-finish-note">
+              <FirstSentenceBoldText
+                text={current.finishNote}
+                style={styles.finishNoteText}
+                boldStyle={styles.finishNoteTextBold}
+              />
+            </View>
+          )}
+        </>
+      ) : (
+        <>
+          {!!current.formatDescription && (
+            <TappableMovementText
+              style={styles.heroSubtext}
+              linkStyle={styles.heroSubtextLink}
+              text={current.formatDescription}
+              onOpenMovement={(movementId) => openMovementVault(movementId, 'CHALLENGE')}
+            />
+          )}
+          {current.movements.length > 0 && (
+            <View style={styles.heroMovements}>
+              {current.movements.map((move, i) => (
+                <View key={i} style={styles.heroMoveRow}>
+                  <View style={styles.heroMoveDot} />
+                  <TappableMovementText
+                    style={styles.heroMoveText}
+                    linkStyle={styles.heroSubtextLink}
+                    text={move}
+                    onOpenMovement={(movementId) => openMovementVault(movementId, 'CHALLENGE')}
+                  />
+                </View>
+              ))}
+            </View>
+          )}
+        </>
       )}
+
       <View style={styles.heroDivider} />
       {current.isClosed ? (
         <>
@@ -81,12 +221,35 @@ function ChallengeHero({ current }: { current: CurrentChallenge }) {
   );
 }
 
+function LevelPicker({ value, onChange }: { value: ChallengeScoreLevel | null; onChange: (v: ChallengeScoreLevel | null) => void }) {
+  return (
+    <>
+      <Text nativeID="cowkiller-level-label" style={styles.label}>LEVEL (OPTIONAL)</Text>
+      <View style={styles.levelRow}>
+        {LEVEL_OPTIONS.map((level) => {
+          const active = value === level;
+          return (
+            <Pressable
+              key={level}
+              style={[styles.levelPill, active && styles.levelPillActive]}
+              onPress={() => onChange(active ? null : level)}
+              testID={`cowkiller-level-${level.toLowerCase()}`}
+            >
+              <Text style={[styles.levelPillText, active && styles.levelPillTextActive]}>{level.toUpperCase()}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </>
+  );
+}
+
 function EntryForm({
   scoringType,
   onSubmit,
 }: {
   scoringType: ContentCowScoringType | null;
-  onSubmit: (entry: Omit<Entry, 'rank' | 'tag'>) => void;
+  onSubmit: (entry: Omit<Entry, 'rank' | 'tag' | 'userId'>) => void;
 }) {
   const displayName = useDisplayName();
   const { recordCowKillerScore } = useBadges();
@@ -94,6 +257,7 @@ function EntryForm({
   const [rounds, setRounds] = useState('');
   const [reps, setReps] = useState('');
   const [kettlebell, setKettlebell] = useState('');
+  const [level, setLevel] = useState<ChallengeScoreLevel | null>(null);
 
   // null (the built-in fallback challenge) shows both TIME and ROUNDS, same
   // as this screen always has — a real Content Library Challenge narrows
@@ -112,18 +276,18 @@ function EntryForm({
       rounds: rounds.trim() || '—',
       reps: showReps ? reps.trim() || '—' : undefined,
       time: showTime ? time.trim() || '—' : '—',
+      level: level ?? undefined,
     });
     recordCowKillerScore();
     setTime('');
     setRounds('');
     setReps('');
     setKettlebell('');
+    setLevel(null);
   };
 
   return (
-    <View style={styles.formCard}>
-      <Text style={styles.formTitle}>POST YOUR SCORE</Text>
-
+    <View testID="cow-entry-form">
       <View style={styles.formRow}>
         {showTime && (
           <View style={styles.formField}>
@@ -195,9 +359,43 @@ function EntryForm({
         aria-label="Kettlebell size"
       />
 
-      <Pressable style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]} disabled={!canSubmit} onPress={submit}>
+      <LevelPicker value={level} onChange={setLevel} />
+
+      <Pressable style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]} disabled={!canSubmit} onPress={submit} testID="cow-submit-score">
         <Text style={styles.submitButtonText}>POST SCORE</Text>
       </Pressable>
+    </View>
+  );
+}
+
+// Round 39, Part 5: a gold-bordered teaser card holding just the full
+// width POST YOUR SCORE button and the owner's own reassurance line —
+// tapping it reveals the real entry form (TIME/ROUNDS/KETTLEBELL/LEVEL)
+// directly below, inside the same card. The entry form's own mechanism
+// (what happens on submit) is completely unchanged — this only changes
+// what's visible before a member decides to post.
+function PostScoreCard({
+  scoringType,
+  onSubmit,
+}: {
+  scoringType: ContentCowScoringType | null;
+  onSubmit: (entry: Omit<Entry, 'rank' | 'tag' | 'userId'>) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <View style={styles.formCard}>
+      {!expanded ? (
+        <>
+          <Pressable style={styles.postScoreButton} onPress={() => setExpanded(true)} testID="cow-post-score-button">
+            <Text style={styles.postScoreButtonText}>POST YOUR SCORE</Text>
+          </Pressable>
+          <Text style={styles.postScoreHint}>
+            Done? Drop your time and bell below. Posting is optional, but the board is a lot more fun with you on it.
+          </Text>
+        </>
+      ) : (
+        <EntryForm scoringType={scoringType} onSubmit={onSubmit} />
+      )}
     </View>
   );
 }
@@ -205,11 +403,14 @@ function EntryForm({
 // A Challenge's leaderboard shows exactly one of these two displays, driven
 // by its own scoring type — never a per-row guess, so it can never mix
 // time-scored and rounds-scored rows even by accident.
-function LeaderboardRow({ entry, isTimeScoring }: { entry: Entry; isTimeScoring: boolean }) {
+function LeaderboardRow({ entry, isTimeScoring, isMine }: { entry: Entry; isTimeScoring: boolean; isMine: boolean }) {
   const isFirst = entry.rank === 1;
   const primaryScore = isTimeScoring ? entry.time : `${entry.rounds}${entry.reps ? ` +${entry.reps}` : ''}`;
+  // "RX · 24KG" — level omitted entirely if not picked, never a blank
+  // "· 24KG" with a dangling separator.
+  const metaLine = `${entry.level ? `${entry.level.toUpperCase()} · ` : ''}${entry.kettlebell}KG`;
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, isMine && styles.rowMine]} testID={isMine ? 'cow-leaderboard-own-row' : undefined}>
       <Text style={[styles.rank, isFirst && styles.rankFirst]}>{entry.rank}</Text>
       <Avatar name={entry.name} size={32} />
       <View style={styles.rowMain}>
@@ -225,18 +426,16 @@ function LeaderboardRow({ entry, isTimeScoring }: { entry: Entry; isTimeScoring:
             />
           )}
         </View>
-        <Text style={styles.rowMeta}>
-          {isTimeScoring
-            ? `${entry.kettlebell} KB · ${entry.tag}`
-            : `${entry.rounds} rounds${entry.reps ? ` + ${entry.reps} reps` : ''} · ${entry.kettlebell} KB · ${entry.tag}`}
-        </Text>
+        <Text style={styles.rowMeta}>{metaLine}</Text>
       </View>
-      <Text style={styles.score}>{primaryScore}</Text>
+      <View style={styles.scoreBadge}>
+        <Text style={styles.scoreBadgeText}>{primaryScore}</Text>
+      </View>
     </View>
   );
 }
 
-function Leaderboard({ entries, isTimeScoring, closed }: { entries: Entry[]; isTimeScoring: boolean; closed: boolean }) {
+function Leaderboard({ entries, isTimeScoring, closed, myUserId }: { entries: Entry[]; isTimeScoring: boolean; closed: boolean; myUserId?: string }) {
   return (
     <View>
       <Text style={styles.subtitle}>{closed ? 'FINAL LEADERBOARD' : 'LIVE LEADERBOARD — THIS WEEK'}</Text>
@@ -244,7 +443,9 @@ function Leaderboard({ entries, isTimeScoring, closed }: { entries: Entry[]; isT
         {entries.length === 0 ? (
           <Text style={styles.emptyText}>{closed ? 'No scores posted this week.' : 'No scores posted yet. Be the first.'}</Text>
         ) : (
-          entries.map((entry) => <LeaderboardRow key={`${entry.rank}-${entry.name}`} entry={entry} isTimeScoring={isTimeScoring} />)
+          entries.map((entry) => (
+            <LeaderboardRow key={`${entry.rank}-${entry.name}`} entry={entry} isTimeScoring={isTimeScoring} isMine={!!myUserId && entry.userId === myUserId} />
+          ))
         )}
       </View>
     </View>
@@ -296,18 +497,20 @@ function DocsCowsContent() {
   const { addEntry: addChallengeEntry, error } = useChallenge();
   const current = useCurrentChallenge();
   const entries = useChallengeLeaderboard();
+  const { user } = useAuth();
 
   // Round 36: the completion share card no longer opens from a COW entry
   // at all, by owner decision -- the card is reserved exclusively for a
   // real MARK COMPLETE button press (a Doc's WOD or a deck card), and the
   // COW has no such button. See AGENTS.md's "Round 36" section.
-  const addEntry = (entry: Omit<Entry, 'rank' | 'tag'>) => {
+  const addEntry = (entry: Omit<Entry, 'rank' | 'tag' | 'userId'>) => {
     addChallengeEntry({
       challengeTitle: current.title,
       kettlebell: entry.kettlebell,
       rounds: entry.rounds,
       reps: entry.reps,
       time: entry.time,
+      level: entry.level,
     });
   };
 
@@ -332,11 +535,12 @@ function DocsCowsContent() {
       ) : (
         <>
           {current.sourceId &&
-            (current.isClosed ? <ClosedNotice /> : <EntryForm scoringType={current.scoringType} onSubmit={addEntry} />)}
+            (current.isClosed ? <ClosedNotice /> : <PostScoreCard scoringType={current.scoringType} onSubmit={addEntry} />)}
           <Leaderboard
             entries={entries}
             isTimeScoring={current.scoringType === 'time' || current.scoringType === null}
             closed={current.isClosed}
+            myUserId={user?.id}
           />
         </>
       )}
@@ -361,12 +565,16 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 16,
     overflow: 'hidden',
+    // Part 1, item 1: the hero's own gold identity border.
+    borderWidth: 1.5,
+    borderColor: colors.gold,
   },
   ghostWatermark: {
     position: 'absolute',
     top: -22,
     right: -8,
-    color: 'rgba(255,255,255,0.08)',
+    // Part 1, item 3: translucent GOLD (~14% opacity), not the old white.
+    color: 'rgba(255,213,32,0.14)',
     fontFamily: fonts.headline,
     fontSize: 96,
     letterSpacing: 2,
@@ -375,7 +583,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: colors.goldBright,
+    // Part 1, item 2: filled gold pill.
+    backgroundColor: colors.gold,
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -383,7 +592,8 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   badgeText: {
-    color: colors.greenDeep,
+    // Near-black text on gold.
+    color: colors.text,
     fontFamily: fonts.labelBold,
     fontSize: 11,
     letterSpacing: 1,
@@ -399,6 +609,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 1,
+    marginTop: 4,
+  },
+  // Part 1, item 4: "Scores close Saturday · 12 PM ET" — condensed caps,
+  // muted, directly under the format line.
+  scoresCloseLine: {
+    color: 'rgba(255,255,255,0.55)',
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 11,
+    letterSpacing: 0.8,
     marginTop: 4,
   },
   heroSubtext: {
@@ -433,6 +652,95 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 14,
   },
+  // Part 3, item 1: DOC'S PRESCRIBED KETTLEBELLS — a soft gray rounded box.
+  kettlebellBox: {
+    backgroundColor: '#F3F2EE',
+    borderRadius: 10,
+    padding: 14,
+    marginTop: 16,
+  },
+  sectionHeading: {
+    color: colors.greenDeep,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  kettlebellRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 4,
+  },
+  kettlebellLevelLabel: {
+    color: colors.text,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.6,
+  },
+  kettlebellLine: {
+    color: colors.text,
+    fontFamily: fonts.body,
+    fontSize: 13,
+  },
+  kettlebellWeight: {
+    fontFamily: fonts.bodyBold,
+  },
+  bodySection: {
+    marginTop: 16,
+  },
+  bodyText: {
+    color: colors.text,
+    fontFamily: fonts.body,
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  bodyTextBold: {
+    fontFamily: fonts.bodyBold,
+  },
+  // Part 3, item 3: THE CATCH's own penalty list — a box with a 3px gold
+  // left border on a faint cream background.
+  catchBox: {
+    backgroundColor: '#FDF8E7',
+    borderLeftWidth: 3,
+    borderLeftColor: colors.gold,
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 10,
+  },
+  catchLine: {
+    color: colors.text,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  catchLineLink: {
+    color: colors.green,
+    fontFamily: fonts.bodySemiBold,
+    textDecorationLine: 'underline',
+  },
+  followUpLine: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 10,
+  },
+  // Part 3, item 5: the finish note — a soft green box.
+  finishNoteBox: {
+    backgroundColor: '#EAF3F0',
+    borderRadius: 10,
+    padding: 14,
+    marginTop: 16,
+  },
+  finishNoteText: {
+    color: colors.greenDeep,
+    fontFamily: fonts.body,
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  finishNoteTextBold: {
+    fontFamily: fonts.bodyBold,
+  },
   heroDivider: {
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.25)',
@@ -451,13 +759,35 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginTop: 2,
   },
+  // Part 5: the score card gets a 1.5px gold border (replacing the
+  // hairline border every other card in this app uses).
   formCard: {
     backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.hairline,
+    borderWidth: 1.5,
+    borderColor: colors.gold,
     borderRadius: 14,
     padding: 20,
     marginBottom: 20,
+  },
+  postScoreButton: {
+    backgroundColor: colors.gold,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  postScoreButtonText: {
+    color: colors.text,
+    fontFamily: fonts.labelBold,
+    fontSize: 15,
+    letterSpacing: 1,
+  },
+  postScoreHint: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 10,
   },
   closedNoticeCard: {
     backgroundColor: colors.card,
@@ -490,13 +820,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 15,
   },
-  formTitle: {
-    color: colors.text,
-    fontFamily: fonts.headline,
-    fontSize: 18,
-    letterSpacing: 1,
-    marginBottom: 16,
-  },
   formRow: {
     flexDirection: 'row',
     gap: 12,
@@ -523,6 +846,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 14,
   },
+  levelRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  levelPill: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  levelPillActive: {
+    backgroundColor: colors.greenDeep,
+    borderColor: colors.greenDeep,
+  },
+  levelPillText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelBold,
+    fontSize: 12,
+    letterSpacing: 0.8,
+  },
+  levelPillTextActive: {
+    color: colors.goldBright,
+  },
   submitButton: {
     backgroundColor: colors.gold,
     borderRadius: 10,
@@ -533,7 +882,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   submitButtonText: {
-    color: colors.greenDeep,
+    color: colors.text,
     fontFamily: fonts.labelBold,
     fontSize: 14,
     letterSpacing: 1,
@@ -569,6 +918,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.background,
   },
+  // Part 5: the signed-in member's own row, highlighted with a gold
+  // border -- a thin inset ring rather than changing the row's background,
+  // so it reads clearly without fighting the crown/rank colors.
+  rowMine: {
+    borderWidth: 1.5,
+    borderColor: colors.gold,
+    // `row`'s own borderBottomColor (the list divider) is a more specific
+    // key than borderColor and doesn't get overridden by it when the two
+    // style objects merge — without this, three sides of the ring come
+    // out gold and the bottom stays the plain divider shade.
+    borderBottomColor: colors.gold,
+    borderRadius: 10,
+    marginHorizontal: 4,
+  },
   rank: {
     width: 20,
     color: colors.textMuted,
@@ -598,10 +961,18 @@ const styles = StyleSheet.create({
     fontFamily: fonts.label,
     fontSize: 12,
     marginTop: 1,
+    letterSpacing: 0.5,
   },
-  score: {
-    color: colors.text,
+  // Part 5: the score in "the scoreboard red badge."
+  scoreBadge: {
+    backgroundColor: colors.scoreboardRed,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  scoreBadgeText: {
+    color: colors.white,
     fontFamily: fonts.bodyBold,
-    fontSize: 16,
+    fontSize: 15,
   },
 });

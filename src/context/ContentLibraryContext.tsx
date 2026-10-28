@@ -38,6 +38,12 @@ export const SCORING_TYPE_LABELS: Record<ContentCowScoringType, string> = {
   rounds_reps: 'ROUNDS + REPS',
 };
 
+// Round 39: THE COW's own "prescribed kettlebells" line — Rx/Scaled/
+// Modified, one set for DUDES and one for FEMALES. Free text per level
+// (not a number), same reasoning as every other kettlebell-size field in
+// this app (see migration_021/AGENTS.md) — Doc writes "32kg", not "32".
+export type KettlebellLevels = { rx: string; scaled: string; modified: string };
+
 export type ContentWorkout = {
   id: string;
   name: string;
@@ -56,6 +62,30 @@ export type ContentWorkout = {
   videoUrl: string;
   notes: string;
   scoringType?: ContentCowScoringType;
+  // Round 39: THE COW's own structured body — DOC'S PRESCRIBED
+  // KETTLEBELLS, THE WORK, and THE CATCH, as rendered sections rather than
+  // free-form `notes` text. 'cow' only; every field optional so an older
+  // or simpler Challenge (nothing set here) falls back to the plain
+  // format/movements display DocsCowsScreen already had. The penalty
+  // list and `theWork`'s own movement mentions are matched against THE
+  // MOVEMENT VAULT exactly like every other movement text in this app —
+  // see TappableMovementText.
+  kettlebellsDudes?: KettlebellLevels;
+  kettlebellsFemales?: KettlebellLevels;
+  // The main task, e.g. "50 Pull Ups, for time.\nSubs: ...". DocsCowsScreen
+  // renders its own first line bold.
+  theWork?: string;
+  // "Every time you drop off the bar, pay the toll:"
+  catchIntro?: string;
+  // One penalty per line, e.g. "8 Swings" — rendered in a boxed list.
+  catchPenalties?: string[];
+  // The plain line after the penalty box, e.g. "Then get back on the bar
+  // right where you left off."
+  catchFollowUp?: string;
+  // The closing note, e.g. "Your time stops when you finish the toll
+  // after your final pull up." DocsCowsScreen renders its own first
+  // sentence bold.
+  finishNote?: string;
   // 'sunday_setup' only — a specific pick from SUNDAY_QUOTES for this one
   // week, overriding the automatic cycle. Undefined means "use whatever
   // the cycle assigns this Sunday" (the normal case).

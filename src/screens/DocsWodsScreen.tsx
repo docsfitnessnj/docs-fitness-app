@@ -6,7 +6,7 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { DateStrip } from '../components/DateStrip';
 import { LogResultsModal } from '../components/LogResultsModal';
 import { UpgradeBanner } from '../components/UpgradeBanner';
-import { WatchVideoBreakdownButton } from '../components/WatchVideoBreakdownButton';
+import { WorkoutVideoBreakdown } from '../components/WorkoutVideoBreakdown';
 import { TappableMovementText } from '../components/movement/TappableMovementText';
 import { useMembership } from '../context/MembershipContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
@@ -141,7 +141,7 @@ export default function DocsWodsScreen() {
               <>
                 <Text style={styles.cardHeadline}>{wod.title}</Text>
 
-                <WatchVideoBreakdownButton videoUrl={wod.videoUrl} />
+                <WorkoutVideoBreakdown videoUrl={wod.videoUrl} />
 
                 <View style={styles.divider} />
 
@@ -198,7 +198,7 @@ export default function DocsWodsScreen() {
             ) : saturdayContent ? (
               <>
                 <Text style={styles.cardHeadline}>{saturdayContent.title}</Text>
-                <WatchVideoBreakdownButton videoUrl={saturdayContent.videoUrl} />
+                <WorkoutVideoBreakdown videoUrl={saturdayContent.videoUrl} />
                 <View style={styles.divider} />
                 <Text style={styles.weekendDescription}>{saturdayContent.description}</Text>
                 {saturdayContent.movements.map((move, index) => {

@@ -4,7 +4,7 @@ import { AppPressable } from './AppPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { LogResultsModal } from './LogResultsModal';
 import { ScheduleStrip } from './ScheduleStrip';
-import { WatchVideoBreakdownButton } from './WatchVideoBreakdownButton';
+import { WorkoutVideoBreakdown } from './WorkoutVideoBreakdown';
 import { TappableMovementText } from './movement/TappableMovementText';
 import { useClassBookingData } from '../context/ClassBookingContext';
 import { useMembership } from '../context/MembershipContext';
@@ -266,7 +266,7 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                 <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]} testID="day-panel-wod-title">
                   {wod.title}
                 </Text>
-                <WatchVideoBreakdownButton videoUrl={wod.videoUrl} />
+                <WorkoutVideoBreakdown videoUrl={wod.videoUrl} />
                 {wod.moves.map((move, index) => {
                   const parsed = parseMoveRow(move);
                   return (
@@ -312,7 +312,7 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                     <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>
                       {saturdayContent.title}
                     </Text>
-                    <WatchVideoBreakdownButton videoUrl={saturdayContent.videoUrl} />
+                    <WorkoutVideoBreakdown videoUrl={saturdayContent.videoUrl} />
                     <Text style={styles.weekendDescription}>{saturdayContent.description}</Text>
                     {saturdayContent.movements.map((move, index) => {
                       const parsed = parseMoveRow(move);
