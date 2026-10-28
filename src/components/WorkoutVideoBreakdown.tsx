@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MovementVideoPlayer } from './movement/MovementVideoPlayer';
 import { extractYoutubeId } from '../lib/youtubeUrl';
@@ -9,18 +9,23 @@ type Props = {
   videoUrl?: string;
 };
 
-// Round 39: replaces WatchVideoBreakdownButton (an external-link button
-// that always opened YouTube in a new tab) with a real video thumbnail —
-// the YouTube-hosted cover image, tapped to play in-app via the SAME
-// treatment THE MOVEMENT VAULT already uses (MovementVideoPlayer: a
-// youtube-nocookie embed with load-timeout retry and an always-visible
-// reload button). Doc's WOD/COW `videoUrl` is a raw pasted link, not a
-// pre-parsed id, so extractYoutubeId() (lib/youtubeUrl.ts) is the one
-// shared conversion step. Used identically by DayPanel.tsx (Community's
-// own expanded daily workout) and DocsWodsScreen.tsx (the WODS tab) so
-// both screens render "the same video treatment" by construction, not by
-// each hand-matching the other's styling. Renders nothing at all when
-// there's no video, same as the button it replaces.
+// Round 40: matched against the owner's approved reference-wod-screen.png.
+// The reference shows a DESIGNED cover -- a solid green gradient with a
+// centered play button and a dark "WATCH THE BREAKDOWN" tag -- never a real
+// YouTube thumbnail photo, so the YouTube hqdefault.jpg fetch from Round 39
+// is gone. Same in-app playback handoff as before: tapping swaps to
+// MovementVideoPlayer (THE MOVEMENT VAULT's own nocookie-embed-with-retry
+// treatment), used identically by DayPanel.tsx (Community's own expanded
+// daily workout) and DocsWodsScreen.tsx (the WODS tab). Renders nothing at
+// all when there's no video, same as before. The reference's own tag text
+// includes a sample duration ("· 2 MIN") that has no real data behind it in
+// this app's model -- per the round's own "match the design, not the
+// sample content" instruction, the tag omits a duration rather than
+// inventing one.
+const GREEN_GRADIENT = {
+  backgroundImage: `linear-gradient(135deg, ${colors.greenDeep}, ${colors.green})`,
+} as object;
+
 export function WorkoutVideoBreakdown({ videoUrl }: Props) {
   const [playing, setPlaying] = useState(false);
   if (!videoUrl) return null;
@@ -32,23 +37,17 @@ export function WorkoutVideoBreakdown({ videoUrl }: Props) {
 
   return (
     <Pressable
-      style={styles.thumb}
+      style={[styles.thumb, GREEN_GRADIENT]}
       onPress={() => setPlaying(true)}
       testID="watch-video-breakdown"
-      accessibilityLabel="Watch video breakdown"
+      accessibilityLabel="Watch the breakdown"
     >
-      {youtubeId ? (
-        <Image
-          source={{ uri: `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` }}
-          style={styles.thumbImage}
-          resizeMode="cover"
-        />
-      ) : null}
-      <View style={styles.overlay} />
       <View style={styles.playCircle}>
-        <Ionicons name="play" size={22} color={colors.white} />
+        <Ionicons name="play" size={26} color={colors.green} />
       </View>
-      <Text style={styles.label}>WATCH VIDEO BREAKDOWN</Text>
+      <View style={styles.tag}>
+        <Text style={styles.tagText}>WATCH THE BREAKDOWN</Text>
+      </View>
     </Pressable>
   );
 }
@@ -59,40 +58,32 @@ const styles = StyleSheet.create({
     aspectRatio: 16 / 9,
     borderRadius: 14,
     overflow: 'hidden',
-    backgroundColor: colors.greenDeep,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 12,
-    marginBottom: 12,
-  },
-  thumbImage: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(5,76,61,0.35)',
+    marginTop: 0,
+    marginBottom: 14,
   },
   playCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#E7ECE9',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
   },
-  label: {
+  tag: {
+    position: 'absolute',
+    left: 12,
+    bottom: 12,
+    backgroundColor: '#0F2922',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  tagText: {
     color: colors.white,
     fontFamily: fonts.labelBold,
-    fontSize: 13,
-    letterSpacing: 1,
+    fontSize: 11,
+    letterSpacing: 0.8,
   },
 });
