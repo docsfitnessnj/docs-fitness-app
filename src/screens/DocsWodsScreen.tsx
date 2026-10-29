@@ -139,9 +139,9 @@ export default function DocsWodsScreen() {
               </>
             ) : (
               <>
-                <Text style={styles.cardHeadline}>{wod.title}</Text>
-
                 <WorkoutVideoBreakdown videoUrl={wod.videoUrl} />
+
+                <Text style={styles.cardHeadline}>{wod.title}</Text>
 
                 <View style={styles.divider} />
 
@@ -197,8 +197,8 @@ export default function DocsWodsScreen() {
               </>
             ) : saturdayContent ? (
               <>
-                <Text style={styles.cardHeadline}>{saturdayContent.title}</Text>
                 <WorkoutVideoBreakdown videoUrl={saturdayContent.videoUrl} />
+                <Text style={styles.cardHeadline}>{saturdayContent.title}</Text>
                 <View style={styles.divider} />
                 <Text style={styles.weekendDescription}>{saturdayContent.description}</Text>
                 {saturdayContent.movements.map((move, index) => {
@@ -373,9 +373,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.background,
+    borderBottomColor: colors.hairline,
   },
   wodRowText: {
     flex: 1,
@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.greenDeep,
   },
   completeButtonText: {
-    color: colors.white,
+    color: colors.goldBright,
     fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 1,

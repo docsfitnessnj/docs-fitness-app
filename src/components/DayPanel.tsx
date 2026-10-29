@@ -263,10 +263,11 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                 </View>
               ) : (
               <View style={styles.card}>
-                <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]} testID="day-panel-wod-title">
+                <WorkoutVideoBreakdown videoUrl={wod.videoUrl} />
+                <Text style={[styles.wodCardHeading, isDesktop && styles.cardHeadingDesktop]} testID="day-panel-wod-title">
                   {wod.title}
                 </Text>
-                <WorkoutVideoBreakdown videoUrl={wod.videoUrl} />
+                <View style={styles.moveListDivider} />
                 {wod.moves.map((move, index) => {
                   const parsed = parseMoveRow(move);
                   return (
@@ -309,11 +310,12 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                   </>
                 ) : saturdayContent ? (
                   <>
-                    <Text style={[styles.cardHeading, isDesktop && styles.cardHeadingDesktop]}>
+                    <WorkoutVideoBreakdown videoUrl={saturdayContent.videoUrl} />
+                    <Text style={[styles.wodCardHeading, isDesktop && styles.cardHeadingDesktop]}>
                       {saturdayContent.title}
                     </Text>
-                    <WorkoutVideoBreakdown videoUrl={saturdayContent.videoUrl} />
                     <Text style={styles.weekendDescription}>{saturdayContent.description}</Text>
+                    <View style={styles.moveListDivider} />
                     {saturdayContent.movements.map((move, index) => {
                       const parsed = parseMoveRow(move);
                       return (
@@ -450,8 +452,26 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 12,
   },
+  // Round 40: matched against reference-wod-screen.png -- the real WOD/
+  // Saturday title renders noticeably larger than this card's other
+  // headings (the class sign-up card's own heading, the "revealed
+  // tomorrow" date label), so it gets its own style rather than bumping
+  // the shared cardHeading size for contexts the reference never showed.
+  wodCardHeading: {
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 32,
+    letterSpacing: 0.5,
+    marginTop: 14,
+    marginBottom: 6,
+  },
   cardHeadingDesktop: {
     fontSize: 26,
+  },
+  moveListDivider: {
+    height: 1,
+    backgroundColor: colors.hairline,
+    marginBottom: 4,
   },
   // Quiet, condensed-caps line under the card heading — only the number is
   // gold, so it reads at a glance without competing with the heading above
@@ -517,9 +537,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.background,
+    borderBottomColor: colors.hairline,
   },
   moveName: {
     flex: 1,
@@ -550,7 +570,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.greenDeep,
   },
   completeButtonText: {
-    color: colors.white,
+    color: colors.goldBright,
     fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 1,

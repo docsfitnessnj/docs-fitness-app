@@ -7475,7 +7475,10 @@ async function run() {
     const watermarkColor = await page.getByTestId('cow-ghost-watermark').evaluate((el) => getComputedStyle(el).color).catch(() => '');
     record(
       '[cow-screen/gold-styling] the hero border, badge fill, and ghost watermark all use the real brand gold',
-      heroBorder === 'rgb(229, 184, 11)' && badgeBg === 'rgb(229, 184, 11)' && watermarkColor === 'rgba(255, 213, 32, 0.14)',
+      // Round 40: the watermark's own translucent gold was corrected from
+      // goldBright to the slightly deeper colors.gold against the now-white
+      // hero card, per the approved reference-cow-screen.png.
+      heroBorder === 'rgb(229, 184, 11)' && badgeBg === 'rgb(229, 184, 11)' && watermarkColor === 'rgba(229, 184, 11, 0.14)',
       JSON.stringify({ heroBorder, badgeBg, watermarkColor })
     );
 
@@ -7600,6 +7603,15 @@ async function run() {
       !!iframeSrc && iframeSrc.includes('uYRgU5aM4MU'),
       JSON.stringify({ iframeSrc })
     );
+    if (SCREENSHOT_DIR) {
+      // Round 40: a second full-page capture of the YOUR WORKOUTS tab
+      // itself (not just Community's own expanded card) for direct
+      // side-by-side comparison against the owner's approved
+      // reference-wod-screen.png, which frames that tab specifically.
+      await page.getByRole('tab', { name: /YOUR WORKOUTS/i }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'r40-wods-tab-full.png'), fullPage: true }).catch(() => {});
+    }
     await context.close();
   }
 

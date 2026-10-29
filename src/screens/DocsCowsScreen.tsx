@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { MembershipGate } from '../components/MembershipGate';
-import { Avatar } from '../components/Avatar';
 import { ChallengeVideoCover } from '../components/cows/ChallengeVideoCover';
 import { TappableMovementText } from '../components/movement/TappableMovementText';
 import { useAuth } from '../context/AuthContext';
@@ -42,10 +41,17 @@ function scoresCloseLine(closeAtMs: number): string {
   return `SCORES CLOSE ${formatted.slice(0, firstSpace)} · ${formatted.slice(firstSpace + 1)}`;
 }
 
-// "Rx 32kg · Scaled 28kg · Modified 24kg" with only the weights bold.
-function KettlebellLine({ levels }: { levels: KettlebellLevels }) {
+// "DUDES  Rx 32kg · Scaled 28kg · Modified 24kg" with only the weights
+// bold -- the label and the line are nested inside the SAME Text tree
+// (not a sibling in a row View) so the browser can genuinely word-wrap
+// the whole thing at the text-flow level if it ever needs to, instead of
+// the label and the line wrapping to separate lines as two whole flex
+// items the moment they don't both fit on the first line -- which is what
+// the reference's own single-line row relies on.
+function KettlebellLine({ label, levels }: { label: string; levels: KettlebellLevels }) {
   return (
     <Text style={styles.kettlebellLine}>
+      <Text style={styles.kettlebellLevelLabel}>{label}  </Text>
       <Text>Rx </Text>
       <Text style={styles.kettlebellWeight}>{levels.rx}</Text>
       <Text> · Scaled </Text>
@@ -107,9 +113,13 @@ function ChallengeHero({ current }: { current: CurrentChallenge }) {
         <Text style={styles.badgeText}>COW = CHALLENGE OF THE WEEK</Text>
       </View>
       <Text style={styles.heroTitle}>{current.title}</Text>
-      <ChallengeVideoCover videoUrl={current.videoUrl} title={current.title} />
+      {/* Round 40: the approved reference-cow-screen.png orders the format
+          line and the "SCORES CLOSE ..." line directly under the title,
+          with the video cover BELOW both -- Round 39 shipped the cover
+          directly under the title instead, from written prose alone. */}
       {!!current.format && <Text style={styles.heroFormat}>{current.format.toUpperCase()}</Text>}
       <Text style={styles.scoresCloseLine}>{scoresCloseLine(current.closeAt)}</Text>
+      <ChallengeVideoCover videoUrl={current.videoUrl} title={current.title} />
 
       {hasRichBody ? (
         <>
@@ -118,14 +128,12 @@ function ChallengeHero({ current }: { current: CurrentChallenge }) {
               <Text style={styles.sectionHeading}>DOC'S PRESCRIBED KETTLEBELLS</Text>
               {current.kettlebellsDudes && (
                 <View style={styles.kettlebellRow}>
-                  <Text style={styles.kettlebellLevelLabel}>DUDES: </Text>
-                  <KettlebellLine levels={current.kettlebellsDudes} />
+                  <KettlebellLine label="DUDES" levels={current.kettlebellsDudes} />
                 </View>
               )}
               {current.kettlebellsFemales && (
                 <View style={styles.kettlebellRow}>
-                  <Text style={styles.kettlebellLevelLabel}>FEMALES: </Text>
-                  <KettlebellLine levels={current.kettlebellsFemales} />
+                  <KettlebellLine label="FEMALES" levels={current.kettlebellsFemales} />
                 </View>
               )}
             </View>
@@ -201,20 +209,33 @@ function ChallengeHero({ current }: { current: CurrentChallenge }) {
         </>
       )}
 
-      <View style={styles.heroDivider} />
-      {current.isClosed ? (
+      {/* Round 40: the approved reference-cow-screen.png shows no bottom
+          CLOSES footer at all for an open, rich-body COW -- the top
+          "SCORES CLOSE ..." line already carries that info, and repeating
+          it here would be redundant. There's no closed-state reference to
+          confirm against, so the footer stays for the one case it's the
+          ONLY place that info appears: CLOSED (no open-state equivalent
+          exists) and the plain/fallback body (which has no top line at
+          all here, since scoresCloseLine is about the live countdown, not
+          the closed state). */}
+      {(current.isClosed || !hasRichBody) && (
         <>
-          <Text style={styles.daysLeftLabel}>CLOSED</Text>
-          <Text style={styles.closedTiming} testID="challenge-closed-timing">
-            NEW CHALLENGE DROPS {formatEtTime(current.nextRevealAt)}
-          </Text>
-        </>
-      ) : (
-        <>
-          <Text style={styles.daysLeftLabel}>CLOSES</Text>
-          <Text style={styles.closedTiming} testID="challenge-open-timing">
-            {formatEtTime(current.closeAt)}
-          </Text>
+          <View style={styles.heroDivider} />
+          {current.isClosed ? (
+            <>
+              <Text style={styles.daysLeftLabel}>CLOSED</Text>
+              <Text style={styles.closedTiming} testID="challenge-closed-timing">
+                NEW CHALLENGE DROPS {formatEtTime(current.nextRevealAt)}
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.daysLeftLabel}>CLOSES</Text>
+              <Text style={styles.closedTiming} testID="challenge-open-timing">
+                {formatEtTime(current.closeAt)}
+              </Text>
+            </>
+          )}
         </>
       )}
     </View>
@@ -400,32 +421,41 @@ function PostScoreCard({
   );
 }
 
+// Round 40: the reference leaderboard uses two-letter initials ("MK",
+// "TF") in the avatar circle, never the shared app-wide Avatar component's
+// single-letter fallback -- and the signed-in member's own row gets a
+// distinct muted-gold circle instead of the normal green. Both are scoped
+// to this one screen's leaderboard rather than changing the shared
+// Avatar component everywhere else in the app uses it.
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  if (words.length === 1) return words[0].charAt(0).toUpperCase();
+  return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
+}
+
+function LeaderboardAvatar({ name, isMine }: { name: string; isMine: boolean }) {
+  return (
+    <View style={[styles.avatar, isMine && styles.avatarMine]}>
+      <Text style={[styles.avatarText, isMine && styles.avatarTextMine]}>{initials(name)}</Text>
+    </View>
+  );
+}
+
 // A Challenge's leaderboard shows exactly one of these two displays, driven
 // by its own scoring type — never a per-row guess, so it can never mix
 // time-scored and rounds-scored rows even by accident.
 function LeaderboardRow({ entry, isTimeScoring, isMine }: { entry: Entry; isTimeScoring: boolean; isMine: boolean }) {
-  const isFirst = entry.rank === 1;
   const primaryScore = isTimeScoring ? entry.time : `${entry.rounds}${entry.reps ? ` +${entry.reps}` : ''}`;
   // "RX · 24KG" — level omitted entirely if not picked, never a blank
   // "· 24KG" with a dangling separator.
   const metaLine = `${entry.level ? `${entry.level.toUpperCase()} · ` : ''}${entry.kettlebell}KG`;
   return (
     <View style={[styles.row, isMine && styles.rowMine]} testID={isMine ? 'cow-leaderboard-own-row' : undefined}>
-      <Text style={[styles.rank, isFirst && styles.rankFirst]}>{entry.rank}</Text>
-      <Avatar name={entry.name} size={32} />
+      <Text style={styles.rank}>{entry.rank}</Text>
+      <LeaderboardAvatar name={entry.name} isMine={isMine} />
       <View style={styles.rowMain}>
-        <View style={styles.nameRow}>
-          <Text style={styles.name}>{entry.name}</Text>
-          {isFirst && (
-            <MaterialCommunityIcons
-              name="crown"
-              size={14}
-              color={colors.gold}
-              style={styles.crownIcon}
-              testID="leaderboard-crown"
-            />
-          )}
-        </View>
+        <Text style={styles.name}>{entry.name}</Text>
         <Text style={styles.rowMeta}>{metaLine}</Text>
       </View>
       <View style={styles.scoreBadge}>
@@ -436,9 +466,15 @@ function LeaderboardRow({ entry, isTimeScoring, isMine }: { entry: Entry; isTime
 }
 
 function Leaderboard({ entries, isTimeScoring, closed, myUserId }: { entries: Entry[]; isTimeScoring: boolean; closed: boolean; myUserId?: string }) {
+  const count = entries.length;
   return (
     <View>
-      <Text style={styles.subtitle}>{closed ? 'FINAL LEADERBOARD' : 'LIVE LEADERBOARD — THIS WEEK'}</Text>
+      <View style={styles.leaderboardHeader}>
+        <Text style={styles.subtitle}>{closed ? 'FINAL LEADERBOARD' : 'LIVE LEADERBOARD'}</Text>
+        <Text style={styles.leaderboardCount}>
+          {closed ? 'FINAL' : 'THIS WEEK'} · {count} SCORE{count === 1 ? '' : 'S'}
+        </Text>
+      </View>
       <View style={styles.list}>
         {entries.length === 0 ? (
           <Text style={styles.emptyText}>{closed ? 'No scores posted this week.' : 'No scores posted yet. Be the first.'}</Text>
@@ -560,7 +596,11 @@ export default function DocsCowsScreen() {
 
 const styles = StyleSheet.create({
   hero: {
-    backgroundColor: colors.green,
+    // Round 40: the approved reference-cow-screen.png is a WHITE card with
+    // dark text and gold used only as accents (border/badge/watermark) --
+    // not the dark-green-filled card Round 39 shipped from written prose
+    // alone.
+    backgroundColor: colors.card,
     borderRadius: 14,
     padding: 20,
     marginBottom: 16,
@@ -573,8 +613,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -22,
     right: -8,
-    // Part 1, item 3: translucent GOLD (~14% opacity), not the old white.
-    color: 'rgba(255,213,32,0.14)',
+    // Round 40: translucent GOLD on the now-white card -- colors.gold at
+    // ~14% opacity, not goldBright (which read too light/washed out
+    // against a white background in the reference).
+    color: 'rgba(229,184,11,0.14)',
     fontFamily: fonts.headline,
     fontSize: 96,
     letterSpacing: 2,
@@ -599,13 +641,22 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   heroTitle: {
-    color: colors.white,
+    // Round 40: dark text on the now-white card. fontSize corrected from
+    // 40 to 34 -- at 40 with this screen's real card padding, a title the
+    // length of "PULL YOURSELF TOGETHER" wraps to two lines; the reference
+    // fits it on one, confirmed by direct ink-height measurement against
+    // reference-cow-screen.png (~37px est. fontSize) and by the title
+    // genuinely fitting on one line once rebuilt at this size.
+    color: colors.text,
     fontFamily: fonts.headline,
-    fontSize: 40,
-    letterSpacing: 1,
+    fontSize: 34,
+    letterSpacing: 0.5,
   },
   heroFormat: {
-    color: colors.goldBright,
+    // Round 40: the format line reads in the house's own deep green on a
+    // white card, not gold-on-white (which read too close to the
+    // watermark/border's own gold and lost contrast).
+    color: colors.green,
     fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 1,
@@ -614,21 +665,21 @@ const styles = StyleSheet.create({
   // Part 1, item 4: "Scores close Saturday · 12 PM ET" — condensed caps,
   // muted, directly under the format line.
   scoresCloseLine: {
-    color: 'rgba(255,255,255,0.55)',
+    color: colors.textMuted,
     fontFamily: fonts.labelSemiBold,
     fontSize: 11,
     letterSpacing: 0.8,
     marginTop: 4,
   },
   heroSubtext: {
-    color: 'rgba(255,255,255,0.85)',
+    color: colors.text,
     fontFamily: fonts.body,
     fontSize: 15,
     marginTop: 8,
     lineHeight: 20,
   },
   heroSubtextLink: {
-    color: colors.goldBright,
+    color: colors.green,
     fontFamily: fonts.bodySemiBold,
     textDecorationLine: 'underline',
   },
@@ -645,10 +696,10 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.5)',
+    backgroundColor: colors.textMuted,
   },
   heroMoveText: {
-    color: 'rgba(255,255,255,0.9)',
+    color: colors.text,
     fontFamily: fonts.bodyMedium,
     fontSize: 14,
   },
@@ -666,13 +717,16 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 8,
   },
+  // Round 40: no longer a row of two sibling Text/View flex items -- see
+  // KettlebellLine's own comment. A plain block spacer is all this needs
+  // now that label+line are one Text tree.
   kettlebellRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     marginTop: 4,
   },
+  // Confirmed by direct pixel sampling against reference-cow-screen.png:
+  // the DUDES/FEMALES label is colors.textMuted, not full black.
   kettlebellLevelLabel: {
-    color: colors.text,
+    color: colors.textMuted,
     fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 0.6,
@@ -718,11 +772,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     textDecorationLine: 'underline',
   },
+  // Round 40: the reference's own follow-up line reads in the same dark
+  // body-text color as THE CATCH's intro sentence above the toll box, not
+  // muted gray -- confirmed by direct pixel sampling (colors.text,
+  // #12211C) against reference-cow-screen.png.
   followUpLine: {
-    color: colors.textMuted,
+    color: colors.text,
     fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 21,
     marginTop: 10,
   },
   // Part 3, item 5: the finish note — a soft green box.
@@ -732,28 +790,37 @@ const styles = StyleSheet.create({
     padding: 14,
     marginTop: 16,
   },
+  // Round 40: confirmed by direct pixel sampling against
+  // reference-cow-screen.png -- only the bold first sentence is
+  // colors.greenDeep; the rest of the note is the plain house text color,
+  // not green throughout.
   finishNoteText: {
-    color: colors.greenDeep,
+    color: colors.text,
     fontFamily: fonts.body,
     fontSize: 15,
     lineHeight: 21,
   },
   finishNoteTextBold: {
+    color: colors.greenDeep,
     fontFamily: fonts.bodyBold,
   },
   heroDivider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: colors.hairline,
     marginVertical: 16,
   },
   daysLeftLabel: {
-    color: 'rgba(255,255,255,0.75)',
+    color: colors.textMuted,
     fontFamily: fonts.labelSemiBold,
     fontSize: 13,
     letterSpacing: 1,
   },
+  // Round 40: no closed-state reference image exists to confirm this
+  // against -- colors.green (matching heroFormat's own corrected color) is
+  // this round's own best-faith guess for a white card, kept as goldBright
+  // under the old dark-card scheme would now read as nearly invisible.
   closedTiming: {
-    color: colors.goldBright,
+    color: colors.green,
     fontFamily: fonts.headline,
     fontSize: 22,
     letterSpacing: 0.5,
@@ -887,19 +954,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 1,
   },
+  // Round 40: the reference's own leaderboard header is a two-ended row --
+  // "LIVE LEADERBOARD" on the left, "THIS WEEK · N SCORES" on the right --
+  // not a single stacked subtitle line.
+  leaderboardHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
   subtitle: {
     color: colors.green,
     fontFamily: fonts.labelSemiBold,
     fontSize: 14,
     letterSpacing: 1,
-    marginBottom: 12,
   },
+  leaderboardCount: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 0.6,
+  },
+  // Round 40: the reference shows discrete, separately-carded rows with a
+  // real gap between them -- not a single bordered list each row shares a
+  // hairline with. `list` is now just a gap container; each row carries
+  // its own card background/border/radius.
   list: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: 14,
-    overflow: 'hidden',
+    gap: 10,
   },
   emptyText: {
     color: colors.textMuted,
@@ -913,24 +994,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 12,
   },
   // Part 5: the signed-in member's own row, highlighted with a gold
-  // border -- a thin inset ring rather than changing the row's background,
-  // so it reads clearly without fighting the crown/rank colors.
+  // border -- the same per-row card, just with a thicker gold ring instead
+  // of the plain hairline every other row uses.
   rowMine: {
     borderWidth: 1.5,
     borderColor: colors.gold,
-    // `row`'s own borderBottomColor (the list divider) is a more specific
-    // key than borderColor and doesn't get overridden by it when the two
-    // style objects merge — without this, three sides of the ring come
-    // out gold and the bottom stays the plain divider shade.
-    borderBottomColor: colors.gold,
-    borderRadius: 10,
-    marginHorizontal: 4,
   },
   rank: {
     width: 20,
@@ -938,8 +1014,32 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyBold,
     fontSize: 16,
   },
-  rankFirst: {
-    color: colors.gold,
+  // Round 40: two-letter initials circle, replacing the shared app-wide
+  // Avatar component's single-letter photo/fallback for this one screen's
+  // leaderboard only.
+  avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // The signed-in member's own row gets a distinct muted-gold circle
+  // instead of the normal green, echoing the row's own gold ring.
+  avatarMine: {
+    backgroundColor: colors.gold,
+  },
+  avatarText: {
+    color: colors.white,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 0.3,
+  },
+  // White text has poor contrast against the gold circle -- the near-black
+  // house text color reads correctly there instead.
+  avatarTextMine: {
+    color: colors.text,
   },
   rowMain: {
     flex: 1,
@@ -948,13 +1048,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.bodySemiBold,
     fontSize: 16,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  crownIcon: {
-    marginLeft: 5,
   },
   rowMeta: {
     color: colors.textMuted,
