@@ -7111,6 +7111,80 @@ async function run() {
     await context.close();
   }
 
+  // [deck-video/*]: Round 41, Part 2 -- by owner decision, final, deck
+  // cards keep the real playing-card face design (no designed video
+  // cover like ChallengeVideoCover/WorkoutVideoBreakdown). A card with a
+  // real matched breakdown video (see Round 41's own match table in the
+  // PR description) gets one compact, quiet, single-line WATCH THE
+  // BREAKDOWN row instead; a card with none shows no row at all -- no
+  // empty placeholder. Reached the same way the existing [share-card/deck]
+  // block already does (THE DECK tab -> BROWSE DECK -> a real
+  // browse-card-<id> tap). 'A-spade' ("Jen Loves Counting") has a real
+  // matched video this round; '2-heart' ("Tupac Swings") does not.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /THE DECK/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByText('BROWSE DECK', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    // A card WITH a matched video shows the compact watch line, and the
+    // real MARK COMPLETE button (unrelated functionality) is completely
+    // unaffected by its presence -- both render side by side.
+    await page.getByTestId('browse-card-A-spade').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const watchLineVisible = await page.getByTestId('deck-watch-video-breakdown').isVisible().catch(() => false);
+    const watchLineText = await page.getByTestId('deck-watch-video-breakdown').innerText().catch(() => '');
+    const completeToggleStillVisible = await page.getByTestId('deck-card-complete-toggle').isVisible().catch(() => false);
+    record(
+      '[deck-video/watch-line-visible] a deck card with a matched breakdown video shows the compact WATCH THE BREAKDOWN row, and MARK COMPLETE is unaffected',
+      watchLineVisible && watchLineText.includes('WATCH THE BREAKDOWN') && completeToggleStillVisible,
+      JSON.stringify({ watchLineVisible, watchLineText, completeToggleStillVisible })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-card-with-watch-line.png') }).catch(() => {});
+
+    // Tapping it plays the real video in-app -- the same MovementVideoPlayer
+    // treatment (the youtube-nocookie embed) every other video in the app
+    // already uses, never a new player and never an external tab.
+    await page.getByTestId('deck-watch-video-breakdown').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const iframeSrc = await page.locator('iframe').first().getAttribute('src').catch(() => null);
+    record(
+      '[deck-video/plays-in-app] tapping the watch line plays the real video in-app, same treatment as the rest of the app',
+      !!iframeSrc && iframeSrc.includes('328xQCWQJlo') && iframeSrc.includes('youtube-nocookie.com'),
+      JSON.stringify({ iframeSrc })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-card-video-playing.png') }).catch(() => {});
+
+    await page.getByTestId('deck-card-close').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+
+    // A card with NO matched video (left unset, per Part 1's own
+    // no-fuzzy-matching rule) shows no row at all.
+    await page.getByTestId('browse-card-2-heart').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const noWatchLine = await page.getByTestId('deck-watch-video-breakdown').isVisible().catch(() => false);
+    record(
+      '[deck-video/no-line-without-video] a deck card with no matched video shows no watch row at all',
+      !noWatchLine,
+      JSON.stringify({ noWatchLine })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-card-without-watch-line.png') }).catch(() => {});
+    await page.getByTestId('deck-card-close').click({ timeout: 5000 }).catch(() => {});
+
+    await context.close();
+  }
+
   // [share-card/deck]: a real MARK COMPLETE on a Doc's Deck of WODs card,
   // for both a black-suit and a red-suit card -- the suit-ink-color
   // assertion is backed by a real pixel sample on the card's own border

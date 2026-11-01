@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { JoinBoathouseLock } from './JoinBoathouseLock';
-import { WatchVideoBreakdownButton } from './WatchVideoBreakdownButton';
+import { DeckVideoWatchLine } from './DeckVideoWatchLine';
 import { TappableMovementText } from './movement/TappableMovementText';
 import { DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
 import { openMovementVault } from '../lib/movementVaultModal';
@@ -64,8 +64,8 @@ export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplet
 
           <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
             <Text style={styles.title}>{card.title}</Text>
-            <WatchVideoBreakdownButton videoUrl={card.videoUrl} />
             {card.format ? <Text style={styles.format}>{card.format}</Text> : null}
+            <DeckVideoWatchLine videoUrl={card.videoUrl} />
 
             <View style={styles.divider} />
 

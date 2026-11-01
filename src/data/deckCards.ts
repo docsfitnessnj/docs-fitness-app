@@ -9,10 +9,15 @@ export type DeckCardData = {
   movements: string[];
   joker?: 'black' | 'red';
   note?: string;
-  // No breakdown video exists yet for any of these cards — left unset
-  // rather than invented, so the WATCH VIDEO BREAKDOWN button (see
-  // WatchVideoBreakdownButton) correctly shows nothing until a real video
-  // URL is actually added here.
+  // Round 41: matched directly against Doc's own YouTube breakdown
+  // playlist (https://youtube.com/playlist?list=PLUHtAxKU3gRA-dD00NUl44nR374cMjjKk)
+  // -- a card gets a URL here ONLY when a playlist video's own title
+  // quotes this exact workout name, nothing fuzzy. 43 of 54 cards matched
+  // a real video this round; the other 11 are left unset exactly as
+  // before, rather than invented -- see the Round 41 PR description for
+  // the full match table and which playlist videos were skipped and why.
+  // DeckVideoWatchLine (see that component) correctly shows nothing when
+  // this is unset.
   videoUrl?: string;
 };
 
@@ -24,6 +29,7 @@ const SPADES: DeckCardData[] = [
     title: 'Jen Loves Counting',
     format: 'For Time or Take Your Time! Rep Ladder 24_20_16_12_8_4',
     movements: ['Swing + Clean + Squats', 'Elevators (total)', 'Bear squat hops', 'L/R Suitcase Dead (total)', 'L/R Hinge Rows (total)'],
+    videoUrl: 'https://www.youtube.com/watch?v=328xQCWQJlo',
   },
   {
     id: '2-spade',
@@ -39,6 +45,7 @@ const SPADES: DeckCardData[] = [
       'Min 5: 8-12 Bent Row (each)',
       'Min 6: 26-30 Shoulder Taps (total)',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=DZJd1h5CRss',
   },
   {
     id: '3-spade',
@@ -47,6 +54,7 @@ const SPADES: DeckCardData[] = [
     title: '7311',
     format: '30min AMQRAP',
     movements: ['7/7 Snatches', '3/3 Clean & Press', '4 Chin-ups (Sub: 12 TRX or 6/6 Bent Rows)', '7 Straight Arm Burpees'],
+    videoUrl: 'https://www.youtube.com/watch?v=auZHKae6uUA',
   },
   {
     id: '4-spade',
@@ -62,6 +70,7 @@ const SPADES: DeckCardData[] = [
       '5 Chin-ups (Sub: 10x TRX Rows or 5/5 Bent rows)',
       '+ 250m Erg after every round! (Sub: 10 Burpees)',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=-xLmXTLaS_w',
   },
   {
     id: '5-spade',
@@ -70,6 +79,7 @@ const SPADES: DeckCardData[] = [
     title: 'Cliffhanger',
     format: '5 Rounds, 45sec On 15sec Off of Each Move',
     movements: ['Dead Hang (Sub: Hollow Body Plank)', 'Goblet Marches', 'Figure 8 + Shot-Put Squats', 'Up Down Planks', 'Bear Squat Pushups'],
+    videoUrl: 'https://www.youtube.com/watch?v=GcbzX-frxRE',
   },
   {
     id: '6-spade',
@@ -78,6 +88,7 @@ const SPADES: DeckCardData[] = [
     title: 'The Uni Life',
     format: '30min AMQRAP',
     movements: ['10/10 Single Arm Swings', '3/3 Offset Squats', '6/6 Offset Split Squats', '6 Sit Thru Getups', '6 Pull-ups (Sub: 12 TRX or 6/6 Bent Rows)'],
+    videoUrl: 'https://www.youtube.com/watch?v=VYQFbv-f8hw',
   },
   {
     id: '7-spade',
@@ -86,6 +97,7 @@ const SPADES: DeckCardData[] = [
     title: 'S2S Protocol',
     format: '30min AMCAP, Right Side then Left Side',
     movements: ['3 S2S (Swing To Snatches)', '3 Offset Thrusters', '6 Bent Rows', '6 Offset Pushups', '1 TGU'],
+    videoUrl: 'https://www.youtube.com/watch?v=dqk20QO9ruU',
   },
   {
     id: '8-spade',
@@ -94,6 +106,7 @@ const SPADES: DeckCardData[] = [
     title: 'Island In The Sun',
     format: '5 Rounds, For Time or Take Your Time!',
     movements: ['10 Cali Swings', '5/5 Staggered Rows', '10 Deck Squats', '5 Pull-ups (Sub: 10x TRX or 10 Pull Thrus)'],
+    videoUrl: 'https://www.youtube.com/watch?v=k1ENWszokCU',
   },
   {
     id: '9-spade',
@@ -102,6 +115,7 @@ const SPADES: DeckCardData[] = [
     title: 'Farmer Strength',
     format: '30 Minute AMCAP',
     movements: ['4 Farmer Deads', '4/4 Farmer Reverse Lunges', '16 Farmer Marches (8/8)', '8 Gorilla Rows (4/4)', '4 Double Cleans', '16 Racked Marches (8/8)'],
+    videoUrl: 'https://www.youtube.com/watch?v=rHCdZ0LgTSE',
   },
   {
     id: '10-spade',
@@ -117,6 +131,7 @@ const SPADES: DeckCardData[] = [
       'Min 5: 8-12 Bent Row (each)',
       'Min 6: 26-30 Shoulder Taps (total)',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=-hL5ovqhmUc',
   },
   {
     id: 'J-spade',
@@ -132,6 +147,7 @@ const SPADES: DeckCardData[] = [
       'Left Offset Reverse Lunge + Knee Drive',
       'Frog Jumps',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=VHxT6UMaAuQ',
   },
   {
     id: 'Q-spade',
@@ -140,6 +156,7 @@ const SPADES: DeckCardData[] = [
     title: 'Keep Life Complex',
     format: '30min AMCAP (As Many Complexes As Possible), Right Side then Left Side',
     movements: ['8 Swings', '6 Clean + Squats', '4 Press', '2 Offset Thrusters', '1 TGD finish@top'],
+    videoUrl: 'https://www.youtube.com/watch?v=VRv4v_fddJE',
   },
   {
     id: 'K-spade',
@@ -148,6 +165,7 @@ const SPADES: DeckCardData[] = [
     title: 'Just Do It',
     format: '30min AMQRAP (As Many Quality Rounds As Possible)',
     movements: ['15 Swings', '5 Goblet Squats', '5 Goblet Curl + Goblet Press', '20 Jump Lunges', '10 Burpees'],
+    videoUrl: 'https://www.youtube.com/watch?v=YWH0-FH7HfY',
   },
 ];
 
@@ -159,6 +177,7 @@ const HEARTS: DeckCardData[] = [
     title: 'Devil Went Down To Georgia',
     format: '5 Rounds, 45sec On 15sec Off of Each Move',
     movements: ['Walkout Murph', 'Devil Lunges', 'Elevators', 'Low Plank Hip Taps', 'Alt. Dead Clean'],
+    videoUrl: 'https://www.youtube.com/watch?v=KuFNzqZNk6U',
   },
   {
     id: '2-heart',
@@ -185,6 +204,7 @@ const HEARTS: DeckCardData[] = [
       '10x Ballistic Rows (each)',
       '+ 30 Second Max Murphs',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=kGT_Uq1GQec',
   },
   {
     id: '4-heart',
@@ -196,6 +216,7 @@ const HEARTS: DeckCardData[] = [
       'Block 1: 45/15 x 5 Rounds: Up / Down Planks, Bear Pull Thrus, Escalators',
       'Block 2: 18 Minute AMQRAP: 3x Racked Thrusters (1 KB = 3/3 per side), 6x Pull-ups (Sub: 6/6 Bent Rows), 9/9 "Kurtzy" Squats, 12 Bear Squat Pushups, 15 Swings',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=XSXq2dfYZ80',
   },
   {
     id: '5-heart',
@@ -210,6 +231,7 @@ const HEARTS: DeckCardData[] = [
       'Goblet Reverse Lunge + Knee Drive (each)',
       '+ 2x 10cal Assault Bikes or 2x 1min Max Burpees @ Any Time!',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=CZvGciXNp2U',
   },
   {
     id: '6-heart',
@@ -218,6 +240,7 @@ const HEARTS: DeckCardData[] = [
     title: 'Area 51',
     format: 'For Time or Take Your Time! Rep Ladder: 2-4-6-8-10-10-8-6-4-2',
     movements: ['Holster Cleans', 'Push Press', 'Gorilla Rows (each)', 'Bridge Press', 'KB Pull-Overs (each)'],
+    videoUrl: 'https://www.youtube.com/watch?v=ya0gz4D5f1A',
   },
   {
     id: '7-heart',
@@ -255,6 +278,7 @@ const HEARTS: DeckCardData[] = [
     title: '9 Rounds of Fun',
     format: '27min EMOM, 9 Rounds',
     movements: ['Min 1: 20 Swings', 'Min 2: 10 Goblet Thrusters', 'Min 3: 20 Escalators'],
+    videoUrl: 'https://www.youtube.com/watch?v=dJB8ssG3ui8',
   },
   {
     id: '10-heart',
@@ -263,6 +287,7 @@ const HEARTS: DeckCardData[] = [
     title: 'Down By Two',
     format: 'For Time or Take Your Time! 24-22-20-18-16-14-12-10-8-6-4-2',
     movements: ['Swings', 'Goblet Reverse Lunges (total)', 'Goblet Push Press', 'Bent Rows (total)', 'Side Crunch (total)'],
+    videoUrl: 'https://www.youtube.com/watch?v=MeUZZdIg8bk',
   },
   {
     id: 'J-heart',
@@ -278,6 +303,7 @@ const HEARTS: DeckCardData[] = [
       'Min 5: 6-10 Goblet Thrusters',
       'Min 6: 6-10 Alternating Cleans (each)',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=dIzrWfPrD2Q',
   },
   {
     id: 'Q-heart',
@@ -291,6 +317,7 @@ const HEARTS: DeckCardData[] = [
       "3. TGU (1/1) - If you don't have the TGU down: Do 20 Swings + 10 Goblet Squats + 5/5 Goblet Reverse Lunges + 5-10 Pushups",
       '4. Pull-up Practice or Kettlebell Flow - See video',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=JNhuMm0BTiE',
   },
   {
     id: 'K-heart',
@@ -303,6 +330,7 @@ const HEARTS: DeckCardData[] = [
       '10 Minute Block: 4 Reps of each, same moves',
       '10 Minute Block: 2 Reps of each, same moves',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=1rhJEE5xG_g',
   },
 ];
 
@@ -320,6 +348,7 @@ const DIAMONDS: DeckCardData[] = [
       'Min 4: 7x 3-Way V-ups',
       'Min 5: 21 KB Jump Squats',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=4y8JaUOvM9A',
   },
   {
     id: '2-diamond',
@@ -328,6 +357,7 @@ const DIAMONDS: DeckCardData[] = [
     title: 'Two Plus Two',
     format: '30 Minute Ascending Ladder, +2 reps every round',
     movements: ['Cali Swings', 'Yoga Pushups', 'Finger Thumb Press', 'Staggered Rows (each)', 'Elevators (each)', 'Seal Sit-ups (each)'],
+    videoUrl: 'https://www.youtube.com/watch?v=dqEPI19MZ5A',
   },
   {
     id: '3-diamond',
@@ -340,6 +370,7 @@ const DIAMONDS: DeckCardData[] = [
       'Block 2 Rep Ladder 17_14_11_8_5_2: Snatches (each), Goblet Squats, Seal Sit-ups (each)',
       'Block 3 Rep Ladder 5_5_5_5_5_5: Pull-ups, Yoga Pushups',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=6SFm2kOP3XM',
   },
   {
     id: '4-diamond',
@@ -358,6 +389,7 @@ const DIAMONDS: DeckCardData[] = [
       '+ 5 Pull thru pushups',
       '5 Pull-ups',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=ts68r7J3tXc',
   },
   {
     id: '5-diamond',
@@ -366,6 +398,7 @@ const DIAMONDS: DeckCardData[] = [
     title: 'Back To School',
     format: 'For Time or Take Your Time! Rep Ladder: 24_20_16_12_8_4',
     movements: ['Cali Swings', 'Backpack squats', 'R- Backpack Reverse Lunges', 'L- Backpack Reverse Lunges', 'Alternating V-ups (each)'],
+    videoUrl: 'https://www.youtube.com/watch?v=II7xWL5rrD4',
   },
   {
     id: '6-diamond',
@@ -374,6 +407,7 @@ const DIAMONDS: DeckCardData[] = [
     title: 'One Way Gone Wrong',
     format: 'For Time or Take Your Time! Rollercoaster Reps: 20-10-18-12-16-14',
     movements: ['Swings', 'Jump Lunges (each)', 'Pull Thrus (total)', 'Elevators (total)', 'Pull-Ups (cut the reps in half)'],
+    videoUrl: 'https://www.youtube.com/watch?v=fyJb3pApTUA',
   },
   {
     id: '7-diamond',
@@ -382,6 +416,7 @@ const DIAMONDS: DeckCardData[] = [
     title: 'Anchor Down',
     format: '30min AMQRAP',
     movements: ['6/6 Anchor Squats', '24 Skater Taps', '6/6 Racked Forward Lunges', '6 Pushups', '12 Jump Lunge Squats'],
+    videoUrl: 'https://www.youtube.com/watch?v=-GwJH0hBi6I',
   },
   {
     id: '8-diamond',
@@ -390,6 +425,7 @@ const DIAMONDS: DeckCardData[] = [
     title: 'Chalk It Up',
     format: '10 Rounds, For Time or Take Your Time!',
     movements: ['10 Swings', '5 Goblet Thrusters', '5 Pushups', '5 Pull-ups (Sub: 10x TRX or 10 Pull Thru)'],
+    videoUrl: 'https://www.youtube.com/watch?v=oe9iwl0RWes',
   },
   {
     id: '9-diamond',
@@ -402,6 +438,7 @@ const DIAMONDS: DeckCardData[] = [
       'Min 3/4: Perform 1:30 of one of the following cardio movements: Erg, Assault Bike, Sled, Burpees',
       'Min 5/6: Between 1:30-2min Low Plank',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=ZWfz0Ya-TOY',
   },
   {
     id: '10-diamond',
@@ -410,6 +447,7 @@ const DIAMONDS: DeckCardData[] = [
     title: 'Low Key Core Shredder',
     format: '5 Rounds, 45sec On 15sec Off of Each Move',
     movements: ['Side Step Swings', 'Low Plank', 'Goblet Clean + Goblet Squat', 'Elevator Pull Thru', 'Walkout Murph'],
+    videoUrl: 'https://www.youtube.com/watch?v=l-wotk3JYZU',
   },
   {
     id: 'J-diamond',
@@ -418,6 +456,7 @@ const DIAMONDS: DeckCardData[] = [
     title: 'The Extension Ladder',
     format: 'For Time or Take Your Time! Rep Ladder: 50_40_30_20_10_5',
     movements: ['Swings', 'Sit Thrus (total)', 'Alt V-Ups (total)', 'Low Plank Knee2Bow (total)'],
+    videoUrl: 'https://www.youtube.com/watch?v=X8dD4R065Vo',
   },
   {
     id: 'Q-diamond',
@@ -426,6 +465,7 @@ const DIAMONDS: DeckCardData[] = [
     title: 'Basic And Complex',
     format: '30min AMCAP, Right Side then Left Side',
     movements: ['5 Clean & Squats', '4 Rev. Lg + KD', '3 Push Press', '2 Thrusters', '1 TGD'],
+    videoUrl: 'https://www.youtube.com/watch?v=Pv6Lvr_2UfM',
   },
   {
     id: 'K-diamond',
@@ -434,6 +474,7 @@ const DIAMONDS: DeckCardData[] = [
     title: 'Not Fun',
     format: '5 Rounds, For Time or Take Your Time!',
     movements: ['10/10 Snatches', '5 Pull Thru Pushups', '5/5 Offset Thrusters', '5 Pull-ups (Sub: 10x TRX or 5/5 Bent Rows)', '5 Jump Lunge Squats'],
+    videoUrl: 'https://www.youtube.com/watch?v=isywA3zBVYc',
   },
 ];
 
@@ -449,6 +490,7 @@ const CLUBS: DeckCardData[] = [
       'Reps: 5-3-2: Gorilla Rows (Each), Pull Thru Murphs, Double Clean + Push Press, Anchor Squats (Each)',
       'Every Round, Buy out: 20 Hollow Body Crunches',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=ZA38e2Mt16w',
   },
   {
     id: '2-club',
@@ -457,6 +499,7 @@ const CLUBS: DeckCardData[] = [
     title: 'Core Wheel',
     format: 'For Time or Take Your Time! Rep Ladder: 50_40_30_20_10',
     movements: ['Swings', 'Rollouts (No Roller = 50 Low Plank Knee 2 Elbow + 50 Hip Taps)'],
+    videoUrl: 'https://www.youtube.com/watch?v=Jv4AOQ1KUO0',
   },
   {
     id: '3-club',
@@ -468,6 +511,7 @@ const CLUBS: DeckCardData[] = [
       '15 Minute EMOM: Min 1: 7/7 Snatches, Min 2: 9 Right Shot-put Clean & Squat, Min 3: 9 Left Shot-put Clean & Squat',
       '17 Minute AMQRAP: 3x Racked Thrusters (1 KB= 3 each side), 7x Floor Press (1 KB= 7 on each side), 13x Holster Cleans (1 KB= 13 on each side), 15x Swings',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=ivg1ZaMjQ0Q',
   },
   {
     id: '4-club',
@@ -529,6 +573,7 @@ const CLUBS: DeckCardData[] = [
     title: 'Triple Text',
     format: 'For Time or Take Your Time! Rep Ladder: 10_9_8_7_6_5_4_3_2_1',
     movements: ['Gorilla Rows (each)', 'Double Cleans', 'R-1/2 Kneeling Pulls', 'L-1/2 Kneeling Pulls', 'Yoga Pushups', '+ 15 Swings every round'],
+    videoUrl: 'https://www.youtube.com/watch?v=muWt2qhkGWE',
   },
   {
     id: '10-club',
@@ -561,6 +606,7 @@ const CLUBS: DeckCardData[] = [
       '10 Minute Block: 4 Reps of each, same moves',
       '10 Minute Block: 2 Reps of each, same moves',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=_Z-Z-Y6vGjQ',
   },
   {
     id: 'K-club',
@@ -575,6 +621,7 @@ const CLUBS: DeckCardData[] = [
       'Min 4: L - 10 Kickstand Swings + 5 Surfer Squats',
       'Min 5: 40sec Low Plank Knee To Bow',
     ],
+    videoUrl: 'https://www.youtube.com/watch?v=yTEVPq59xSc',
   },
 ];
 
@@ -596,6 +643,7 @@ const JOKERS: DeckCardData[] = [
     movements: ['Clubs = Swings', 'Diamonds = Goblet Squats', 'Spades = Finger Thumb Press', 'Hearts = Bent Rows (each)'],
     joker: 'red',
     note: 'Can you complete the deck within 30min!',
+    videoUrl: 'https://www.youtube.com/watch?v=LAVPKz-I1os',
   },
 ];
 
