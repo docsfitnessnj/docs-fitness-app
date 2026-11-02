@@ -609,20 +609,29 @@ function drawCornerIndex(ctx: CanvasRenderingContext2D, rank: string, suit: stri
 // on these two cards only. Entirely original: a generic three-pointed
 // playing-card jester (floppy cap with a bell on each point) and a simple
 // stylized figure, nothing referencing any film/comic design -- no scars,
-// no makeup face, no text, no prop references. Iterated against real
-// rendered screenshots (both full card size and thumbnail size, see the
-// Round 42 PR description) before landing on this exact geometry: strict
-// vertical bands (kettlebell, then a gap, then the cap, then the head) so
-// nothing collides into illegible clutter, and an explicit elbow bend in
-// each arm (two straight segments, not one smooth curve) so the arms read
-// as arms rather than blurring into the figure's own outer silhouette --
-// both were real failure modes of earlier drafts, caught only by actually
-// looking at the rendered output, not by reasoning about the coordinates
-// alone. Drawn with ctx.stroke(), the same thin line-art language this
-// app's other icons use (Ionicons/MaterialCommunityIcons outline style),
-// deliberately different from the solid-fill kettlewave mark it replaces
-// on these two cards -- never a redrawn/recolored kettlewave, an entirely
-// separate asset.
+// no makeup face, no text, no prop references.
+//
+// This geometry is the 14th iteration (not the 3rd), each one rendered to
+// a real canvas and inspected at both full card size and thumbnail size
+// before being judged, not reasoned about from coordinates alone -- see
+// the Round 42 PR description for the drafts that were rejected and why.
+// Drafts 1-13 all suffered one shared failure mode a casual read of the
+// coordinates never caught: any arm shape that travels both wide AND
+// tall at once (a smooth bow, a long diagonal, even a tight zigzag) gets
+// smoothed by the eye into one continuous tapering outline with the
+// kettlebell at its apex and the torso/legs below it -- a kite, a vase,
+// or a capsule, depending on the exact curve, but never "a person
+// holding something." The two changes that finally broke that illusion:
+// (1) each arm is a short, mostly-HORIZONTAL elbow stub followed by a
+// long, mostly-VERTICAL rise to the hand -- a real bend, not a smooth
+// taper, with its own clearance from the head/cap checked numerically at
+// several heights, not eyeballed; (2) the kettlebell's own ball is
+// SOLID-FILLED (ctx.fill(), not ctx.stroke()) while literally everything
+// else in the figure -- head, cap, arms, torso, legs -- is left as a thin
+// stroke only. That fill/stroke contrast (the same technique a padlock
+// icon uses to separate its shackle from its body) is what finally let
+// the kettlebell read as "a held weight" rather than visually competing
+// with the head's own stroked circle for the same kind of attention.
 function drawJesterKettlebell(ctx: CanvasRenderingContext2D, cx: number, topY: number, w: number, h: number, ink: string) {
   const X = (ux: number) => cx - w / 2 + ux * w;
   const Y = (uy: number) => topY + uy * h;
@@ -631,90 +640,104 @@ function drawJesterKettlebell(ctx: CanvasRenderingContext2D, cx: number, topY: n
   ctx.save();
   ctx.strokeStyle = ink;
   ctx.fillStyle = ink;
-  ctx.lineWidth = h * 0.03;
+  ctx.lineWidth = h * 0.024;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  // Kettlebell, held overhead -- small and clearly separate from the head
-  // below (a weight, not a second face). Handle ends meet the raised
-  // hands exactly at (0.40/0.60, 0.11).
+  // Kettlebell -- the one solid-filled shape in the whole figure (the
+  // handle loop stays a stroke, unfilled, so it still reads as a loop,
+  // not a second blob), pushed up near the very top, well clear of
+  // everything below it.
   ctx.beginPath();
-  ctx.moveTo(X(0.40), Y(0.11));
-  ctx.quadraticCurveTo(X(0.5), Y(0.02), X(0.60), Y(0.11));
+  ctx.moveTo(X(0.40), Y(0.02));
+  ctx.quadraticCurveTo(X(0.5), Y(-0.06), X(0.60), Y(0.02));
   ctx.stroke();
   ctx.beginPath();
-  ctx.arc(X(0.5), Y(0.175), R(0.045), 0, Math.PI * 2);
-  ctx.stroke();
+  ctx.arc(X(0.5), Y(0.09), R(0.065), 0, Math.PI * 2);
+  ctx.fill();
 
-  // Three-pointed jester cap -- short pennants fanning from the head's
-  // own crown, each tipped with a small bell. Stays well clear of the
-  // kettlebell above and the arms to either side.
-  const capPoints = [
-    { baseX: 0.42, baseY: 0.42, tipX: 0.30, tipY: 0.32 },
-    { baseX: 0.50, baseY: 0.40, tipX: 0.50, tipY: 0.27 },
-    { baseX: 0.58, baseY: 0.42, tipX: 0.70, tipY: 0.32 },
-  ];
-  for (const p of capPoints) {
+  // Arms -- a short, mostly-horizontal elbow stub, then a narrow,
+  // mostly-vertical rise to the hand. A real bend, not a smooth taper,
+  // and checked clear of the head/cap below at every height, not just
+  // at its own two endpoints.
+  ctx.beginPath();
+  ctx.moveTo(X(0.38), Y(0.58));
+  ctx.lineTo(X(0.18), Y(0.49));
+  ctx.lineTo(X(0.40), Y(0.115));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(X(0.62), Y(0.58));
+  ctx.lineTo(X(0.82), Y(0.49));
+  ctx.lineTo(X(0.60), Y(0.115));
+  ctx.stroke();
+  for (const [sx, sy] of [
+    [0.38, 0.58],
+    [0.62, 0.58],
+  ]) {
     ctx.beginPath();
-    ctx.moveTo(X(p.baseX), Y(p.baseY));
-    ctx.lineTo(X(p.tipX), Y(p.tipY));
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(X(p.tipX), Y(p.tipY - 0.015), R(0.024), 0, Math.PI * 2);
+    ctx.arc(X(sx), Y(sy), R(0.02), 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // Head.
+  // Jester cap -- one continuous zigzag crown sitting flush on the
+  // head's own crown (not three separate radiating spikes, which read
+  // as antennae once small), three peaks each tipped with a small bell.
   ctx.beginPath();
-  ctx.arc(X(0.5), Y(0.505), R(0.085), 0, Math.PI * 2);
+  ctx.moveTo(X(0.40), Y(0.37));
+  ctx.lineTo(X(0.44), Y(0.30));
+  ctx.lineTo(X(0.47), Y(0.355));
+  ctx.lineTo(X(0.50), Y(0.285));
+  ctx.lineTo(X(0.53), Y(0.355));
+  ctx.lineTo(X(0.56), Y(0.30));
+  ctx.lineTo(X(0.60), Y(0.37));
+  ctx.stroke();
+  for (const [bx, by] of [
+    [0.44, 0.30],
+    [0.50, 0.285],
+    [0.56, 0.30],
+  ]) {
+    ctx.beginPath();
+    ctx.arc(X(bx), Y(by - 0.018), R(0.028), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Head -- deliberately left unfilled (a stroke-only outline), so it
+  // never competes with the kettlebell's own solid fill for weight.
+  ctx.beginPath();
+  ctx.arc(X(0.5), Y(0.455), R(0.10), 0, Math.PI * 2);
   ctx.stroke();
 
   // Scalloped collar at the neck.
   ctx.beginPath();
-  ctx.moveTo(X(0.35), Y(0.615));
-  ctx.quadraticCurveTo(X(0.415), Y(0.665), X(0.465), Y(0.615));
-  ctx.quadraticCurveTo(X(0.50), Y(0.66), X(0.535), Y(0.615));
-  ctx.quadraticCurveTo(X(0.585), Y(0.665), X(0.65), Y(0.615));
-  ctx.stroke();
-
-  // Arms, raised overhead -- an explicit elbow bend (two straight
-  // segments) so each reads as a distinct limb rather than blending into
-  // one outer silhouette line.
-  ctx.beginPath();
-  ctx.moveTo(X(0.32), Y(0.64));
-  ctx.lineTo(X(0.17), Y(0.46));
-  ctx.lineTo(X(0.40), Y(0.11));
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(X(0.68), Y(0.64));
-  ctx.lineTo(X(0.83), Y(0.46));
-  ctx.lineTo(X(0.60), Y(0.11));
+  ctx.moveTo(X(0.37), Y(0.56));
+  ctx.quadraticCurveTo(X(0.435), Y(0.61), X(0.50), Y(0.56));
+  ctx.quadraticCurveTo(X(0.565), Y(0.61), X(0.63), Y(0.56));
   ctx.stroke();
 
   // Torso, tapering to the waist.
   ctx.beginPath();
-  ctx.moveTo(X(0.34), Y(0.615));
-  ctx.lineTo(X(0.40), Y(0.80));
-  ctx.lineTo(X(0.60), Y(0.80));
-  ctx.lineTo(X(0.66), Y(0.615));
+  ctx.moveTo(X(0.38), Y(0.58));
+  ctx.lineTo(X(0.43), Y(0.78));
+  ctx.lineTo(X(0.57), Y(0.78));
+  ctx.lineTo(X(0.62), Y(0.58));
   ctx.stroke();
 
   // Legs, splayed to two feet with a small curled-toe jester flourish.
   ctx.beginPath();
-  ctx.moveTo(X(0.44), Y(0.80));
-  ctx.lineTo(X(0.28), Y(0.975));
+  ctx.moveTo(X(0.46), Y(0.78));
+  ctx.lineTo(X(0.30), Y(0.955));
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(X(0.56), Y(0.80));
-  ctx.lineTo(X(0.72), Y(0.975));
+  ctx.moveTo(X(0.54), Y(0.78));
+  ctx.lineTo(X(0.70), Y(0.955));
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(X(0.28), Y(0.975));
-  ctx.quadraticCurveTo(X(0.16), Y(0.975), X(0.175), Y(0.90));
+  ctx.moveTo(X(0.30), Y(0.955));
+  ctx.quadraticCurveTo(X(0.185), Y(0.955), X(0.20), Y(0.875));
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(X(0.72), Y(0.975));
-  ctx.quadraticCurveTo(X(0.84), Y(0.975), X(0.825), Y(0.90));
+  ctx.moveTo(X(0.70), Y(0.955));
+  ctx.quadraticCurveTo(X(0.815), Y(0.955), X(0.80), Y(0.875));
   ctx.stroke();
 
   ctx.restore();
