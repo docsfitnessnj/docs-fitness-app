@@ -13,6 +13,7 @@ import {
   ShareCardPayload,
   canvasToBlob,
   deckInkColor,
+  deckNoLineText,
   drawShareCard,
   pickRandomColorway,
 } from '../lib/shareCardRender';
@@ -157,7 +158,16 @@ export function CompletionShareCardOverlay() {
   const cleared = payload.workoutNumber >= HUNDRED_DOWN_TARGET;
   const debugInfo =
     payload.variant === 'deck'
-      ? { variant: 'deck', title: payload.card.title, workoutNumber: payload.workoutNumber, deckCardNumber: payload.deckCardNumber, suitInk: deckInkColor(payload.card), cleared }
+      ? {
+          variant: 'deck',
+          title: payload.card.title,
+          workoutNumber: payload.workoutNumber,
+          deckCardNumber: payload.deckCardNumber,
+          suitInk: deckInkColor(payload.card),
+          noLineText: deckNoLineText(payload.card, payload.deckCardNumber),
+          isJoker: !!payload.card.joker,
+          cleared,
+        }
       : { variant: 'standard', title: payload.title, workoutNumber: payload.workoutNumber, colorwayId: payload.colorway.id, cleared };
 
   // The deck card is a true 5:7 playing-card ratio, taller than the

@@ -17,33 +17,51 @@ type Props = {
 // Thin tally marks (four uprights + a diagonal strike) drawn from plain
 // Views — matches the app's line-art icon language without needing an
 // icon-font glyph that doesn't exist for "chalk tally marks."
+//
+// Round 42: the strike now runs a true corner-to-corner diagonal across
+// the whole tally span (top-left of the first upright to bottom-right of
+// the last) instead of a short bar through the center, which read like
+// letters. A bar sized to exactly the bounding box's own diagonal length
+// and centered inside that box reaches both corners by construction once
+// rotated by the box's own diagonal angle — rotating about an element's
+// center never moves the center, so there's nothing to hand-tune per
+// size; the geometry is exact at any `size`.
 function TallyMarks({ color, size }: { color: string; size: number }) {
   const strokeW = Math.max(2, size * 0.12);
   const strokeH = size * 0.62;
   const gap = size * 0.13;
+  const totalW = 4 * strokeW + 3 * gap;
+  const diagonalLength = Math.sqrt(totalW * totalW + strokeH * strokeH);
+  const angleDeg = (Math.atan2(strokeH, totalW) * 180) / Math.PI;
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        {[0, 1, 2, 3].map((i) => (
-          <View
-            key={i}
-            style={{
-              width: strokeW,
-              height: strokeH,
-              backgroundColor: color,
-              borderRadius: strokeW / 2,
-              marginLeft: i === 0 ? 0 : gap,
-            }}
-          />
-        ))}
+      <View style={{ width: totalW, height: strokeH }} testID="tally-marks-box">
+        <View style={{ flexDirection: 'row', alignItems: 'center', height: strokeH }}>
+          {[0, 1, 2, 3].map((i) => (
+            <View
+              key={i}
+              testID={`tally-upright-${i}`}
+              style={{
+                width: strokeW,
+                height: strokeH,
+                backgroundColor: color,
+                borderRadius: strokeW / 2,
+                marginLeft: i === 0 ? 0 : gap,
+              }}
+            />
+          ))}
+        </View>
         <View
+          testID="tally-strike"
           style={{
             position: 'absolute',
-            width: strokeH * 1.15,
+            top: (strokeH - strokeW) / 2,
+            left: (totalW - diagonalLength) / 2,
+            width: diagonalLength,
             height: strokeW,
             backgroundColor: color,
             borderRadius: strokeW / 2,
-            transform: [{ rotate: '58deg' }],
+            transform: [{ rotate: `${angleDeg}deg` }],
           }}
         />
       </View>

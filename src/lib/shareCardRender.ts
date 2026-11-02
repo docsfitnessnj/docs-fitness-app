@@ -393,6 +393,19 @@ const BRAND_LETTER_SPACING = 7.6; // 0.14em of 54px
 const HANDLE_FONT = 36;
 const HANDLE_LETTER_SPACING = 6.5; // 0.18em of 36px
 
+// Converts a plain "#rrggbb" hex to "rgba(r,g,b,alpha)" -- used to derive
+// the Joker cards' own translucent progress-bar track color from their ink
+// (the same shape the five standard colorways already hand-pick per
+// background, e.g. 'rgba(7,102,82,0.16)' for the green track), rather than
+// hardcoding two more literal rgba strings that could drift from the ink
+// constants above if either one ever changes.
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -547,6 +560,17 @@ export function deckInkColor(card: DeckCardData): string {
   return isRedSuit(card.suit) ? colors.playingCardRed : colors.text;
 }
 
+// Round 42, item 3: same "one source of truth" convention as deckInkColor
+// above -- the exact "No." line text drawDeckCard() actually draws onto
+// the canvas (which a Playwright locator can't read directly), shared with
+// the overlay's own hidden debug mirror so the suite's own
+// shows-the-right-line / never-shows-the-old-line assertions check the
+// real string the renderer used, not a second, possibly-drifted copy of
+// the same branch.
+export function deckNoLineText(card: DeckCardData, deckCardNumber: number): string {
+  return card.joker ? 'JOKER · BONUS CARD' : `CARD ${deckCardNumber} OF 52`;
+}
+
 const CORNER_INSET_LEFT = 58;
 const CORNER_INSET_TOP = 50;
 const CORNER_RANK_FONT = 144;
@@ -579,10 +603,161 @@ function drawCornerIndex(ctx: CanvasRenderingContext2D, rank: string, suit: stri
   ctx.restore();
 }
 
+// Round 42: the two Jokers' own completion share cards get a dedicated
+// costume, distinct from the 52 standard deck cards -- an ORIGINAL line-art
+// jester lifting a kettlebell overhead, replacing the green kettlewave mark
+// on these two cards only. Entirely original: a generic three-pointed
+// playing-card jester (floppy cap with a bell on each point) and a simple
+// stylized figure, nothing referencing any film/comic design -- no scars,
+// no makeup face, no text, no prop references. Iterated against real
+// rendered screenshots (both full card size and thumbnail size, see the
+// Round 42 PR description) before landing on this exact geometry: strict
+// vertical bands (kettlebell, then a gap, then the cap, then the head) so
+// nothing collides into illegible clutter, and an explicit elbow bend in
+// each arm (two straight segments, not one smooth curve) so the arms read
+// as arms rather than blurring into the figure's own outer silhouette --
+// both were real failure modes of earlier drafts, caught only by actually
+// looking at the rendered output, not by reasoning about the coordinates
+// alone. Drawn with ctx.stroke(), the same thin line-art language this
+// app's other icons use (Ionicons/MaterialCommunityIcons outline style),
+// deliberately different from the solid-fill kettlewave mark it replaces
+// on these two cards -- never a redrawn/recolored kettlewave, an entirely
+// separate asset.
+function drawJesterKettlebell(ctx: CanvasRenderingContext2D, cx: number, topY: number, w: number, h: number, ink: string) {
+  const X = (ux: number) => cx - w / 2 + ux * w;
+  const Y = (uy: number) => topY + uy * h;
+  const R = (ur: number) => ur * h; // true-circle radius, always relative to h -- never squashes into an ellipse even though w != h
+
+  ctx.save();
+  ctx.strokeStyle = ink;
+  ctx.fillStyle = ink;
+  ctx.lineWidth = h * 0.03;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Kettlebell, held overhead -- small and clearly separate from the head
+  // below (a weight, not a second face). Handle ends meet the raised
+  // hands exactly at (0.40/0.60, 0.11).
+  ctx.beginPath();
+  ctx.moveTo(X(0.40), Y(0.11));
+  ctx.quadraticCurveTo(X(0.5), Y(0.02), X(0.60), Y(0.11));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(X(0.5), Y(0.175), R(0.045), 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Three-pointed jester cap -- short pennants fanning from the head's
+  // own crown, each tipped with a small bell. Stays well clear of the
+  // kettlebell above and the arms to either side.
+  const capPoints = [
+    { baseX: 0.42, baseY: 0.42, tipX: 0.30, tipY: 0.32 },
+    { baseX: 0.50, baseY: 0.40, tipX: 0.50, tipY: 0.27 },
+    { baseX: 0.58, baseY: 0.42, tipX: 0.70, tipY: 0.32 },
+  ];
+  for (const p of capPoints) {
+    ctx.beginPath();
+    ctx.moveTo(X(p.baseX), Y(p.baseY));
+    ctx.lineTo(X(p.tipX), Y(p.tipY));
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(X(p.tipX), Y(p.tipY - 0.015), R(0.024), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Head.
+  ctx.beginPath();
+  ctx.arc(X(0.5), Y(0.505), R(0.085), 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Scalloped collar at the neck.
+  ctx.beginPath();
+  ctx.moveTo(X(0.35), Y(0.615));
+  ctx.quadraticCurveTo(X(0.415), Y(0.665), X(0.465), Y(0.615));
+  ctx.quadraticCurveTo(X(0.50), Y(0.66), X(0.535), Y(0.615));
+  ctx.quadraticCurveTo(X(0.585), Y(0.665), X(0.65), Y(0.615));
+  ctx.stroke();
+
+  // Arms, raised overhead -- an explicit elbow bend (two straight
+  // segments) so each reads as a distinct limb rather than blending into
+  // one outer silhouette line.
+  ctx.beginPath();
+  ctx.moveTo(X(0.32), Y(0.64));
+  ctx.lineTo(X(0.17), Y(0.46));
+  ctx.lineTo(X(0.40), Y(0.11));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(X(0.68), Y(0.64));
+  ctx.lineTo(X(0.83), Y(0.46));
+  ctx.lineTo(X(0.60), Y(0.11));
+  ctx.stroke();
+
+  // Torso, tapering to the waist.
+  ctx.beginPath();
+  ctx.moveTo(X(0.34), Y(0.615));
+  ctx.lineTo(X(0.40), Y(0.80));
+  ctx.lineTo(X(0.60), Y(0.80));
+  ctx.lineTo(X(0.66), Y(0.615));
+  ctx.stroke();
+
+  // Legs, splayed to two feet with a small curled-toe jester flourish.
+  ctx.beginPath();
+  ctx.moveTo(X(0.44), Y(0.80));
+  ctx.lineTo(X(0.28), Y(0.975));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(X(0.56), Y(0.80));
+  ctx.lineTo(X(0.72), Y(0.975));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(X(0.28), Y(0.975));
+  ctx.quadraticCurveTo(X(0.16), Y(0.975), X(0.175), Y(0.90));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(X(0.72), Y(0.975));
+  ctx.quadraticCurveTo(X(0.84), Y(0.975), X(0.825), Y(0.90));
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// Round 42, Part 1, item 4: a Joker card's corner no longer shows the word
+// "JOKER". Two candidates were rendered and compared at real corner scale
+// before picking one (see the Round 42 PR description for both
+// screenshots): a plain empty corner, and a single small mark derived
+// directly from the center figure -- one jester-cap point (the same spike
+// + bell shape drawCornerIndex's text used to occupy). The single-bell
+  // mark read clearly, not as clutter, at this size, so that's what ships.
+function drawJokerCornerMark(ctx: CanvasRenderingContext2D, ink: string, cardWidth: number, cardHeight: number) {
+  const draw = () => {
+    ctx.strokeStyle = ink;
+    ctx.fillStyle = ink;
+    ctx.lineWidth = 8;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(13, 150);
+    ctx.quadraticCurveTo(39, 69, 80, 23);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(89, 16, 15, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  ctx.save();
+  ctx.translate(CORNER_INSET_LEFT, CORNER_INSET_TOP);
+  draw();
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(cardWidth - CORNER_INSET_LEFT, cardHeight - CORNER_INSET_TOP);
+  ctx.rotate(Math.PI);
+  draw();
+  ctx.restore();
+}
+
 async function drawDeckCard(ctx: CanvasRenderingContext2D, payload: DeckCardPayload) {
   const { card, date, workoutNumber, deckCardNumber } = payload;
   const centerX = CARD_WIDTH / 2;
   const ink = deckInkColor(card);
+  const isJoker = !!card.joker;
   const rank = card.joker ? 'JOKER' : card.rank;
   const suit = card.joker ? '' : card.suit ?? '';
 
@@ -591,17 +766,32 @@ async function drawDeckCard(ctx: CanvasRenderingContext2D, payload: DeckCardPayl
 
   strokeBorder(ctx, ink, DECK_CARD_HEIGHT);
 
-  drawCornerIndex(ctx, rank, suit, ink, CARD_WIDTH, DECK_CARD_HEIGHT);
+  // Round 42: the two Jokers get their own costume -- no "JOKER" corner
+  // text (a small mark derived from the center figure instead, see
+  // drawJokerCornerMark) and their own eyebrow/figure/counter/bar-fill ink
+  // theming below. Every other deck card (the 52 standard ones) is
+  // completely untouched.
+  if (isJoker) {
+    drawJokerCornerMark(ctx, ink, CARD_WIDTH, DECK_CARD_HEIGHT);
+  } else {
+    drawCornerIndex(ctx, rank, suit, ink, CARD_WIDTH, DECK_CARD_HEIGHT);
+  }
 
   let y = EYEBROW_INK_TOP;
-  y = drawCenteredInkTop(ctx, "DOC'S DECK OF WODS", centerX, y, `${EYEBROW_FONT}px ${fonts.labelSemiBold}`, colors.green, EYEBROW_LETTER_SPACING);
+  y = drawCenteredInkTop(ctx, "DOC'S DECK OF WODS", centerX, y, `${EYEBROW_FONT}px ${fonts.labelSemiBold}`, isJoker ? ink : colors.green, EYEBROW_LETTER_SPACING);
 
   const waveTop = y + GAP_EYEBROW_WAVE;
-  // The green kettlewave center -- deliberately the real native color,
-  // never suit-recolored, per the approved spec.
-  const wave = await getTintedKettlewave(KETTLEWAVE_NATIVE_HEX);
-  const waveWidth = WAVE_HEIGHT * (wave.width / wave.height);
-  ctx.drawImage(wave, centerX - waveWidth / 2, waveTop, waveWidth, WAVE_HEIGHT);
+  if (isJoker) {
+    // An original line-art jester lifting a kettlebell, in the card's own
+    // ink -- never the green kettlewave mark the 52 standard cards use.
+    drawJesterKettlebell(ctx, centerX, waveTop, WAVE_HEIGHT * 0.75, WAVE_HEIGHT, ink);
+  } else {
+    // The green kettlewave center -- deliberately the real native color,
+    // never suit-recolored, per the approved spec.
+    const wave = await getTintedKettlewave(KETTLEWAVE_NATIVE_HEX);
+    const waveWidth = WAVE_HEIGHT * (wave.width / wave.height);
+    ctx.drawImage(wave, centerX - waveWidth / 2, waveTop, waveWidth, WAVE_HEIGHT);
+  }
   y = waveTop + WAVE_HEIGHT;
 
   const titleTop = y + GAP_WAVE_TITLE;
@@ -623,17 +813,23 @@ async function drawDeckCard(ctx: CanvasRenderingContext2D, payload: DeckCardPayl
   const dateTop = y + GAP_TITLE_DATE;
   y = drawCenteredInkTop(ctx, formatShareCardDate(date), centerX, dateTop, `${DATE_FONT}px ${fonts.labelSemiBold}`, colors.textMuted, DATE_LETTER_SPACING);
 
+  // Round 42, item 3: the Jokers don't count toward "out of 52" at all
+  // (the counter line is this round's own replacement, see below), but
+  // they still count in the member's lifetime workoutNumber/Road to
+  // Hundred Down line exactly as every other completion does -- nothing
+  // about that threshold or bar changes here, only the "No." line's own
+  // text and ink.
   const noTop = y + GAP_DATE_NO;
   y = drawNoAndProgress(
     ctx,
-    `CARD ${deckCardNumber} OF 52`,
+    deckNoLineText(card, deckCardNumber),
     workoutNumber,
     noTop,
     centerX,
-    colors.green,
-    colors.green,
-    'rgba(7,102,82,0.16)',
-    colors.green,
+    isJoker ? ink : colors.green,
+    isJoker ? ink : colors.green,
+    isJoker ? hexToRgba(ink, 0.16) : 'rgba(7,102,82,0.16)',
+    isJoker ? ink : colors.green,
     colors.textMuted,
     'WORKOUT '
   );
