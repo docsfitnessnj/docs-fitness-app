@@ -7889,6 +7889,11 @@ async function run() {
       cardVisible && strikeSpansFullBox,
       JSON.stringify({ cardVisible, geometry })
     );
+    // THE REGULAR is in the "THIS WEEK" section, below the fold -- scroll
+    // it into view first so the PR's own evidence screenshot actually
+    // shows the badge, not just the top of the scrolled list.
+    await page.getByTestId('trophy-case-badge-the_regular').scrollIntoViewIfNeeded().catch(() => {});
+    await page.waitForTimeout(200);
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-the-regular.png') }).catch(() => {});
 
     await context.close();
