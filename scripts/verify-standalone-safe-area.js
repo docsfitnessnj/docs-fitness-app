@@ -7286,11 +7286,19 @@ async function run() {
     const inkSample = await sampleCanvasPixel(page, 4, 756);
     const expectedInkHex = fixture.expectedInk[0] === 18 ? '#12211c' : '#c8102e';
     record(
-      `[share-card/deck-${fixture.label.replace(' ', '-')}] completing a ${fixture.label} Deck card opens the white playing-card variant with the correct suit ink`,
+      // Round 42: a standard (non-Joker) deck card must still show the
+      // real "CARD X OF 52" counter line, byte for byte, never the
+      // Joker-only "JOKER . BONUS CARD" replacement -- asserted directly
+      // off the same noLineText field the two Joker fixtures below check,
+      // one source of truth for both directions of this round's own
+      // change.
+      `[share-card/deck-${fixture.label.replace(' ', '-')}] completing a ${fixture.label} Deck card opens the white playing-card variant with the correct suit ink and "CARD 1 OF 52"`,
       cardVisible &&
         !!debugInfo &&
         debugInfo.variant === 'deck' &&
         debugInfo.deckCardNumber === 1 &&
+        debugInfo.isJoker === false &&
+        debugInfo.noLineText === 'CARD 1 OF 52' &&
         debugInfo.suitInk.toLowerCase() === expectedInkHex &&
         closeToRgb(inkSample, fixture.expectedInk),
       JSON.stringify({ cardVisible, debugInfo, inkSample, fixture })
@@ -7308,6 +7316,92 @@ async function run() {
       `[share-card/corner-deck-${fixture.label.replace(' ', '-')}] the deck card's fill reaches its square corner as white, never black`,
       closeToRgb(deckCornerSample, [255, 255, 255]),
       JSON.stringify({ deckCornerSample })
+    );
+
+    await context.close();
+  }
+
+  // [share-card/joker-*]: Round 42 -- the two Jokers get their own
+  // costume, distinct from the 52 standard deck cards above. Driven the
+  // identical way the two standard-suit fixtures are: a real MARK
+  // COMPLETE on joker-black/joker-red via BROWSE DECK.
+  for (const fixture of [
+    { id: 'joker-black', expectedInk: [18, 33, 28], expectedHex: '#12211c', label: 'black-joker' },
+    { id: 'joker-red', expectedInk: [200, 16, 46], expectedHex: '#c8102e', label: 'red-joker' },
+  ]) {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /THE DECK/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByText('BROWSE DECK', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId(`browse-card-${fixture.id}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('deck-card-complete-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await waitForShareCardReady(page);
+
+    const cardVisible = await page.getByTestId('completion-share-card').isVisible().catch(() => false);
+    const debugInfo = await readShareCardDebug(page);
+    record(
+      `[share-card/${fixture.label}] the ${fixture.label} card shows JOKER . BONUS CARD, never CARD X OF 52, with its own ink theme`,
+      cardVisible &&
+        !!debugInfo &&
+        debugInfo.variant === 'deck' &&
+        debugInfo.isJoker === true &&
+        debugInfo.noLineText === 'JOKER · BONUS CARD' &&
+        debugInfo.suitInk.toLowerCase() === fixture.expectedHex,
+      JSON.stringify({ cardVisible, debugInfo })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, `share-card-${fixture.label}.png`) }).catch(() => {});
+
+    // Border/bar-fill ink: the same sample point the standard-suit
+    // fixtures above use (the border stroke's own center, mid-height) --
+    // a fresh account's first-ever Joker completion is workoutNumber 1,
+    // well under HUNDRED_DOWN_TARGET, so the real progress bar (not the
+    // cleared pill) is what's on screen, and its own fill is this same
+    // ink per Round 42's own ink-theming rule.
+    const inkSample = await sampleCanvasPixel(page, 4, 756);
+    record(
+      `[share-card/${fixture.label}-border-ink] the border stroke uses the card's own ink, not the old suit-neutral green`,
+      closeToRgb(inkSample, fixture.expectedInk),
+      JSON.stringify({ inkSample })
+    );
+
+    // The jester figure itself: a full-width row scan (the same
+    // canvasRowHasInk technique the WORKOUT No. line check already uses,
+    // robust against exactly where a given drawing's own strokes land)
+    // through the vertical band the figure occupies, against the card's
+    // own white background -- confirms something real actually painted
+    // there, not a blank gap where the kettlewave mark used to be.
+    const figureHasInk = await canvasRowHasInk(page, 388, [255, 255, 255]);
+    record(
+      `[share-card/${fixture.label}-figure] the original jester-with-kettlebell figure actually renders, not a blank gap`,
+      figureHasInk,
+      JSON.stringify({ figureHasInk })
+    );
+
+    // Corner: the new small bell mark paints near its own expected
+    // position (CORNER_INSET_LEFT/TOP + the mark's own local coordinates,
+    // see drawJokerCornerMark), and nothing paints far out along the same
+    // row where the old 5-character "JOKER" word (144px font) would
+    // certainly still reach -- together confirming the long word was
+    // actually replaced, not just resized.
+    const cornerMarkSample = await sampleCanvasPixel(page, 147, 66);
+    const cornerFarOutSample = await sampleCanvasPixel(page, 280, 70);
+    record(
+      `[share-card/${fixture.label}-corner] the corner shows a small mark derived from the figure, never the old "JOKER" word`,
+      closeToRgb(cornerMarkSample, fixture.expectedInk, 40) && closeToRgb(cornerFarOutSample, [255, 255, 255]),
+      JSON.stringify({ cornerMarkSample, cornerFarOutSample })
     );
 
     await context.close();
@@ -7735,6 +7829,73 @@ async function run() {
       await page.waitForTimeout(600);
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'r40-wods-tab-full.png'), fullPage: true }).catch(() => {});
     }
+    await context.close();
+  }
+
+  // [badges/the-regular-strike]: Round 42, Part 2 -- THE REGULAR badge's
+  // tally-mark strike now runs a true corner-to-corner diagonal across
+  // the whole tally span (top-left of the first upright to bottom-right
+  // of the last) instead of a short bar through the center. Verified
+  // geometrically off the real rendered DOM -- not just a screenshot --
+  // via the testIDs BadgeIcon.tsx added for exactly this: the strike's
+  // own post-rotation bounding box (getBoundingClientRect() reports the
+  // AXIS-ALIGNED box of the rotated element) should span essentially the
+  // whole tally-marks box, since the bar's two endpoints land exactly on
+  // the box's own opposite corners by construction -- a short centered
+  // bar (the old behavior) could never produce a bounding box anywhere
+  // close to the full span. Trophy Case (opened via the hamburger
+  // drawer's own THE TROPHY CASE row) is the one place this badge
+  // renders large enough (60px) to measure reliably; every other
+  // renderer (post author badges, the badge detail modal) shares the
+  // exact same BadgeIcon/TallyMarks component, so fixing the one glyph
+  // fixes all of them by construction.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-trophy-case').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const cardVisible = await page.getByTestId('trophy-case-badge-the_regular').isVisible().catch(() => false);
+    const geometry = await page.evaluate(() => {
+      const box = document.querySelector('[data-testid="tally-marks-box"]');
+      const strike = document.querySelector('[data-testid="tally-strike"]');
+      const uprights = Array.from(document.querySelectorAll('[data-testid^="tally-upright-"]'));
+      if (!box || !strike || uprights.length !== 4) return null;
+      const boxRect = box.getBoundingClientRect();
+      const strikeRect = strike.getBoundingClientRect();
+      return {
+        boxW: boxRect.width,
+        boxH: boxRect.height,
+        strikeW: strikeRect.width,
+        strikeH: strikeRect.height,
+        uprightCount: uprights.length,
+      };
+    });
+    const strikeSpansFullBox =
+      !!geometry && geometry.strikeW >= geometry.boxW * 0.85 && geometry.strikeH >= geometry.boxH * 0.85;
+    record(
+      '[badges/the-regular-strike] the tally mark strike spans corner to corner across the real DOM, not a short bar through the center',
+      cardVisible && strikeSpansFullBox,
+      JSON.stringify({ cardVisible, geometry })
+    );
+    // THE REGULAR is in the "THIS WEEK" section, below the fold -- scroll
+    // it into view first so the PR's own evidence screenshot actually
+    // shows the badge, not just the top of the scrolled list.
+    await page.getByTestId('trophy-case-badge-the_regular').scrollIntoViewIfNeeded().catch(() => {});
+    await page.waitForTimeout(200);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-the-regular.png') }).catch(() => {});
+
     await context.close();
   }
 

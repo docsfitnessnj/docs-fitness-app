@@ -393,6 +393,19 @@ const BRAND_LETTER_SPACING = 7.6; // 0.14em of 54px
 const HANDLE_FONT = 36;
 const HANDLE_LETTER_SPACING = 6.5; // 0.18em of 36px
 
+// Converts a plain "#rrggbb" hex to "rgba(r,g,b,alpha)" -- used to derive
+// the Joker cards' own translucent progress-bar track color from their ink
+// (the same shape the five standard colorways already hand-pick per
+// background, e.g. 'rgba(7,102,82,0.16)' for the green track), rather than
+// hardcoding two more literal rgba strings that could drift from the ink
+// constants above if either one ever changes.
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -547,6 +560,17 @@ export function deckInkColor(card: DeckCardData): string {
   return isRedSuit(card.suit) ? colors.playingCardRed : colors.text;
 }
 
+// Round 42, item 3: same "one source of truth" convention as deckInkColor
+// above -- the exact "No." line text drawDeckCard() actually draws onto
+// the canvas (which a Playwright locator can't read directly), shared with
+// the overlay's own hidden debug mirror so the suite's own
+// shows-the-right-line / never-shows-the-old-line assertions check the
+// real string the renderer used, not a second, possibly-drifted copy of
+// the same branch.
+export function deckNoLineText(card: DeckCardData, deckCardNumber: number): string {
+  return card.joker ? 'JOKER · BONUS CARD' : `CARD ${deckCardNumber} OF 52`;
+}
+
 const CORNER_INSET_LEFT = 58;
 const CORNER_INSET_TOP = 50;
 const CORNER_RANK_FONT = 144;
@@ -579,10 +603,184 @@ function drawCornerIndex(ctx: CanvasRenderingContext2D, rank: string, suit: stri
   ctx.restore();
 }
 
+// Round 42: the two Jokers' own completion share cards get a dedicated
+// costume, distinct from the 52 standard deck cards -- an ORIGINAL line-art
+// jester lifting a kettlebell overhead, replacing the green kettlewave mark
+// on these two cards only. Entirely original: a generic three-pointed
+// playing-card jester (floppy cap with a bell on each point) and a simple
+// stylized figure, nothing referencing any film/comic design -- no scars,
+// no makeup face, no text, no prop references.
+//
+// This geometry is the 14th iteration (not the 3rd), each one rendered to
+// a real canvas and inspected at both full card size and thumbnail size
+// before being judged, not reasoned about from coordinates alone -- see
+// the Round 42 PR description for the drafts that were rejected and why.
+// Drafts 1-13 all suffered one shared failure mode a casual read of the
+// coordinates never caught: any arm shape that travels both wide AND
+// tall at once (a smooth bow, a long diagonal, even a tight zigzag) gets
+// smoothed by the eye into one continuous tapering outline with the
+// kettlebell at its apex and the torso/legs below it -- a kite, a vase,
+// or a capsule, depending on the exact curve, but never "a person
+// holding something." The two changes that finally broke that illusion:
+// (1) each arm is a short, mostly-HORIZONTAL elbow stub followed by a
+// long, mostly-VERTICAL rise to the hand -- a real bend, not a smooth
+// taper, with its own clearance from the head/cap checked numerically at
+// several heights, not eyeballed; (2) the kettlebell's own ball is
+// SOLID-FILLED (ctx.fill(), not ctx.stroke()) while literally everything
+// else in the figure -- head, cap, arms, torso, legs -- is left as a thin
+// stroke only. That fill/stroke contrast (the same technique a padlock
+// icon uses to separate its shackle from its body) is what finally let
+// the kettlebell read as "a held weight" rather than visually competing
+// with the head's own stroked circle for the same kind of attention.
+function drawJesterKettlebell(ctx: CanvasRenderingContext2D, cx: number, topY: number, w: number, h: number, ink: string) {
+  const X = (ux: number) => cx - w / 2 + ux * w;
+  const Y = (uy: number) => topY + uy * h;
+  const R = (ur: number) => ur * h; // true-circle radius, always relative to h -- never squashes into an ellipse even though w != h
+
+  ctx.save();
+  ctx.strokeStyle = ink;
+  ctx.fillStyle = ink;
+  ctx.lineWidth = h * 0.024;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Kettlebell -- the one solid-filled shape in the whole figure (the
+  // handle loop stays a stroke, unfilled, so it still reads as a loop,
+  // not a second blob), pushed up near the very top, well clear of
+  // everything below it.
+  ctx.beginPath();
+  ctx.moveTo(X(0.40), Y(0.02));
+  ctx.quadraticCurveTo(X(0.5), Y(-0.06), X(0.60), Y(0.02));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(X(0.5), Y(0.09), R(0.065), 0, Math.PI * 2);
+  ctx.fill();
+
+  // Arms -- a short, mostly-horizontal elbow stub, then a narrow,
+  // mostly-vertical rise to the hand. A real bend, not a smooth taper,
+  // and checked clear of the head/cap below at every height, not just
+  // at its own two endpoints.
+  ctx.beginPath();
+  ctx.moveTo(X(0.38), Y(0.58));
+  ctx.lineTo(X(0.18), Y(0.49));
+  ctx.lineTo(X(0.40), Y(0.115));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(X(0.62), Y(0.58));
+  ctx.lineTo(X(0.82), Y(0.49));
+  ctx.lineTo(X(0.60), Y(0.115));
+  ctx.stroke();
+  for (const [sx, sy] of [
+    [0.38, 0.58],
+    [0.62, 0.58],
+  ]) {
+    ctx.beginPath();
+    ctx.arc(X(sx), Y(sy), R(0.02), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Jester cap -- one continuous zigzag crown sitting flush on the
+  // head's own crown (not three separate radiating spikes, which read
+  // as antennae once small), three peaks each tipped with a small bell.
+  ctx.beginPath();
+  ctx.moveTo(X(0.40), Y(0.37));
+  ctx.lineTo(X(0.44), Y(0.30));
+  ctx.lineTo(X(0.47), Y(0.355));
+  ctx.lineTo(X(0.50), Y(0.285));
+  ctx.lineTo(X(0.53), Y(0.355));
+  ctx.lineTo(X(0.56), Y(0.30));
+  ctx.lineTo(X(0.60), Y(0.37));
+  ctx.stroke();
+  for (const [bx, by] of [
+    [0.44, 0.30],
+    [0.50, 0.285],
+    [0.56, 0.30],
+  ]) {
+    ctx.beginPath();
+    ctx.arc(X(bx), Y(by - 0.018), R(0.028), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Head -- deliberately left unfilled (a stroke-only outline), so it
+  // never competes with the kettlebell's own solid fill for weight.
+  ctx.beginPath();
+  ctx.arc(X(0.5), Y(0.455), R(0.10), 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Scalloped collar at the neck.
+  ctx.beginPath();
+  ctx.moveTo(X(0.37), Y(0.56));
+  ctx.quadraticCurveTo(X(0.435), Y(0.61), X(0.50), Y(0.56));
+  ctx.quadraticCurveTo(X(0.565), Y(0.61), X(0.63), Y(0.56));
+  ctx.stroke();
+
+  // Torso, tapering to the waist.
+  ctx.beginPath();
+  ctx.moveTo(X(0.38), Y(0.58));
+  ctx.lineTo(X(0.43), Y(0.78));
+  ctx.lineTo(X(0.57), Y(0.78));
+  ctx.lineTo(X(0.62), Y(0.58));
+  ctx.stroke();
+
+  // Legs, splayed to two feet with a small curled-toe jester flourish.
+  ctx.beginPath();
+  ctx.moveTo(X(0.46), Y(0.78));
+  ctx.lineTo(X(0.30), Y(0.955));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(X(0.54), Y(0.78));
+  ctx.lineTo(X(0.70), Y(0.955));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(X(0.30), Y(0.955));
+  ctx.quadraticCurveTo(X(0.185), Y(0.955), X(0.20), Y(0.875));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(X(0.70), Y(0.955));
+  ctx.quadraticCurveTo(X(0.815), Y(0.955), X(0.80), Y(0.875));
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// Round 42, Part 1, item 4: a Joker card's corner no longer shows the word
+// "JOKER". Two candidates were rendered and compared at real corner scale
+// before picking one (see the Round 42 PR description for both
+// screenshots): a plain empty corner, and a single small mark derived
+// directly from the center figure -- one jester-cap point (the same spike
+// + bell shape drawCornerIndex's text used to occupy). The single-bell
+  // mark read clearly, not as clutter, at this size, so that's what ships.
+function drawJokerCornerMark(ctx: CanvasRenderingContext2D, ink: string, cardWidth: number, cardHeight: number) {
+  const draw = () => {
+    ctx.strokeStyle = ink;
+    ctx.fillStyle = ink;
+    ctx.lineWidth = 8;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(13, 150);
+    ctx.quadraticCurveTo(39, 69, 80, 23);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(89, 16, 15, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  ctx.save();
+  ctx.translate(CORNER_INSET_LEFT, CORNER_INSET_TOP);
+  draw();
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(cardWidth - CORNER_INSET_LEFT, cardHeight - CORNER_INSET_TOP);
+  ctx.rotate(Math.PI);
+  draw();
+  ctx.restore();
+}
+
 async function drawDeckCard(ctx: CanvasRenderingContext2D, payload: DeckCardPayload) {
   const { card, date, workoutNumber, deckCardNumber } = payload;
   const centerX = CARD_WIDTH / 2;
   const ink = deckInkColor(card);
+  const isJoker = !!card.joker;
   const rank = card.joker ? 'JOKER' : card.rank;
   const suit = card.joker ? '' : card.suit ?? '';
 
@@ -591,17 +789,32 @@ async function drawDeckCard(ctx: CanvasRenderingContext2D, payload: DeckCardPayl
 
   strokeBorder(ctx, ink, DECK_CARD_HEIGHT);
 
-  drawCornerIndex(ctx, rank, suit, ink, CARD_WIDTH, DECK_CARD_HEIGHT);
+  // Round 42: the two Jokers get their own costume -- no "JOKER" corner
+  // text (a small mark derived from the center figure instead, see
+  // drawJokerCornerMark) and their own eyebrow/figure/counter/bar-fill ink
+  // theming below. Every other deck card (the 52 standard ones) is
+  // completely untouched.
+  if (isJoker) {
+    drawJokerCornerMark(ctx, ink, CARD_WIDTH, DECK_CARD_HEIGHT);
+  } else {
+    drawCornerIndex(ctx, rank, suit, ink, CARD_WIDTH, DECK_CARD_HEIGHT);
+  }
 
   let y = EYEBROW_INK_TOP;
-  y = drawCenteredInkTop(ctx, "DOC'S DECK OF WODS", centerX, y, `${EYEBROW_FONT}px ${fonts.labelSemiBold}`, colors.green, EYEBROW_LETTER_SPACING);
+  y = drawCenteredInkTop(ctx, "DOC'S DECK OF WODS", centerX, y, `${EYEBROW_FONT}px ${fonts.labelSemiBold}`, isJoker ? ink : colors.green, EYEBROW_LETTER_SPACING);
 
   const waveTop = y + GAP_EYEBROW_WAVE;
-  // The green kettlewave center -- deliberately the real native color,
-  // never suit-recolored, per the approved spec.
-  const wave = await getTintedKettlewave(KETTLEWAVE_NATIVE_HEX);
-  const waveWidth = WAVE_HEIGHT * (wave.width / wave.height);
-  ctx.drawImage(wave, centerX - waveWidth / 2, waveTop, waveWidth, WAVE_HEIGHT);
+  if (isJoker) {
+    // An original line-art jester lifting a kettlebell, in the card's own
+    // ink -- never the green kettlewave mark the 52 standard cards use.
+    drawJesterKettlebell(ctx, centerX, waveTop, WAVE_HEIGHT * 0.75, WAVE_HEIGHT, ink);
+  } else {
+    // The green kettlewave center -- deliberately the real native color,
+    // never suit-recolored, per the approved spec.
+    const wave = await getTintedKettlewave(KETTLEWAVE_NATIVE_HEX);
+    const waveWidth = WAVE_HEIGHT * (wave.width / wave.height);
+    ctx.drawImage(wave, centerX - waveWidth / 2, waveTop, waveWidth, WAVE_HEIGHT);
+  }
   y = waveTop + WAVE_HEIGHT;
 
   const titleTop = y + GAP_WAVE_TITLE;
@@ -623,17 +836,23 @@ async function drawDeckCard(ctx: CanvasRenderingContext2D, payload: DeckCardPayl
   const dateTop = y + GAP_TITLE_DATE;
   y = drawCenteredInkTop(ctx, formatShareCardDate(date), centerX, dateTop, `${DATE_FONT}px ${fonts.labelSemiBold}`, colors.textMuted, DATE_LETTER_SPACING);
 
+  // Round 42, item 3: the Jokers don't count toward "out of 52" at all
+  // (the counter line is this round's own replacement, see below), but
+  // they still count in the member's lifetime workoutNumber/Road to
+  // Hundred Down line exactly as every other completion does -- nothing
+  // about that threshold or bar changes here, only the "No." line's own
+  // text and ink.
   const noTop = y + GAP_DATE_NO;
   y = drawNoAndProgress(
     ctx,
-    `CARD ${deckCardNumber} OF 52`,
+    deckNoLineText(card, deckCardNumber),
     workoutNumber,
     noTop,
     centerX,
-    colors.green,
-    colors.green,
-    'rgba(7,102,82,0.16)',
-    colors.green,
+    isJoker ? ink : colors.green,
+    isJoker ? ink : colors.green,
+    isJoker ? hexToRgba(ink, 0.16) : 'rgba(7,102,82,0.16)',
+    isJoker ? ink : colors.green,
     colors.textMuted,
     'WORKOUT '
   );
