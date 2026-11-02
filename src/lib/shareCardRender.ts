@@ -603,166 +603,89 @@ function drawCornerIndex(ctx: CanvasRenderingContext2D, rank: string, suit: stri
   ctx.restore();
 }
 
-// Round 42: the two Jokers' own completion share cards get a dedicated
-// costume, distinct from the 52 standard deck cards -- an ORIGINAL line-art
-// jester lifting a kettlebell overhead, replacing the green kettlewave mark
-// on these two cards only. Entirely original: a generic three-pointed
-// playing-card jester (floppy cap with a bell on each point) and a simple
-// stylized figure, nothing referencing any film/comic design -- no scars,
-// no makeup face, no text, no prop references.
-//
-// This geometry is the 14th iteration (not the 3rd), each one rendered to
-// a real canvas and inspected at both full card size and thumbnail size
-// before being judged, not reasoned about from coordinates alone -- see
-// the Round 42 PR description for the drafts that were rejected and why.
-// Drafts 1-13 all suffered one shared failure mode a casual read of the
-// coordinates never caught: any arm shape that travels both wide AND
-// tall at once (a smooth bow, a long diagonal, even a tight zigzag) gets
-// smoothed by the eye into one continuous tapering outline with the
-// kettlebell at its apex and the torso/legs below it -- a kite, a vase,
-// or a capsule, depending on the exact curve, but never "a person
-// holding something." The two changes that finally broke that illusion:
-// (1) each arm is a short, mostly-HORIZONTAL elbow stub followed by a
-// long, mostly-VERTICAL rise to the hand -- a real bend, not a smooth
-// taper, with its own clearance from the head/cap checked numerically at
-// several heights, not eyeballed; (2) the kettlebell's own ball is
-// SOLID-FILLED (ctx.fill(), not ctx.stroke()) while literally everything
-// else in the figure -- head, cap, arms, torso, legs -- is left as a thin
-// stroke only. That fill/stroke contrast (the same technique a padlock
-// icon uses to separate its shackle from its body) is what finally let
-// the kettlebell read as "a held weight" rather than visually competing
-// with the head's own stroked circle for the same kind of attention.
-function drawJesterKettlebell(ctx: CanvasRenderingContext2D, cx: number, topY: number, w: number, h: number, ink: string) {
-  const X = (ux: number) => cx - w / 2 + ux * w;
-  const Y = (uy: number) => topY + uy * h;
-  const R = (ur: number) => ur * h; // true-circle radius, always relative to h -- never squashes into an ellipse even though w != h
+// Round 42 follow-up (owner decision, final, approved from a rendered
+// draft): the Round 42 original-figure design is rejected and removed
+// entirely -- the jester-lifting-a-kettlebell mark (14 iterations, see
+// AGENTS.md's Round 42 section for that whole story) is gone. The two
+// Jokers now use the real kettlewave brand mark, mechanically recolored to
+// the card's own ink (see KETTLEWAVE_NATIVE_HEX / getTintedKettlewave
+// above -- the exact same recolor path the five standard colorways
+// already use, just with `ink` instead of a colorway's own `wave` hex),
+// same size and position as every standard deck card. No separate drawing
+// function is needed for this any more: drawDeckCard() below simply calls
+// getTintedKettlewave(ink) instead of getTintedKettlewave(KETTLEWAVE_NATIVE_HEX)
+// for a Joker.
 
-  ctx.save();
-  ctx.strokeStyle = ink;
+// Corner proportions, from the owner's own approved rendered draft: the
+// cap mark is ~12% of the card's own width wide; each letter of the
+// vertical JOKER word is ~6.5% of the card's own width tall (ink height,
+// not raw font size -- divided by ~0.73, the same measured
+// ink-height/fontSize ratio Round 33's polish round established for this
+// app's own display fonts set in all-caps).
+const JOKER_CORNER_CAP_WIDTH = Math.round(CARD_WIDTH * 0.12); // 130
+const JOKER_CORNER_LETTER_FONT = Math.round((CARD_WIDTH * 0.065) / 0.73); // 96
+const JOKER_CORNER_GAP_CAP_WORD = 20;
+const JOKER_CORNER_LETTER_GAP = 12;
+
+// A small, filled, three-point jester-cap silhouette -- band at the base,
+// three triangular points each tipped with a small filled bell. Drawn as
+// a set of solid, same-color fills (never stroked), so adjoining shapes
+// merge seamlessly into one silhouette with no visible seam. Returns the
+// Y of the mark's own bottom edge, for stacking the vertical word below it.
+function drawJokerCapSilhouette(ctx: CanvasRenderingContext2D, ink: string): number {
+  const capW = JOKER_CORNER_CAP_WIDTH;
+  const bandH = capW * 0.16;
+  const pointBaseY = capW * 0.62;
+  const ballR = capW * 0.065;
+
   ctx.fillStyle = ink;
-  ctx.lineWidth = h * 0.024;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
 
-  // Kettlebell -- the one solid-filled shape in the whole figure (the
-  // handle loop stays a stroke, unfilled, so it still reads as a loop,
-  // not a second blob), pushed up near the very top, well clear of
-  // everything below it.
-  ctx.beginPath();
-  ctx.moveTo(X(0.40), Y(0.02));
-  ctx.quadraticCurveTo(X(0.5), Y(-0.06), X(0.60), Y(0.02));
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(X(0.5), Y(0.09), R(0.065), 0, Math.PI * 2);
+  roundRect(ctx, 0, pointBaseY, capW, bandH, bandH / 2);
   ctx.fill();
 
-  // Arms -- a short, mostly-horizontal elbow stub, then a narrow,
-  // mostly-vertical rise to the hand. A real bend, not a smooth taper,
-  // and checked clear of the head/cap below at every height, not just
-  // at its own two endpoints.
-  ctx.beginPath();
-  ctx.moveTo(X(0.38), Y(0.58));
-  ctx.lineTo(X(0.18), Y(0.49));
-  ctx.lineTo(X(0.40), Y(0.115));
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(X(0.62), Y(0.58));
-  ctx.lineTo(X(0.82), Y(0.49));
-  ctx.lineTo(X(0.60), Y(0.115));
-  ctx.stroke();
-  for (const [sx, sy] of [
-    [0.38, 0.58],
-    [0.62, 0.58],
-  ]) {
+  const points = [
+    { apexX: capW * 0.17, apexY: capW * 0.06, baseL: 0, baseR: capW * 0.36 },
+    { apexX: capW * 0.5, apexY: -capW * 0.02, baseL: capW * 0.32, baseR: capW * 0.68 },
+    { apexX: capW * 0.83, apexY: capW * 0.06, baseL: capW * 0.64, baseR: capW },
+  ];
+  for (const p of points) {
     ctx.beginPath();
-    ctx.arc(X(sx), Y(sy), R(0.02), 0, Math.PI * 2);
+    ctx.moveTo(p.baseL, pointBaseY);
+    ctx.lineTo(p.apexX, p.apexY);
+    ctx.lineTo(p.baseR, pointBaseY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(p.apexX, p.apexY, ballR, 0, Math.PI * 2);
     ctx.fill();
   }
-
-  // Jester cap -- one continuous zigzag crown sitting flush on the
-  // head's own crown (not three separate radiating spikes, which read
-  // as antennae once small), three peaks each tipped with a small bell.
-  ctx.beginPath();
-  ctx.moveTo(X(0.40), Y(0.37));
-  ctx.lineTo(X(0.44), Y(0.30));
-  ctx.lineTo(X(0.47), Y(0.355));
-  ctx.lineTo(X(0.50), Y(0.285));
-  ctx.lineTo(X(0.53), Y(0.355));
-  ctx.lineTo(X(0.56), Y(0.30));
-  ctx.lineTo(X(0.60), Y(0.37));
-  ctx.stroke();
-  for (const [bx, by] of [
-    [0.44, 0.30],
-    [0.50, 0.285],
-    [0.56, 0.30],
-  ]) {
-    ctx.beginPath();
-    ctx.arc(X(bx), Y(by - 0.018), R(0.028), 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Head -- deliberately left unfilled (a stroke-only outline), so it
-  // never competes with the kettlebell's own solid fill for weight.
-  ctx.beginPath();
-  ctx.arc(X(0.5), Y(0.455), R(0.10), 0, Math.PI * 2);
-  ctx.stroke();
-
-  // Scalloped collar at the neck.
-  ctx.beginPath();
-  ctx.moveTo(X(0.37), Y(0.56));
-  ctx.quadraticCurveTo(X(0.435), Y(0.61), X(0.50), Y(0.56));
-  ctx.quadraticCurveTo(X(0.565), Y(0.61), X(0.63), Y(0.56));
-  ctx.stroke();
-
-  // Torso, tapering to the waist.
-  ctx.beginPath();
-  ctx.moveTo(X(0.38), Y(0.58));
-  ctx.lineTo(X(0.43), Y(0.78));
-  ctx.lineTo(X(0.57), Y(0.78));
-  ctx.lineTo(X(0.62), Y(0.58));
-  ctx.stroke();
-
-  // Legs, splayed to two feet with a small curled-toe jester flourish.
-  ctx.beginPath();
-  ctx.moveTo(X(0.46), Y(0.78));
-  ctx.lineTo(X(0.30), Y(0.955));
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(X(0.54), Y(0.78));
-  ctx.lineTo(X(0.70), Y(0.955));
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(X(0.30), Y(0.955));
-  ctx.quadraticCurveTo(X(0.185), Y(0.955), X(0.20), Y(0.875));
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(X(0.70), Y(0.955));
-  ctx.quadraticCurveTo(X(0.815), Y(0.955), X(0.80), Y(0.875));
-  ctx.stroke();
-
-  ctx.restore();
+  return pointBaseY + bandH;
 }
 
-// Round 42, Part 1, item 4: a Joker card's corner no longer shows the word
-// "JOKER". Two candidates were rendered and compared at real corner scale
-// before picking one (see the Round 42 PR description for both
-// screenshots): a plain empty corner, and a single small mark derived
-// directly from the center figure -- one jester-cap point (the same spike
-// + bell shape drawCornerIndex's text used to occupy). The single-bell
-  // mark read clearly, not as clutter, at this size, so that's what ships.
+// "JOKER", one letter per line, centered, ink-top-anchored (reusing
+// drawCenteredInkTop -- the same house convention every other text
+// element in this file already uses, so a capital letter's own near-zero
+// descent is treated the same "baseline as ink bottom" way Round 33's
+// polish round already established).
+function drawVerticalJokerWord(ctx: CanvasRenderingContext2D, centerX: number, topY: number, ink: string): number {
+  let y = topY;
+  for (const ch of 'JOKER') {
+    y = drawCenteredInkTop(ctx, ch, centerX, y, `${JOKER_CORNER_LETTER_FONT}px ${fonts.headline}`, ink) + JOKER_CORNER_LETTER_GAP;
+  }
+  return y - JOKER_CORNER_LETTER_GAP;
+}
+
+// Round 42 follow-up, item 2: a Joker card's corner carries the small
+// filled cap mark stacked directly above the word JOKER written
+// vertically, one letter per line -- replacing both the original "JOKER"
+// horizontal rank text AND Round 42's own single spike-and-bell mark.
+// Top-left draws upright; bottom-right reuses the same draw() closure
+// rotated 180° about its own anchor point, the identical pattern
+// drawCornerIndex() already established for the 52 standard cards.
 function drawJokerCornerMark(ctx: CanvasRenderingContext2D, ink: string, cardWidth: number, cardHeight: number) {
   const draw = () => {
-    ctx.strokeStyle = ink;
-    ctx.fillStyle = ink;
-    ctx.lineWidth = 8;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(13, 150);
-    ctx.quadraticCurveTo(39, 69, 80, 23);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(89, 16, 15, 0, Math.PI * 2);
-    ctx.fill();
+    const capBottom = drawJokerCapSilhouette(ctx, ink);
+    drawVerticalJokerWord(ctx, JOKER_CORNER_CAP_WIDTH / 2, capBottom + JOKER_CORNER_GAP_CAP_WORD, ink);
   };
   ctx.save();
   ctx.translate(CORNER_INSET_LEFT, CORNER_INSET_TOP);
@@ -800,26 +723,51 @@ async function drawDeckCard(ctx: CanvasRenderingContext2D, payload: DeckCardPayl
     drawCornerIndex(ctx, rank, suit, ink, CARD_WIDTH, DECK_CARD_HEIGHT);
   }
 
+  // Round 42 follow-up, SPACING RULE: for the two Joker cards only, the
+  // title's own line count (1 vs 2) decides how much "flexible vertical
+  // slack" exists -- exactly TITLE_LINE_ADVANCE (the height a second title
+  // line would have occupied) whenever the title fits on one line, zero
+  // otherwise. That slack is split evenly between the eyebrow-to-wave gap
+  // and the date-to-counter-line gap (never pooled in one spot), so a
+  // one-line title's card ends up the SAME total content height as a
+  // two-line title's would -- no hole under the date, no shorter card.
+  // The title has to be wrapped here, before the eyebrow is even drawn, to
+  // know its line count in time; titleLines is reused below rather than
+  // wrapping a second time.
+  const titleMaxWidth = CONTENT_WIDTH - 160; // extra clearance so the title never collides with the corner indices
+  // Test-only override: `window.__shareCardForceJokerTitle` -- the same
+  // "force what the real mechanism would produce" technique
+  // pickRandomColorway() above already established. Both real Jokers'
+  // own titles ("THE CLOWN PRINCE OF CRIME", "WHY SO SERIOUS?") wrap to
+  // two lines at full size under this file's own established "wrap, don't
+  // shrink to one line" rule (Round 33 polish), so the suite's own
+  // one-line-title balance check needs a way to drive the real,
+  // unmodified layout with a title short enough to actually fit on one
+  // line -- real app code never reads or writes this.
+  const forcedJokerTitle =
+    isJoker && typeof window !== 'undefined' ? (window as unknown as { __shareCardForceJokerTitle?: string }).__shareCardForceJokerTitle : undefined;
+  const titleSource = (forcedJokerTitle ?? card.title).toUpperCase();
+  const titleLines = wrapTitle(ctx, titleSource, fonts.headline, TITLE_FONT_SIZE, titleMaxWidth);
+  let gapEyebrowWave = GAP_EYEBROW_WAVE;
+  let gapDateNo = GAP_DATE_NO;
+  if (isJoker) {
+    const slack = titleLines.length === 1 ? TITLE_LINE_ADVANCE : 0;
+    gapEyebrowWave = GAP_EYEBROW_WAVE + slack / 2;
+    gapDateNo = GAP_DATE_NO + slack / 2;
+  }
+
   let y = EYEBROW_INK_TOP;
   y = drawCenteredInkTop(ctx, "DOC'S DECK OF WODS", centerX, y, `${EYEBROW_FONT}px ${fonts.labelSemiBold}`, isJoker ? ink : colors.green, EYEBROW_LETTER_SPACING);
 
-  const waveTop = y + GAP_EYEBROW_WAVE;
-  if (isJoker) {
-    // An original line-art jester lifting a kettlebell, in the card's own
-    // ink -- never the green kettlewave mark the 52 standard cards use.
-    drawJesterKettlebell(ctx, centerX, waveTop, WAVE_HEIGHT * 0.75, WAVE_HEIGHT, ink);
-  } else {
-    // The green kettlewave center -- deliberately the real native color,
-    // never suit-recolored, per the approved spec.
-    const wave = await getTintedKettlewave(KETTLEWAVE_NATIVE_HEX);
-    const waveWidth = WAVE_HEIGHT * (wave.width / wave.height);
-    ctx.drawImage(wave, centerX - waveWidth / 2, waveTop, waveWidth, WAVE_HEIGHT);
-  }
+  const waveTop = y + gapEyebrowWave;
+  // The kettlewave mark, mechanically recolored -- the card's own ink for
+  // a Joker, the real native green for every standard card, per spec.
+  const wave = await getTintedKettlewave(isJoker ? ink : KETTLEWAVE_NATIVE_HEX);
+  const waveWidth = WAVE_HEIGHT * (wave.width / wave.height);
+  ctx.drawImage(wave, centerX - waveWidth / 2, waveTop, waveWidth, WAVE_HEIGHT);
   y = waveTop + WAVE_HEIGHT;
 
   const titleTop = y + GAP_WAVE_TITLE;
-  const titleMaxWidth = CONTENT_WIDTH - 160; // extra clearance so the title never collides with the corner indices
-  const titleLines = wrapTitle(ctx, card.title.toUpperCase(), fonts.headline, TITLE_FONT_SIZE, titleMaxWidth);
   let titleFont = TITLE_FONT_SIZE;
   if (titleLines.length === 1) {
     titleFont = fitFontSize(ctx, titleLines[0], fonts.headline, TITLE_FONT_SIZE, 72, titleMaxWidth);
@@ -841,8 +789,9 @@ async function drawDeckCard(ctx: CanvasRenderingContext2D, payload: DeckCardPayl
   // they still count in the member's lifetime workoutNumber/Road to
   // Hundred Down line exactly as every other completion does -- nothing
   // about that threshold or bar changes here, only the "No." line's own
-  // text and ink.
-  const noTop = y + GAP_DATE_NO;
+  // text and ink. gapDateNo is GAP_DATE_NO unchanged for a standard card,
+  // and GAP_DATE_NO plus half the Joker-only flexible slack for a Joker.
+  const noTop = y + gapDateNo;
   y = drawNoAndProgress(
     ctx,
     deckNoLineText(card, deckCardNumber),
