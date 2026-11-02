@@ -7200,6 +7200,36 @@ async function run() {
     });
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-card-without-watch-line.png') }).catch(() => {});
     await page.getByTestId('deck-card-close').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+
+    // Round 41's follow-up: the owner supplied 10 real breakdown videos
+    // that live OUTSIDE the official playlist (so Part 1's own exact-quote
+    // matching could never have found them) plus the Clown Prince Of
+    // Crime video, bringing every one of the 54 cards to a verified
+    // video. '2-heart' ("Tupac Swings") was this suite's own former "no
+    // video" fixture before this follow-up -- now it has one of those 10
+    // owner-supplied videos, so re-checking it here proves a card from
+    // that newly-attached batch works identically to a playlist-matched
+    // one, not just A-spade.
+    await page.getByTestId('browse-card-2-heart').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const newlyAttachedWatchLineVisible = await page.getByTestId('deck-watch-video-breakdown').isVisible().catch(() => false);
+    record(
+      '[deck-video/newly-attached-card] "Tupac Swings" (one of the owner\'s 10 newly-attached, non-playlist videos) shows the watch line',
+      newlyAttachedWatchLineVisible,
+      JSON.stringify({ newlyAttachedWatchLineVisible })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-card-newly-attached-video.png') }).catch(() => {});
+
+    await page.getByTestId('deck-watch-video-breakdown').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const newlyAttachedIframeSrc = await page.locator('iframe').first().getAttribute('src').catch(() => null);
+    record(
+      '[deck-video/newly-attached-card] tapping it plays the real, owner-supplied video in-app',
+      !!newlyAttachedIframeSrc && newlyAttachedIframeSrc.includes('J7xGxj0Aljo') && newlyAttachedIframeSrc.includes('youtube-nocookie.com'),
+      JSON.stringify({ newlyAttachedIframeSrc })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-card-newly-attached-video-playing.png') }).catch(() => {});
 
     await context.close();
   }
