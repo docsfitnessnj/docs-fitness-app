@@ -7364,6 +7364,38 @@ async function run() {
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, `share-card-${fixture.label}.png`) }).catch(() => {});
 
+    if (process.env.DUMP_JOKER_CANVAS) {
+      const dataUrl = await page.evaluate(() => {
+        const canvas = document.getElementById('completion-share-card-canvas-host')?.querySelector('canvas');
+        return canvas ? canvas.toDataURL('image/png') : null;
+      });
+      if (dataUrl) fs.writeFileSync(path.join(process.env.DUMP_JOKER_CANVAS, `joker-canvas-${fixture.label}.png`), Buffer.from(dataUrl.split(',')[1], 'base64'));
+    }
+
+    // Round 42 follow-up (owner decision, final): the original line-art
+    // jester figure is gone -- the kettlewave mark is back, mechanically
+    // recolored to the card's own ink (see drawDeckCard's
+    // getTintedKettlewave(isJoker ? ink : KETTLEWAVE_NATIVE_HEX) call).
+    // (540, 345) -- the card's horizontal center, guessed to land inside
+    // the kettlebell's own ball -- actually landed in one of the real
+    // asset's own internal white gaps (confirmed via DUMP_JOKER_CANVAS +
+    // a row-by-row ink scan): the recolored kettlewave mark is a real
+    // multi-stroke illustration, not a single solid blob, so its own
+    // vertical centerline crosses several thin ink bands separated by
+    // real white space. (447, 493) was found the same way -- a per-row
+    // ink-density scan across the wave's own y-range (219-551) located
+    // y=493 as the row with the most ink pixels across the full width,
+    // and a column scan along that row found a genuinely solid ~20px-wide
+    // ink run (not an antialiased edge) centered near x=447 -- confirmed
+    // directly against both real dumps (red ~(200,18,48), black
+    // ~(20,35,30), each within this check's own tolerance of its ink).
+    const waveInkSample = await sampleCanvasPixel(page, 447, 493);
+    record(
+      `[share-card/${fixture.label}-wave-ink] the kettlewave mark is recolored to the card's own ink, never green`,
+      closeToRgb(waveInkSample, fixture.expectedInk, 40),
+      JSON.stringify({ waveInkSample })
+    );
+
     // Border/bar-fill ink: the same sample point the standard-suit
     // fixtures above use (the border stroke's own center, mid-height) --
     // a fresh account's first-ever Joker completion is workoutNumber 1,
@@ -7377,32 +7409,103 @@ async function run() {
       JSON.stringify({ inkSample })
     );
 
-    // The jester figure itself: a full-width row scan (the same
-    // canvasRowHasInk technique the WORKOUT No. line check already uses,
-    // robust against exactly where a given drawing's own strokes land)
-    // through the vertical band the figure occupies, against the card's
-    // own white background -- confirms something real actually painted
-    // there, not a blank gap where the kettlewave mark used to be.
-    const figureHasInk = await canvasRowHasInk(page, 388, [255, 255, 255]);
+    // Corner, Round 42 follow-up's own new design: a small filled cap
+    // silhouette stacked directly above the word JOKER written
+    // vertically, one letter per line (see drawJokerCornerMark /
+    // drawJokerCapSilhouette / drawVerticalJokerWord). The cap-mark
+    // sample sits at the band's own geometric center (CORNER_INSET_LEFT +
+    // JOKER_CORNER_CAP_WIDTH/2, CORNER_INSET_TOP + a point inside the
+    // band -- the mark's own largest solid-filled region, so this is
+    // robust against the exact point-triangle geometry around it); the
+    // word-mark sample sits inside the first letter's own ink. Both
+    // coordinates were confirmed directly against the real rendered
+    // canvas (DUMP_JOKER_CANVAS), not guessed from the geometry alone.
+    const capMarkSample = await sampleCanvasPixel(page, 123, 141);
+    const wordMarkSample = await sampleCanvasPixel(page, 123, 206);
     record(
-      `[share-card/${fixture.label}-figure] the original jester-with-kettlebell figure actually renders, not a blank gap`,
-      figureHasInk,
-      JSON.stringify({ figureHasInk })
+      `[share-card/${fixture.label}-corner] the corner shows the small cap mark stacked above the vertical JOKER word, in the card's own ink`,
+      closeToRgb(capMarkSample, fixture.expectedInk, 40) && closeToRgb(wordMarkSample, fixture.expectedInk, 40),
+      JSON.stringify({ capMarkSample, wordMarkSample })
     );
 
-    // Corner: the new small bell mark paints near its own expected
-    // position (CORNER_INSET_LEFT/TOP + the mark's own local coordinates,
-    // see drawJokerCornerMark), and nothing paints far out along the same
-    // row where the old 5-character "JOKER" word (144px font) would
-    // certainly still reach -- together confirming the long word was
-    // actually replaced, not just resized.
-    const cornerMarkSample = await sampleCanvasPixel(page, 147, 66);
-    const cornerFarOutSample = await sampleCanvasPixel(page, 280, 70);
+    await context.close();
+  }
+
+  // [share-card/joker-balance]: Round 42 follow-up's own SPACING RULE --
+  // for a Joker card, the real titles ("THE CLOWN PRINCE OF CRIME", "WHY
+  // SO SERIOUS?") always wrap to 2 lines, so this needs
+  // window.__shareCardForceJokerTitle (a test-only override, real app code
+  // never reads or writes it) to drive the real, unmodified layout with a
+  // genuinely short, one-line title. Calibrated directly against real
+  // rendered canvas dumps of both the real (2-line) and forced ("HA!",
+  // 1-line) red Joker, via a row-by-row ink scan, not guessed from the
+  // geometry constants alone:
+  //   title bottom:  2-line real ~878, 1-line forced ~802
+  //   wave band:     2-line real 221-550, 1-line forced 295-624 (+74, half
+  //                  of TITLE_LINE_ADVANCE=148 -- the GAP_EYEBROW_WAVE zone
+  //                  absorbed its own half of the saved line)
+  //   counter line:  2-line real 992-1069, 1-line forced 991-1068 --
+  //                  essentially IDENTICAL, proving the GAP_DATE_NO zone
+  //                  absorbed its own other half, so downstream content
+  //                  (counter line, bar, road line, footer) lands at the
+  //                  SAME total height either way -- no hole, no pooled
+  //                  slack in one spot.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.addInitScript(() => {
+      window.__shareCardForceJokerTitle = 'HA!';
+    });
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleBalance = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleBalance) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /THE DECK/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByText('BROWSE DECK', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('browse-card-joker-red').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('deck-card-complete-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await waitForShareCardReady(page);
+
+    const debugInfoBalance = await readShareCardDebug(page);
+
+    // Zone 1 (the gap above the wave): for a 1-line title, the wave must
+    // not have started yet at y=260 -- it would have, at this exact row,
+    // for an UNFLEXED gap (the real 2-line title's own wave band starts at
+    // 221), so ink here would mean the slack never reached this zone at
+    // all. y=320 is a sanity check that the wave did actually render,
+    // just later than the unflexed baseline.
+    const aboveWaveBlank = !(await canvasRowHasInk(page, 260, [255, 255, 255], 350, 730));
+    const waveRenders = await canvasRowHasInk(page, 320, [255, 255, 255], 350, 730);
+
+    // Zone 2 (the gap between the date and the counter line): a HALF-fix
+    // that only flexed zone 1 (never zone 2) would land the counter line
+    // around y=915 for this exact title -- still blank there is the
+    // regression guard; y=1030 confirms the counter line/bar genuinely
+    // renders at the fully-balanced position instead (matching the real
+    // 2-line title's own 992-1069 band almost exactly).
+    const dateCounterGapStillBlank = !(await canvasRowHasInk(page, 950, [255, 255, 255], 350, 730));
+    const counterRendersAtBalancedSpot = await canvasRowHasInk(page, 1030, [255, 255, 255], 350, 730);
+
     record(
-      `[share-card/${fixture.label}-corner] the corner shows a small mark derived from the figure, never the old "JOKER" word`,
-      closeToRgb(cornerMarkSample, fixture.expectedInk, 40) && closeToRgb(cornerFarOutSample, [255, 255, 255]),
-      JSON.stringify({ cornerMarkSample, cornerFarOutSample })
+      `[share-card/joker-balance] a one-line Joker title splits its flexible slack between the eyebrow-wave gap and the date-counter gap, never pooling it in one spot`,
+      !!debugInfoBalance &&
+        debugInfoBalance.isJoker === true &&
+        aboveWaveBlank &&
+        waveRenders &&
+        dateCounterGapStillBlank &&
+        counterRendersAtBalancedSpot,
+      JSON.stringify({ debugInfoBalance, aboveWaveBlank, waveRenders, dateCounterGapStillBlank, counterRendersAtBalancedSpot })
     );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, `share-card-red-joker-balance.png`) }).catch(() => {});
 
     await context.close();
   }
