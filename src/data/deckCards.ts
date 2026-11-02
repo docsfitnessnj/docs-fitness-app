@@ -189,6 +189,7 @@ const HEARTS: DeckCardData[] = [
       'Block 1: 2 Rounds of 10-5-10-5: Cali Swings, KB Jump Squats',
       'Block 2: 5 Rounds: 5 Chin-ups (Sub: 5/5 Staggered Rows), 10 Elevators (total), 5/5 Snatches (Sub: 5/5 Single A. Swings), 15/15 Hollow Body Knee to Bow',
     ],
+    videoUrl: 'https://youtu.be/J7xGxj0Aljo',
   },
   {
     id: '3-heart',
@@ -256,6 +257,7 @@ const HEARTS: DeckCardData[] = [
       '5x Bent Rows (each)',
       '+ 30 Second Suitcase Carry/March (each)',
     ],
+    videoUrl: 'https://youtu.be/df3eAeE2Y9Q',
   },
   {
     id: '8-heart',
@@ -270,6 +272,7 @@ const HEARTS: DeckCardData[] = [
       'Min 4: 3-5 Pull Thru Murphs',
       'Min 5: 3-5 Clean & Squats (each)',
     ],
+    videoUrl: 'https://youtu.be/IAAYrDF_M8k',
   },
   {
     id: '9-heart',
@@ -524,6 +527,7 @@ const CLUBS: DeckCardData[] = [
       '10 Minute Block: 4 Reps of each, same moves',
       '10 Minute Block: 2 Reps of each, same moves',
     ],
+    videoUrl: 'https://youtu.be/TnuddrTklrA',
   },
   {
     id: '5-club',
@@ -535,6 +539,7 @@ const CLUBS: DeckCardData[] = [
       '12 Minute EMOM, 4 Rounds: Min 1: 20-25 Swings, Min 2: 1x L - Turkish Getup, Min 3: 1x R - Turkish Getup',
       '18 Minute AMQRAP: 20x Elevators (total), 7 Chin-ups (Sub: 7/7 Dead Cleans), 10/10 Goblet Split Squats, 20 Alternating V-Ups',
     ],
+    videoUrl: 'https://youtu.be/-vgjjTANGMk',
   },
   {
     id: '6-club',
@@ -549,6 +554,7 @@ const CLUBS: DeckCardData[] = [
       '4. Can Opener Pullovers (30sec each side)',
       '5. Banded Murphs (No band? No problem)',
     ],
+    videoUrl: 'https://youtu.be/A6PvO2_feJM',
   },
   {
     id: '7-club',
@@ -557,6 +563,7 @@ const CLUBS: DeckCardData[] = [
     title: 'Mickey Mantle',
     format: '30 Minute AMQRAP',
     movements: ['7/7 Snatches', '7/7 Bent Rows', '7/7 Offset Reverse Lunge + Knee Drive', '7/7 Push Press', '7 Chin-ups (Sub: 14 TRX or 14 Pull Thrus)'],
+    videoUrl: 'https://youtu.be/OMTV-urnduU',
   },
   {
     id: '8-club',
@@ -565,6 +572,7 @@ const CLUBS: DeckCardData[] = [
     title: 'Jumanji',
     format: '30 Minute AMCAP: Repeating Rep Ladder 5-3-2',
     movements: ['Gorilla Rows (each)', 'Double Cleans', 'Racked Squats', 'Racked Surrenders', 'Snatches (each)', 'Pull-ups', '+ 10 Swings'],
+    videoUrl: 'https://youtu.be/M5DTQYnjnNQ',
   },
   {
     id: '9-club',
@@ -586,6 +594,7 @@ const CLUBS: DeckCardData[] = [
       'Min 3/4: Perform 1:30 of one of the following cardio movements: Erg, Assault Bike, Sled, Burpees',
       'Min 5/6: Between 1:30-2min Low Plank',
     ],
+    videoUrl: 'https://youtu.be/YpI7O7ovgFY',
   },
   {
     id: 'J-club',
@@ -594,6 +603,7 @@ const CLUBS: DeckCardData[] = [
     title: 'Step Ladder',
     format: 'For Time or Take Your Time! Rep Ladder: 10_8_6_4_2_2_4_6_8_10',
     movements: ['Single Leg Deads (each)', 'Pull Thru Pushups', 'Offset Thrusters (each)', 'Staggered Rows (each)'],
+    videoUrl: 'https://youtu.be/l6LCxlEmyVU',
   },
   {
     id: 'Q-club',
@@ -634,6 +644,7 @@ const JOKERS: DeckCardData[] = [
     movements: ['Clubs = Cali Swings', 'Diamonds = Goblet Thrusters', 'Spades = Yoga Pushups', 'Hearts = Pull Throughs (total)'],
     joker: 'black',
     note: 'Can you complete the deck within 30min!',
+    videoUrl: 'https://www.youtube.com/watch?v=1cMwzV_j5kY',
   },
   {
     id: 'joker-red',

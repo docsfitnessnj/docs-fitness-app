@@ -7120,7 +7120,14 @@ async function run() {
   // empty placeholder. Reached the same way the existing [share-card/deck]
   // block already does (THE DECK tab -> BROWSE DECK -> a real
   // browse-card-<id> tap). 'A-spade' ("Jen Loves Counting") has a real
-  // matched video this round; '2-heart' ("Tupac Swings") does not.
+  // matched video this round. Round 41's follow-up attached the owner's
+  // own 10 additional videos plus the Clown Prince Of Crime video,
+  // bringing every one of the 54 cards to a real, verified video -- so
+  // there is no longer a genuinely unmatched card to use as the "no
+  // video -> no row" fixture. That check now uses
+  // window.__deckVideoTestForceNoUrl (DeckVideoWatchLine.tsx's own
+  // test-only hook, same convention as __tourTestForceMissing) to force
+  // the real, unmodified component down its null-render branch instead.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -7169,16 +7176,28 @@ async function run() {
     await page.getByTestId('deck-card-close').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(300);
 
-    // A card with NO matched video (left unset, per Part 1's own
-    // no-fuzzy-matching rule) shows no row at all.
-    await page.getByTestId('browse-card-2-heart').click({ timeout: 5000 }).catch(() => {});
+    // Every one of the 54 cards now has a real, verified video (Round
+    // 41's follow-up), so there's no genuinely unmatched card left to
+    // use as a "no video" fixture. Forcing the real, unmodified
+    // DeckVideoWatchLine down its own null-render branch via its
+    // test-only hook proves the same code path instead -- the exact
+    // "force what the real mechanism would produce" technique this
+    // suite already uses elsewhere (__tourTestForceMissing,
+    // forceVisualViewportShrink()).
+    await page.evaluate(() => {
+      window.__deckVideoTestForceNoUrl = true;
+    });
+    await page.getByTestId('browse-card-A-spade').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
     const noWatchLine = await page.getByTestId('deck-watch-video-breakdown').isVisible().catch(() => false);
     record(
-      '[deck-video/no-line-without-video] a deck card with no matched video shows no watch row at all',
+      '[deck-video/no-line-without-video] forcing a card down the null-render branch shows no watch row at all',
       !noWatchLine,
       JSON.stringify({ noWatchLine })
     );
+    await page.evaluate(() => {
+      delete window.__deckVideoTestForceNoUrl;
+    });
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-card-without-watch-line.png') }).catch(() => {});
     await page.getByTestId('deck-card-close').click({ timeout: 5000 }).catch(() => {});
 

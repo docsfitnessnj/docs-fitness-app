@@ -20,7 +20,13 @@ type Props = {
 // app already uses -- never a new, card-specific player.
 export function DeckVideoWatchLine({ videoUrl }: Props) {
   const [playing, setPlaying] = useState(false);
-  if (!videoUrl) return null;
+  // Round 41 follow-up: every one of the 54 cards now has a matched
+  // video, so there's no longer a real unmatched card to exercise the
+  // "no video -> no row" branch against. __deckVideoTestForceNoUrl is a
+  // test-only hook (same convention as window.__tourTestForceMissing) --
+  // real app code never reads or writes it.
+  const forcedNoUrl = typeof window !== 'undefined' && (window as any).__deckVideoTestForceNoUrl === true;
+  if (!videoUrl || forcedNoUrl) return null;
   const youtubeId = extractYoutubeId(videoUrl);
 
   if (playing) {
