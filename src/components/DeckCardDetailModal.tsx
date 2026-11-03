@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { JoinBoathouseLock } from './JoinBoathouseLock';
 import { DeckVideoWatchLine } from './DeckVideoWatchLine';
+import { LogResultsModal } from './LogResultsModal';
 import { TappableMovementText } from './movement/TappableMovementText';
 import { DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
 import { openMovementVault } from '../lib/movementVaultModal';
@@ -29,6 +30,13 @@ type Props = {
 };
 
 export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplete, locked = false }: Props) {
+  // Round 44 — a real Log Results form for deck cards, for the first time
+  // (this used to be MARK-COMPLETE-only, no results logging at all; see
+  // AGENTS.md's Round 44 writeup). Reuses the exact same LogResultsModal
+  // the WOD path already has, bound to deck_completions via its own
+  // `logSource="deck"` prop.
+  const [logOpen, setLogOpen] = useState(false);
+
   if (!card) return null;
 
   const jokerColor = card.joker === 'red' ? colors.scoreboardRed : colors.green;
@@ -104,10 +112,26 @@ export function DeckCardDetailModal({ card, onClose, isComplete, onToggleComplet
               </Text>
             </Pressable>
 
+            <Pressable style={styles.logResultsButton} onPress={() => setLogOpen(true)} testID="deck-card-log-results">
+              <Ionicons name="create-outline" size={16} color={colors.textMuted} />
+              <Text style={styles.logResultsButtonText}>LOG RESULTS</Text>
+            </Pressable>
+
             <Text style={[styles.corner, styles.cornerBottomRight, { color: suitColor }]}>{label}</Text>
           </ScrollView>
         </Pressable>
       </Pressable>
+
+      <LogResultsModal
+        visible={logOpen}
+        onClose={() => setLogOpen(false)}
+        logSource="deck"
+        dayKey={card.id}
+        workoutTitle={card.title}
+        dateLabel=""
+        date={new Date()}
+        movements={card.movements}
+      />
     </AppModal>
   );
 }
@@ -225,5 +249,22 @@ const styles = StyleSheet.create({
   },
   completeButtonTextDone: {
     color: colors.white,
+  },
+  // Round 44 — a quiet, secondary button under MARK COMPLETE, since
+  // logging structured results is an optional extra on top of the binary
+  // complete/incomplete flag, never a replacement for it.
+  logResultsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginTop: 6,
+  },
+  logResultsButtonText: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 1,
   },
 });

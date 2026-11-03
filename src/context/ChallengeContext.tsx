@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { useAuth } from './AuthContext';
 import { ContentCowScoringType, KettlebellLevels, useContentLibrary } from './ContentLibraryContext';
 import { getChallengeCycle } from '../lib/challengeSchedule';
+import { checkPersonalBest } from '../lib/personalBest';
 import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
 
 // The label next to a member's name on the leaderboard — computed live from
@@ -97,13 +98,18 @@ export type ChallengeEntry = {
   tag: ChallengeTag;
   level?: ChallengeScoreLevel;
   createdAt: number;
+  // Round 44 — computed and persisted at post time (every other entry this
+  // same account has ever posted for this exact challengeTitle, "same
+  // workout, any path: ... COW by challenge" per the brief). Never
+  // recomputed on read.
+  isPb: boolean;
 };
 
 type ChallengeContextValue = {
   loading: boolean;
   error: string | null;
   entries: ChallengeEntry[];
-  addEntry: (entry: Omit<ChallengeEntry, 'id' | 'userId' | 'createdAt' | 'author' | 'tag'>) => void;
+  addEntry: (entry: Omit<ChallengeEntry, 'id' | 'userId' | 'createdAt' | 'author' | 'tag' | 'isPb'>) => void;
 };
 
 const ChallengeContext = createContext<ChallengeContextValue | undefined>(undefined);
@@ -133,6 +139,8 @@ type ChallengeEntryRow = {
   time_taken: string;
   // Round 39, migration_027 — optional, free pick at score-entry time.
   level: string | null;
+  // Round 44, migration_028.
+  is_pb: boolean;
   created_at: string;
   profiles: ProfileRef;
 };
@@ -151,11 +159,12 @@ function rowToEntry(row: ChallengeEntryRow): ChallengeEntry {
     tag: tagFromHowTrain(profile?.how_train),
     level: (row.level as ChallengeScoreLevel | null) ?? undefined,
     createdAt: new Date(row.created_at).getTime(),
+    isPb: row.is_pb,
   };
 }
 
 const ENTRY_SELECT =
-  'id, user_id, challenge_title, kettlebell_kg, rounds, reps, time_taken, level, created_at, profiles(display_name, how_train)';
+  'id, user_id, challenge_title, kettlebell_kg, rounds, reps, time_taken, level, is_pb, created_at, profiles(display_name, how_train)';
 
 // Weekly Challenge (COWs) submissions — every member's entries, read from
 // the shared `challenge_entries` table, so the leaderboard is the same for
@@ -196,6 +205,17 @@ export function ChallengeProvider({ children }: { children: React.ReactNode }) {
       entries,
       addEntry: (entry) => {
         if (!user) return;
+        // Round 44 — "same workout, any path: ... COW by challenge": every
+        // other entry THIS account has ever posted for this exact
+        // challengeTitle, computed from what's already loaded (no extra
+        // fetch), so this can never block or slow the post itself.
+        const history = entries
+          .filter((e) => e.userId === user.id && e.challengeTitle === entry.challengeTitle)
+          .map((e) => ({ time: e.time, rounds: e.rounds, reps: e.reps, kettlebell: e.kettlebell }));
+        const { isPb } = checkPersonalBest(
+          { time: entry.time, rounds: entry.rounds, reps: entry.reps, kettlebell: entry.kettlebell },
+          history
+        );
         supabase
           .from('challenge_entries')
           .insert({
@@ -206,6 +226,7 @@ export function ChallengeProvider({ children }: { children: React.ReactNode }) {
             reps: entry.reps ?? null,
             time_taken: entry.time,
             level: entry.level ?? null,
+            is_pb: isPb,
           })
           .select(ENTRY_SELECT)
           .single()

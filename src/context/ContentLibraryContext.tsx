@@ -30,12 +30,27 @@ export type ContentWorkoutStatus = 'draft' | 'scheduled' | 'published';
 // a WOD entry leaves this unset. Required to save a COW entry (enforced in
 // ContentWorkoutForm) since the leaderboard can't render without knowing
 // which column(s) to show.
-export type ContentCowScoringType = 'time' | 'rounds' | 'rounds_reps';
+//
+// Round 44: the owner-facing names are FOR TIME / AMRAP / EMOM — but the
+// underlying stored VALUES for the first two are left exactly as they were
+// ('time' / 'rounds_reps'), never renamed, since this is purely a display
+// label change and renaming the value itself would mean rewriting every
+// already-saved Content Library entry and the already-mirrored
+// `challenges.scoring_type` rows in Supabase for no functional benefit.
+// 'emom' is the one genuinely new value (migration_028 widened the
+// database's own check constraint to allow it) — an endless-EMOM Challenge
+// scores on completed minutes (stored in challenge_entries.rounds, the
+// same column AMRAP already uses for round count) plus the reps reached in
+// the minute the member broke (challenge_entries.reps) — no new column
+// needed. 'rounds' stays the existing legacy fallback, never offered as a
+// new choice (see ContentWorkoutForm's own SCORING_TYPE_OPTIONS).
+export type ContentCowScoringType = 'time' | 'rounds' | 'rounds_reps' | 'emom';
 
 export const SCORING_TYPE_LABELS: Record<ContentCowScoringType, string> = {
-  time: 'TIME',
+  time: 'FOR TIME',
   rounds: 'ROUNDS',
-  rounds_reps: 'ROUNDS + REPS',
+  rounds_reps: 'AMRAP',
+  emom: 'EMOM',
 };
 
 // Round 39: THE COW's own "prescribed kettlebells" line — Rx/Scaled/

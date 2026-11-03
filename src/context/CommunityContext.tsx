@@ -58,6 +58,12 @@ export type WodPostMeta = {
   dateLabel: string;
   notes: string;
   resultsLine?: string;
+  // Round 44 — a small gold PB marker on the post, read off the already-
+  // persisted is_pb flag on the member's own completion row at POST TO
+  // COMMUNITY time (see LogResultsModal's own isPbNow) and persisted here
+  // because another member's feed has no way to recompute a PB from the
+  // poster's own private completion history.
+  isPb?: boolean;
 };
 
 export type Post = {
@@ -107,7 +113,7 @@ type CommunityContextValue = {
   // ignored — the real author is always the signed-in member (author_id =
   // auth.uid(), enforced by RLS), never whatever string is passed in.
   addTextPost: (author: string, title: string, text: string, category?: string, media?: MediaAttachment | null) => Promise<void>;
-  addWodResultPost: (author: string, title: string, meta: WodPostMeta, media?: MediaAttachment | null) => Promise<void>;
+  addWodResultPost: (author: string, title: string, meta: WodPostMeta, media?: MediaAttachment | null, isPb?: boolean) => Promise<void>;
   updateTextPost: (postId: string, title: string, text: string, media?: MediaAttachment | null) => Promise<void>;
   deletePost: (postId: string) => void;
   // Toggles the given reaction off if this viewer already placed it, on
@@ -174,6 +180,7 @@ type PostRow = {
   workout_title: string | null;
   workout_notes: string | null;
   workout_results_line: string | null;
+  is_pb: boolean;
   pinned: boolean;
   created_at: string;
   author_id: string;
@@ -183,7 +190,7 @@ type PostRow = {
 };
 
 const POST_SELECT =
-  'id, title, body, category, kind, media_url, media_type, workout_title, workout_notes, workout_results_line, pinned, created_at, author_id, profiles(display_name), community_comments(id, body, created_at, author_id, media_url, profiles(display_name), community_comment_reactions(emoji, author_id)), community_reactions(emoji, author_id)';
+  'id, title, body, category, kind, media_url, media_type, workout_title, workout_notes, workout_results_line, is_pb, pinned, created_at, author_id, profiles(display_name), community_comments(id, body, created_at, author_id, media_url, profiles(display_name), community_comment_reactions(emoji, author_id)), community_reactions(emoji, author_id)';
 
 function relativeTimeLabel(ms: number): string {
   const diffMs = Date.now() - ms;
@@ -239,6 +246,7 @@ function rowToPost(row: PostRow, userId: string | undefined, lastViewedAt: Recor
             dateLabel: '',
             notes: row.workout_notes ?? '',
             resultsLine: row.workout_results_line ?? undefined,
+            isPb: row.is_pb,
           }
         : undefined,
     unread: latestActivity > (lastViewedAt[row.id] ?? 0),
@@ -305,6 +313,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       workout_title?: string | null;
       workout_notes?: string | null;
       workout_results_line?: string | null;
+      is_pb?: boolean;
     };
 
     const insertPost = async (fields: NewPostFields) => {
@@ -344,7 +353,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           media_type: resolved?.type ?? null,
         });
       },
-      addWodResultPost: async (_author, title, meta, media = null) => {
+      addWodResultPost: async (_author, title, meta, media = null, isPb = false) => {
         const resolved = await resolveMedia(media);
         await insertPost({
           title: title.trim() || meta.workoutTitle,
@@ -356,6 +365,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           workout_title: meta.workoutTitle,
           workout_notes: meta.notes,
           workout_results_line: meta.resultsLine ?? null,
+          is_pb: isPb,
         });
       },
       updateTextPost: async (postId, title, text, media) => {
