@@ -165,6 +165,11 @@ create table if not exists public.community_posts (
   workout_results_line text,
   linked_workout_day_key text,
   pinned boolean not null default false,
+  -- Round 44 / migration_028 — a personal-best marker, written once by the
+  -- posting member's own client at POST TO COMMUNITY time (see
+  -- wod_completions.is_pb below for why this can't be recomputed live by
+  -- another member's feed).
+  is_pb boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -410,9 +415,24 @@ create table if not exists public.wod_completions (
   -- Free text, not a number (migration_021) — "2x24", "16/20", "24kg" and
   -- plain pounds are all real, routine ways to write a kettlebell size.
   kettlebell_kg text,
+  -- Round 44 / migration_028 — an overall AMRAP partial-reps count,
+  -- alongside the existing `rounds`. Free text, same convention as every
+  -- other score field in this app.
+  reps text,
   notes text not null default '',
   media_url text,
   media_type text check (media_type in ('image', 'video')),
+  -- Round 44 / migration_028 — one JSONB map per completion, keyed by
+  -- movement identity (a Movement Vault match's own id when one exists,
+  -- `raw:<normalized text>` otherwise — see src/lib/movementWeights.ts).
+  -- Never null; a completion with no weights logged is simply `{}`.
+  movement_weights jsonb not null default '{}'::jsonb,
+  -- Round 44 / migration_028 — computed and written by the client at save
+  -- time (faster time / more rounds+reps / heavier bell at the same-or-
+  -- better score than this member's own prior history for this exact
+  -- workout). Persisted (not only computed live) so a future recap job can
+  -- query PB counts directly without re-deriving them from full history.
+  is_pb boolean not null default false,
   completed_at timestamptz not null default now(),
   unique (user_id, day_key)
 );
@@ -426,10 +446,23 @@ create policy "members manage only their own WOD completions"
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
 
+-- Round 44 / migration_028 widened this table from a bare completion flag
+-- to the same results shape wod_completions carries — deck cards get a
+-- real Log Results form for the first time this round (reusing the exact
+-- same LogResultsModal the WOD path already has), not just MARK COMPLETE.
 create table if not exists public.deck_completions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
   card_id text not null,
+  rounds text not null default '',
+  time_taken text not null default '',
+  kettlebell_kg text,
+  reps text,
+  notes text not null default '',
+  media_url text,
+  media_type text check (media_type in ('image', 'video')),
+  movement_weights jsonb not null default '{}'::jsonb,
+  is_pb boolean not null default false,
   completed_at timestamptz not null default now(),
   unique (user_id, card_id)
 );
@@ -479,6 +512,8 @@ create table if not exists public.challenge_entries (
   -- Round 39 / migration_027 — optional, free pick at score-entry time.
   -- Null means the member didn't say; the leaderboard then omits it.
   level text check (level in ('Rx', 'Scaled', 'Modified')),
+  -- Round 44 / migration_028 — see wod_completions.is_pb above.
+  is_pb boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -521,7 +556,14 @@ create policy "members can delete their own challenge entry"
 create table if not exists public.challenges (
   id text primary key,
   title text not null,
-  scoring_type text not null check (scoring_type in ('time', 'rounds', 'rounds_reps')),
+  -- 'emom' added Round 44 / migration_028 — an endless-EMOM Challenge scores
+  -- on completed minutes (stored in challenge_entries.rounds, same column
+  -- AMRAP uses for round count) plus the reps reached in the minute the
+  -- member broke (challenge_entries.reps) — the identical "bigger number,
+  -- then reps as tiebreaker" shape 'rounds_reps' already uses, just with
+  -- member-facing labels of MINUTES / REPS instead of ROUNDS / +REPS. No
+  -- new column needed on challenge_entries for this.
+  scoring_type text not null check (scoring_type in ('time', 'rounds', 'rounds_reps', 'emom')),
   week_start timestamptz not null,
   week_end timestamptz not null,
   -- Set once the award job below has processed this challenge's close, so a

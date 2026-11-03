@@ -8046,6 +8046,672 @@ async function run() {
     await context.close();
   }
 
+  // [structured-log/*]: Round 44, Part 1 -- per-movement weight entries
+  // (prefilled from the last time this exact movement was logged in ANY
+  // workout, WOD or deck) and an overall +REPS field alongside ROUNDS.
+  // Monday's THE GAUNTLET (moves[1] = "10 Kettlebell Swings") and
+  // Thursday's SWING SET (moves[1] = "Kettlebell Swings") both mention the
+  // same movement under slightly different wording -- logging a weight on
+  // Monday must prefill as a real starting VALUE the next time a
+  // DIFFERENT workout containing it is opened, never just a placeholder
+  // hint ("members should never retype a weight that has not changed").
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible1 = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible1) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId(`date-strip-cell-${offsetToWeekday(1)}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('log-results-movement-weight-1').fill('24kg').catch(() => {});
+    await page.getByTestId('log-results-reps').fill('6').catch(() => {});
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'log-results-structured.png') }).catch(() => {});
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    const mondaySavedWeight = await page.getByTestId('log-results-movement-weight-1').inputValue().catch(() => '');
+    const mondaySavedReps = await page.getByTestId('log-results-reps').inputValue().catch(() => '');
+    record(
+      '[structured-log/weight-and-reps-save] a per-movement weight and the overall +REPS field both save and persist on screen',
+      mondaySavedWeight === '24kg' && mondaySavedReps === '6',
+      JSON.stringify({ mondaySavedWeight, mondaySavedReps })
+    );
+
+    await page.getByTestId('close-log-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    // wod-bar-toggle is a genuine toggle on DayPanel's own `wodExpanded`
+    // state, and DayPanel stays mounted across a date-strip selection
+    // change (switching days does not remount it) -- so it's already
+    // expanded from the Monday open above, and tapping it again here would
+    // COLLAPSE it, hiding day-panel-log entirely. Re-collapse it now
+    // (matching the house convention [share-card/colorway-*] already
+    // established for exactly this) purely so the NEXT genuinely fresh
+    // wod-bar-toggle tap below has a clean, consistent, collapsed
+    // starting state to expand from.
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByTestId(`date-strip-cell-${offsetToWeekday(4)}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const thursdayPrefilledWeight = await page.getByTestId('log-results-movement-weight-1').inputValue().catch(() => '');
+    record(
+      '[structured-log/movement-weight-prefill] opening a DIFFERENT workout containing the same movement prefills its weight as a real value, not just a placeholder',
+      thursdayPrefilledWeight === '24kg',
+      JSON.stringify({ thursdayPrefilledWeight })
+    );
+    await context.close();
+  }
+
+  // [structured-log/deck-log-results]: Round 44 -- deck cards get a real
+  // Log Results form for the first time (previously MARK-COMPLETE-only, no
+  // results logging at all -- see AGENTS.md's Round 44 writeup). Reuses
+  // the exact same LogResultsModal the WOD path already has, bound to
+  // deck_completions via logSource="deck".
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible2 = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible2) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /THE DECK/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByText('BROWSE DECK', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('browse-card-A-spade').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('deck-card-log-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const deckLogVisible = await page.getByTestId('close-log-results').isVisible().catch(() => false);
+    await page.locator('#log-results-time-input').fill('11:05').catch(() => {});
+    await page.getByTestId('log-results-movement-weight-0').fill('20kg').catch(() => {});
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    const deckSaveButtonText = await page.getByTestId('save-results').innerText().catch(() => '');
+    // This is this account's first-ever deck completion -- DeckUpsellModal
+    // ("WANT THE REAL THING?") shows on exactly that transition
+    // (DeckScreen.tsx's own completedCount > prevCompletedCount.current &&
+    // shouldOfferUpsell) and, left undismissed, sits on top of and
+    // intercepts clicks meant for LogResultsModal underneath it.
+    if (await page.getByTestId('deck-upsell-dismiss').isVisible().catch(() => false)) {
+      await page.getByTestId('deck-upsell-dismiss').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+    }
+    await page.getByTestId('close-log-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const deckCompleteStillToggleable = await page.getByTestId('deck-card-complete-toggle').isVisible().catch(() => false);
+    record(
+      '[structured-log/deck-log-results] a deck card now has a real LOG RESULTS form -- opens, saves a time and a movement weight, and MARK COMPLETE is unaffected by its presence',
+      deckLogVisible && deckSaveButtonText.includes('SAVED') && deckCompleteStillToggleable,
+      JSON.stringify({ deckLogVisible, deckSaveButtonText, deckCompleteStillToggleable })
+    );
+    await context.close();
+  }
+
+  // [cow-scoring/*]: Round 44, Part 2 -- FOR TIME/AMRAP/EMOM. The current
+  // live seeded COW (PULL YOURSELF TOGETHER) is already FOR TIME and
+  // already covered by [cow-screen/score-entry]/[cow-screen/leaderboard-
+  // own-row]. These two fresh fixtures cover AMRAP (rounds_reps -- labels
+  // unchanged, just no check existed yet by this name) and EMOM (the new
+  // value migration_028 added: completed minutes stored in the same
+  // `rounds` column, relabeled MINUTES, plus the reps reached when the
+  // member broke, relabeled REPS instead of +REPS). Both verify the
+  // leaderboard sorts the bigger number first with reps as the tiebreaker,
+  // the same real formula AMRAP already used -- never posting order. The
+  // real weekly cycle's open/closed window is a function of today's actual
+  // wall-clock weekday -- pinned here to the same fixed, safely mid-week
+  // instant [share-card/cow-never] already established, for the same
+  // reason.
+  for (const [scoringType, label, roundsLabel, repsLabel] of [
+    ['rounds_reps', 'amrap', 'ROUNDS', '+ REPS'],
+    ['emom', 'emom', 'MINUTES', 'REPS'],
+  ]) {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await page.clock.setFixedTime(new Date('2027-01-20T17:00:00.000Z'));
+    await setupMocks(page, USER_ID);
+    await page.addInitScript((type) => {
+      try {
+        const releaseAt = Date.now() - 2 * 24 * 60 * 60 * 1000;
+        window.localStorage.setItem(
+          'contentLibraryDrafts.v1',
+          JSON.stringify([
+            {
+              id: `r44-cow-${type}`,
+              name: `ROUND 44 ${type.toUpperCase()} TEST`,
+              originalTitle: `ROUND 44 ${type.toUpperCase()} TEST`,
+              type: 'cow',
+              format: type === 'emom' ? 'Endless EMOM' : '20min AMRAP',
+              formatDescription: '',
+              movements: ['Swings', 'Push-Ups'],
+              videoUrl: '',
+              notes: '',
+              scoringType: type,
+              releaseAt,
+              status: 'published',
+              scheduled: true,
+              createdAt: releaseAt,
+              updatedAt: releaseAt,
+            },
+          ])
+        );
+        window.localStorage.setItem('contentLibraryDrafts.v1.seedVersion', '999');
+      } catch {}
+    }, scoringType);
+    const insertedCowEntries = [];
+    await page.route('**/rest/v1/challenge_entries*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'POST') {
+        let payload = {};
+        try {
+          payload = JSON.parse(req.postData() || '{}');
+        } catch {}
+        const row = {
+          id: `r44-cow-entry-${insertedCowEntries.length + 1}`,
+          user_id: payload.user_id ?? USER_ID,
+          challenge_title: payload.challenge_title ?? '',
+          kettlebell_kg: payload.kettlebell_kg ?? '',
+          rounds: payload.rounds ?? '',
+          reps: payload.reps ?? null,
+          time_taken: payload.time_taken ?? '',
+          level: payload.level ?? null,
+          is_pb: payload.is_pb ?? false,
+          created_at: new Date().toISOString(),
+          profiles: { display_name: 'Test Member', how_train: 'boathouse' },
+        };
+        insertedCowEntries.push(row);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(row) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(insertedCowEntries) });
+    });
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible3 = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible3) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /DOC'?S COWS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.getByTestId('cow-hero').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByTestId('cow-post-score-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+
+    const showsTime = await page.locator('#cowkiller-time-input').isVisible().catch(() => false);
+    const roundsLabelText = await page.locator('#cowkiller-rounds-label').innerText().catch(() => '');
+    const repsLabelText = await page.locator('#cowkiller-reps-label').innerText().catch(() => '');
+    record(
+      `[cow-scoring/${label}-entry-form] the ${label.toUpperCase()} score entry form shows ${roundsLabel}+${repsLabel}, never TIME`,
+      !showsTime && roundsLabelText === roundsLabel && repsLabelText === repsLabel,
+      JSON.stringify({ showsTime, roundsLabelText, repsLabelText })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, `cow-entry-form-${label}.png`) }).catch(() => {});
+
+    // Two scores, worse then better, to prove the leaderboard sorts the
+    // bigger number first with reps as the tiebreaker -- never posting
+    // order.
+    await page.locator('#cowkiller-rounds-input').fill('8').catch(() => {});
+    await page.locator('#cowkiller-reps-input').fill('3').catch(() => {});
+    await page.getByTestId('cow-submit-score').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('cow-post-score-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+    await page.locator('#cowkiller-rounds-input').fill('12').catch(() => {});
+    await page.locator('#cowkiller-reps-input').fill('1').catch(() => {});
+    await page.getByTestId('cow-submit-score').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const rowTexts = await page.locator('[data-testid="cow-leaderboard-own-row"]').allInnerTexts().catch(() => []);
+    record(
+      `[cow-scoring/${label}-leaderboard-sort] the leaderboard sorts the higher ${roundsLabel.toLowerCase()}+${repsLabel.toLowerCase().replace('+ ', '')} score first, never posting order`,
+      rowTexts.length === 2 && rowTexts[0].includes('12 +1') && rowTexts[1].includes('8 +3'),
+      JSON.stringify({ rowTexts })
+    );
+    await context.close();
+  }
+
+  // [pb/*]: Round 44, Part 3 -- PB detection. wod_completions has always
+  // had exactly one row per (user, day_key) -- day_key is a FIXED weekday
+  // slot ('mon'..'fri'), the same slot every calendar week, never a
+  // per-date key (see DayPanel.tsx's own dayKey derivation, unchanged by
+  // this round) -- so "the same workout, logged before, by name" for a
+  // WOD means re-opening THIS SAME day's own already-saved entry and
+  // improving it, a singleton comparison identical in shape to deck's own
+  // one-row-per-card model, not an accumulated multi-week history. A
+  // brand-new completion (nothing to compare against yet) never earns the
+  // tag; re-saving a genuinely faster time does; re-saving a genuinely
+  // slower time afterward correctly drops it again -- all three states
+  // read live off the real My Workouts screen, never an internal flag
+  // alone.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible4 = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible4) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+
+    // Re-opens the SAME day (Monday) three times in this one block.
+    // wod-bar-toggle is a genuine toggle on DayPanel's own `wodExpanded`
+    // state, which DayPanel never resets on its own (it stays mounted and
+    // expanded once opened) -- so only the FIRST call actually needs to
+    // expand it; tapping it again on a later call would collapse it right
+    // back and hide day-panel-log.
+    let wodBarExpanded = false;
+    const openMondayLog = async () => {
+      await page.getByTestId(`date-strip-cell-${offsetToWeekday(1)}`).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      if (!wodBarExpanded) {
+        await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(400);
+        wodBarExpanded = true;
+      }
+      await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    };
+    const readMyWorkoutsPbTag = async (testId) => {
+      await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.getByTestId('sidebar-workouts').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      const visible = await page.getByTestId(testId).isVisible().catch(() => false);
+      if (SCREENSHOT_DIR && visible) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'my-workouts-pb-tag.png') }).catch(() => {});
+      // MY WORKOUTS is opened NESTED under the still-open hamburger drawer
+      // (SidebarDrawer.tsx's own openNested() convention -- the house's
+      // own back-button rule: closing a nested screen reveals the
+      // drawer's own menu list again, never the tab underneath). Closing
+      // close-my-workouts alone leaves the DRAWER itself still open and
+      // covering the whole screen -- root-caused directly via a
+      // screenshot while chasing this exact check's own repeat failure --
+      // so any further navigation back to a tab's own content (the date
+      // strip, BROWSE DECK, etc.) needs the drawer closed too.
+      await page.getByTestId('close-my-workouts').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      await page.getByTestId('close-sidebar').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      return visible;
+    };
+
+    // Waits for the real SAVED confirmation text rather than a flat delay
+    // -- more robust under the variable load of a 350+-check suite run
+    // than a fixed timeout, root-caused directly: an isolated reproduction
+    // of this exact sequence (same waits) passed cleanly stand-alone, so
+    // the gap is this block running under real contention later in a long
+    // run, not the underlying save/PB logic itself.
+    const waitForSaved = () => page.getByTestId('save-results').filter({ hasText: 'SAVED' }).waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+
+    await openMondayLog();
+    await page.locator('#log-results-time-input').fill('20:00').catch(() => {});
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    await waitForSaved();
+    await page.waitForTimeout(400);
+    await page.getByTestId('close-log-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const pbAfterFirstSave = await readMyWorkoutsPbTag('my-workout-pb-wod-mon');
+    record(
+      '[pb/wod-no-tag-on-first-completion] a brand-new completion, with nothing to compare against, never shows the PB tag',
+      pbAfterFirstSave === false,
+      JSON.stringify({ pbAfterFirstSave })
+    );
+
+    await openMondayLog();
+    // A per-movement weight too, so the My Workouts screenshot shows a
+    // real entry with both weights AND a PB tag together. A short settle
+    // wait between the two field edits, since each one's own context-level
+    // sync call reads whatever state is current at that instant.
+    await page.getByTestId('log-results-movement-weight-1').fill('24kg').catch(() => {});
+    await page.waitForTimeout(300);
+    await page.locator('#log-results-time-input').fill('15:00').catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    await waitForSaved();
+    await page.waitForTimeout(400);
+    await page.getByTestId('close-log-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const pbAfterFasterSave = await readMyWorkoutsPbTag('my-workout-pb-wod-mon');
+    record(
+      '[pb/wod-tag-on-genuinely-better] re-saving a genuinely faster time than the prior save shows the gold PB tag in My Workouts',
+      pbAfterFasterSave === true,
+      JSON.stringify({ pbAfterFasterSave })
+    );
+
+    await openMondayLog();
+    await page.locator('#log-results-time-input').fill('25:00').catch(() => {});
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    await waitForSaved();
+    await page.waitForTimeout(400);
+    await page.getByTestId('close-log-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const pbAfterSlowerSave = await readMyWorkoutsPbTag('my-workout-pb-wod-mon');
+    record(
+      '[pb/wod-no-tag-on-worse] re-saving a genuinely slower time afterward correctly drops the PB tag again',
+      pbAfterSlowerSave === false,
+      JSON.stringify({ pbAfterSlowerSave })
+    );
+    await context.close();
+  }
+
+  // [pb/community-post-marker-*]: Round 44, Part 3 -- POST TO COMMUNITY
+  // carries the PB marker on the post itself, computed once by the
+  // posting member's own client (previewIsPb, run at post time against
+  // their own already-loaded history) and persisted, since another
+  // member's feed has no way to recompute a PB from the poster's private
+  // completion history.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const insertedPosts = [];
+    await page.route('**/rest/v1/community_posts*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'POST') {
+        let payload = {};
+        try {
+          payload = JSON.parse(req.postData() || '{}');
+        } catch {}
+        insertedPosts.push(payload);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify([{ id: `r44-post-${insertedPosts.length}`, ...payload }]) });
+      }
+      if (req.method() === 'GET') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(
+            insertedPosts.map((p, i) => ({
+              id: `r44-post-${i + 1}`,
+              title: p.title ?? '',
+              body: p.body ?? '',
+              category: p.category ?? 'Workout',
+              kind: p.kind ?? 'wod',
+              media_url: p.media_url ?? null,
+              media_type: p.media_type ?? null,
+              workout_title: p.workout_title ?? null,
+              workout_notes: p.workout_notes ?? null,
+              workout_results_line: p.workout_results_line ?? null,
+              is_pb: p.is_pb ?? false,
+              pinned: false,
+              created_at: new Date().toISOString(),
+              author_id: USER_ID,
+              profiles: { display_name: 'Test Member' },
+              community_comments: [],
+              community_reactions: [],
+            }))
+          ),
+        });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible5 = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible5) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId(`date-strip-cell-${offsetToWeekday(1)}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.locator('#log-results-time-input').fill('20:00').catch(() => {});
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    await page.locator('#log-results-time-input').fill('15:00').catch(() => {});
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    await page.getByTestId('post-to-community').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByText('POST IT', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    const postedIsPb = insertedPosts.length === 1 && insertedPosts[0].is_pb === true;
+    record(
+      '[pb/community-post-marker-written] POST TO COMMUNITY on a genuine PB writes is_pb true onto the real inserted post row',
+      postedIsPb,
+      JSON.stringify({ insertedPosts })
+    );
+    await page.getByTestId('close-log-results').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByRole('tab', { name: /COMMUNITY/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    const pbMarkerVisible = await page.getByTestId('post-pb-marker-r44-post-1').isVisible().catch(() => false);
+    record(
+      '[pb/community-post-marker-rendered] the community feed renders a small gold PB marker on that post',
+      pbMarkerVisible,
+      JSON.stringify({ pbMarkerVisible })
+    );
+    if (SCREENSHOT_DIR) {
+      await page.getByTestId('post-pb-marker-r44-post-1').scrollIntoViewIfNeeded().catch(() => {});
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'community-pb-marker.png') }).catch(() => {});
+    }
+    await context.close();
+  }
+
+  // [pb/deck-*]: Round 44, Part 3 -- deck_completions is a true one-row-
+  // per-card singleton (the same `unique(user_id, card_id)` constraint
+  // that's always been there), so a deck card's own PB comparison is
+  // exactly the same "compare against the single row's own prior state"
+  // shape WOD now uses too. A brand-new completion never earns the tag;
+  // re-logging with a genuinely faster time does.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible6 = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible6) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /THE DECK/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const openSpadeLog = async () => {
+      await page.getByText('BROWSE DECK', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await page.getByTestId('browse-card-A-spade').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      await page.getByTestId('deck-card-log-results').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    };
+    const closeSpadeLogAndCard = async () => {
+      await page.getByTestId('close-log-results').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      await page.getByTestId('deck-card-close').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+    };
+    const readDeckPbTag = async () => {
+      await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.getByTestId('sidebar-workouts').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      const visible = await page.getByTestId('my-workout-pb-deck-A-spade').isVisible().catch(() => false);
+      // See readMyWorkoutsPbTag's own comment above -- MY WORKOUTS nests
+      // under the still-open drawer, so closing it alone leaves the
+      // drawer itself covering the screen.
+      await page.getByTestId('close-my-workouts').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      await page.getByTestId('close-sidebar').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      return visible;
+    };
+
+    // Waits for the real SAVED confirmation text rather than a flat delay
+    // -- more robust under the variable load of a 350+-check suite run.
+    const waitForDeckSaved = () => page.getByTestId('save-results').filter({ hasText: 'SAVED' }).waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+
+    await openSpadeLog();
+    await page.locator('#log-results-time-input').fill('12:00').catch(() => {});
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    await waitForDeckSaved();
+    await page.waitForTimeout(400);
+    // This is this account's first-ever deck completion -- DeckUpsellModal
+    // ("WANT THE REAL THING?") shows on exactly that transition and, left
+    // undismissed, sits on top of and intercepts every click meant for
+    // LogResultsModal/DeckCardDetailModal underneath it (confirmed directly
+    // via a screenshot while root-causing this check). It only ever shows
+    // once per session (DeckScreen.tsx's own recordUpsellShown gates it),
+    // so no later re-check is needed.
+    if (await page.getByTestId('deck-upsell-dismiss').isVisible().catch(() => false)) {
+      await page.getByTestId('deck-upsell-dismiss').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+    }
+    await closeSpadeLogAndCard();
+    const pbAfterFirstDeckSave = await readDeckPbTag();
+    record(
+      "[pb/deck-no-tag-on-first-completion] a deck card's brand-new completion never shows the PB tag",
+      pbAfterFirstDeckSave === false,
+      JSON.stringify({ pbAfterFirstDeckSave })
+    );
+
+    await openSpadeLog();
+    await page.waitForTimeout(300);
+    await page.locator('#log-results-time-input').fill('9:00').catch(() => {});
+    await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
+    await waitForDeckSaved();
+    await page.waitForTimeout(400);
+    await closeSpadeLogAndCard();
+    const pbAfterFasterDeckSave = await readDeckPbTag();
+    record(
+      '[pb/deck-tag-on-genuinely-better] re-logging a deck card with a genuinely faster time shows the gold PB tag in My Workouts',
+      pbAfterFasterDeckSave === true,
+      JSON.stringify({ pbAfterFasterDeckSave })
+    );
+    await context.close();
+  }
+
+  // [pb/old-entries-unaffected] + [pb/save-never-blocked]: Round 44, Part
+  // 4 -- an older, pre-Round-44-shaped completion row (no reps, no
+  // movement_weights, no is_pb -- exactly what a real pre-migration row
+  // looks like once the new nullable columns default to null/false) must
+  // render exactly as it always did, with no crash and no false PB tag;
+  // and re-saving over a row with a genuinely unparseable prior score must
+  // never block or slow the save itself.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const oldRow = {
+      day_key: 'tue',
+      workout_title: 'IRON GRIP',
+      date_label: 'A WEEK AGO',
+      workout_timestamp: Date.now() - 7 * 86400000,
+      rounds: '',
+      reps: null,
+      time_taken: 'DNF',
+      kettlebell_kg: null,
+      notes: 'an old freetext note from before this round',
+      media_url: null,
+      media_type: null,
+      movement_weights: null,
+      is_pb: false,
+      completed_at: new Date(Date.now() - 7 * 86400000).toISOString(),
+    };
+    await page.route('**/rest/v1/wod_completions*', (route) => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([oldRow]) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+    // This fixture's own nonzero wod_completions row makes BadgeContext's
+    // own effect see totalWorkoutsLogged >= 1 and try to grant
+    // day_one_doug -- without also mocking badge_grants to reflect that,
+    // the generic empty-array default never satisfies the effect's own
+    // condition and it loops forever trying to upsert it (documented
+    // since Round 28; the exact same gap the [share-card/*] fixtures
+    // above already answer for the same reason), which floods the
+    // network and is why page.goto({waitUntil:'networkidle'}) below was
+    // timing out -- not an app bug, a missing fixture mock.
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } }]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible7 = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible7) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-workouts').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const oldEntryVisible = await page.getByTestId('my-workout-wod-tue').isVisible().catch(() => false);
+    const oldEntryPbTagAbsent = !(await page.getByTestId('my-workout-pb-wod-tue').isVisible().catch(() => true));
+    const oldEntryWeightsLineAbsent = !(await page.getByTestId('my-workout-weights-wod-tue').isVisible().catch(() => true));
+    record(
+      '[pb/old-entries-unaffected] a pre-Round-44-shaped row (no reps/weights/is_pb) renders exactly as it always did -- no crash, no weights line, no false PB tag',
+      oldEntryVisible && oldEntryPbTagAbsent && oldEntryWeightsLineAbsent,
+      JSON.stringify({ oldEntryVisible, oldEntryPbTagAbsent, oldEntryWeightsLineAbsent })
+    );
+    // MY WORKOUTS nests under the still-open drawer (SidebarDrawer.tsx's
+    // own openNested() convention) -- closing it alone leaves the drawer
+    // itself covering the screen, which is exactly what root-caused this
+    // block's own repeat failure (confirmed via a screenshot showing the
+    // drawer's menu list still on screen where the date strip was
+    // expected).
+    await page.getByTestId('close-my-workouts').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByTestId('close-sidebar').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    await page.getByTestId(`date-strip-cell-${offsetToWeekday(2)}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.locator('#log-results-time-input').fill('11:30').catch(() => {});
+    await page.waitForTimeout(200);
+    await page.getByTestId('save-results').click({ timeout: 8000 }).catch(() => {});
+    // Elapsed time is measured from AFTER the click itself lands (not
+    // including however long Playwright needed to find/retry a clickable
+    // target under this suite's own load) -- isolating "how long did the
+    // PB-comparison save itself take" from ordinary UI-action variance.
+    const saveStart = Date.now();
+    await page.getByTestId('save-results').filter({ hasText: 'SAVED' }).waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+    const saveElapsedMs = Date.now() - saveStart;
+    const saveButtonTextAfter = await page.getByTestId('save-results').innerText().catch(() => '');
+    record(
+      '[pb/save-never-blocked] re-saving over a row with an unparseable prior time (DNF) still saves normally and quickly, never blocked by incomplete comparison data',
+      saveButtonTextAfter.includes('SAVED') && saveElapsedMs < 6000,
+      JSON.stringify({ saveButtonTextAfter, saveElapsedMs })
+    );
+    await context.close();
+  }
+
   await browser.close();
   console.log('\n=== SUMMARY ===');
   const failed = results.filter((r) => !r.pass);

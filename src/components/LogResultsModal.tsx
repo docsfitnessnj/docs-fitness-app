@@ -6,10 +6,12 @@ import { MediaAttachmentPicker } from './MediaAttachmentPicker';
 import { ModalHeader } from './ModalHeader';
 import { TappableMovementText } from './movement/TappableMovementText';
 import { useCommunity } from '../context/CommunityContext';
+import { useDeckProgress } from '../context/DeckProgressContext';
 import { useDisplayName } from '../context/ProfileContext';
-import { formatResultsLine, useWorkoutLog } from '../context/WorkoutLogContext';
+import { formatResultsLine, useWorkoutLog, WorkoutLog } from '../context/WorkoutLogContext';
 import { formatShortDate, parseMoveRow } from '../data/content';
 import { showAlert } from '../lib/alert';
+import { findLastWeight, movementWeightKey } from '../lib/movementWeights';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useActionCompletion } from '../lib/useActionCompletion';
 import { colors, fonts } from '../theme';
@@ -17,6 +19,9 @@ import { colors, fonts } from '../theme';
 // Free text ("2x24", "16/20 kg", pounds) — no format validation, just a
 // sane ceiling.
 const KETTLEBELL_SIZE_MAX_LENGTH = 40;
+// Free text ("24kg", "16/20", "2x16") — same convention as the overall
+// kettlebell field, just scoped to one movement.
+const MOVEMENT_WEIGHT_MAX_LENGTH = 24;
 
 type Props = {
   visible: boolean;
@@ -28,14 +33,69 @@ type Props = {
   // The workout's movement list, shown read-only above the entry fields so
   // the member never has to leave this screen to remember what it was.
   movements: string[];
+  // Round 44 — which context actually owns this log. 'deck' reuses this
+  // exact same form for a deck card's Log Results (see DeckCardDetailModal)
+  // — deck cards had no results-logging flow of any kind before this
+  // round, only a binary MARK COMPLETE; this is the first time they get
+  // the richer form the WOD path already had.
+  logSource?: 'wod' | 'deck';
 };
 
-export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLabel, date, movements }: Props) {
+export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLabel, date, movements, logSource = 'wod' }: Props) {
   const displayName = useDisplayName();
   const { addWodResultPost } = useCommunity();
-  const { getLog, updateLog: updateLogEntry, setLogMedia, isCompleted, toggleCompleted } = useWorkoutLog();
+  const wodSource = useWorkoutLog();
+  const deckSource = useDeckProgress();
+  const isDeck = logSource === 'deck';
+
+  // Round 44 — WorkoutLogContext and DeckProgressContext expose the same
+  // *shape* of log data (getLog/updateLog/setLogMedia/setMovementWeight/
+  // movementWeightHistory) but different method names for isCompleted/
+  // toggleCompleted (deck's own toggle takes no workoutTitle/dateLabel/
+  // timestamp, since a deck completion's identity is just the card id) —
+  // this is the one place that difference is bridged, so the rest of this
+  // component never has to branch on `isDeck` again below.
+  const getLog = isDeck ? deckSource.getLog : wodSource.getLog;
+  const updateLogEntry = isDeck ? deckSource.updateLog : wodSource.updateLog;
+  const setLogMedia = isDeck ? deckSource.setLogMedia : wodSource.setLogMedia;
+  const setMovementWeight = isDeck ? deckSource.setMovementWeight : wodSource.setMovementWeight;
+  const seedMovementWeights = isDeck ? deckSource.seedMovementWeights : wodSource.seedMovementWeights;
+  const isCompleted = isDeck ? deckSource.isComplete : wodSource.isCompleted;
+  const isPbNow = isDeck
+    ? !!deckSource.pbCardIds[dayKey]
+    : !!wodSource.completedWorkouts.find((w) => w.dayKey === dayKey)?.isPb;
+  const toggleCompletedForSource = () => {
+    if (isDeck) deckSource.toggleComplete(dayKey);
+    else wodSource.toggleCompleted(dayKey, workoutTitle, dateLabel, Date.now());
+  };
+  // Round 44 — "the last time you logged ANY workout containing it" spans
+  // both WOD and deck history, regardless of which one this screen is
+  // currently logging into.
+  const weightHistory = [...wodSource.movementWeightHistory, ...deckSource.movementWeightHistory];
 
   const log = getLog(dayKey);
+
+  // Round 44 — "members should never retype a weight that has not
+  // changed": prefill is a real starting VALUE, not just a placeholder
+  // hint the member still has to type over. Seeds any movement whose
+  // weight is still blank with the last time it was logged, the instant
+  // this screen opens for a day that isn't already complete (an
+  // already-saved entry's own state — even a movement deliberately left
+  // blank that time — is never silently overwritten by reopening it).
+  // One seed pass per open; SAVE RESULTS still has to be tapped for it to
+  // actually persist, same as every other field in this form.
+  useEffect(() => {
+    if (!visible || isCompleted(dayKey)) return;
+    const seeds: Record<string, string> = {};
+    for (const move of movements) {
+      const key = movementWeightKey(parseMoveRow(move).name);
+      if (log.movementWeights[key]) continue;
+      const prefill = findLastWeight(key, weightHistory);
+      if (prefill) seeds[key] = prefill;
+    }
+    seedMovementWeights(dayKey, seeds);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, dayKey]);
 
   // Auto-fills as "WORKOUT NAME · DATE" but stays fully editable so the
   // member can append their own note before posting to the community.
@@ -67,7 +127,7 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
     setPosted(false);
   };
 
-  const updateLog = (field: 'rounds' | 'time' | 'kettlebell' | 'notes', value: string) => {
+  const updateLog = (field: 'rounds' | 'reps' | 'time' | 'kettlebell' | 'notes', value: string) => {
     updateLogEntry(dayKey, field, value);
     setSaved(false);
     setPosted(false);
@@ -79,13 +139,23 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
     setPosted(false);
   };
 
+  // Round 44 — one movement's own weight field. Blank clears the key
+  // entirely (see setMovementWeight in both contexts) rather than storing
+  // an empty string, so a later prefill scan never finds a "last weight"
+  // of nothing.
+  const handleMovementWeightChange = (movementKey: string, value: string) => {
+    setMovementWeight(dayKey, movementKey, value);
+    setSaved(false);
+    setPosted(false);
+  };
+
   // The Trophy Case counts a workout the moment it's logged, not only when
   // MARK COMPLETE is tapped separately — so logging results for a day that
   // isn't already marked complete quietly marks it complete too (toggle is
   // a flip, so this only ever fires when it's not already done).
   const markCompleteIfNeeded = () => {
     if (!isCompleted(dayKey)) {
-      toggleCompleted(dayKey, workoutTitle, dateLabel, Date.now());
+      toggleCompletedForSource();
     }
   };
 
@@ -142,6 +212,20 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
           onPress: () => {
             runPost(() => {
               markCompleteIfNeeded();
+              // Round 44 — `isPbNow` (above) already reads whatever is_pb
+              // the row currently carries. Every path that can set it
+              // (toggleCompleted's own first-completion write, or a field
+              // edit's syncCompletedRow write) runs and settles into a
+              // fresh render BEFORE this button can be tapped -- a live
+              // edit already persists its own correct is_pb the instant it
+              // changes (LogResultsModal never holds score fields back
+              // until a separate save step), so there is no "stale" value
+              // left to recompute here; reading the same flag My Workouts
+              // reads is both correct and the simplest answer. A brand-new
+              // completion (markCompleteIfNeeded just above) is always
+              // is_pb: false by construction, which is exactly what a
+              // not-yet-rendered isPbNow already reads too.
+              const isPb = isPbNow;
               // Awaited by useActionCompletion's own run() -- see
               // CommunityContext.tsx's addWodResultPost, which now uploads
               // a locally-picked photo/video to real Storage before writing
@@ -150,7 +234,8 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
                 displayName,
                 title,
                 { workoutTitle, dateLabel, notes: log.notes.trim(), resultsLine: formatResultsLine(log) },
-                log.media
+                log.media,
+                isPb
               );
             }, () => {
               setPosted(true);
@@ -174,14 +259,41 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             <View style={styles.movementsBlock} testID="log-results-movements">
               {movements.map((move, index) => {
                 const parsed = parseMoveRow(move);
+                // Round 44 — every movement line gets its own optional
+                // weight field, keyed by movementWeightKey (a real Movement
+                // Vault match's own id when one exists, the raw line
+                // otherwise — same key a format-only line like "5 Rounds"
+                // falls back to, which is fine: it just never has a real
+                // prefill to find). The seeding effect above already fills
+                // this in as a real value the instant the screen opens for
+                // a not-yet-complete day, so by the time this renders,
+                // `currentWeight` already IS the prefill when one exists —
+                // the member never has to retype it, just confirm or edit.
+                const key = movementWeightKey(parsed.name);
+                const currentWeight = log.movementWeights[key] ?? '';
                 return (
                   <View key={index} style={styles.movementRow}>
-                    <TappableMovementText
-                      style={styles.movementName}
-                      text={parsed.name}
-                      onOpenMovement={(movementId) => openMovementVault(movementId, 'WORKOUT')}
+                    <View style={styles.movementNameCol}>
+                      <TappableMovementText
+                        style={styles.movementName}
+                        text={parsed.name}
+                        onOpenMovement={(movementId) => openMovementVault(movementId, 'WORKOUT')}
+                      />
+                      {parsed.reps ? <Text style={styles.movementReps}>{parsed.reps}</Text> : null}
+                    </View>
+                    <TextInput
+                      style={styles.movementWeightInput}
+                      value={currentWeight}
+                      onChangeText={(v) => handleMovementWeightChange(key, v)}
+                      placeholder="kg"
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      spellCheck={false}
+                      maxLength={MOVEMENT_WEIGHT_MAX_LENGTH}
+                      aria-label={`${parsed.name} weight`}
+                      testID={`log-results-movement-weight-${index}`}
                     />
-                    {parsed.reps ? <Text style={styles.movementReps}>{parsed.reps}</Text> : null}
                   </View>
                 );
               })}
@@ -217,6 +329,26 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
                 spellCheck={false}
                 nativeID="log-results-rounds-input"
                 aria-label="Rounds"
+              />
+            </View>
+            {/* Round 44 — an AMRAP's partial-round reps, alongside Rounds.
+                Always shown, same "no WOD/deck scoring-type exists to gate
+                on" reasoning the overall ROUNDS/TIME fields already use —
+                see AGENTS.md's Round 44 writeup. */}
+            <View style={styles.logField}>
+              <Text nativeID="log-results-reps-label" style={styles.label}>+ REPS</Text>
+              <TextInput
+                style={styles.input}
+                value={log.reps}
+                onChangeText={(v) => updateLog('reps', v)}
+                placeholder="e.g. 8"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
+                nativeID="log-results-reps-input"
+                aria-label="Partial-round reps"
+                testID="log-results-reps"
               />
             </View>
             <View style={styles.logField}>
@@ -343,6 +475,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: colors.hairline,
+    gap: 10,
+  },
+  movementNameCol: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   movementName: {
     flex: 1,
@@ -356,6 +494,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 0.5,
     marginLeft: 12,
+  },
+  // Round 44 — a compact per-movement weight field, small enough to sit on
+  // the same row as the movement's own name without crowding it.
+  movementWeightInput: {
+    width: 70,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: colors.text,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+    textAlign: 'right',
   },
   logRow: {
     flexDirection: 'row',

@@ -284,8 +284,15 @@ function EntryForm({
   // as this screen always has — a real Content Library Challenge narrows
   // to just the field(s) its own scoring type calls for.
   const showTime = scoringType === null || scoringType === 'time';
-  const showRounds = scoringType === null || scoringType === 'rounds' || scoringType === 'rounds_reps';
-  const showReps = scoringType === 'rounds_reps';
+  const showRounds = scoringType === null || scoringType === 'rounds' || scoringType === 'rounds_reps' || scoringType === 'emom';
+  // Round 44 — an endless EMOM scores on completed minutes (stored in the
+  // same `rounds` field, relabeled below) PLUS the reps reached in the
+  // minute the member broke — the identical "+REPS" field AMRAP already
+  // has, just also offered for 'emom'.
+  const showReps = scoringType === 'rounds_reps' || scoringType === 'emom';
+  const isEmom = scoringType === 'emom';
+  const roundsLabel = isEmom ? 'MINUTES' : 'ROUNDS';
+  const repsLabel = isEmom ? 'REPS' : '+ REPS';
 
   const canSubmit = showRounds && !showTime ? rounds.trim().length > 0 : time.trim().length > 0;
 
@@ -329,25 +336,25 @@ function EntryForm({
         )}
         {showRounds && (
           <View style={styles.formField}>
-            <Text nativeID="cowkiller-rounds-label" style={styles.label}>ROUNDS</Text>
+            <Text nativeID="cowkiller-rounds-label" style={styles.label}>{roundsLabel}</Text>
             <TextInput
               style={styles.input}
               value={rounds}
               onChangeText={setRounds}
-              placeholder="e.g. 12"
+              placeholder={isEmom ? 'e.g. 14' : 'e.g. 12'}
               placeholderTextColor={colors.textMuted}
               keyboardType="numeric"
               autoCapitalize="none"
               autoCorrect={false}
               spellCheck={false}
               nativeID="cowkiller-rounds-input"
-              aria-label="Rounds"
+              aria-label={roundsLabel}
             />
           </View>
         )}
         {showReps && (
           <View style={styles.formField}>
-            <Text nativeID="cowkiller-reps-label" style={styles.label}>+ REPS</Text>
+            <Text nativeID="cowkiller-reps-label" style={styles.label}>{repsLabel}</Text>
             <TextInput
               style={styles.input}
               value={reps}
@@ -359,7 +366,7 @@ function EntryForm({
               autoCorrect={false}
               spellCheck={false}
               nativeID="cowkiller-reps-input"
-              aria-label="Extra reps"
+              aria-label={repsLabel}
             />
           </View>
         )}

@@ -169,7 +169,18 @@ function PostCard({
 
       {post.kind === 'wod' && post.meta ? (
         <View style={styles.wodBlock}>
-          <Text style={styles.wodBadge}>WORKOUT COMPLETE</Text>
+          <View style={styles.wodBadgeRow}>
+            <Text style={styles.wodBadge}>WORKOUT COMPLETE</Text>
+            {/* Round 44 — a small gold PB marker, read off the already-
+                persisted is_pb flag and carried along at POST TO
+                COMMUNITY time (see LogResultsModal's isPbNow). No popup,
+                no card -- the tag itself is the celebration. */}
+            {post.meta.isPb && (
+              <View style={styles.pbPill} testID={`post-pb-marker-${post.id}`}>
+                <Text style={styles.pbPillText}>PB</Text>
+              </View>
+            )}
+          </View>
           <View style={styles.titleRow}>
             {post.unread && <View style={styles.unreadDot} />}
             <Text style={[styles.wodTitle, isDesktop && styles.wodTitleDesktop]}>{post.title}</Text>
@@ -705,12 +716,29 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 6,
   },
+  wodBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
   wodBadge: {
     color: colors.green,
     fontFamily: fonts.labelBold,
     fontSize: 11,
     letterSpacing: 1,
-    marginBottom: 4,
+  },
+  pbPill: {
+    backgroundColor: colors.gold,
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  pbPillText: {
+    color: colors.text,
+    fontFamily: fonts.labelBold,
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   wodTitle: {
     color: colors.text,
