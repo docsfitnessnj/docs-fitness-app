@@ -7326,8 +7326,8 @@ async function run() {
   // identical way the two standard-suit fixtures are: a real MARK
   // COMPLETE on joker-black/joker-red via BROWSE DECK.
   for (const fixture of [
-    { id: 'joker-black', expectedInk: [18, 33, 28], expectedHex: '#12211c', label: 'black-joker' },
-    { id: 'joker-red', expectedInk: [200, 16, 46], expectedHex: '#c8102e', label: 'red-joker' },
+    { id: 'joker-black', expectedInk: [18, 33, 28], expectedHex: '#12211c', label: 'black-joker', barY: 1138, roadY: 1193 },
+    { id: 'joker-red', expectedInk: [200, 16, 46], expectedHex: '#c8102e', label: 'red-joker', barY: 1148, roadY: 1203 },
   ]) {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -7426,6 +7426,50 @@ async function run() {
       `[share-card/${fixture.label}-corner] the corner shows the small cap mark stacked above the vertical JOKER word, in the card's own ink`,
       closeToRgb(capMarkSample, fixture.expectedInk, 40) && closeToRgb(wordMarkSample, fixture.expectedInk, 40),
       JSON.stringify({ capMarkSample, wordMarkSample })
+    );
+
+    // Round 43 (owner decision, final): on a Joker card only, the progress
+    // bar is shortened symmetrically (JOKER_SAFE_WIDTH, shareCardRender.ts)
+    // so its own right edge clears the bottom-right corner's vertical
+    // JOKER stack (real measured left edge x=893) with a real margin,
+    // instead of running behind/under it. Confirmed two ways at the bar's
+    // own real y (calibrated directly against DUMP_JOKER_CANVAS output,
+    // not guessed): x=500 must be the bar's OWN painted region -- not
+    // necessarily the solid ink fill itself (a fresh account's first
+    // completion is workoutNumber 1, so the fill is only its own 18px-wide
+    // minimum width starting at the bar's own left edge; x=500 sits in the
+    // bar's own lightly-tinted TRACK instead, confirmed directly: a first
+    // draft of this check wrongly asserted x=500 against the full-strength
+    // ink color and failed on exactly this, since the track reads as a
+    // near-white tint, not the fill's own saturated color) -- so this
+    // checks only that x=500 is NOT blank background, proving the bar
+    // still renders at all; x=880 -- comfortably past the bar's own new
+    // ~862 right edge, comfortably short of the stack's own 893 left edge
+    // -- must be blank background, proving the bar's own fill/track does
+    // not reach into the stack's column.
+    const barInsideSample = await sampleCanvasPixel(page, 500, fixture.barY);
+    const barClearOfCornerSample = await sampleCanvasPixel(page, 880, fixture.barY);
+    record(
+      `[share-card/${fixture.label}-bar-clears-corner] the progress bar is shortened on Joker cards so it clears the bottom-right corner's own JOKER stack`,
+      !closeToRgb(barInsideSample, [255, 255, 255], 15) && closeToRgb(barClearOfCornerSample, [255, 255, 255], 15),
+      JSON.stringify({ barInsideSample, barClearOfCornerSample })
+    );
+
+    // The Road to Hundred Down line's own natural width (its real text,
+    // "WORKOUT <N> OF 100 · ROAD TO HUNDRED DOWN") also reached into the
+    // same corner column at the default ROAD_FONT -- a real, if smaller,
+    // overlap confirmed directly via ctx.measureText() before this round's
+    // own fix (shrunk to JOKER_ROAD_FONT on Joker cards only). x=860, at
+    // the road line's own real y, sits just past the real road text's own
+    // measured right edge (~833-838 at this fixture's real workoutNumber)
+    // and well short of the corner's own 893 edge -- confirmed blank here
+    // proves the shrunk road line clears the stack, the same technique the
+    // bar check above uses.
+    const roadClearOfCornerSample = await sampleCanvasPixel(page, 860, fixture.roadY);
+    record(
+      `[share-card/${fixture.label}-road-clears-corner] the Road to Hundred Down line is sized so its own text clears the bottom-right corner's own JOKER stack`,
+      closeToRgb(roadClearOfCornerSample, [255, 255, 255], 15),
+      JSON.stringify({ roadClearOfCornerSample })
     );
 
     await context.close();
