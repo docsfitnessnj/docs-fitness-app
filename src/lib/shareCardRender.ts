@@ -416,14 +416,14 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-function drawProgressBar(ctx: CanvasRenderingContext2D, topY: number, fraction: number, track: string, fill: string): number {
-  const left = (CARD_WIDTH - CONTENT_WIDTH) / 2;
+function drawProgressBar(ctx: CanvasRenderingContext2D, topY: number, fraction: number, track: string, fill: string, width: number = CONTENT_WIDTH): number {
+  const left = (CARD_WIDTH - width) / 2;
   const pct = Math.max(0, Math.min(1, fraction));
   ctx.fillStyle = track;
-  roundRect(ctx, left, topY, CONTENT_WIDTH, BAR_HEIGHT, BAR_HEIGHT / 2);
+  roundRect(ctx, left, topY, width, BAR_HEIGHT, BAR_HEIGHT / 2);
   ctx.fill();
   ctx.fillStyle = fill;
-  roundRect(ctx, left, topY, Math.max(BAR_HEIGHT, CONTENT_WIDTH * pct), BAR_HEIGHT, BAR_HEIGHT / 2);
+  roundRect(ctx, left, topY, Math.max(BAR_HEIGHT, width * pct), BAR_HEIGHT, BAR_HEIGHT / 2);
   ctx.fill();
   return topY + BAR_HEIGHT;
 }
@@ -445,15 +445,23 @@ function drawNoAndProgress(
   track: string,
   fill: string,
   roadColor: string,
-  roadPrefix: string
+  roadPrefix: string,
+  barWidth: number = CONTENT_WIDTH,
+  roadFontSize: number = ROAD_FONT
 ): number {
   const y = drawCenteredInkTop(ctx, noText, centerX, topY, `${NO_FONT}px ${fonts.headline}`, noColor);
   const cleared = workoutNumber >= HUNDRED_DOWN_TARGET;
   if (!cleared) {
     const barY = y + GAP_NO_BAR;
-    const barBottom = drawProgressBar(ctx, barY, workoutNumber / HUNDRED_DOWN_TARGET, track, fill);
+    const barBottom = drawProgressBar(ctx, barY, workoutNumber / HUNDRED_DOWN_TARGET, track, fill, barWidth);
     const roadText = `${roadPrefix}${workoutNumber} OF ${HUNDRED_DOWN_TARGET} · ROAD TO HUNDRED DOWN`;
-    return drawCenteredInkTop(ctx, roadText, centerX, barBottom + GAP_BAR_ROAD, `${ROAD_FONT}px ${fonts.labelSemiBold}`, roadColor, ROAD_LETTER_SPACING);
+    // roadFontSize defaults to ROAD_FONT (36), in which case this ratio
+    // resolves to exactly ROAD_LETTER_SPACING (5) -- a standard card's own
+    // road line is byte-for-byte unchanged. A Joker's own shrunk size
+    // keeps the same proportional (em-based) tracking instead of the flat
+    // standard-card px value looking comparatively loose at a smaller size.
+    const roadLetterSpacing = roadFontSize * (ROAD_LETTER_SPACING / ROAD_FONT);
+    return drawCenteredInkTop(ctx, roadText, centerX, barBottom + GAP_BAR_ROAD, `${roadFontSize}px ${fonts.labelSemiBold}`, roadColor, roadLetterSpacing);
   }
   // Cleared: a small outlined HUNDRED DOWN pill sits where the bar would
   // have been, same vertical rhythm (GAP_NO_BAR then GAP_BAR_ROAD-ish
@@ -626,6 +634,39 @@ const JOKER_CORNER_CAP_WIDTH = Math.round(CARD_WIDTH * 0.12); // 130
 const JOKER_CORNER_LETTER_FONT = Math.round((CARD_WIDTH * 0.065) / 0.73); // 96
 const JOKER_CORNER_GAP_CAP_WORD = 20;
 const JOKER_CORNER_LETTER_GAP = 12;
+
+// Round 43 (owner decision, final): on a Joker card only, the progress bar
+// and the Road to Hundred Down line both run close enough to the bottom-
+// right corner's own vertical JOKER stack to collide with it -- confirmed
+// directly via ctx.measureText() against the real rendered text (not by
+// scanning the exported PNG's own pixels, which reads as contaminated
+// wherever an element shares the corner stack's own ink color, since
+// drawNoAndProgress's own noColor/track/fill are the card's ink for a
+// Joker). The bar's own full CONTENT_WIDTH (894px, right edge x=987) and
+// the road line's own natural width (up to ~764px for a real 2-digit
+// workout number, right edge ~x=922) both land well past the corner
+// stack's real measured left edge (x=893, matching
+// CARD_WIDTH-CORNER_INSET_LEFT-JOKER_CORNER_CAP_WIDTH=892 almost exactly)
+// -- the bar collides outright (it's drawn AFTER the corner mark, so it
+// visibly paints over part of a letter), the road line's own trailing
+// characters overlap by a smaller but still real ~25-30px. JOKER_SAFE_LEFT
+// derives a centered, symmetric zone directly from the corner geometry
+// constants above (never a bare hardcoded pixel guess, so it stays
+// correct if those constants ever change) plus a small, deliberate
+// clearance margin. JOKER_ROAD_FONT is the largest size, in the same -2px
+// steps fitFontSize() already uses elsewhere in this file, whose worst
+// real case ("WORKOUT 99 OF 100 · ROAD TO HUNDRED DOWN" -- the bar retires
+// into the HUNDRED DOWN pill at workoutNumber 100, so a 2-digit number is
+// the real ceiling) fits inside JOKER_SAFE_WIDTH with real margin to
+// spare (confirmed directly: 610px at size 28, against a 644px budget).
+// Every other deck card (and every other element on a Joker card --
+// eyebrow, date, the JOKER · BONUS CARD counter line, the footer -- all
+// independently confirmed to already clear the stack with real margin)
+// is completely untouched.
+const JOKER_BAR_MARGIN = 30;
+const JOKER_SAFE_LEFT = CORNER_INSET_LEFT + JOKER_CORNER_CAP_WIDTH + JOKER_BAR_MARGIN; // 218
+const JOKER_SAFE_WIDTH = CARD_WIDTH - JOKER_SAFE_LEFT * 2; // 644
+const JOKER_ROAD_FONT = 28;
 
 // A small, filled, three-point jester-cap silhouette -- band at the base,
 // three triangular points each tipped with a small filled bell. Drawn as
@@ -803,7 +844,9 @@ async function drawDeckCard(ctx: CanvasRenderingContext2D, payload: DeckCardPayl
     isJoker ? hexToRgba(ink, 0.16) : 'rgba(7,102,82,0.16)',
     isJoker ? ink : colors.green,
     colors.textMuted,
-    'WORKOUT '
+    'WORKOUT ',
+    isJoker ? JOKER_SAFE_WIDTH : CONTENT_WIDTH,
+    isJoker ? JOKER_ROAD_FONT : ROAD_FONT
   );
 
   drawFooter(ctx, y + GAP_ROAD_BRAND, centerX, colors.text, colors.textMuted);
