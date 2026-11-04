@@ -24,6 +24,10 @@ export type AdminMember = {
   statusKind: AdminMemberStatusKind;
   statusLabel: string | null;
   groupChatMuted: boolean;
+  // LEGACY badge (Round 45) — classes this member took on the old,
+  // pre-app system, admin-editable here. Added to their real in-app
+  // class_bookings count for the badge's lifetime total.
+  legacyStartingCount: number;
 };
 
 // The 7 sections Member Manager groups the roster into, in the exact order
@@ -59,6 +63,7 @@ type Row = {
   sub_trial_end: string | null;
   sub_cancel_at_period_end: boolean | null;
   group_chat_muted: boolean | null;
+  legacy_starting_count: number | null;
 };
 
 function formatDate(iso: string | null): string {
@@ -128,6 +133,7 @@ function mapRow(row: Row): AdminMember {
     statusKind,
     statusLabel,
     groupChatMuted: row.group_chat_muted ?? false,
+    legacyStartingCount: row.legacy_starting_count ?? 0,
   };
 }
 
@@ -184,5 +190,17 @@ export function useAdminMembers(active: boolean) {
     return { error: null };
   };
 
-  return { members, grouped, loading, error, refetch, setMemberMuted };
+  // LEGACY badge (Round 45) — same shape as setMemberMuted above, allowed
+  // by migration_029.sql's "admin can update any profile" policy; the
+  // profiles_legacy_starting_count_admin_only trigger is the real
+  // enforcement that this column is admin-only, regardless of what a
+  // non-admin client might try to send.
+  const setLegacyStartingCount = async (id: string, count: number): Promise<{ error: string | null }> => {
+    const { error: updateError } = await supabase.from('profiles').update({ legacy_starting_count: count }).eq('id', id);
+    if (updateError) return { error: updateError.message };
+    setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, legacyStartingCount: count } : m)));
+    return { error: null };
+  };
+
+  return { members, grouped, loading, error, refetch, setMemberMuted, setLegacyStartingCount };
 }

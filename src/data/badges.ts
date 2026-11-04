@@ -11,7 +11,9 @@ export type BadgeId =
   | 'cow_killer'
   | 'the_regular'
   | 'day_one_doug'
-  | 'hundred_down';
+  | 'hundred_down'
+  | 'legacy'
+  | 'upstairs';
 
 // 'membership' is distinct from 'permanent': it reflects CURRENT membership
 // status (live-computed, not a one-time grant) — earned the moment access
@@ -99,6 +101,22 @@ export const BADGE_DEFS: BadgeDef[] = [
     kind: 'permanent',
     order: 5,
   },
+  {
+    id: 'upstairs',
+    name: 'UPSTAIRS',
+    description:
+      "Booked 3 or more Doc's Fitness classes in one week. The gym lives up the boathouse stairs, and you made that climb at least 3 times. Resets every Monday.",
+    kind: 'weekly',
+    order: 3.5,
+  },
+  {
+    id: 'legacy',
+    name: 'LEGACY',
+    description:
+      "Lifetime classes taken at Doc's Fitness. The number on the badge is your milestone: 50, 100, 250, 500, 750, 1000. Every class you have ever booked counts, including the years before this app existed.",
+    kind: 'permanent',
+    order: 6.5,
+  },
 ];
 
 export const BADGE_MAP: Record<BadgeId, BadgeDef> = BADGE_DEFS.reduce(
@@ -119,8 +137,15 @@ export const INLINE_BADGE_CAP = 4;
 // 50 first (while it's live/held), then the grouped permanents (Doug,
 // Hundred Down, Joker), then weeklies. Distinct from `order`/sortBadgeIds
 // above, which stays Joker-first for inline feed badges.
-export const PERMANENT_DISPLAY_ORDER: BadgeId[] = ['founding_50', 'day_one_doug', 'hundred_down', 'joker', 'cow_champ'];
-export const WEEKLY_DISPLAY_ORDER: BadgeId[] = ['on_fire', 'cow_killer', 'the_regular'];
+export const PERMANENT_DISPLAY_ORDER: BadgeId[] = [
+  'founding_50',
+  'day_one_doug',
+  'hundred_down',
+  'joker',
+  'cow_champ',
+  'legacy',
+];
+export const WEEKLY_DISPLAY_ORDER: BadgeId[] = ['on_fire', 'cow_killer', 'the_regular', 'upstairs'];
 // THE CREW is the one 'membership'-kind badge — its own section on the
 // Trophy Case, above PERMANENT (see PERMANENT_DISPLAY_ORDER).
 export const MEMBERSHIP_DISPLAY_ORDER: BadgeId[] = ['crew'];

@@ -136,6 +136,10 @@ function YourWeekModule() {
   if (!badges.cowKillerEarned) {
     candidates.push({ remaining: 1, label: 'Post a score this week for COW KILLER' });
   }
+  if (!badges.upstairsProgress.earned) {
+    const remaining = badges.upstairsProgress.target - badges.upstairsProgress.count;
+    candidates.push({ remaining, label: `${pluralize(remaining, 'more class')} booked for UPSTAIRS` });
+  }
   candidates.sort((a, b) => a.remaining - b.remaining);
   const closest = candidates[0];
 

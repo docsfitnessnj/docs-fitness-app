@@ -12,6 +12,10 @@ type Props = {
   // COW CHAMP only — total wins, for the "x2"/"x3" stack count. One win
   // shows no count at all, just the badge, same as every other permanent.
   count?: number;
+  // LEGACY only — the member's current milestone (50/100/250/500/750/1000).
+  // The number itself IS the glyph (Round 45), the same text-glyph pattern
+  // DAY ONE DOUG already uses, just dynamic instead of a fixed "D1D".
+  legacyMilestone?: number;
 };
 
 // Thin tally marks (four uprights + a diagonal strike) drawn from plain
@@ -69,7 +73,17 @@ function TallyMarks({ color, size }: { color: string; size: number }) {
   );
 }
 
-function BadgeGlyph({ id, color, size }: { id: BadgeId; color: string; size: number }) {
+function BadgeGlyph({
+  id,
+  color,
+  size,
+  legacyMilestone,
+}: {
+  id: BadgeId;
+  color: string;
+  size: number;
+  legacyMilestone?: number;
+}) {
   switch (id) {
     case 'crew':
       return <Ionicons name="boat-outline" size={size} color={color} />;
@@ -110,6 +124,22 @@ function BadgeGlyph({ id, color, size }: { id: BadgeId; color: string; size: num
       return (
         <Text style={{ fontFamily: fonts.headline, fontSize: size * 0.58, color, letterSpacing: 0.5 }}>D1D</Text>
       );
+    case 'upstairs':
+      return <MaterialCommunityIcons name="stairs" size={size} color={color} />;
+    case 'legacy':
+      return (
+        <Text
+          testID="badge-legacy-glyph"
+          style={{
+            fontFamily: fonts.headline,
+            fontSize: size * (legacyMilestone && legacyMilestone >= 1000 ? 0.46 : 0.58),
+            color,
+            letterSpacing: 0.5,
+          }}
+        >
+          {legacyMilestone ? String(legacyMilestone) : ''}
+        </Text>
+      );
     case 'hundred_down':
       return (
         <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -135,7 +165,7 @@ function BadgeGlyph({ id, color, size }: { id: BadgeId; color: string; size: num
 // A badge glyph inside its circular frame — gold fill/border when earned,
 // gray hairline silhouette when not. Used both inline (small, next to a
 // name) and large (profile grid, Trophy Case, detail modal).
-export function BadgeIcon({ id, earned, size = 36, count }: Props) {
+export function BadgeIcon({ id, earned, size = 36, count, legacyMilestone }: Props) {
   const showCount = earned && !!count && count > 1;
   return (
     <View style={{ width: size, height: size }}>
@@ -146,7 +176,12 @@ export function BadgeIcon({ id, earned, size = 36, count }: Props) {
           earned ? styles.frameEarned : styles.frameUnearned,
         ]}
       >
-        <BadgeGlyph id={id} color={earned ? colors.greenDeep : colors.textMuted} size={size * 0.72} />
+        <BadgeGlyph
+          id={id}
+          color={earned ? colors.greenDeep : colors.textMuted}
+          size={size * 0.72}
+          legacyMilestone={legacyMilestone}
+        />
       </View>
       {showCount && (
         <View
