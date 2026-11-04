@@ -422,16 +422,22 @@ create table if not exists public.wod_completions (
   notes text not null default '',
   media_url text,
   media_type text check (media_type in ('image', 'video')),
-  -- Round 44 / migration_028 — one JSONB map per completion, keyed by
-  -- movement identity (a Movement Vault match's own id when one exists,
-  -- `raw:<normalized text>` otherwise — see src/lib/movementWeights.ts).
-  -- Never null; a completion with no weights logged is simply `{}`.
+  -- Round 44 / migration_028 — a per-movement weight entry grid the app
+  -- briefly collected into this JSONB map. Round 44.5 (owner decision,
+  -- final) removed that grid from the app entirely ("logging results must
+  -- be as simple as humanly possible") — this column is left in place
+  -- (no migration drops it) purely so an already-saved Round 44 row's own
+  -- data isn't lost, but nothing writes to it from now on, and nothing
+  -- reads it either; it simply stays `{}` (or whatever it already held)
+  -- forever on from here.
   movement_weights jsonb not null default '{}'::jsonb,
   -- Round 44 / migration_028 — computed and written by the client at save
-  -- time (faster time / more rounds+reps / heavier bell at the same-or-
-  -- better score than this member's own prior history for this exact
-  -- workout). Persisted (not only computed live) so a future recap job can
-  -- query PB counts directly without re-deriving them from full history.
+  -- time (faster time, or more rounds+reps, than this member's own prior
+  -- history for this exact workout — Round 44.5, owner decision, final,
+  -- dropped the original "heavier bell at the same-or-better score" axis;
+  -- weight plays no part in PB detection at all now). Persisted (not only
+  -- computed live) so a future recap job can query PB counts directly
+  -- without re-deriving them from full history.
   is_pb boolean not null default false,
   completed_at timestamptz not null default now(),
   unique (user_id, day_key)
@@ -450,6 +456,9 @@ create policy "members manage only their own WOD completions"
 -- to the same results shape wod_completions carries — deck cards get a
 -- real Log Results form for the first time this round (reusing the exact
 -- same LogResultsModal the WOD path already has), not just MARK COMPLETE.
+-- Round 44.5 (owner decision, final) kept this form but dropped its
+-- per-movement weight grid; see the matching movement_weights/is_pb
+-- comments on wod_completions above, which apply identically here.
 create table if not exists public.deck_completions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,

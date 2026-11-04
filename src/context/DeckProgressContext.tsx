@@ -2,7 +2,6 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { useAuth } from './AuthContext';
 import { WorkoutLog, EMPTY_WORKOUT_LOG } from './WorkoutLogContext';
 import { DECK_CARDS } from '../data/deckCards';
-import { MovementWeights } from '../lib/movementWeights';
 import { checkPersonalBest } from '../lib/personalBest';
 import { loadJSON, saveJSON } from '../lib/storage';
 import { describeChatFailure, isBackendUnavailableError, supabase } from '../lib/supabaseClient';
@@ -16,12 +15,12 @@ const UPSELL_STORAGE_KEY = 'docsfitness.deckUpsell.v1';
 export const DECK_SHUFFLE_ORDER_RESCUE_KEY = 'docsfitness.deckShuffleOrder.v1';
 const UPSELL_MIN_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
 
-// Round 44 — draft log text (rounds/reps/time/kettlebell/notes/media/
-// movement weights) for a card that hasn't been marked complete yet. Same
-// local-only-until-complete convention as WorkoutLogContext's own
-// DRAFT_LOGS_STORAGE_KEY, kept entirely separate (a different key, a
-// different provider) since deck progress and WOD logs have always been
-// two independent contexts in this app.
+// Round 44 — draft log text (rounds/reps/time/kettlebell/notes/media) for
+// a card that hasn't been marked complete yet. Same local-only-until-
+// complete convention as WorkoutLogContext's own DRAFT_LOGS_STORAGE_KEY,
+// kept entirely separate (a different key, a different provider) since
+// deck progress and WOD logs have always been two independent contexts in
+// this app.
 const DECK_DRAFT_LOGS_STORAGE_KEY = 'docsfitness.deckLogDrafts.v1';
 
 function shuffle<T>(items: T[]): T[] {
@@ -65,7 +64,6 @@ type DeckRow = {
   notes: string;
   media_url: string | null;
   media_type: 'image' | 'video' | null;
-  movement_weights: MovementWeights | null;
   is_pb: boolean;
   completed_at: string;
 };
@@ -78,7 +76,6 @@ function rowToLog(row: DeckRow): WorkoutLog {
     kettlebell: row.kettlebell_kg ?? '',
     notes: row.notes,
     media: row.media_url ? { uri: row.media_url, type: row.media_type ?? 'image' } : null,
-    movementWeights: row.movement_weights ?? {},
   };
 }
 
@@ -88,9 +85,11 @@ function rowToLog(row: DeckRow): WorkoutLog {
 // accumulate the way a recurring WOD title naturally builds across
 // different weeks — the only "prior" a singleton-per-card model can ever
 // have is whatever was in that one row immediately before this edit.
+// Round 44.5 (owner decision, final): weight no longer plays any part in
+// this comparison, so kettlebell_kg isn't read here at all.
 function priorScoreForCard(existing: DeckRow | undefined) {
   if (!existing) return [];
-  return [{ time: existing.time_taken, rounds: existing.rounds, reps: existing.reps ?? undefined, kettlebell: existing.kettlebell_kg ?? '' }];
+  return [{ time: existing.time_taken, rounds: existing.rounds, reps: existing.reps ?? undefined }];
 }
 
 type DeckProgressContextValue = {
@@ -111,19 +110,11 @@ type DeckProgressContextValue = {
   // When each completed card was first marked complete — drives My Workouts.
   completedAt: Record<string, number>;
   // Round 44 — the card's full logged results (rounds/reps/time/kettlebell/
-  // notes/media/movement weights), draft or completed either way, same
-  // shape WorkoutLogContext.getLog already returns for a WOD.
+  // notes/media), draft or completed either way, same shape
+  // WorkoutLogContext.getLog already returns for a WOD.
   getLog: (cardId: string) => WorkoutLog;
   updateLog: (cardId: string, field: 'rounds' | 'reps' | 'time' | 'kettlebell' | 'notes', value: string) => void;
   setLogMedia: (cardId: string, media: WorkoutLog['media']) => void;
-  setMovementWeight: (cardId: string, movementKey: string, weight: string) => void;
-  // Round 44 — see WorkoutLogContext's own seedMovementWeights.
-  seedMovementWeights: (cardId: string, weights: MovementWeights) => void;
-  // Round 44 — "the last time you logged ANY workout containing this
-  // movement" (deck history only; LogResultsModal merges this with
-  // WorkoutLogContext's own movementWeightHistory before reading from
-  // either).
-  movementWeightHistory: { completedAt: number; movementWeights: MovementWeights }[];
   // Round 44 — whichever card(s) are complete and earned the PB tag at
   // save time (see toggleComplete/syncCompletedRow below).
   pbCardIds: Record<string, boolean>;
@@ -168,7 +159,7 @@ export function DeckProgressProvider({ children }: { children: React.ReactNode }
     Promise.all([
       supabase
         .from('deck_completions')
-        .select('card_id, rounds, reps, time_taken, kettlebell_kg, notes, media_url, media_type, movement_weights, is_pb, completed_at')
+        .select('card_id, rounds, reps, time_taken, kettlebell_kg, notes, media_url, media_type, is_pb, completed_at')
         .eq('user_id', user.id),
       supabase.from('deck_browse_order').select('card_order').eq('user_id', user.id).maybeSingle(),
     ]).then(([completionsRes, orderRes]) => {
@@ -229,14 +220,16 @@ export function DeckProgressProvider({ children }: { children: React.ReactNode }
     // Round 44 — same shape as WorkoutLogContext's syncCompletedRow: saves
     // an already-complete card's edited log (optimistic, rolled back on a
     // failed write), recomputing is_pb against this exact card's own prior
-    // state every time rather than only once at first completion.
+    // state every time rather than only once at first completion. Round
+    // 44.5 (owner decision, final): weight no longer plays any part in
+    // this comparison.
     const syncCompletedRow = async (cardId: string, log: WorkoutLog) => {
       if (!user) return;
       const existing = rowsByCard.get(cardId);
       if (!existing) return; // not completed yet — nothing to sync, stays a local draft
       const history = priorScoreForCard(existing);
       const { isPb } = checkPersonalBest(
-        { time: log.time, rounds: log.rounds, reps: log.reps, kettlebell: log.kettlebell },
+        { time: log.time, rounds: log.rounds, reps: log.reps },
         history
       );
       const patch = {
@@ -247,7 +240,6 @@ export function DeckProgressProvider({ children }: { children: React.ReactNode }
         notes: log.notes,
         media_url: log.media?.uri ?? null,
         media_type: log.media?.type ?? null,
-        movement_weights: log.movementWeights,
         is_pb: isPb,
       };
       setRows((prev) => prev.map((r) => (r.card_id === cardId ? { ...r, ...patch } : r)));
@@ -283,25 +275,6 @@ export function DeckProgressProvider({ children }: { children: React.ReactNode }
         setDrafts((prev) => ({ ...prev, [cardId]: nextLog }));
         syncCompletedRow(cardId, nextLog);
       },
-      setMovementWeight: (cardId, movementKey, weight) => {
-        const current = rowsByCard.get(cardId) ? rowToLog(rowsByCard.get(cardId)!) : (drafts[cardId] ?? EMPTY_WORKOUT_LOG);
-        const nextWeights = { ...current.movementWeights };
-        if (weight.trim()) nextWeights[movementKey] = weight;
-        else delete nextWeights[movementKey];
-        const nextLog = { ...current, movementWeights: nextWeights };
-        setDrafts((prev) => ({ ...prev, [cardId]: nextLog }));
-        syncCompletedRow(cardId, nextLog);
-      },
-      seedMovementWeights: (cardId, weights) => {
-        if (Object.keys(weights).length === 0) return;
-        const current = rowsByCard.get(cardId) ? rowToLog(rowsByCard.get(cardId)!) : (drafts[cardId] ?? EMPTY_WORKOUT_LOG);
-        const nextLog = { ...current, movementWeights: { ...weights, ...current.movementWeights } };
-        setDrafts((prev) => ({ ...prev, [cardId]: nextLog }));
-      },
-      movementWeightHistory: rows.map((r) => ({
-        completedAt: new Date(r.completed_at).getTime(),
-        movementWeights: r.movement_weights ?? {},
-      })),
       pbCardIds,
       // Optimistic, but no longer fire-and-forget (the root cause this
       // round fixed): both branches await the write and roll the local
@@ -338,7 +311,6 @@ export function DeckProgressProvider({ children }: { children: React.ReactNode }
             notes: log.notes,
             media_url: log.media?.uri ?? null,
             media_type: log.media?.type ?? null,
-            movement_weights: log.movementWeights,
             is_pb: false,
             completed_at: new Date(now).toISOString(),
           };
@@ -356,7 +328,6 @@ export function DeckProgressProvider({ children }: { children: React.ReactNode }
                 notes: newRow.notes,
                 media_url: newRow.media_url,
                 media_type: newRow.media_type,
-                movement_weights: newRow.movement_weights,
                 is_pb: newRow.is_pb,
                 completed_at: newRow.completed_at,
               },

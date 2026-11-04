@@ -8046,15 +8046,16 @@ async function run() {
     await context.close();
   }
 
-  // [structured-log/*]: Round 44, Part 1 -- per-movement weight entries
-  // (prefilled from the last time this exact movement was logged in ANY
-  // workout, WOD or deck) and an overall +REPS field alongside ROUNDS.
-  // Monday's THE GAUNTLET (moves[1] = "10 Kettlebell Swings") and
-  // Thursday's SWING SET (moves[1] = "Kettlebell Swings") both mention the
-  // same movement under slightly different wording -- logging a weight on
-  // Monday must prefill as a real starting VALUE the next time a
-  // DIFFERENT workout containing it is opened, never just a placeholder
-  // hint ("members should never retype a weight that has not changed").
+  // [structured-log/*]: Round 44.5 (owner decision, final) -- the per-
+  // movement weight grid Round 44 shipped, and its cross-workout prefill,
+  // are REMOVED entirely: "logging results must be as simple as humanly
+  // possible." This block replaces Round 44's own [structured-log/weight-
+  // and-reps-save]/[structured-log/movement-weight-prefill] pair outright
+  // and proves the opposite of what they tested: no weight field renders
+  // anywhere in the WOD form (not on a real movement, not on a body-weight
+  // movement, not on the format header line -- there is simply no such
+  // field left to mis-target any line into), while the +REPS field (kept,
+  // per the brief) still saves and persists normally.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -8073,52 +8074,31 @@ async function run() {
     await page.waitForTimeout(400);
     await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
-    await page.getByTestId('log-results-movement-weight-1').fill('24kg').catch(() => {});
+    const weightFieldCount = await page.locator('[data-testid^="log-results-movement-weight-"]').count();
     await page.getByTestId('log-results-reps').fill('6').catch(() => {});
-    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'log-results-structured.png') }).catch(() => {});
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'log-results-wod.png') }).catch(() => {});
     await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(1200);
-    const mondaySavedWeight = await page.getByTestId('log-results-movement-weight-1').inputValue().catch(() => '');
     const mondaySavedReps = await page.getByTestId('log-results-reps').inputValue().catch(() => '');
     record(
-      '[structured-log/weight-and-reps-save] a per-movement weight and the overall +REPS field both save and persist on screen',
-      mondaySavedWeight === '24kg' && mondaySavedReps === '6',
-      JSON.stringify({ mondaySavedWeight, mondaySavedReps })
+      '[structured-log/wod-no-weight-fields] the WOD Log Results form renders no per-movement weight fields at all (no "kg" suffix, no field on the format header line)',
+      weightFieldCount === 0,
+      JSON.stringify({ weightFieldCount })
     );
-
-    await page.getByTestId('close-log-results').click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(300);
-    // wod-bar-toggle is a genuine toggle on DayPanel's own `wodExpanded`
-    // state, and DayPanel stays mounted across a date-strip selection
-    // change (switching days does not remount it) -- so it's already
-    // expanded from the Monday open above, and tapping it again here would
-    // COLLAPSE it, hiding day-panel-log entirely. Re-collapse it now
-    // (matching the house convention [share-card/colorway-*] already
-    // established for exactly this) purely so the NEXT genuinely fresh
-    // wod-bar-toggle tap below has a clean, consistent, collapsed
-    // starting state to expand from.
-    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(300);
-    await page.getByTestId(`date-strip-cell-${offsetToWeekday(4)}`).click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(500);
-    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(400);
-    await page.getByTestId('day-panel-log').click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(400);
-    const thursdayPrefilledWeight = await page.getByTestId('log-results-movement-weight-1').inputValue().catch(() => '');
     record(
-      '[structured-log/movement-weight-prefill] opening a DIFFERENT workout containing the same movement prefills its weight as a real value, not just a placeholder',
-      thursdayPrefilledWeight === '24kg',
-      JSON.stringify({ thursdayPrefilledWeight })
+      '[structured-log/wod-reps-save] the kept + REPS field still saves and persists, unaffected by the weight-grid removal',
+      mondaySavedReps === '6',
+      JSON.stringify({ mondaySavedReps })
     );
     await context.close();
   }
 
-  // [structured-log/deck-log-results]: Round 44 -- deck cards get a real
-  // Log Results form for the first time (previously MARK-COMPLETE-only, no
-  // results logging at all -- see AGENTS.md's Round 44 writeup). Reuses
-  // the exact same LogResultsModal the WOD path already has, bound to
-  // deck_completions via logSource="deck".
+  // [structured-log/deck-log-results]: the deck card LOG RESULTS form
+  // itself is KEPT, per the brief's own explicit instruction ("the owner
+  // likes it ... it simply returns to the same simple field set as
+  // WODs") -- it still reuses the exact same LogResultsModal the WOD path
+  // uses, bound to deck_completions via logSource="deck", just with no
+  // weight fields, same as the WOD form above.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -8140,8 +8120,9 @@ async function run() {
     await page.getByTestId('deck-card-log-results').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
     const deckLogVisible = await page.getByTestId('close-log-results').isVisible().catch(() => false);
+    const deckWeightFieldCount = await page.locator('[data-testid^="log-results-movement-weight-"]').count();
     await page.locator('#log-results-time-input').fill('11:05').catch(() => {});
-    await page.getByTestId('log-results-movement-weight-0').fill('20kg').catch(() => {});
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'log-results-deck.png') }).catch(() => {});
     await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(1200);
     const deckSaveButtonText = await page.getByTestId('save-results').innerText().catch(() => '');
@@ -8158,9 +8139,9 @@ async function run() {
     await page.waitForTimeout(300);
     const deckCompleteStillToggleable = await page.getByTestId('deck-card-complete-toggle').isVisible().catch(() => false);
     record(
-      '[structured-log/deck-log-results] a deck card now has a real LOG RESULTS form -- opens, saves a time and a movement weight, and MARK COMPLETE is unaffected by its presence',
-      deckLogVisible && deckSaveButtonText.includes('SAVED') && deckCompleteStillToggleable,
-      JSON.stringify({ deckLogVisible, deckSaveButtonText, deckCompleteStillToggleable })
+      '[structured-log/deck-log-results] a deck card keeps its real LOG RESULTS form (owner decision, final), with no weight fields, and MARK COMPLETE is unaffected by its presence',
+      deckLogVisible && deckWeightFieldCount === 0 && deckSaveButtonText.includes('SAVED') && deckCompleteStillToggleable,
+      JSON.stringify({ deckLogVisible, deckWeightFieldCount, deckSaveButtonText, deckCompleteStillToggleable })
     );
     await context.close();
   }
@@ -8378,12 +8359,6 @@ async function run() {
     );
 
     await openMondayLog();
-    // A per-movement weight too, so the My Workouts screenshot shows a
-    // real entry with both weights AND a PB tag together. A short settle
-    // wait between the two field edits, since each one's own context-level
-    // sync call reads whatever state is current at that instant.
-    await page.getByTestId('log-results-movement-weight-1').fill('24kg').catch(() => {});
-    await page.waitForTimeout(300);
     await page.locator('#log-results-time-input').fill('15:00').catch(() => {});
     await page.waitForTimeout(300);
     await page.getByTestId('save-results').click({ timeout: 5000 }).catch(() => {});
@@ -8613,7 +8588,15 @@ async function run() {
   // looks like once the new nullable columns default to null/false) must
   // render exactly as it always did, with no crash and no false PB tag;
   // and re-saving over a row with a genuinely unparseable prior score must
-  // never block or slow the save itself.
+  // never block or slow the save itself. Round 44.5 (owner decision,
+  // final) removed the weight grid and its display -- this block also
+  // covers that round's own item 5: a GENUINE Round 44 row that DOES carry
+  // real movement_weights data (the shape Round 44 itself could write,
+  // before this round's own change to stop collecting it -- migration_028
+  // is explicitly left in place, so a row like this can still exist in a
+  // real database) must also render cleanly, with the stored weights
+  // simply never displayed -- not a crash, not a stale UI element reading
+  // a field the app no longer collects.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -8634,9 +8617,25 @@ async function run() {
       is_pb: false,
       completed_at: new Date(Date.now() - 7 * 86400000).toISOString(),
     };
+    const r44RowWithWeights = {
+      day_key: 'wed',
+      workout_title: 'ROTATOR CUFF',
+      date_label: 'THREE DAYS AGO',
+      workout_timestamp: Date.now() - 3 * 86400000,
+      rounds: '5',
+      reps: '3',
+      time_taken: '',
+      kettlebell_kg: '16kg',
+      notes: 'a genuine Round 44 row that still carries real movement_weights data',
+      media_url: null,
+      media_type: null,
+      movement_weights: { 'raw:kettlebell swings': '24kg', 'raw:goblet squats': '16kg' },
+      is_pb: false,
+      completed_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+    };
     await page.route('**/rest/v1/wod_completions*', (route) => {
       if (route.request().method() === 'GET') {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([oldRow]) });
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([oldRow, r44RowWithWeights]) });
       }
       return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
     });
@@ -8675,6 +8674,13 @@ async function run() {
       '[pb/old-entries-unaffected] a pre-Round-44-shaped row (no reps/weights/is_pb) renders exactly as it always did -- no crash, no weights line, no false PB tag',
       oldEntryVisible && oldEntryPbTagAbsent && oldEntryWeightsLineAbsent,
       JSON.stringify({ oldEntryVisible, oldEntryPbTagAbsent, oldEntryWeightsLineAbsent })
+    );
+    const r44EntryVisible = await page.getByTestId('my-workout-wod-wed').isVisible().catch(() => false);
+    const r44EntryWeightsLineAbsent = !(await page.getByTestId('my-workout-weights-wod-wed').isVisible().catch(() => true));
+    record(
+      '[pb/r44-row-with-stored-weights-unaffected] a genuine Round 44 row that still carries real movement_weights data renders cleanly too -- no crash, the stored weights simply never displayed',
+      r44EntryVisible && r44EntryWeightsLineAbsent,
+      JSON.stringify({ r44EntryVisible, r44EntryWeightsLineAbsent })
     );
     // MY WORKOUTS nests under the still-open drawer (SidebarDrawer.tsx's
     // own openNested() convention) -- closing it alone leaves the drawer
