@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './AuthContext';
 import { MediaAttachment } from '../lib/media';
-import { MovementWeights } from '../lib/movementWeights';
 import { checkPersonalBest } from '../lib/personalBest';
 import { loadJSON, saveJSON } from '../lib/storage';
 import { describeChatFailure, isBackendUnavailableError, supabase } from '../lib/supabaseClient';
@@ -23,10 +22,6 @@ export type WorkoutLog = {
   kettlebell: string;
   notes: string;
   media: MediaAttachment | null;
-  // Round 44 — per-movement weight entries, keyed by movementWeightKey()
-  // (see src/lib/movementWeights.ts). Never includes an empty string value
-  // for a movement the member left blank -- see setMovementWeight below.
-  movementWeights: MovementWeights;
 };
 
 export type CompletedWorkout = {
@@ -49,7 +44,6 @@ export const EMPTY_WORKOUT_LOG: WorkoutLog = {
   kettlebell: '',
   notes: '',
   media: null,
-  movementWeights: {},
 };
 
 // Kettlebell size is free text ("2x24", "16/20", "24kg", plain pounds —
@@ -88,19 +82,6 @@ type WorkoutLogContextValue = {
   getLog: (dayKey: string) => WorkoutLog;
   updateLog: (dayKey: string, field: 'rounds' | 'reps' | 'time' | 'kettlebell' | 'notes', value: string) => void;
   setLogMedia: (dayKey: string, media: MediaAttachment | null) => void;
-  // Round 44 — one movement's weight within this day's log. An empty/blank
-  // value removes the key entirely rather than storing an empty string, so
-  // a later prefill scan never finds a "last weight" of "".
-  setMovementWeight: (dayKey: string, movementKey: string, weight: string) => void;
-  // Round 44 — merges several movement weights into this day's log in one
-  // update (see the long comment at its implementation below for why a
-  // loop of setMovementWeight calls can't be used for this).
-  seedMovementWeights: (dayKey: string, weights: MovementWeights) => void;
-  // Round 44 — "the last time you logged ANY workout containing this
-  // movement" (WOD history only; see DeckProgressContext for the deck
-  // half of this same lookup — LogResultsModal merges both before reading
-  // from either).
-  movementWeightHistory: { completedAt: number; movementWeights: MovementWeights }[];
   isCompleted: (dayKey: string) => boolean;
   toggleCompleted: (dayKey: string, workoutTitle: string, dateLabel: string, timestamp: number) => void;
   completedWorkouts: CompletedWorkout[];
@@ -132,11 +113,6 @@ type Row = {
   notes: string;
   media_url: string | null;
   media_type: 'image' | 'video' | null;
-  // Round 44 — never null (db default '{}'), but a pre-Round-44 row was
-  // never written with this column at all, so a defensive `?? {}` still
-  // guards the one real gap: a row fetched before the column existed in
-  // whatever local type-checking ran against stale generated types.
-  movement_weights: MovementWeights | null;
   is_pb: boolean;
   completed_at: string;
 };
@@ -155,7 +131,6 @@ function rowToCompletedWorkout(row: Row): CompletedWorkout {
       kettlebell: row.kettlebell_kg ?? '',
       notes: row.notes,
       media: row.media_url ? { uri: row.media_url, type: row.media_type ?? 'image' } : null,
-      movementWeights: row.movement_weights ?? {},
     },
     isPb: row.is_pb,
   };
@@ -178,8 +153,10 @@ function rowToCompletedWorkout(row: Row): CompletedWorkout {
 // `existing` row to pass at all, by construction (it only reaches its
 // "new completion" branch when no row exists yet for this dayKey), so a
 // brand-new completion correctly can never be a PB on its own first save.
+// Round 44.5 (owner decision, final): weight no longer plays any part in
+// this comparison, so kettlebell_kg isn't read here at all.
 function priorScoreForDayKey(existing: Row) {
-  return [{ time: existing.time_taken, rounds: existing.rounds, reps: existing.reps ?? undefined, kettlebell: existing.kettlebell_kg ?? '' }];
+  return [{ time: existing.time_taken, rounds: existing.rounds, reps: existing.reps ?? undefined }];
 }
 
 export function WorkoutLogProvider({ children }: { children: React.ReactNode }) {
@@ -205,7 +182,7 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
     setLoading(true);
     supabase
       .from('wod_completions')
-      .select('day_key, workout_title, date_label, workout_timestamp, rounds, reps, time_taken, kettlebell_kg, notes, media_url, media_type, movement_weights, is_pb, completed_at')
+      .select('day_key, workout_title, date_label, workout_timestamp, rounds, reps, time_taken, kettlebell_kg, notes, media_url, media_type, is_pb, completed_at')
       .eq('user_id', user.id)
       .then(({ data, error: fetchError }) => {
         if (cancelled) return;
@@ -234,22 +211,23 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
       .sort((a, b) => b.completedAt - a.completedAt);
 
     // Updating an already-completed day's logged results (rounds/reps/time/
-    // KB/notes/media/movement weights). Optimistic, same shape as
-    // toggleCompleted below — on a failed write this rolls the row back to
-    // what it was before the edit and surfaces writeError, rather than
-    // leaving an edit on screen that never actually reached the database.
+    // KB/notes/media). Optimistic, same shape as toggleCompleted below — on
+    // a failed write this rolls the row back to what it was before the edit
+    // and surfaces writeError, rather than leaving an edit on screen that
+    // never actually reached the database.
     // Round 44: also recomputes is_pb against this exact workout's own
     // prior history (every other row sharing the same workout_title,
     // excluding this one) every time results are saved — never only once
     // at first completion — so re-saving a better score still earns the
-    // tag, and re-saving a worse one correctly drops it.
+    // tag, and re-saving a worse one correctly drops it. Round 44.5 (owner
+    // decision, final): weight no longer plays any part in this comparison.
     const syncCompletedRow = async (dayKey: string, log: WorkoutLog) => {
       if (!user) return;
       const existing = completedByDay.get(dayKey);
       if (!existing) return; // not completed yet — nothing to sync, stays a local draft
       const history = priorScoreForDayKey(existing);
       const { isPb } = checkPersonalBest(
-        { time: log.time, rounds: log.rounds, reps: log.reps, kettlebell: log.kettlebell },
+        { time: log.time, rounds: log.rounds, reps: log.reps },
         history
       );
       const patch = {
@@ -260,7 +238,6 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
         notes: log.notes,
         media_url: log.media?.uri ?? null,
         media_type: log.media?.type ?? null,
-        movement_weights: log.movementWeights,
         is_pb: isPb,
       };
       setCompletedRows((prev) => prev.map((r) => (r.day_key === dayKey ? { ...r, ...patch } : r)));
@@ -299,36 +276,6 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
         setDrafts((prev) => ({ ...prev, [dayKey]: nextLog }));
         syncCompletedRow(dayKey, nextLog);
       },
-      setMovementWeight: (dayKey, movementKey, weight) => {
-        const current = completedByDay.get(dayKey)
-          ? rowToCompletedWorkout(completedByDay.get(dayKey)!).log
-          : (drafts[dayKey] ?? EMPTY_WORKOUT_LOG);
-        const nextWeights = { ...current.movementWeights };
-        if (weight.trim()) nextWeights[movementKey] = weight;
-        else delete nextWeights[movementKey];
-        const nextLog = { ...current, movementWeights: nextWeights };
-        setDrafts((prev) => ({ ...prev, [dayKey]: nextLog }));
-        syncCompletedRow(dayKey, nextLog);
-      },
-      // Round 44 — the prefill auto-seed (LogResultsModal's own effect,
-      // run once when the screen opens for a not-yet-complete day) merges
-      // every movement's own prefilled weight in ONE update, never a loop
-      // of individual setMovementWeight calls — those would each read the
-      // same stale `drafts` snapshot and clobber each other down to just
-      // the last one, since none of them see the others' not-yet-applied
-      // result within the same synchronous pass.
-      seedMovementWeights: (dayKey, weights) => {
-        if (Object.keys(weights).length === 0) return;
-        const current = completedByDay.get(dayKey)
-          ? rowToCompletedWorkout(completedByDay.get(dayKey)!).log
-          : (drafts[dayKey] ?? EMPTY_WORKOUT_LOG);
-        const nextLog = { ...current, movementWeights: { ...weights, ...current.movementWeights } };
-        setDrafts((prev) => ({ ...prev, [dayKey]: nextLog }));
-      },
-      movementWeightHistory: completedRows.map((r) => ({
-        completedAt: new Date(r.completed_at).getTime(),
-        movementWeights: r.movement_weights ?? {},
-      })),
       isCompleted: (dayKey) => completedByDay.has(dayKey),
       // Optimistic, but no longer fire-and-forget (the root cause this round
       // fixed): both branches await the write and roll the local state back
@@ -374,7 +321,6 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
           notes: log.notes,
           media_url: log.media?.uri ?? null,
           media_type: log.media?.type ?? null,
-          movement_weights: log.movementWeights,
           is_pb: isPb,
           completed_at: nowIso,
         };
@@ -395,7 +341,6 @@ export function WorkoutLogProvider({ children }: { children: React.ReactNode }) 
               notes: log.notes,
               media_url: newRow.media_url,
               media_type: newRow.media_type,
-              movement_weights: newRow.movement_weights,
               is_pb: newRow.is_pb,
               completed_at: nowIso,
             },

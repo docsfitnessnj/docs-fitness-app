@@ -208,12 +208,14 @@ export function ChallengeProvider({ children }: { children: React.ReactNode }) {
         // Round 44 — "same workout, any path: ... COW by challenge": every
         // other entry THIS account has ever posted for this exact
         // challengeTitle, computed from what's already loaded (no extra
-        // fetch), so this can never block or slow the post itself.
+        // fetch), so this can never block or slow the post itself. Round
+        // 44.5 (owner decision, final): weight no longer plays any part in
+        // this comparison.
         const history = entries
           .filter((e) => e.userId === user.id && e.challengeTitle === entry.challengeTitle)
-          .map((e) => ({ time: e.time, rounds: e.rounds, reps: e.reps, kettlebell: e.kettlebell }));
+          .map((e) => ({ time: e.time, rounds: e.rounds, reps: e.reps }));
         const { isPb } = checkPersonalBest(
-          { time: entry.time, rounds: entry.rounds, reps: entry.reps, kettlebell: entry.kettlebell },
+          { time: entry.time, rounds: entry.rounds, reps: entry.reps },
           history
         );
         supabase

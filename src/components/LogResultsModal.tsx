@@ -11,7 +11,6 @@ import { useDisplayName } from '../context/ProfileContext';
 import { formatResultsLine, useWorkoutLog, WorkoutLog } from '../context/WorkoutLogContext';
 import { formatShortDate, parseMoveRow } from '../data/content';
 import { showAlert } from '../lib/alert';
-import { findLastWeight, movementWeightKey } from '../lib/movementWeights';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useActionCompletion } from '../lib/useActionCompletion';
 import { colors, fonts } from '../theme';
@@ -19,9 +18,6 @@ import { colors, fonts } from '../theme';
 // Free text ("2x24", "16/20 kg", pounds) — no format validation, just a
 // sane ceiling.
 const KETTLEBELL_SIZE_MAX_LENGTH = 40;
-// Free text ("24kg", "16/20", "2x16") — same convention as the overall
-// kettlebell field, just scoped to one movement.
-const MOVEMENT_WEIGHT_MAX_LENGTH = 24;
 
 type Props = {
   visible: boolean;
@@ -49,17 +45,15 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
   const isDeck = logSource === 'deck';
 
   // Round 44 — WorkoutLogContext and DeckProgressContext expose the same
-  // *shape* of log data (getLog/updateLog/setLogMedia/setMovementWeight/
-  // movementWeightHistory) but different method names for isCompleted/
-  // toggleCompleted (deck's own toggle takes no workoutTitle/dateLabel/
-  // timestamp, since a deck completion's identity is just the card id) —
-  // this is the one place that difference is bridged, so the rest of this
-  // component never has to branch on `isDeck` again below.
+  // *shape* of log data (getLog/updateLog/setLogMedia) but different method
+  // names for isCompleted/toggleCompleted (deck's own toggle takes no
+  // workoutTitle/dateLabel/timestamp, since a deck completion's identity is
+  // just the card id) — this is the one place that difference is bridged,
+  // so the rest of this component never has to branch on `isDeck` again
+  // below.
   const getLog = isDeck ? deckSource.getLog : wodSource.getLog;
   const updateLogEntry = isDeck ? deckSource.updateLog : wodSource.updateLog;
   const setLogMedia = isDeck ? deckSource.setLogMedia : wodSource.setLogMedia;
-  const setMovementWeight = isDeck ? deckSource.setMovementWeight : wodSource.setMovementWeight;
-  const seedMovementWeights = isDeck ? deckSource.seedMovementWeights : wodSource.seedMovementWeights;
   const isCompleted = isDeck ? deckSource.isComplete : wodSource.isCompleted;
   const isPbNow = isDeck
     ? !!deckSource.pbCardIds[dayKey]
@@ -68,34 +62,8 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
     if (isDeck) deckSource.toggleComplete(dayKey);
     else wodSource.toggleCompleted(dayKey, workoutTitle, dateLabel, Date.now());
   };
-  // Round 44 — "the last time you logged ANY workout containing it" spans
-  // both WOD and deck history, regardless of which one this screen is
-  // currently logging into.
-  const weightHistory = [...wodSource.movementWeightHistory, ...deckSource.movementWeightHistory];
 
   const log = getLog(dayKey);
-
-  // Round 44 — "members should never retype a weight that has not
-  // changed": prefill is a real starting VALUE, not just a placeholder
-  // hint the member still has to type over. Seeds any movement whose
-  // weight is still blank with the last time it was logged, the instant
-  // this screen opens for a day that isn't already complete (an
-  // already-saved entry's own state — even a movement deliberately left
-  // blank that time — is never silently overwritten by reopening it).
-  // One seed pass per open; SAVE RESULTS still has to be tapped for it to
-  // actually persist, same as every other field in this form.
-  useEffect(() => {
-    if (!visible || isCompleted(dayKey)) return;
-    const seeds: Record<string, string> = {};
-    for (const move of movements) {
-      const key = movementWeightKey(parseMoveRow(move).name);
-      if (log.movementWeights[key]) continue;
-      const prefill = findLastWeight(key, weightHistory);
-      if (prefill) seeds[key] = prefill;
-    }
-    seedMovementWeights(dayKey, seeds);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, dayKey]);
 
   // Auto-fills as "WORKOUT NAME · DATE" but stays fully editable so the
   // member can append their own note before posting to the community.
@@ -135,16 +103,6 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
 
   const handleMediaChange = (media: Parameters<typeof setLogMedia>[1]) => {
     setLogMedia(dayKey, media);
-    setSaved(false);
-    setPosted(false);
-  };
-
-  // Round 44 — one movement's own weight field. Blank clears the key
-  // entirely (see setMovementWeight in both contexts) rather than storing
-  // an empty string, so a later prefill scan never finds a "last weight"
-  // of nothing.
-  const handleMovementWeightChange = (movementKey: string, value: string) => {
-    setMovementWeight(dayKey, movementKey, value);
     setSaved(false);
     setPosted(false);
   };
@@ -259,18 +217,6 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
             <View style={styles.movementsBlock} testID="log-results-movements">
               {movements.map((move, index) => {
                 const parsed = parseMoveRow(move);
-                // Round 44 — every movement line gets its own optional
-                // weight field, keyed by movementWeightKey (a real Movement
-                // Vault match's own id when one exists, the raw line
-                // otherwise — same key a format-only line like "5 Rounds"
-                // falls back to, which is fine: it just never has a real
-                // prefill to find). The seeding effect above already fills
-                // this in as a real value the instant the screen opens for
-                // a not-yet-complete day, so by the time this renders,
-                // `currentWeight` already IS the prefill when one exists —
-                // the member never has to retype it, just confirm or edit.
-                const key = movementWeightKey(parsed.name);
-                const currentWeight = log.movementWeights[key] ?? '';
                 return (
                   <View key={index} style={styles.movementRow}>
                     <View style={styles.movementNameCol}>
@@ -281,19 +227,6 @@ export function LogResultsModal({ visible, onClose, dayKey, workoutTitle, dateLa
                       />
                       {parsed.reps ? <Text style={styles.movementReps}>{parsed.reps}</Text> : null}
                     </View>
-                    <TextInput
-                      style={styles.movementWeightInput}
-                      value={currentWeight}
-                      onChangeText={(v) => handleMovementWeightChange(key, v)}
-                      placeholder="kg"
-                      placeholderTextColor={colors.textMuted}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      spellCheck={false}
-                      maxLength={MOVEMENT_WEIGHT_MAX_LENGTH}
-                      aria-label={`${parsed.name} weight`}
-                      testID={`log-results-movement-weight-${index}`}
-                    />
                   </View>
                 );
               })}
@@ -494,21 +427,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 0.5,
     marginLeft: 12,
-  },
-  // Round 44 — a compact per-movement weight field, small enough to sit on
-  // the same row as the movement's own name without crowding it.
-  movementWeightInput: {
-    width: 70,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    color: colors.text,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 14,
-    textAlign: 'right',
   },
   logRow: {
     flexDirection: 'row',

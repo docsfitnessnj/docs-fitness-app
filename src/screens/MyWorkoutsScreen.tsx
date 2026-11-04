@@ -8,7 +8,6 @@ import { useDeckProgress } from '../context/DeckProgressContext';
 import { useDisplayName } from '../context/ProfileContext';
 import { formatLogSummary, useWorkoutLog } from '../context/WorkoutLogContext';
 import { DECK_CARDS, deckCardLabel } from '../data/deckCards';
-import { movementWeightLabel, MovementWeights } from '../lib/movementWeights';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -27,22 +26,7 @@ type Entry = {
   // (see WorkoutLogContext/DeckProgressContext/ChallengeContext's own
   // is_pb writes). No popup, no card — the tag itself is the celebration.
   isPb: boolean;
-  // Round 44 — per-movement weights logged for this entry, if any. Older
-  // entries (predating this round, or simply never filled in) carry no
-  // weights at all and render exactly as they always did.
-  movementWeights?: MovementWeights;
 };
-
-// Round 44 — "Swings: 24kg, Goblet Squats: 16kg" under a WOD/deck entry's
-// own summary line. Returns '' (nothing rendered) when every weight was
-// left blank, same as every other optional field in this app.
-function formatMovementWeights(weights: MovementWeights | undefined): string {
-  if (!weights) return '';
-  const parts = Object.entries(weights)
-    .filter(([, value]) => value && value.trim())
-    .map(([key, value]) => `${movementWeightLabel(key)}: ${value.trim()}`);
-  return parts.join(', ');
-}
 
 function formatEntryDate(ts: number): string {
   return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
@@ -74,7 +58,6 @@ export function MyWorkoutsScreen({ visible, onClose }: Props) {
     title: w.workoutTitle,
     results: formatLogSummary(w.log) || 'No results logged.',
     isPb: w.isPb,
-    movementWeights: w.log.movementWeights,
   }));
 
   const deckEntries: Entry[] = Object.entries(deckCompletedAt).map(([cardId, ts]) => {
@@ -93,7 +76,6 @@ export function MyWorkoutsScreen({ visible, onClose }: Props) {
       title: card ? `${deckCardLabel(card)} — ${card.title}` : cardId,
       results: summary || (card?.format ?? ''),
       isPb: !!pbCardIds[cardId],
-      movementWeights: log.movementWeights,
     };
   });
 
@@ -127,7 +109,6 @@ export function MyWorkoutsScreen({ visible, onClose }: Props) {
           </View>
         ) : (
           allEntries.map((entry) => {
-            const weightsLine = formatMovementWeights(entry.movementWeights);
             return (
               <View key={entry.key} style={styles.card} testID={`my-workout-${entry.key}`}>
                 <View style={styles.cardTopRow}>
@@ -147,11 +128,6 @@ export function MyWorkoutsScreen({ visible, onClose }: Props) {
                 </View>
                 <Text style={styles.title}>{entry.title}</Text>
                 {!!entry.results && <Text style={styles.results}>{entry.results}</Text>}
-                {!!weightsLine && (
-                  <Text style={styles.weightsLine} testID={`my-workout-weights-${entry.key}`}>
-                    {weightsLine}
-                  </Text>
-                )}
               </View>
             );
           })
@@ -248,15 +224,5 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyMedium,
     fontSize: 15,
     lineHeight: 20,
-  },
-  // Round 44 — "Swings: 24kg, Goblet Squats: 16kg," one quiet line under
-  // the results summary. Absent entirely for an entry with no weights
-  // logged, same as every other optional field in this app.
-  weightsLine: {
-    color: colors.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 4,
   },
 });
