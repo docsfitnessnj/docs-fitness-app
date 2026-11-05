@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './AuthContext';
+import { useClassBookingData } from './ClassBookingContext';
 import { useCommunity } from './CommunityContext';
 import { useDeckProgress } from './DeckProgressContext';
 import { useMembership } from './MembershipContext';
@@ -12,6 +13,10 @@ import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
 
 export const HUNDRED_DOWN_TARGET = 100;
 const REGULAR_TARGET = 3;
+const UPSTAIRS_TARGET = 3;
+// LEGACY's milestone ladder (Round 45) — the badge is earned at the first
+// one and the displayed number levels up at each one after.
+export const LEGACY_MILESTONES = [50, 100, 250, 500, 750, 1000];
 
 // THE FOUNDING 50 badge grant itself is out of scope here (it's not in the
 // Tier 1 badge list) — it stays exactly as it was, persisted locally per
@@ -22,7 +27,11 @@ const RECAP_STORAGE_KEY = 'docsfitness.badgeRecap.v1';
 
 type FoundingFiftyGrants = Record<string, { granted: boolean; grantedAt: number }>;
 
-const COMPUTED_BADGE_IDS: BadgeId[] = ['on_fire', 'cow_killer', 'the_regular', 'day_one_doug', 'hundred_down'];
+// LEGACY is deliberately NOT in this list — unlike every badge here, its
+// period_key holds a milestone number rather than '' or the current week,
+// so getBadgesForAuthor() below gives it its own dedicated branch instead
+// of the generic '' -or-current-week check every one of these uses.
+const COMPUTED_BADGE_IDS: BadgeId[] = ['on_fire', 'cow_killer', 'the_regular', 'day_one_doug', 'hundred_down', 'upstairs'];
 
 // A stable id for "this Monday-anchored week" — weekly badges (ON FIRE, COW
 // KILLER, THE REGULAR) are granted with this as their period_key, so they
@@ -32,6 +41,16 @@ const COMPUTED_BADGE_IDS: BadgeId[] = ['on_fire', 'cow_killer', 'the_regular', '
 // supabase/setup.sql's default).
 function currentWeekPeriodKey(): string {
   return String(getWeekStart().getTime());
+}
+
+// The highest LEGACY_MILESTONES rung a lifetime count has reached, or 0 if
+// it hasn't reached the first one (50) yet — e.g. 180 -> 100, 37 -> 0.
+function legacyMilestoneFor(lifetimeCount: number): number {
+  let best = 0;
+  for (const m of LEGACY_MILESTONES) {
+    if (lifetimeCount >= m) best = m;
+  }
+  return best;
 }
 
 type ProfileRef = { display_name: string } | { display_name: string }[] | null;
@@ -79,6 +98,17 @@ type BadgeContextValue = {
   cowChampCount: number;
   cowChampEarnedAt: number | null;
 
+  // LEGACY (Round 45) — lifetime booked-not-cancelled classes (this
+  // member's real in-app bookings + their admin-set legacy starting count).
+  // legacyMilestone is 0 until the first rung (50) is reached; the badge is
+  // "earned" the moment it's nonzero.
+  legacyLifetimeCount: number;
+  legacyMilestone: number;
+  legacyEarned: boolean;
+  // UPSTAIRS (Round 45) — 3+ booked-not-cancelled classes whose session
+  // falls inside the current Mon-Sun week, the in-person twin of ON FIRE.
+  upstairsProgress: { count: number; target: number; earned: boolean };
+
   // Any author's badges, read from the shared badge_grants table (joker,
   // cow_champ, the 5 computed badges) plus the local Founding 50 grant —
   // sorted Joker-first, weeklies, then permanents.
@@ -88,6 +118,11 @@ type BadgeContextValue = {
   // How many times this author holds COW CHAMP — 0 if never, used to render
   // the "x2"/"x3" stack count next to the badge wherever it renders.
   getCowChampCount: (name: string) => number;
+  // This author's current LEGACY milestone (0 if they've never earned it) —
+  // the number the badge glyph itself displays. For the signed-in member
+  // this is the live-computed value (always current); for anyone else it's
+  // the highest milestone ever self-granted into badge_grants for them.
+  getLegacyMilestone: (name: string) => number;
 
   recordCowKillerScore: () => void;
   // Admin-only — see supabase/setup.sql's badge_grants insert/delete
@@ -116,10 +151,18 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
   const { completedCount: deckCompletedCount } = useDeckProgress();
   const { posts, addTextPost } = useCommunity();
   const { fullContentAccess } = useMembership();
+  const { myBookings } = useClassBookingData();
 
   const [grants, setGrants] = useState<GrantRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // LEGACY (Round 45) — this account's own admin-set starting count
+  // (profiles.legacy_starting_count), fetched directly rather than through
+  // ProfileContext (which doesn't carry this admin-only field) since it's
+  // plainly readable by any signed-in member — "profiles are readable by
+  // any signed-in member" already covers it, same as every other profile
+  // field this app reads about someone else.
+  const [legacyStartingCount, setLegacyStartingCount] = useState(0);
   const [foundingFiftyGrants, setFoundingFiftyGrants] = useState<FoundingFiftyGrants>(() =>
     loadJSON(FOUNDING_FIFTY_STORAGE_KEY, {})
   );
@@ -149,6 +192,14 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     }
     setLoading(true);
     refetchGrants();
+    supabase
+      .from('profiles')
+      .select('legacy_starting_count')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setLegacyStartingCount((data as { legacy_starting_count: number }).legacy_starting_count ?? 0);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady, user]);
 
@@ -202,6 +253,30 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       toGrant.push({ badge_id: 'the_regular', period_key: weekPeriodKey });
     }
 
+    // LEGACY — stamp the current milestone the moment it's newly reached.
+    // period_key holds the milestone number itself (see the badge_grants
+    // comment in supabase/setup.sql) so another member can see "LEGACY
+    // 100" on this account's posts without reading their bookings/profile
+    // directly; earlier milestone rows are never deleted.
+    const legacyLifetimeCountNow = legacyStartingCount + myBookings.length;
+    const legacyMilestoneNow = legacyMilestoneFor(legacyLifetimeCountNow);
+    if (legacyMilestoneNow > 0) {
+      const hasThisMilestone = grants.some(
+        (g) => g.user_id === user.id && g.badge_id === 'legacy' && g.period_key === String(legacyMilestoneNow)
+      );
+      if (!hasThisMilestone) toGrant.push({ badge_id: 'legacy', period_key: String(legacyMilestoneNow) });
+    }
+
+    // UPSTAIRS — 3+ booked-not-cancelled classes whose session falls inside
+    // the current Mon-Sun week, same weekly reset convention as ON FIRE.
+    const upstairsCountNow = myBookings.filter((b) => isThisWeek(b.startAt)).length;
+    const hasUpstairsThisWeek = grants.some(
+      (g) => g.user_id === user.id && g.badge_id === 'upstairs' && g.period_key === weekPeriodKey
+    );
+    if (upstairsCountNow >= UPSTAIRS_TARGET && !hasUpstairsThisWeek) {
+      toGrant.push({ badge_id: 'upstairs', period_key: weekPeriodKey });
+    }
+
     if (toGrant.length === 0) return;
     supabase
       .from('badge_grants')
@@ -211,7 +286,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       )
       .then(() => refetchGrants());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, totalWorkoutsLogged, completedWorkouts, posts, displayName, weekPeriodKey, grants]);
+  }, [user, totalWorkoutsLogged, completedWorkouts, posts, displayName, weekPeriodKey, grants, legacyStartingCount, myBookings]);
 
   const value = useMemo<BadgeContextValue>(() => {
     const dayOneDougGrant = grants.find((g) => g.user_id === user?.id && g.badge_id === 'day_one_doug');
@@ -240,6 +315,19 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     const regularCount = posts.filter((p) => p.author === displayName && p.kind === 'wod' && p.createdAt >= weekStart).length;
     const regularProgress = { count: regularCount, target: REGULAR_TARGET, earned: regularCount >= REGULAR_TARGET };
 
+    // LEGACY — live-computed from this account's own data, so it's always
+    // current even if the stored badge_grants milestone row lags behind
+    // (e.g. right after admin raises legacy_starting_count, before the
+    // self-grant effect's next upsert lands).
+    const legacyLifetimeCount = legacyStartingCount + myBookings.length;
+    const legacyMilestone = legacyMilestoneFor(legacyLifetimeCount);
+    const legacyEarned = legacyMilestone > 0;
+
+    // UPSTAIRS — 3+ booked-not-cancelled classes whose session falls inside
+    // the current Mon-Sun week.
+    const upstairsCount = myBookings.filter((b) => isThisWeek(b.startAt)).length;
+    const upstairsProgress = { count: upstairsCount, target: UPSTAIRS_TARGET, earned: upstairsCount >= UPSTAIRS_TARGET };
+
     const myBadgeIds: BadgeId[] = [
       ...(crewEarned ? (['crew'] as BadgeId[]) : []),
       ...(foundingFiftyEarned ? (['founding_50'] as BadgeId[]) : []),
@@ -248,9 +336,26 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       ...(onFireProgress.earned ? (['on_fire'] as BadgeId[]) : []),
       ...(cowKillerEarned ? (['cow_killer'] as BadgeId[]) : []),
       ...(regularProgress.earned ? (['the_regular'] as BadgeId[]) : []),
+      ...(upstairsProgress.earned ? (['upstairs'] as BadgeId[]) : []),
       ...(dayOneDougEarned ? (['day_one_doug'] as BadgeId[]) : []),
       ...(hundredDownEarned ? (['hundred_down'] as BadgeId[]) : []),
+      ...(legacyEarned ? (['legacy'] as BadgeId[]) : []),
     ];
+
+    // This author's current LEGACY milestone — live for the signed-in
+    // member (always correct, see above), else the max of their own
+    // stacked 'legacy' badge_grants period_keys (the milestone-as-text
+    // convention — see the badge_grants comment in supabase/setup.sql).
+    const legacyMilestoneForAuthor = (name: string): number => {
+      if (name === displayName) return legacyMilestone;
+      let best = 0;
+      for (const g of grants) {
+        if (g.badge_id !== 'legacy' || nameOf(g.profiles) !== name) continue;
+        const n = parseInt(g.period_key, 10);
+        if (!isNaN(n) && n > best) best = n;
+      }
+      return best;
+    };
 
     const getBadgesForAuthor = (name: string): BadgeId[] => {
       if (name === displayName) return sortBadgeIds(myBadgeIds);
@@ -259,6 +364,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
         if (nameOf(g.profiles) !== name) continue;
         if (g.badge_id === 'joker') ids.add('joker');
         else if (g.badge_id === 'cow_champ') ids.add('cow_champ');
+        else if (g.badge_id === 'legacy') ids.add('legacy');
         else if (COMPUTED_BADGE_IDS.includes(g.badge_id)) {
           if (g.period_key === '' || g.period_key === weekPeriodKey) ids.add(g.badge_id);
         }
@@ -285,6 +391,10 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       cowChampEarned,
       cowChampCount,
       cowChampEarnedAt,
+      legacyLifetimeCount,
+      legacyMilestone,
+      legacyEarned,
+      upstairsProgress,
       getBadgesForAuthor,
       getJokerGrantedAt: (name) => {
         const grant = grants.find((g) => nameOf(g.profiles) === name && g.badge_id === 'joker');
@@ -295,6 +405,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
         if (name === displayName) return cowChampCount;
         return grants.filter((g) => g.badge_id === 'cow_champ' && nameOf(g.profiles) === name).length;
       },
+      getLegacyMilestone: legacyMilestoneForAuthor,
       recordCowKillerScore: () => {
         if (!user) return;
         supabase
@@ -328,7 +439,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grants, myGrantedIds, foundingFiftyGrants, displayName, completedWorkouts, posts, totalWorkoutsLogged, fullContentAccess, loading, error, user, weekPeriodKey, realAdmin]);
+  }, [grants, myGrantedIds, foundingFiftyGrants, displayName, completedWorkouts, posts, totalWorkoutsLogged, fullContentAccess, loading, error, user, weekPeriodKey, realAdmin, legacyStartingCount, myBookings]);
 
   // Auto-generate the monthly recap on the 1st, once per month — only when
   // the signed-in member is a real admin, since a recap posted under "Doc"

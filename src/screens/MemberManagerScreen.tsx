@@ -48,17 +48,23 @@ function statusColor(kind: AdminMemberStatusKind): string {
 export function MemberManagerScreen({ visible, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<AdminMember | null>(null);
-  const { grouped, loading, error, setMemberMuted } = useAdminMembers(visible);
+  const { grouped, loading, error, setMemberMuted, setLegacyStartingCount } = useAdminMembers(visible);
   const badges = useBadges();
   const founding50 = useFoundingFifty();
   const jokerSaveConfirm = useSaveConfirmation();
   const muteSaveConfirm = useSaveConfirmation();
+  const legacySaveConfirm = useSaveConfirmation();
+  const [legacyDraft, setLegacyDraft] = useState('');
 
   // A stale SAVED/error from a previous member shouldn't linger once Doc
-  // moves on to look at someone else.
+  // moves on to look at someone else, and the legacy count draft should
+  // start out showing this member's own real saved value, not whatever the
+  // previous member's field held.
   useEffect(() => {
     jokerSaveConfirm.reset();
     muteSaveConfirm.reset();
+    legacySaveConfirm.reset();
+    setLegacyDraft(selected ? String(selected.legacyStartingCount) : '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
@@ -123,7 +129,12 @@ export function MemberManagerScreen({ visible, onClose }: Props) {
                 const earned = badges.getBadgesForAuthor(selected.displayName).includes(def.id);
                 return (
                   <View key={def.id} style={styles.badgeCell}>
-                    <BadgeIcon id={def.id} earned={earned} size={44} />
+                    <BadgeIcon
+                      id={def.id}
+                      earned={earned}
+                      size={44}
+                      legacyMilestone={def.id === 'legacy' ? badges.getLegacyMilestone(selected.displayName) : undefined}
+                    />
                     <Text style={styles.badgeCellLabel} numberOfLines={2}>
                       {def.name}
                     </Text>
@@ -190,6 +201,49 @@ export function MemberManagerScreen({ visible, onClose }: Props) {
               <Text style={[styles.grantButtonText, selected.groupChatMuted && styles.revokeButtonText]}>
                 {selected.groupChatMuted ? 'UNMUTE' : 'MUTE'}
               </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.grantRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.grantTitle}>LEGACY STARTING COUNT</Text>
+              <Text style={styles.grantSubtext}>
+                Classes this member took before this app existed — added to their real in-app bookings for LEGACY.
+              </Text>
+              <TextInput
+                style={styles.legacyInput}
+                value={legacyDraft}
+                onChangeText={setLegacyDraft}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={colors.textMuted}
+                testID="legacy-starting-count-input"
+              />
+              <View style={styles.jokerSaveConfirmWrap}>
+                <SaveConfirmation state={legacySaveConfirm.state} errorMessage={legacySaveConfirm.errorMessage} />
+              </View>
+            </View>
+            <Pressable
+              style={styles.grantButton}
+              onPress={async () => {
+                const parsed = Math.max(0, Math.trunc(Number(legacyDraft)));
+                if (!Number.isFinite(parsed)) {
+                  legacySaveConfirm.fail('Enter a whole number.');
+                  return;
+                }
+                legacySaveConfirm.start();
+                const { error: countError } = await setLegacyStartingCount(selected.id, parsed);
+                if (countError) {
+                  legacySaveConfirm.fail(countError);
+                  return;
+                }
+                setSelected((prev) => (prev ? { ...prev, legacyStartingCount: parsed } : prev));
+                setLegacyDraft(String(parsed));
+                legacySaveConfirm.succeed();
+              }}
+              testID="save-legacy-starting-count"
+            >
+              <Text style={styles.grantButtonText}>SAVE</Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -261,7 +315,13 @@ export function MemberManagerScreen({ visible, onClose }: Props) {
                         )}
                         <View style={styles.miniBadgeRow}>
                           {visibleBadgeDefs(founding50.isLive || m.founding || earnedIds.has('founding_50')).map((def) => (
-                            <BadgeIcon key={def.id} id={def.id} earned={earnedIds.has(def.id)} size={18} />
+                            <BadgeIcon
+                              key={def.id}
+                              id={def.id}
+                              earned={earnedIds.has(def.id)}
+                              size={18}
+                              legacyMilestone={def.id === 'legacy' ? badges.getLegacyMilestone(m.displayName) : undefined}
+                            />
                           ))}
                         </View>
                       </View>
@@ -491,6 +551,19 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 12,
     marginTop: 2,
+  },
+  legacyInput: {
+    color: colors.text,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 16,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+    width: 100,
   },
   grantButton: {
     backgroundColor: colors.green,

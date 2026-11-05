@@ -69,6 +69,10 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
         const first = `EARNED ${formatEarnedDate(badges.cowChampEarnedAt)}`;
         return badges.cowChampCount > 1 ? `${first} — WON ${badges.cowChampCount} TIMES` : first;
       }
+      case 'legacy':
+        return badges.legacyEarned
+          ? `LEGACY ${badges.legacyMilestone} — ${badges.legacyLifetimeCount} lifetime classes`
+          : `${badges.legacyLifetimeCount} of 50 lifetime classes`;
       default:
         return '';
     }
@@ -85,6 +89,8 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
         return badges.cowKillerEarned ? 'EARNED THIS WEEK' : 'NOT YET THIS WEEK';
       case 'the_regular':
         return `${badges.regularProgress.count} of ${badges.regularProgress.target} results posted this week`;
+      case 'upstairs':
+        return `${badges.upstairsProgress.count} of ${badges.upstairsProgress.target} classes booked this week`;
       default:
         return '';
     }
@@ -96,7 +102,13 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
     return (
       <View key={id} style={styles.card} testID={`trophy-case-badge-${id}`}>
         <View style={styles.cardTopRow}>
-          <BadgeIcon id={id} earned={earned} size={60} count={id === 'cow_champ' ? badges.cowChampCount : undefined} />
+          <BadgeIcon
+            id={id}
+            earned={earned}
+            size={60}
+            count={id === 'cow_champ' ? badges.cowChampCount : undefined}
+            legacyMilestone={id === 'legacy' ? badges.legacyMilestone : undefined}
+          />
           <View style={styles.cardMain}>
             <Text style={styles.cardName}>{def.name}</Text>
             <Text style={styles.cardDescription}>{def.description}</Text>

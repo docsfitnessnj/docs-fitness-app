@@ -52,6 +52,12 @@ create table if not exists public.profiles (
   -- added by migration_012. Blocks posting only — a muted member can still
   -- read the chat and react.
   group_chat_muted boolean not null default false,
+  -- LEGACY badge (Round 45, migration_029) — how many classes this member
+  -- took on the old, pre-app system, carried over by Doc in Member Manager.
+  -- Admin-only write (see profiles_legacy_starting_count_admin_only below);
+  -- added to the member's own real in-app class_bookings count to get their
+  -- full lifetime total.
+  legacy_starting_count integer not null default 0 check (legacy_starting_count >= 0),
   created_at timestamptz not null default now()
 );
 
@@ -122,6 +128,30 @@ drop trigger if exists profiles_in_person_plan_service_role_only on public.profi
 create trigger profiles_in_person_plan_service_role_only
   before update on public.profiles
   for each row execute function public.enforce_in_person_plan_service_role_only();
+
+-- legacy_starting_count (migration_029) — same shape as the guard above,
+-- but trusts an ordinary signed-in ADMIN session (Member Manager), never a
+-- service-role key: the "members can update their own profile" policy has
+-- no per-column carve-out, so without this a member could inflate their
+-- own LEGACY milestone by writing this column directly.
+create or replace function public.enforce_legacy_starting_count_admin_only()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.legacy_starting_count is distinct from old.legacy_starting_count and not public.is_admin(auth.uid()) then
+    new.legacy_starting_count := old.legacy_starting_count;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_legacy_starting_count_admin_only on public.profiles;
+create trigger profiles_legacy_starting_count_admin_only
+  before update on public.profiles
+  for each row execute function public.enforce_legacy_starting_count_admin_only();
 
 -- A brand-new login (sign-up) automatically gets a blank profile row, so the
 -- rest of the app never has to special-case "no profile yet."
@@ -613,19 +643,30 @@ create policy "only admin can update a challenge"
 -- per week won, period_key set to that week's `challenges.id` so the same
 -- challenge can never award it twice but a member can hold many rows over
 -- time — the count of those rows is the "x2"/"x3" the app shows. Everyone
--- can see everyone's badges; members can only grant themselves the 5
+-- can see everyone's badges; members can only grant themselves the 7
 -- badges that are computed from their own activity, and only for
 -- themselves. THE JOKER can only be granted (to anyone) or revoked by an
 -- admin — see Member Manager. COW CHAMP is never member-grantable at all —
 -- only the award_cow_champ_for_closed_challenges() job below (running as a
 -- security definer function, same as this file's other automated triggers)
 -- can insert it.
+--
+-- LEGACY (Round 45, migration_029) is permanent but stacks like COW CHAMP —
+-- one row per milestone crossed (50/100/250/500/750/1000), period_key
+-- holding that milestone number as text, never deleted, so another member
+-- viewing a post still sees "LEGACY 100" even after this member's own live
+-- count later passes 100. UPSTAIRS is a plain weekly boolean, period_key =
+-- the current week's start, same convention as ON FIRE/COW KILLER/
+-- THE REGULAR.
 -- ----------------------------------------------------------------------------
 create table if not exists public.badge_grants (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
   badge_id text not null check (
-    badge_id in ('joker', 'on_fire', 'cow_killer', 'the_regular', 'day_one_doug', 'hundred_down', 'cow_champ')
+    badge_id in (
+      'joker', 'on_fire', 'cow_killer', 'the_regular', 'day_one_doug', 'hundred_down', 'cow_champ',
+      'legacy', 'upstairs'
+    )
   ),
   period_key text not null default '',
   granted_by uuid references public.profiles (id),
@@ -649,7 +690,7 @@ create policy "members can earn their own computed badges, admin can grant any"
     public.is_admin(auth.uid())
     or (
       user_id = auth.uid()
-      and badge_id in ('on_fire', 'cow_killer', 'the_regular', 'day_one_doug', 'hundred_down')
+      and badge_id in ('on_fire', 'cow_killer', 'the_regular', 'day_one_doug', 'hundred_down', 'legacy', 'upstairs')
     )
   );
 
@@ -1264,7 +1305,8 @@ returns table (
   sub_current_period_end timestamptz,
   sub_trial_end timestamptz,
   sub_cancel_at_period_end boolean,
-  group_chat_muted boolean
+  group_chat_muted boolean,
+  legacy_starting_count integer
 )
 language sql
 security definer
@@ -1285,7 +1327,8 @@ as $$
     s.current_period_end,
     s.trial_end,
     s.cancel_at_period_end,
-    p.group_chat_muted
+    p.group_chat_muted,
+    p.legacy_starting_count
   from public.profiles p
   join auth.users u on u.id = p.id
   left join public.founding_fifty_members f on f.id = p.id

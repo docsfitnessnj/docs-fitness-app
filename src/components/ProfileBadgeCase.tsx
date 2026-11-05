@@ -5,6 +5,7 @@ import { BadgeIcon } from './icons/BadgeIcon';
 import { BADGE_MAP, BadgeId, permanentDisplayOrder, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import { useBadges } from '../context/BadgeContext';
 import { useFoundingFifty } from '../context/FoundingFiftyContext';
+import { useDisplayName } from '../context/ProfileContext';
 import { colors, fonts } from '../theme';
 
 // All badges, earned in gold, unearned as gray silhouettes — tapping any of
@@ -17,10 +18,12 @@ import { colors, fonts } from '../theme';
 // already supports any display name, not just the current member's, since
 // `grants` is a single app-wide query, not a per-member one.
 export function ProfileBadgeCase({ authorName }: { authorName?: string } = {}) {
-  const { myBadgeIds, getBadgesForAuthor } = useBadges();
+  const { myBadgeIds, getBadgesForAuthor, getLegacyMilestone } = useBadges();
   const founding50 = useFoundingFifty();
+  const displayName = useDisplayName();
   const [selected, setSelected] = useState<BadgeId | null>(null);
   const earnedSet = new Set(authorName ? getBadgesForAuthor(authorName) : myBadgeIds);
+  const nameForBadges = authorName ?? displayName;
   const permanentIds = permanentDisplayOrder(founding50.isLive || earnedSet.has('founding_50'));
 
   return (
@@ -37,7 +40,12 @@ export function ProfileBadgeCase({ authorName }: { authorName?: string } = {}) {
               onPress={() => setSelected(def.id)}
               testID={`profile-badge-${def.id}`}
             >
-              <BadgeIcon id={def.id} earned={earned} size={62} />
+              <BadgeIcon
+                id={def.id}
+                earned={earned}
+                size={62}
+                legacyMilestone={def.id === 'legacy' ? getLegacyMilestone(nameForBadges) : undefined}
+              />
               <Text style={[styles.cellLabel, !earned && styles.cellLabelUnearned]} numberOfLines={2}>
                 {def.name}
               </Text>
@@ -46,7 +54,12 @@ export function ProfileBadgeCase({ authorName }: { authorName?: string } = {}) {
         })}
       </View>
 
-      <BadgeDetailModal badgeId={selected} earned={selected ? earnedSet.has(selected) : false} onClose={() => setSelected(null)} />
+      <BadgeDetailModal
+        badgeId={selected}
+        earned={selected ? earnedSet.has(selected) : false}
+        onClose={() => setSelected(null)}
+        legacyMilestone={selected === 'legacy' ? getLegacyMilestone(nameForBadges) : undefined}
+      />
     </View>
   );
 }

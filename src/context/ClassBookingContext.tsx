@@ -41,6 +41,13 @@ export type MyBooking = {
   id: string;
   sessionId: string;
   paymentMethod: 'unlimited' | 'pack_credit' | 'drop_in_paid' | 'first_class_free' | 'pilates_paid';
+  // The booked class's own real date/time (epoch ms), joined from
+  // class_sessions — class_sessions is readable by any signed-in member
+  // regardless of date (see "anyone signed in reads class sessions" in
+  // migration_023.sql), so this needs no new RPC. Used by BadgeContext.tsx
+  // for UPSTAIRS's "3+ bookings whose session falls in the current week"
+  // computation (Round 45).
+  startAt: number;
 };
 
 type BookResult = { ok: true } | { ok: false; code: string; message: string };
@@ -50,6 +57,11 @@ type ClassBookingContextValue = {
   refetching: boolean;
   error: string | null;
   sessions: ClassSession[];
+  // Every booking this account currently holds with status='booked' — no
+  // date filter, so this is this account's full lifetime booked-not-
+  // cancelled history (BadgeContext.tsx reads this directly for LEGACY's
+  // lifetime count and UPSTAIRS's current-week count, Round 45).
+  myBookings: MyBooking[];
   // One lookup key, `${classKey}::${dateKey}`, so every screen that already
   // has a schedule.ts ClassRow.id (== classKey) and a dateKey can find the
   // live session instantly without re-deriving anything.
@@ -137,7 +149,10 @@ export function ClassBookingProvider({ children }: { children: React.ReactNode }
     const [, sessionsRes, bookingsRes, everBookedRes, everDropInRes] = await Promise.all([
       supabase.rpc('ensure_class_sessions'),
       supabase.rpc('class_sessions_with_availability'),
-      supabase.from('class_bookings').select('id, session_id, payment_method').eq('status', 'booked'),
+      supabase
+        .from('class_bookings')
+        .select('id, session_id, payment_method, class_sessions(start_at)')
+        .eq('status', 'booked'),
       supabase.from('class_bookings').select('id', { count: 'exact', head: true }),
       supabase.from('in_person_purchases').select('id', { count: 'exact', head: true }).eq('plan', 'drop_in'),
     ]);
@@ -171,11 +186,29 @@ export function ClassBookingProvider({ children }: { children: React.ReactNode }
       }))
     );
     setMyBookings(
-      ((bookingsRes.data as { id: string; session_id: string; payment_method: string }[] | null) ?? []).map((row) => ({
-        id: row.id,
-        sessionId: row.session_id,
-        paymentMethod: row.payment_method as MyBooking['paymentMethod'],
-      }))
+      (
+        (bookingsRes.data as
+          | {
+              id: string;
+              session_id: string;
+              payment_method: string;
+              // A single not-null FK (class_bookings.session_id ->
+              // class_sessions.id) embeds as one object via PostgREST, but
+              // handled defensively (array or null) in case that ever
+              // changes — same convention as BadgeContext.tsx's own
+              // ProfileRef for a FK embed.
+              class_sessions: { start_at: string } | { start_at: string }[] | null;
+            }[]
+          | null) ?? []
+      ).map((row) => {
+        const session = Array.isArray(row.class_sessions) ? row.class_sessions[0] : row.class_sessions;
+        return {
+          id: row.id,
+          sessionId: row.session_id,
+          paymentMethod: row.payment_method as MyBooking['paymentMethod'],
+          startAt: session ? new Date(session.start_at).getTime() : 0,
+        };
+      })
     );
     hasLoadedOnce.current = true;
   };
@@ -237,6 +270,7 @@ export function ClassBookingProvider({ children }: { children: React.ReactNode }
       refetching,
       error,
       sessions,
+      myBookings,
       getSession: (classKey, dateKey) => sessionsByKey.get(`${classKey}::${dateKey}`),
       getMyBooking: (sessionId) => bookingsBySessionId.get(sessionId),
       hasEverBooked,
@@ -270,7 +304,7 @@ export function ClassBookingProvider({ children }: { children: React.ReactNode }
         return rpcErrorToResult(rpcError);
       },
     }),
-    [loading, refetching, error, sessions, sessionsByKey, bookingsBySessionId, hasEverBooked, hasBookedDropInBefore]
+    [loading, refetching, error, sessions, myBookings, sessionsByKey, bookingsBySessionId, hasEverBooked, hasBookedDropInBefore]
   );
 
   return <ClassBookingContext.Provider value={value}>{children}</ClassBookingContext.Provider>;

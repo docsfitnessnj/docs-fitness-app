@@ -447,6 +447,48 @@ function sessionAvailabilityRow(state, s) {
   return { ...s, booked_count: bookedCountFor(state, s.id) };
 }
 
+// Round 45 -- Monday 00:00 local, mirroring getWeekStart() (data/content.ts)
+// exactly, so a fixture date built from this can be deterministically
+// placed "inside the current week" or just outside it regardless of which
+// real day this suite happens to run on. UPSTAIRS reads the same device-
+// local week window every other weekly badge already uses.
+function mondayOfThisWeek() {
+  const now = new Date();
+  const dow = now.getDay();
+  const offset = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() + offset);
+  return monday;
+}
+
+// A direct **/rest/v1/class_bookings* mock for the UPSTAIRS checks, which
+// don't need the full registerClassBookingMocks/class_sessions_with_
+// availability machinery -- just this one account's own real-shaped
+// response, including the class_sessions(start_at) embed BadgeContext.tsx
+// reads. Mirrors the real server's own `.eq('status', 'booked')` filter by
+// reading the request's own query string, so a fixture that includes a
+// 'cancelled' row genuinely proves the app only ever counts what a real
+// server would actually return, not just what this mock felt like serving.
+function makeUpstairsBookingsRoute(fixtureBookings) {
+  return (route) => {
+    if (route.request().method() === 'HEAD') {
+      const count = fixtureBookings.filter((b) => b.status === 'booked').length;
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'content-range': `*/${count}` }, body: '' });
+    }
+    const url = new URL(route.request().url());
+    const statusFilter = url.searchParams.get('status');
+    const rows = statusFilter === 'eq.booked' ? fixtureBookings.filter((b) => b.status === 'booked') : fixtureBookings;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        rows.map((b) => ({ id: b.id, session_id: b.session_id, payment_method: 'unlimited', class_sessions: { start_at: b.startAt } }))
+      ),
+    });
+  };
+}
+
 // Seeds `count` already-booked fixture rows from OTHER members (never
 // USER_ID) directly into shared state -- simulating "this class already
 // has N real people in it" without those other members ever being a real
@@ -594,9 +636,20 @@ async function registerClassBookingMocks(page, state, userId) {
       const everCount = state.bookings.filter((b) => b.user_id === userId).length;
       return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'content-range': `*/${everCount}` }, body: '' });
     }
+    // Round 45: BadgeContext.tsx's own LEGACY/UPSTAIRS computation reads
+    // this same query's class_sessions(start_at) embed (added to the real
+    // ClassBookingContext.tsx select list) -- mirrored here so UPSTAIRS's
+    // "is this booking's session inside the current week" check has a
+    // real start_at to read, not the 0 (epoch) fallback a missing embed
+    // would otherwise produce.
     const mine = state.bookings
       .filter((b) => b.user_id === userId && b.status === 'booked')
-      .map((b) => ({ id: b.id, session_id: b.session_id, payment_method: b.payment_method }));
+      .map((b) => ({
+        id: b.id,
+        session_id: b.session_id,
+        payment_method: b.payment_method,
+        class_sessions: { start_at: state.sessions.find((s) => s.id === b.session_id)?.start_at ?? new Date().toISOString() },
+      }));
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mine) });
   });
 
@@ -8715,6 +8768,557 @@ async function run() {
       saveButtonTextAfter.includes('SAVED') && saveElapsedMs < 6000,
       JSON.stringify({ saveButtonTextAfter, saveElapsedMs })
     );
+    await context.close();
+  }
+
+  // Round 45: LEGACY and UPSTAIRS, the in-person class badges.
+  //
+  // [legacy/*] + [upstairs/*] -- Trophy Case display order (legacy right
+  // after cow_champ in PERMANENT, upstairs right after the_regular in THIS
+  // WEEK) plus unearned/earned states, all against a fresh account with
+  // zero class-booking history -- the correct default for a check that
+  // isn't itself about booking state (same convention the rest of this
+  // file already uses for the generic class_sessions_with_availability
+  // baseline).
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-trophy-case').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const order = await page.evaluate(() => {
+      const ids = Array.from(document.querySelectorAll('[data-testid^="trophy-case-badge-"]')).map((el) =>
+        el.getAttribute('data-testid').replace('trophy-case-badge-', '')
+      );
+      return ids;
+    });
+    const legacyIdx = order.indexOf('legacy');
+    const cowChampIdx = order.indexOf('cow_champ');
+    const upstairsIdx = order.indexOf('upstairs');
+    const theRegularIdx = order.indexOf('the_regular');
+    record(
+      '[legacy/trophy-case-order] LEGACY renders in the PERMANENT section, immediately after COW CHAMP',
+      legacyIdx > -1 && cowChampIdx > -1 && legacyIdx === cowChampIdx + 1,
+      JSON.stringify({ order })
+    );
+    record(
+      '[upstairs/trophy-case-order] UPSTAIRS renders in the THIS WEEK section, immediately after THE REGULAR',
+      upstairsIdx > -1 && theRegularIdx > -1 && upstairsIdx === theRegularIdx + 1,
+      JSON.stringify({ order })
+    );
+
+    const legacyStatus = await page.getByTestId('trophy-case-badge-legacy').innerText().catch(() => '');
+    record(
+      '[legacy/unearned] a fresh account with 0 lifetime classes shows the unearned progress line, not a milestone',
+      legacyStatus.includes('0 of 50 lifetime classes') && !legacyStatus.includes('LEGACY 50'),
+      JSON.stringify({ legacyStatus })
+    );
+    const legacyGlyphText = await page
+      .getByTestId('trophy-case-badge-legacy')
+      .getByTestId('badge-legacy-glyph')
+      .innerText()
+      .catch(() => 'present');
+    record(
+      '[legacy/unearned-glyph] the unearned glyph shows no number at all (gray silhouette, nothing to display yet)',
+      legacyGlyphText === '',
+      JSON.stringify({ legacyGlyphText })
+    );
+
+    const upstairsStatus = await page.getByTestId('trophy-case-badge-upstairs').innerText().catch(() => '');
+    record(
+      '[upstairs/unearned] a fresh account with 0 classes booked this week shows 0 of 3',
+      upstairsStatus.includes('0 of 3 classes booked this week'),
+      JSON.stringify({ upstairsStatus })
+    );
+
+    if (SCREENSHOT_DIR) {
+      await page.getByTestId('trophy-case-badge-legacy').scrollIntoViewIfNeeded().catch(() => {});
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-legacy-unearned.png') }).catch(() => {});
+      await page.getByTestId('trophy-case-badge-upstairs').scrollIntoViewIfNeeded().catch(() => {});
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-upstairs-unearned.png') }).catch(() => {});
+    }
+    await context.close();
+  }
+
+  // [legacy/earned] + [legacy/post-marker]: the brief's own worked example
+  // -- a member with a legacy starting count of 170 plus 10 real in-app
+  // bookings (180 lifetime total) shows LEGACY 100 (the highest milestone
+  // at or below 180), both in the Trophy Case and next to their name on a
+  // real community post. One context, since both reads share the exact
+  // same account state.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Member',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: false,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+            legacy_starting_count: 170,
+          },
+        ]),
+      })
+    );
+    // Dated comfortably outside the current week (30+ days back) -- this
+    // block is testing LEGACY's lifetime count, not UPSTAIRS, and a
+    // booking that happened to land inside the current week would also
+    // cross UPSTAIRS's own 3-count threshold as an unplanned side effect.
+    const myRealBookings = Array.from({ length: 10 }, (_, i) => ({
+      id: `r45-booking-${i}`,
+      session_id: `r45-session-${i}`,
+      payment_method: 'unlimited',
+      class_sessions: { start_at: new Date(Date.now() - (i + 30) * 86400000).toISOString() },
+    }));
+    await page.route('**/rest/v1/class_bookings*', (route) => {
+      if (route.request().method() === 'HEAD') {
+        return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'content-range': `*/${myRealBookings.length}` }, body: '' });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(myRealBookings) });
+    });
+    // 180 lifetime classes crosses the LEGACY 100 milestone for the first
+    // time -- BadgeContext's own self-grant effect will try to upsert it
+    // every render until badge_grants reflects that it's already there
+    // (the same infinite-retry shape Round 28 documented for day_one_doug
+    // against a generic empty-array default), which would otherwise never
+    // let page.goto's networkidle wait resolve at all.
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { user_id: USER_ID, badge_id: 'legacy', period_key: '100', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } },
+        ]),
+      })
+    );
+    await page.route('**/rest/v1/community_posts*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'r45-post-1',
+            title: 'THE GAUNTLET',
+            body: 'Crushed it this morning.',
+            category: 'Workout',
+            kind: 'wod',
+            media_url: null,
+            media_type: null,
+            workout_title: 'THE GAUNTLET',
+            workout_notes: null,
+            workout_results_line: '20:00',
+            is_pb: false,
+            pinned: false,
+            created_at: new Date().toISOString(),
+            author_id: USER_ID,
+            profiles: { display_name: 'Test Member' },
+            community_comments: [],
+            community_reactions: [],
+          },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible2 = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible2) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-trophy-case').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const legacyStatus = await page.getByTestId('trophy-case-badge-legacy').innerText().catch(() => '');
+    const legacyGlyphText = await page
+      .getByTestId('trophy-case-badge-legacy')
+      .getByTestId('badge-legacy-glyph')
+      .innerText()
+      .catch(() => '');
+    record(
+      '[legacy/earned] 170 starting + 10 real bookings = 180 lifetime classes shows LEGACY 100, both in the status line and the glyph itself',
+      legacyStatus.includes('LEGACY 100') && legacyStatus.includes('180 lifetime classes') && legacyGlyphText === '100',
+      JSON.stringify({ legacyStatus, legacyGlyphText })
+    );
+    if (SCREENSHOT_DIR) {
+      await page.getByTestId('trophy-case-badge-legacy').scrollIntoViewIfNeeded().catch(() => {});
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-legacy-earned.png') }).catch(() => {});
+    }
+
+    await page.getByTestId('close-trophy-case').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByTestId('close-sidebar').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByRole('tab', { name: /COMMUNITY/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(700);
+
+    const postGlyphText = await page
+      .getByTestId('badge-legacy-glyph')
+      .first()
+      .innerText()
+      .catch(() => '');
+    record(
+      '[legacy/post-marker] the same account\'s real community post shows LEGACY 100 next to their name',
+      postGlyphText === '100',
+      JSON.stringify({ postGlyphText })
+    );
+    if (SCREENSHOT_DIR) {
+      await page.getByTestId('post-card-r45-post-1').scrollIntoViewIfNeeded().catch(() => {});
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'community-legacy-badge.png') }).catch(() => {});
+    }
+    await context.close();
+  }
+
+  // [upstairs/earned-at-3] + [upstairs/not-earned-at-2] +
+  // [upstairs/cancelled-not-counted]: three small, focused contexts --
+  // exactly the brief's own three-part behavioral ask. Each one's booking
+  // fixture is dated via mondayOfThisWeek(), the same device-local Monday-
+  // Sunday window getWeekStart()/isThisWeek() (data/content.ts) already use
+  // for every other weekly badge, so this holds regardless of which real
+  // day the suite happens to run on.
+  {
+    const monday = mondayOfThisWeek();
+    const inWeek = (hoursFromMonday) => new Date(monday.getTime() + hoursFromMonday * 3600000).toISOString();
+
+    // 3 real, booked, in-week sessions -- earned.
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      const bookings = [
+        { id: 'up-1', session_id: 's-1', status: 'booked', startAt: inWeek(25) },
+        { id: 'up-2', session_id: 's-2', status: 'booked', startAt: inWeek(49) },
+        { id: 'up-3', session_id: 's-3', status: 'booked', startAt: inWeek(73) },
+      ];
+      await page.route('**/rest/v1/class_bookings*', makeUpstairsBookingsRoute(bookings));
+      // 3 bookings this week crosses UPSTAIRS for the first time -- same
+      // infinite-self-grant-retry risk as the LEGACY fixture above
+      // (networkidle would never resolve) without badge_grants already
+      // reflecting it.
+      await page.route('**/rest/v1/badge_grants*', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([
+            {
+              user_id: USER_ID,
+              badge_id: 'upstairs',
+              period_key: String(mondayOfThisWeek().getTime()),
+              granted_at: new Date().toISOString(),
+              profiles: { display_name: 'Test Member' },
+            },
+          ]),
+        })
+      );
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      const nv = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+      if (nv) {
+        await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(400);
+      }
+      await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.getByTestId('sidebar-trophy-case').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      const status = await page.getByTestId('trophy-case-badge-upstairs').innerText().catch(() => '');
+      // earned is also independently confirmed via the real computed
+      // color (cardStatusEarned -> colors.gold) on the status line itself,
+      // not just the count text alone.
+      const statusColorRgb = await page
+        .getByTestId('trophy-case-badge-upstairs')
+        .locator('text=/of 3 classes booked this week/')
+        .evaluate((el) => getComputedStyle(el).color)
+        .catch(() => '');
+      record(
+        '[upstairs/earned-at-3] 3 real booked classes inside the current week earns UPSTAIRS -- the count and the real gold earned color both agree',
+        status.includes('3 of 3 classes booked this week') && statusColorRgb === 'rgb(229, 184, 11)',
+        JSON.stringify({ status, statusColorRgb })
+      );
+      if (SCREENSHOT_DIR) {
+        await page.getByTestId('trophy-case-badge-upstairs').scrollIntoViewIfNeeded().catch(() => {});
+        await page.waitForTimeout(200);
+        await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-upstairs-earned.png') }).catch(() => {});
+      }
+      await context.close();
+    }
+
+    // Only 2 -- not earned.
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      const bookings = [
+        { id: 'up-1', session_id: 's-1', status: 'booked', startAt: inWeek(25) },
+        { id: 'up-2', session_id: 's-2', status: 'booked', startAt: inWeek(49) },
+      ];
+      await page.route('**/rest/v1/class_bookings*', makeUpstairsBookingsRoute(bookings));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      const nv = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+      if (nv) {
+        await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(400);
+      }
+      await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.getByTestId('sidebar-trophy-case').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      const status = await page.getByTestId('trophy-case-badge-upstairs').innerText().catch(() => '');
+      record(
+        '[upstairs/not-earned-at-2] only 2 booked classes this week does NOT earn UPSTAIRS',
+        status.includes('2 of 3 classes booked this week'),
+        JSON.stringify({ status })
+      );
+      await context.close();
+    }
+
+    // 3 total, one cancelled -- only 2 real booked ones count, not earned.
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      const bookings = [
+        { id: 'up-1', session_id: 's-1', status: 'booked', startAt: inWeek(25) },
+        { id: 'up-2', session_id: 's-2', status: 'booked', startAt: inWeek(49) },
+        { id: 'up-3', session_id: 's-3', status: 'cancelled', startAt: inWeek(73) },
+      ];
+      await page.route('**/rest/v1/class_bookings*', makeUpstairsBookingsRoute(bookings));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      const nv = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+      if (nv) {
+        await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(400);
+      }
+      await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.getByTestId('sidebar-trophy-case').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      const status = await page.getByTestId('trophy-case-badge-upstairs').innerText().catch(() => '');
+      record(
+        '[upstairs/cancelled-not-counted] 2 real booked classes plus 1 cancelled one still reads as only 2 -- a cancelled booking never counts',
+        status.includes('2 of 3 classes booked this week'),
+        JSON.stringify({ status, fixtureCount: bookings.length })
+      );
+      await context.close();
+    }
+  }
+
+  // [badges/the-regular-strike-inline]: the brief's own explicit ask to
+  // verify the corner-to-corner strike fix at BOTH render sizes -- the
+  // large 60px Trophy Case card is already covered by [badges/the-regular-
+  // strike] above; this covers the small 18px inline size PostAuthorBadges
+  // renders next to a name on a post, via a real community post from an
+  // account that has genuinely earned THE REGULAR this week.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            user_id: USER_ID,
+            badge_id: 'the_regular',
+            period_key: String(mondayOfThisWeek().getTime()),
+            granted_at: new Date().toISOString(),
+            profiles: { display_name: 'Test Member' },
+          },
+        ]),
+      })
+    );
+    // THE REGULAR's "earned" state for the signed-in member is always
+    // live-recomputed from real posts this week (regularProgress.earned in
+    // BadgeContext.tsx), never read back from the badge_grants mock above
+    // -- so this needs 3 real posts from this account this week, not just
+    // 1, for PostAuthorBadges to actually render the badge at all.
+    await page.route('**/rest/v1/community_posts*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          Array.from({ length: 3 }, (_, i) => ({
+            id: `r45-regular-post-${i}`,
+            title: 'DOWN BY TWO',
+            body: 'Solid session.',
+            category: 'Workout',
+            kind: 'wod',
+            media_url: null,
+            media_type: null,
+            workout_title: 'DOWN BY TWO',
+            workout_notes: null,
+            workout_results_line: '18:30',
+            is_pb: false,
+            pinned: false,
+            created_at: new Date().toISOString(),
+            author_id: USER_ID,
+            profiles: { display_name: 'Test Member' },
+            community_comments: [],
+            community_reactions: [],
+          }))
+        ),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible3 = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible3) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /COMMUNITY/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(700);
+
+    const geometry = await page.evaluate(() => {
+      const box = document.querySelector('[data-testid="tally-marks-box"]');
+      const strike = document.querySelector('[data-testid="tally-strike"]');
+      if (!box || !strike) return null;
+      const boxRect = box.getBoundingClientRect();
+      const strikeRect = strike.getBoundingClientRect();
+      return { boxW: boxRect.width, boxH: boxRect.height, strikeW: strikeRect.width, strikeH: strikeRect.height };
+    });
+    const strikeSpansFullBox =
+      !!geometry && geometry.strikeW >= geometry.boxW * 0.85 && geometry.strikeH >= geometry.boxH * 0.85;
+    record(
+      '[badges/the-regular-strike-inline] at the small 18px inline size (next to a name on a post), the strike still spans corner to corner',
+      strikeSpansFullBox,
+      JSON.stringify({ geometry })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'post-the-regular-inline.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [member-manager/legacy-starting-count]: the admin-only editable field,
+  // a real round trip (the mocked profiles PATCH payload is captured and
+  // served back by the mocked admin_list_members RPC, same convention as
+  // every other stateful round-trip mock in this file) with the real
+  // SaveConfirmation component, not an assumption that the write went
+  // through.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    let legacyCount = 0;
+    await page.route('**/rest/v1/profiles*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'PATCH') {
+        let payload = {};
+        try {
+          payload = JSON.parse(req.postData() || '{}');
+        } catch {}
+        if (typeof payload.legacy_starting_count === 'number') legacyCount = payload.legacy_starting_count;
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Admin',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: true,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+          },
+        ]),
+      });
+    });
+    await page.route('**/rest/v1/rpc/admin_list_members*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'r45-roster-member',
+            display_name: 'Legacy Member',
+            email: 'legacy-member@example.com',
+            how_train: 'boathouse',
+            in_person_plan: null,
+            is_admin: false,
+            created_at: new Date(Date.now() - 200 * 86400000).toISOString(),
+            founding_member: false,
+            sub_status: null,
+            sub_plan: null,
+            sub_current_period_end: null,
+            sub_trial_end: null,
+            sub_cancel_at_period_end: null,
+            group_chat_muted: false,
+            legacy_starting_count: legacyCount,
+          },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible4 = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible4) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-member-manager').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('member-row-Legacy Member').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    const inputVisible = await page.getByTestId('legacy-starting-count-input').isVisible().catch(() => false);
+    const prefillValue = await page.getByTestId('legacy-starting-count-input').inputValue().catch(() => '');
+    record(
+      '[member-manager/legacy-starting-count-field] the editable field is visible and prefills the real saved value (0)',
+      inputVisible && prefillValue === '0',
+      JSON.stringify({ inputVisible, prefillValue })
+    );
+
+    await page.getByTestId('legacy-starting-count-input').fill('170');
+    await page.getByTestId('save-legacy-starting-count').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const savedVisible = await page.getByTestId('save-confirmation-saved').isVisible().catch(() => false);
+    record(
+      '[member-manager/legacy-starting-count-save] saving shows the real SAVED confirmation, and the write actually reached the server (170)',
+      savedVisible && legacyCount === 170,
+      JSON.stringify({ savedVisible, legacyCount })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'member-manager-legacy-starting-count.png') }).catch(() => {});
     await context.close();
   }
 

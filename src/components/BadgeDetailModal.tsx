@@ -15,12 +15,14 @@ type Props = {
   // from the Trophy Case) — omit it (e.g. from the Profile grid) and the
   // Joker's verify button just isn't shown.
   onVerifyJoker?: () => void;
+  // LEGACY only — see BadgeIcon.tsx's own Props comment.
+  legacyMilestone?: number;
 };
 
 // Tap-to-inspect for any badge, earned or not — the whole reason the unearned
 // ones render as gray silhouettes instead of disappearing: this modal is
 // what tells you how to go earn one.
-export function BadgeDetailModal({ badgeId, earned, onClose, onVerifyJoker }: Props) {
+export function BadgeDetailModal({ badgeId, earned, onClose, onVerifyJoker, legacyMilestone }: Props) {
   if (!badgeId) return null;
   const def = BADGE_MAP[badgeId];
 
@@ -35,7 +37,7 @@ export function BadgeDetailModal({ badgeId, earned, onClose, onVerifyJoker }: Pr
             <Text style={styles.closeText}>✕</Text>
           </Pressable>
 
-          <BadgeIcon id={badgeId} earned={earned} size={72} />
+          <BadgeIcon id={badgeId} earned={earned} size={72} legacyMilestone={legacyMilestone} />
           <Text style={styles.name}>{def.name}</Text>
           <Text style={styles.kindLabel}>{def.kind === 'permanent' ? 'PERMANENT BADGE' : 'WEEKLY BADGE'}</Text>
           <Text style={styles.description}>{def.description}</Text>

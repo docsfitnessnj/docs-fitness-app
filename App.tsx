@@ -1205,10 +1205,18 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
                 <StoriesProvider>
                   <DeckProgressProvider>
                     <ChallengeProvider>
+                      {/* Round 45: moved above BadgeProvider — LEGACY/
+                          UPSTAIRS read this account's own class_bookings
+                          (useClassBookingData()) to compute lifetime/weekly
+                          class counts, so BadgeProvider must render inside
+                          this provider, not the other way around. Neither
+                          FoundingFiftyProvider nor DocsInboxProvider reads
+                          anything from BadgeContext or ClassBookingContext,
+                          so reordering them here is safe. */}
+                      <ClassBookingProvider>
                       <BadgeProvider>
                         <FoundingFiftyProvider>
                           <DocsInboxProvider>
-                            <ClassBookingProvider>
                               <ContentLibraryProvider>
                                 <GroupChatUnreadProvider>
                                 <TourProvider>
@@ -1246,10 +1254,10 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
                                 </TourProvider>
                                 </GroupChatUnreadProvider>
                               </ContentLibraryProvider>
-                            </ClassBookingProvider>
                           </DocsInboxProvider>
                         </FoundingFiftyProvider>
                       </BadgeProvider>
+                      </ClassBookingProvider>
                     </ChallengeProvider>
                   </DeckProgressProvider>
                 </StoriesProvider>
