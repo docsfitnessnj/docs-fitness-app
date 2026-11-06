@@ -22,7 +22,7 @@ export const FOUNDING_NO_TRIAL_SENTENCE = `$${FOUNDING_FIFTY_PRICE} today. Your 
 // every founding surface (About door, Memberships, Pricing) shows exactly
 // this sentence, never a paraphrase.
 export const FOUNDING_VALUE_LINE =
-  'All 5 weekly workouts, the full Deck of WODs, the Weekly Challenge and live leaderboard, the community, and a direct line to Doc.';
+  'All 4 weekly workouts, the full Deck of WODs, the Weekly Challenge and live leaderboard, the community, and a direct line to Doc.';
 
 const WEEKDAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 const MONTH_NAMES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
@@ -80,7 +80,7 @@ export type OnlinePlan = {
 };
 
 export const ONLINE_PLAN_BULLETS = [
-  'All 5 kettlebell workouts a week',
+  'All 4 kettlebell workouts a week',
   'The full Deck of WODs (54 workouts)',
   'Weekly Challenge + live leaderboard',
   'Full community access',

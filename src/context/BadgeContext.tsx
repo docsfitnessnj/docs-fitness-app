@@ -5,6 +5,7 @@ import { useCommunity } from './CommunityContext';
 import { useDeckProgress } from './DeckProgressContext';
 import { useMembership } from './MembershipContext';
 import { useDisplayName, useProfile } from './ProfileContext';
+import { useScheduledContent } from './ScheduledContentContext';
 import { useWorkoutLog } from './WorkoutLogContext';
 import { BadgeId, sortBadgeIds } from '../data/badges';
 import { getCurrentWeek, getWeekStart, isThisWeek } from '../data/content';
@@ -32,6 +33,23 @@ type FoundingFiftyGrants = Record<string, { granted: boolean; grantedAt: number 
 // so getBadgesForAuthor() below gives it its own dedicated branch instead
 // of the generic '' -or-current-week check every one of these uses.
 const COMPUTED_BADGE_IDS: BadgeId[] = ['on_fire', 'cow_killer', 'the_regular', 'day_one_doug', 'hundred_down', 'upstairs'];
+
+// ON FIRE's own real weekly target. getCurrentWeek()'s raw WeekDay.wod is
+// never schedule-aware (it's always the legacy 5-day Mon-Fri array) — a
+// real Round 46 scheduled week covering the current calendar week drops
+// Wednesday entirely (it's COW day now, see weekendContent.ts's own
+// useIsCowDay), so without this ON FIRE would keep asking for all 5
+// forever, including a day that no longer has a WOD to mark complete at
+// all. Mirrors weekendContent.ts's own coveringScheduledWeek check, which
+// this file can't import directly (it's shaped as a hook there) — the
+// same plain comparison is inlined here instead.
+function onFireWeekdayKeys(scheduledCurrentWeek: { weekStartDate: number } | null): string[] {
+  const week = getCurrentWeek();
+  const coversThisWeek = !!scheduledCurrentWeek && scheduledCurrentWeek.weekStartDate === getWeekStart().getTime();
+  return week
+    .filter((d) => !d.isRestDay && d.wod && !(coversThisWeek && d.wod.key === 'wed'))
+    .map((d) => d.wod!.key);
+}
 
 // A stable id for "this Monday-anchored week" — weekly badges (ON FIRE, COW
 // KILLER, THE REGULAR) are granted with this as their period_key, so they
@@ -152,6 +170,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
   const { posts, addTextPost } = useCommunity();
   const { fullContentAccess } = useMembership();
   const { myBookings } = useClassBookingData();
+  const { currentWeek: scheduledCurrentWeek } = useScheduledContent();
 
   const [grants, setGrants] = useState<GrantRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -233,8 +252,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       toGrant.push({ badge_id: 'hundred_down', period_key: '' });
     }
 
-    const week = getCurrentWeek();
-    const weekdayKeys = week.filter((d) => !d.isRestDay && d.wod).map((d) => d.wod!.key);
+    const weekdayKeys = onFireWeekdayKeys(scheduledCurrentWeek);
     const onFireCount = weekdayKeys.filter((key) => completedWorkouts.some((w) => w.dayKey === key)).length;
     const onFireEarnedNow = weekdayKeys.length > 0 && onFireCount >= weekdayKeys.length;
     const hasOnFireThisWeek = grants.some(
@@ -286,7 +304,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       )
       .then(() => refetchGrants());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, totalWorkoutsLogged, completedWorkouts, posts, displayName, weekPeriodKey, grants, legacyStartingCount, myBookings]);
+  }, [user, totalWorkoutsLogged, completedWorkouts, posts, displayName, weekPeriodKey, grants, legacyStartingCount, myBookings, scheduledCurrentWeek]);
 
   const value = useMemo<BadgeContextValue>(() => {
     const dayOneDougGrant = grants.find((g) => g.user_id === user?.id && g.badge_id === 'day_one_doug');
@@ -306,8 +324,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     const cowChampCount = myCowChampGrants.length;
     const cowChampEarnedAt = cowChampEarned ? new Date(myCowChampGrants[0].granted_at).getTime() : null;
 
-    const week = getCurrentWeek();
-    const weekdayKeys = week.filter((d) => !d.isRestDay && d.wod).map((d) => d.wod!.key);
+    const weekdayKeys = onFireWeekdayKeys(scheduledCurrentWeek);
     const onFireCount = weekdayKeys.filter((key) => completedWorkouts.some((w) => w.dayKey === key)).length;
     const onFireProgress = { count: onFireCount, target: weekdayKeys.length, earned: onFireCount >= weekdayKeys.length };
 
@@ -439,7 +456,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grants, myGrantedIds, foundingFiftyGrants, displayName, completedWorkouts, posts, totalWorkoutsLogged, fullContentAccess, loading, error, user, weekPeriodKey, realAdmin, legacyStartingCount, myBookings]);
+  }, [grants, myGrantedIds, foundingFiftyGrants, displayName, completedWorkouts, posts, totalWorkoutsLogged, fullContentAccess, loading, error, user, weekPeriodKey, realAdmin, legacyStartingCount, myBookings, scheduledCurrentWeek]);
 
   // Auto-generate the monthly recap on the 1st, once per month — only when
   // the signed-in member is a real admin, since a recap posted under "Doc"

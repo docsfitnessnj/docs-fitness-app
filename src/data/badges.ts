@@ -69,7 +69,7 @@ export const BADGE_DEFS: BadgeDef[] = [
   {
     id: 'on_fire',
     name: 'ON FIRE',
-    description: 'All 5 WODs completed in one week. No days off, no excuses.',
+    description: 'All 4 WODs completed in one week. No days off, no excuses.',
     kind: 'weekly',
     order: 1,
   },

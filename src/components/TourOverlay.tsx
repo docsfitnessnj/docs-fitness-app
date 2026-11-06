@@ -71,7 +71,7 @@ const LIMITED_STOPS: Stop[] = [
   {
     key: 'wods-tab',
     title: "A TASTE OF DOC'S WODS",
-    body: "Two of Doc's five weekly workouts are open to you, free. Go try one.",
+    body: "Two of Doc's four weekly workouts are open to you, free. Go try one.",
     radius: 16,
   },
   {

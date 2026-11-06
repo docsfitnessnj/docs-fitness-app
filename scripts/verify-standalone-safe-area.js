@@ -195,6 +195,7 @@ const ASPECT_RATIO_FIXTURE_RATIO = 300 / 200;
 // 4:3 ratio deliberately distinct from the PNG fixture's 1.5 above, so a
 // test against each can't be satisfied by the same wrong number).
 const jpeg = require('jpeg-js');
+const XLSX = require('xlsx');
 function buildSolidJpeg(width, height, [r, g, b]) {
   const rgba = Buffer.alloc(width * height * 4);
   for (let i = 0; i < width * height; i++) {
@@ -278,6 +279,16 @@ async function setupMocks(page, userId = USER_ID) {
     }
     if (table === 'class_sessions_with_availability') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(defaultClassSessionsFixture()) });
+    }
+    // Round 46: the scheduled-content RPC returns a single scalar (a
+    // timestamp or null), never a row array -- the generic `[]` fallback
+    // below is correct for scheduled_weeks/scheduled_wods/scheduled_cows
+    // (no rows = no scheduled-system coverage, the exact legacy baseline
+    // every pre-existing check already assumes), but would read back as a
+    // truthy, NaN-producing value here instead of a clean "nothing
+    // scheduled" null.
+    if (table === 'next_scheduled_release_at') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
   });
@@ -438,6 +449,140 @@ function defaultClassSessionsFixture() {
     }
   }
   return rows;
+}
+
+// ---------------------------------------------------------------------------
+// Round 46: the content scheduling engine and the 4 WOD week. Fixture
+// helpers for the new scheduled_weeks/scheduled_wods/scheduled_cows tables
+// and the next_scheduled_release_at() RPC -- mirrors
+// ScheduledContentContext.tsx's own row shapes exactly (a nested PostgREST
+// embed in one response, same as every other embedded-select mock already
+// in this file).
+// ---------------------------------------------------------------------------
+function pgDateOnly(ms) {
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// The real Monday this suite's own wall-clock "today" falls in -- the exact
+// same algorithm data/content.ts's getWeekStart() uses, inlined here (the
+// established convention this file already follows for date-dependent
+// fixtures, e.g. offsetToWeekday/dateAtOffsetDays above) so a scheduled-
+// week fixture always lines up with whatever real day this suite runs on.
+function thisWeekMonday() {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() + mondayOffset);
+  return monday;
+}
+
+function makeScheduledWeekRow({ id, weekStartDateMs, releaseAtMs, releasedAtMs = null, wods = [], cow = null }) {
+  return {
+    id,
+    week_start_date: pgDateOnly(weekStartDateMs),
+    release_at: new Date(releaseAtMs).toISOString(),
+    released_at: releasedAtMs ? new Date(releasedAtMs).toISOString() : null,
+    scheduled_wods: wods.map((w, i) => ({
+      id: `${id}-wod-${i}`,
+      day_of_week: w.dayOfWeek,
+      name: w.name,
+      format: w.format || '',
+      format_description: w.formatDescription || '',
+      movements: w.movements || [],
+      video_url: w.videoUrl || '',
+      notes: w.notes || '',
+    })),
+    scheduled_cows: cow
+      ? [
+          {
+            id: `${id}-cow`,
+            name: cow.name,
+            video_url: cow.videoUrl || '',
+            scoring_type: cow.scoringType || 'time',
+            kettlebells: cow.kettlebells || null,
+            the_work: cow.theWork || null,
+            the_catch: cow.theCatch || null,
+            finish_note: cow.finishNote || null,
+          },
+        ]
+      : [],
+  };
+}
+
+function registerScheduledWeeksMock(page, rows) {
+  return page.route('**/rest/v1/scheduled_weeks*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rows) })
+  );
+}
+
+function registerNextReleaseMock(page, ms) {
+  return page.route('**/rest/v1/rpc/next_scheduled_release_at*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: ms ? JSON.stringify(new Date(ms).toISOString()) : 'null' })
+  );
+}
+
+function adminProfileFixture(overrides = {}) {
+  return [
+    {
+      display_name: 'Doc',
+      instagram_handle: '',
+      favorite_quote: '',
+      avatar_url: null,
+      how_train: 'boathouse',
+      is_admin: true,
+      show_tomorrows_workout: true,
+      tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+      group_chat_muted: false,
+      legacy_starting_count: 0,
+      ...overrides,
+    },
+  ];
+}
+
+function mdY(ms) {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+}
+
+// A real .xlsx workbook, built with the same `xlsx` package the app's own
+// import screen uses to read one -- written to a real file on disk and
+// delivered through Playwright's own filechooser event, never a hand-
+// assembled byte string or a mocked parse result. Columns are exactly the
+// brief's own spec: a WODs sheet (Release date, Day, Workout name, Format,
+// Format description, Movements, Video URL, Notes) and a COWs sheet (Week
+// of, Challenge name, Video URL, Scoring type, Prescribed kettlebells, The
+// Work, The Catch, Finish note).
+function buildScheduledImportFixtureXlsx(weekStartDateMs) {
+  const wodRows = [
+    { 'Release date': mdY(weekStartDateMs), Day: 'MONDAY', 'Workout name': 'R46 Import Monday', Format: '21-15-9', 'Format description': 'For time', Movements: 'Swings\nPush-Ups', 'Video URL': '', Notes: '' },
+    { 'Release date': mdY(weekStartDateMs + 86400000), Day: 'TUESDAY', 'Workout name': 'R46 Import Tuesday', Format: 'AMRAP 20', 'Format description': '', Movements: 'Lunges', 'Video URL': '', Notes: '' },
+    { 'Release date': mdY(weekStartDateMs + 3 * 86400000), Day: 'THURSDAY', 'Workout name': 'R46 Import Thursday', Format: 'EMOM 15', 'Format description': '', Movements: 'Thrusters', 'Video URL': '', Notes: '' },
+    { 'Release date': mdY(weekStartDateMs + 4 * 86400000), Day: 'FRIDAY', 'Workout name': 'R46 Import Friday', Format: 'For Time', 'Format description': '', Movements: 'Goblet Squats', 'Video URL': '', Notes: '' },
+  ];
+  const cowRows = [
+    {
+      'Week of': mdY(weekStartDateMs),
+      'Challenge name': 'R46 Import COW',
+      'Video URL': '',
+      'Scoring type': 'FOR TIME',
+      'Prescribed kettlebells': '24kg',
+      'The Work': 'Do the real work',
+      'The Catch': 'Catch the real penalty',
+      'Finish note': 'Finish strong.',
+    },
+  ];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(wodRows), 'WODs');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(cowRows), 'COWs');
+  const outPath = path.join(require('os').tmpdir(), `r46-import-fixture-${Date.now()}.xlsx`);
+  XLSX.writeFile(workbook, outPath);
+  return outPath;
 }
 
 function bookedCountFor(state, sessionId) {
@@ -9319,6 +9464,660 @@ async function run() {
       JSON.stringify({ savedVisible, legacyCount })
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'member-manager-legacy-starting-count.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // ===========================================================================
+  // Round 46: the content scheduling engine and the 4 WOD week.
+  //
+  // [scheduled/legacy-unaffected]: no scheduled_weeks mocked at all (the
+  // generic setupMocks fallback already answers that table with `[]`,
+  // meaning "no scheduled-system coverage" is the correct baseline every
+  // pre-existing check already assumes, unmodified) -- the current week
+  // must still show all 5 real WOD days, Wednesday included, exactly as
+  // before. This is the direct proof of "the 4-WOD shape applies to
+  // scheduled weeks going forward only."
+  // ---------------------------------------------------------------------------
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR46a = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR46a) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /YOUR WORKOUTS/i }).first().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const wedFraction = await page.getByTestId('date-strip-cell-2').last().innerText().catch(() => '');
+    record(
+      '[scheduled/legacy-unaffected] with no scheduled week loaded, Wednesday still reads as a real 5th WOD day (not COW), fraction unchanged',
+      wedFraction.includes('5') && !wedFraction.includes('COW'),
+      JSON.stringify({ wedFraction })
+    );
+    await page.getByTestId('date-strip-cell-2').last().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const cowDayButtonAbsent = !(await page.getByTestId('wods-go-to-cow').isVisible().catch(() => true));
+    record(
+      '[scheduled/legacy-unaffected] selecting Wednesday shows the real legacy WOD, never the COW day card',
+      cowDayButtonAbsent,
+      JSON.stringify({ cowDayButtonAbsent })
+    );
+    const countdownAbsent = !(await page.getByTestId('scheduled-release-countdown').isVisible().catch(() => true));
+    record(
+      '[scheduled/legacy-unaffected] no countdown renders when nothing is scheduled',
+      countdownAbsent,
+      JSON.stringify({ countdownAbsent })
+    );
+    await context.close();
+  }
+
+  // [scheduled/covered-week]: a real released scheduled week covering THIS
+  // calendar week (computed the same way getWeekStart() does, so this
+  // never depends on which real day the suite happens to run on) -- Mon/
+  // Tue/Thu/Fri show the real scheduled WOD names, Wednesday shows COW day
+  // and its own button navigates to the real COW room. A full-access
+  // subscription (fullContentAccess: true) keeps MembershipGate out of the
+  // way, since this block is testing the scheduling system, not tier
+  // gating.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const monday = thisWeekMonday().getTime();
+    const weekRow = makeScheduledWeekRow({
+      id: 'r46-week-1',
+      weekStartDateMs: monday,
+      releaseAtMs: monday - 2 * 86400000,
+      releasedAtMs: monday - 2 * 86400000,
+      wods: [
+        { dayOfWeek: 'mon', name: 'R46 Monday Burner', format: '21-15-9', movements: ['Swings', 'Push-Ups'] },
+        { dayOfWeek: 'tue', name: 'R46 Tuesday Torch', format: 'AMRAP 20', movements: ['Lunges'] },
+        { dayOfWeek: 'thu', name: 'R46 Thursday Thrasher', format: 'EMOM 15', movements: ['Thrusters'] },
+        { dayOfWeek: 'fri', name: 'R46 Friday Finisher', format: 'For Time', movements: ['Goblet Squats'] },
+      ],
+      cow: { name: 'R46 Test COW', scoringType: 'time', kettlebells: '24kg', theWork: 'Do the work', theCatch: 'Catch the penalty', finishNote: 'Finish strong.' },
+    });
+    await registerScheduledWeeksMock(page, [weekRow]);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR46b = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR46b) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /YOUR WORKOUTS/i }).first().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const mondayFraction = await page.getByTestId('date-strip-cell-0').last().innerText().catch(() => '');
+    record(
+      '[scheduled/covered-week] Monday reads 1/4 (Wednesday excluded from the denominator) once a real scheduled week covers this calendar week',
+      mondayFraction.includes('1') && mondayFraction.includes('4') && !mondayFraction.includes('5'),
+      JSON.stringify({ mondayFraction })
+    );
+
+    await page.getByTestId('date-strip-cell-0').last().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const mondayTitle = await page.getByText('R46 MONDAY BURNER', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[scheduled/covered-week] Monday shows the real scheduled WOD name, not the legacy default',
+      mondayTitle,
+      JSON.stringify({ mondayTitle })
+    );
+
+    const wedFractionCovered = await page.getByTestId('date-strip-cell-2').last().innerText().catch(() => '');
+    record(
+      '[scheduled/covered-week] Wednesday\'s date-strip cell reads COW, not a numeric fraction, once a scheduled week covers this week',
+      wedFractionCovered.includes('COW'),
+      JSON.stringify({ wedFractionCovered })
+    );
+
+    await page.getByTestId('date-strip-cell-2').last().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const cowDayCardVisible = await page.getByTestId('wods-go-to-cow').isVisible().catch(() => false);
+    record(
+      '[scheduled/covered-week] selecting Wednesday opens the COW day card with its own GO TO THIS WEEK\'S COW button',
+      cowDayCardVisible,
+      JSON.stringify({ cowDayCardVisible })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'scheduled-wednesday-cow-day.png') }).catch(() => {});
+
+    await page.getByTestId('wods-go-to-cow').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const cowHeroVisible = await page.getByTestId('cow-hero').isVisible().catch(() => false);
+    const cowTitleVisible = await page.getByText('R46 TEST COW', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[scheduled/covered-week] the GO TO THIS WEEK\'S COW button actually navigates to the real COW room showing this week\'s real scheduled COW',
+      cowHeroVisible && cowTitleVisible,
+      JSON.stringify({ cowHeroVisible, cowTitleVisible })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'scheduled-cow-room.png') }).catch(() => {});
+
+    // Search must never surface Wednesday's own stale legacy WOD once a
+    // scheduled week has taken over that day as COW day.
+    await page.getByTestId('open-search').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByPlaceholder(/search/i).first().fill('grind').catch(() => {});
+    await page.waitForTimeout(400);
+    const staleWedResultVisible = await page.getByText('THE GRINDER', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[scheduled/covered-week] search never surfaces Wednesday\'s old legacy WOD once it has become COW day',
+      !staleWedResultVisible,
+      JSON.stringify({ staleWedResultVisible })
+    );
+    await context.close();
+  }
+
+  // [scheduled/on-fire-4]: ON FIRE's own real target is 4, earnable at
+  // 4/4, once a scheduled week covers the current calendar week -- the
+  // direct proof that BadgeContext's own weekdayKeys computation (fixed
+  // this round -- see onFireWeekdayKeys in BadgeContext.tsx) actually
+  // excludes Wednesday rather than still silently asking for all 5.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const monday2 = thisWeekMonday().getTime();
+    await registerScheduledWeeksMock(page, [
+      makeScheduledWeekRow({
+        id: 'r46-week-onfire',
+        weekStartDateMs: monday2,
+        releaseAtMs: monday2 - 2 * 86400000,
+        releasedAtMs: monday2 - 2 * 86400000,
+        wods: [
+          { dayOfWeek: 'mon', name: 'R46 Monday Burner' },
+          { dayOfWeek: 'tue', name: 'R46 Tuesday Torch' },
+          { dayOfWeek: 'thu', name: 'R46 Thursday Thrasher' },
+          { dayOfWeek: 'fri', name: 'R46 Friday Finisher' },
+        ],
+        cow: { name: 'R46 Test COW', scoringType: 'time' },
+      }),
+    ]);
+    const completedRows = ['mon', 'tue', 'thu', 'fri'].map((dayKey, i) => ({
+      day_key: dayKey,
+      workout_title: `R46 ${dayKey}`,
+      date_label: dayKey,
+      workout_timestamp: monday2 + i * 86400000,
+      rounds: '5',
+      time_taken: '9:30',
+      kettlebell_kg: '16',
+      notes: '',
+      media_url: null,
+      media_type: null,
+      is_pb: false,
+      completed_at: new Date(monday2 + i * 86400000).toISOString(),
+    }));
+    await page.route('**/rest/v1/wod_completions*', (route) => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(completedRows) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+    // 4 real completions this week trips both ON FIRE and (at exactly 4
+    // completions) never DAY ONE DOUG's own separate >=1-ever condition by
+    // surprise -- badge_grants already reflecting both avoids the
+    // documented infinite-self-grant-retry gap (Round 28) this file has
+    // hit before whenever a fixture crosses a threshold for the first time
+    // without also seeding the grant it would produce.
+    await page.route('**/rest/v1/badge_grants*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { user_id: USER_ID, badge_id: 'day_one_doug', period_key: '', granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } },
+          { user_id: USER_ID, badge_id: 'on_fire', period_key: String(monday2), granted_at: new Date().toISOString(), profiles: { display_name: 'Test Member' } },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR46c = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR46c) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-trophy-case').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const onFireStatus = await page.getByTestId('trophy-case-badge-on_fire').innerText().catch(() => '');
+    record(
+      '[scheduled/on-fire-4] ON FIRE reads 4 of 4 WODs this week once a scheduled week covers the current week and all 4 real days are completed',
+      onFireStatus.includes('4 of 4'),
+      JSON.stringify({ onFireStatus })
+    );
+    if (SCREENSHOT_DIR) {
+      await page.getByTestId('trophy-case-badge-on_fire').scrollIntoViewIfNeeded().catch(() => {});
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-on-fire-4of4.png') }).catch(() => {});
+    }
+    await context.close();
+  }
+
+  // [scheduled/copy-sweep]: the various "5 WODs"/"2 of 5" strings this
+  // round rewrote to "4"/"2 of 4" -- the free (online_free) tier's own
+  // upgrade nudge and the WODs tab's own UpgradeBanner are the two
+  // reachable from a signed-in Playwright session; AboutScreen/plans.ts's
+  // copy (pre-signup, not reachable from a signed-in session at all) was
+  // confirmed correct by direct source inspection when it was edited --
+  // see this round's own AGENTS.md writeup.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeText = await page.getByTestId('alert-backdrop').isVisible().catch(() => false)
+      ? await page.locator('body').innerText().catch(() => '')
+      : '';
+    const nudgeSaysOldFive = nudgeText.includes('2 of 5');
+    const nudgeSaysNewFour = nudgeText.includes('2 of 4');
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /YOUR WORKOUTS/i }).first().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    // Wednesday (index 2) is never one of FREE_UNLOCKED_WOD_KEYS -- select
+    // it explicitly so the UpgradeBanner is deterministically on screen
+    // regardless of which real weekday the suite happens to run on.
+    await page.getByTestId('date-strip-cell-2').last().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const bannerText = await page.getByText(/kettlebell workouts a week/i).first().innerText().catch(() => '');
+    record(
+      '[scheduled/copy-sweep] the free tier\'s own upgrade copy (nudge and/or WODs tab banner) says "4", never the old "5"',
+      (nudgeSaysNewFour || bannerText.includes('4')) && !nudgeSaysOldFive && !bannerText.includes('all 5'),
+      JSON.stringify({ nudgeSaysOldFive, nudgeSaysNewFour, bannerText })
+    );
+    await context.close();
+  }
+
+  // [scheduled/countdown]: a quiet one-line countdown to the next
+  // scheduled release, shown ALL WEEK LONG for a paid tier whenever a
+  // future scheduled week exists -- deliberately NOT conditioned on
+  // "nothing is live right now" (the owner's own explicit correction to
+  // the original plan), and never shown to a free tier.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const futureRelease = Date.now() + 3 * 86400000;
+    await registerNextReleaseMock(page, futureRelease);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR46d = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR46d) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /YOUR WORKOUTS/i }).first().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const countdownOnWods = await page.getByTestId('scheduled-release-countdown').innerText().catch(() => '');
+    record(
+      '[scheduled/countdown] the WODs tab shows the quiet countdown line for a paid tier whenever a future scheduled week exists',
+      countdownOnWods.includes('THE NEW WEEK DROPS'),
+      JSON.stringify({ countdownOnWods })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'scheduled-countdown-wods-tab.png') }).catch(() => {});
+
+    await page.getByRole('tab', { name: /DOC'S COWS/i }).first().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const countdownOnCow = await page.getByTestId('scheduled-release-countdown').last().innerText().catch(() => '');
+    record(
+      '[scheduled/countdown] the COW room shows the same countdown line',
+      countdownOnCow.includes('THE NEW WEEK DROPS'),
+      JSON.stringify({ countdownOnCow })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'scheduled-countdown-cow-room.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [scheduled/countdown-free-tier-hidden]: the same future release, read
+  // by a free (online_free) tier account -- the countdown must not show
+  // at all, since it's gated to fullContentAccess ("paid tiers").
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await registerNextReleaseMock(page, Date.now() + 3 * 86400000);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /YOUR WORKOUTS/i }).first().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const countdownHiddenForFree = !(await page.getByTestId('scheduled-release-countdown').isVisible().catch(() => true));
+    record(
+      '[scheduled/countdown-free-tier-hidden] a free (online_free) tier never sees the countdown, even with a real future release scheduled',
+      countdownHiddenForFree,
+      JSON.stringify({ countdownHiddenForFree })
+    );
+    await context.close();
+  }
+
+  // [scheduled/release-crossing-post]: the post-release state the real
+  // server-side release_scheduled_weeks_if_due() produces (already proven
+  // directly against a real local Postgres instance -- see this round's
+  // own PR description, not re-proven here): a pinned post carrying the
+  // exact copy and this week's real workout names, with the PREVIOUS auto-
+  // release post correctly left unpinned.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/community_posts*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'r46-old-release-post',
+            title: '',
+            body: 'THE NEW WEEK IS LIVE. Fresh WODs and a new COW just dropped. See you Monday morning.\n\nLast Monday\nLast Tuesday\nLast Thursday\nLast Friday',
+            category: 'General',
+            kind: 'text',
+            media_url: null,
+            media_type: null,
+            workout_title: null,
+            workout_notes: null,
+            workout_results_line: null,
+            linked_workout_day_key: null,
+            pinned: false,
+            is_pb: false,
+            created_at: new Date(Date.now() - 7 * 86400000).toISOString(),
+            author_id: USER_ID,
+            profiles: { display_name: 'Doc', how_train: 'boathouse' },
+            community_comments: [],
+            community_reactions: [],
+          },
+          {
+            id: 'r46-new-release-post',
+            title: '',
+            body: 'THE NEW WEEK IS LIVE. Fresh WODs and a new COW just dropped. See you Monday morning.\n\nR46 Monday Burner\nR46 Tuesday Torch\nR46 Thursday Thrasher\nR46 Friday Finisher',
+            category: 'General',
+            kind: 'text',
+            media_url: null,
+            media_type: null,
+            workout_title: null,
+            workout_notes: null,
+            workout_results_line: null,
+            linked_workout_day_key: null,
+            pinned: true,
+            is_pb: false,
+            created_at: new Date().toISOString(),
+            author_id: USER_ID,
+            profiles: { display_name: 'Doc', how_train: 'boathouse' },
+            community_comments: [],
+            community_reactions: [],
+          },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    const newPostVisible = await page.getByText('THE NEW WEEK IS LIVE', { exact: false }).first().isVisible().catch(() => false);
+    const workoutNamesVisible = await page.getByText('R46 Monday Burner', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[scheduled/release-crossing-post] the real pinned release post renders with its exact copy and this week\'s workout names listed beneath it',
+      newPostVisible && workoutNamesVisible,
+      JSON.stringify({ newPostVisible, workoutNamesVisible })
+    );
+    if (SCREENSHOT_DIR) {
+      await page.getByText('THE NEW WEEK IS LIVE', { exact: false }).first().scrollIntoViewIfNeeded().catch(() => {});
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'scheduled-release-pinned-post.png') }).catch(() => {});
+    }
+    await context.close();
+  }
+
+  // [scheduled/last-call-post]: Saturday 8am ET's own LAST CALL post --
+  // not pinned, exact copy.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/community_posts*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'r46-last-call-post',
+            title: '',
+            body: 'LAST CALL. The COW closes at noon. The leaderboard locks. Post your score or hold your peace.',
+            category: 'General',
+            kind: 'text',
+            media_url: null,
+            media_type: null,
+            workout_title: null,
+            workout_notes: null,
+            workout_results_line: null,
+            linked_workout_day_key: null,
+            pinned: false,
+            is_pb: false,
+            created_at: new Date().toISOString(),
+            author_id: USER_ID,
+            profiles: { display_name: 'Doc', how_train: 'boathouse' },
+            community_comments: [],
+            community_reactions: [],
+          },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    const lastCallVisible = await page.getByText('LAST CALL. The COW closes at noon.', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[scheduled/last-call-post] the real LAST CALL post renders with its exact copy, not pinned',
+      lastCallVisible,
+      JSON.stringify({ lastCallVisible })
+    );
+    if (SCREENSHOT_DIR) {
+      await page.getByText('LAST CALL. The COW closes at noon.', { exact: false }).scrollIntoViewIfNeeded().catch(() => {});
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'scheduled-last-call-post.png') }).catch(() => {});
+    }
+    await context.close();
+  }
+
+  // [scheduled/admin-no-week-banner]: the edge case -- no week loaded for
+  // the coming Sunday shows a warning banner in the admin Content Library,
+  // ahead of time, before that Sunday ever arrives.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-content-library').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const bannerVisible = await page.getByTestId('content-no-week-warning').isVisible().catch(() => false);
+    record(
+      '[scheduled/admin-no-week-banner] with no scheduled weeks at all, the admin Content Library shows the "No week loaded for Sunday ..." warning',
+      bannerVisible,
+      JSON.stringify({ bannerVisible })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'content-library-no-week-banner.png') }).catch(() => {});
+
+    await page.getByTestId('content-tab-weekly-releases').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const emptyStateVisible = await page.getByText('No scheduled weeks yet.', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[scheduled/admin-no-week-banner] the WEEKLY RELEASES tab itself shows the matching empty state',
+      emptyStateVisible,
+      JSON.stringify({ emptyStateVisible })
+    );
+    await context.close();
+  }
+
+  // [scheduled/admin-sees-unreleased]: an admin session can see an
+  // UNRELEASED scheduled week (RLS lets admin through; a non-admin's own
+  // request for the same row would come back empty, which is exactly what
+  // [scheduled/legacy-unaffected] above already exercises) -- the banner
+  // disappears once a week is loaded for the coming Sunday, and that week
+  // shows in the WEEKLY RELEASES list.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+    // The coming Sunday's own real 6pm ET release instant, computed the
+    // identical way the app's own getChallengeCycle() does -- rather than
+    // re-derive that math here, this reuses the already-released covered-
+    // week fixture's own Monday plus 7 days, which is always the NEXT
+    // Monday after today's own real week, i.e. the week unlocked by the
+    // coming Sunday's release.
+    const nextMonday = thisWeekMonday().getTime() + 7 * 86400000;
+    await registerScheduledWeeksMock(page, [
+      makeScheduledWeekRow({
+        id: 'r46-week-next',
+        weekStartDateMs: nextMonday,
+        // The Sunday immediately before nextMonday -- the exact calendar
+        // day getChallengeCycle().nextCycleStart lands on too, since both
+        // anchor to the same real week just from different reference
+        // points within it (Monday vs. the Sunday release before it).
+        releaseAtMs: nextMonday - 86400000,
+        wods: [{ dayOfWeek: 'mon', name: 'Next Week Monday' }],
+        cow: { name: 'Next Week COW', scoringType: 'time' },
+      }),
+    ]);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-content-library').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const bannerGone = !(await page.getByTestId('content-no-week-warning').isVisible().catch(() => true));
+    record(
+      '[scheduled/admin-sees-unreleased] once a week is loaded for the coming Sunday, the warning banner is gone',
+      bannerGone,
+      JSON.stringify({ bannerGone })
+    );
+    await page.getByTestId('content-tab-weekly-releases').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('scheduled-week-toggle-r46-week-next').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const unreleasedWeekVisible = await page.getByText('Next Week Monday', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[scheduled/admin-sees-unreleased] admin can see the real content of the not-yet-released week in WEEKLY RELEASES (RLS lets admin through)',
+      unreleasedWeekVisible,
+      JSON.stringify({ unreleasedWeekVisible })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'content-library-weekly-releases.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [scheduled/import]: a real .xlsx workbook (built with the same `xlsx`
+  // package the app itself uses, written to a real file and delivered via
+  // Playwright's own real filechooser event -- never a hand-assembled byte
+  // string) with a WODs sheet (4 real rows) and a COWs sheet (1 real row),
+  // uploaded through the real admin import screen, previewed, and
+  // confirmed -- a genuine round trip through buildImportPreview() and
+  // importWeeks(), not an assumption.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+
+    const importMonday = thisWeekMonday().getTime() + 14 * 86400000;
+    const importedWeeks = [];
+    await page.route('**/rest/v1/scheduled_weeks*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'GET') {
+        const url = new URL(req.url());
+        if (url.search.includes('select=id')) {
+          // The importWeeks() collision check -- nothing exists yet.
+          return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+        }
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(importedWeeks) });
+      }
+      if (req.method() === 'POST') {
+        const id = `imported-week-${importedWeeks.length + 1}`;
+        importedWeeks.push(makeScheduledWeekRow({ id, weekStartDateMs: importMonday, releaseAtMs: importMonday - 2 * 86400000, wods: [], cow: null }));
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify([{ id }]) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+    await page.route('**/rest/v1/scheduled_wods*', (route) => route.fulfill({ status: 201, contentType: 'application/json', body: '[]' }));
+    await page.route('**/rest/v1/scheduled_cows*', (route) => route.fulfill({ status: 201, contentType: 'application/json', body: '[]' }));
+
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-content-library').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.getByTestId('content-tab-weekly-releases').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('scheduled-weeks-open-import').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    const fixturePath = buildScheduledImportFixtureXlsx(importMonday);
+    const [fileChooser] = await Promise.all([
+      page.waitForEvent('filechooser', { timeout: 5000 }),
+      page.getByTestId('scheduled-import-choose-file').click(),
+    ]);
+    await fileChooser.setFiles(fixturePath);
+    await page.waitForTimeout(600);
+
+    const weekPreviewVisible = await page.getByText('R46 IMPORT MONDAY', { exact: false }).isVisible().catch(() => false);
+    const noProblemsVisible = !(await page.getByTestId('scheduled-import-global-problems').isVisible().catch(() => true));
+    record(
+      '[scheduled/import] uploading a real .xlsx with a WODs sheet and a COWs sheet previews the real week, its 4 workouts, and its COW, with no problems',
+      weekPreviewVisible && noProblemsVisible,
+      JSON.stringify({ weekPreviewVisible, noProblemsVisible })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'scheduled-import-preview.png') }).catch(() => {});
+
+    await page.getByTestId('scheduled-import-confirm').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    const backToList = await page.getByTestId('scheduled-weeks-open-import').isVisible().catch(() => false);
+    record(
+      '[scheduled/import] confirming the import actually writes the week (POST reaches scheduled_weeks) and returns to the WEEKLY RELEASES list',
+      backToList && importedWeeks.length === 1,
+      JSON.stringify({ backToList, importedWeeksCount: importedWeeks.length })
+    );
     await context.close();
   }
 

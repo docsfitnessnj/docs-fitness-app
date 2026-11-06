@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './AuthContext';
 import { ContentCowScoringType, KettlebellLevels, useContentLibrary } from './ContentLibraryContext';
+import { useScheduledContent } from './ScheduledContentContext';
 import { getChallengeCycle } from '../lib/challengeSchedule';
 import { checkPersonalBest } from '../lib/personalBest';
 import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
@@ -60,6 +61,13 @@ export type CurrentChallenge = {
   catchPenalties?: string[];
   catchFollowUp?: string;
   finishNote?: string;
+  // Round 46: set only when `live` comes from the new scheduled system
+  // (migration_030.sql's scheduled_cows), which stores a flatter shape —
+  // one free-text kettlebells field, one free-text catch field, rather
+  // than the local system's dudes/females and intro/penalties/follow-up
+  // splits above. Never both kettlebellsDudes and kettlebells set at once.
+  kettlebells?: string;
+  catchText?: string;
   // null when no real challenge is live for the current cycle.
   sourceId: string | null;
   // Saturday 12:00pm ET this cycle's scores lock, and the Sunday 6:00pm ET
@@ -265,13 +273,62 @@ export function useChallenge() {
 // which every real caller (DocsCowsScreen, IdentitySidebar) already is.
 export function useCurrentChallenge(): CurrentChallenge {
   const { workouts } = useContentLibrary();
+  // Round 46: the new server-side scheduled system (migration_030.sql) is a
+  // second, independent source of a COW — RLS already means `weeks` here
+  // only ever contains a released week (or, for admin, every week), so
+  // there's no separate "is this actually live yet" check needed beyond
+  // the same releaseAt <= asOf comparison the local path already uses.
+  // Merged by actual recency rather than one source always winning, so a
+  // real local-library COW is never hidden just because the latest
+  // scheduled week happened not to define one.
+  const { weeks: scheduledWeeks } = useScheduledContent();
   const now = new Date();
   const cycle = getChallengeCycle(now);
   const asOf = cycle.isClosed ? cycle.closeAt.getTime() : now.getTime();
 
-  const live = workouts
+  type Candidate = { releaseAt: number; id: string } & Omit<
+    CurrentChallenge,
+    'sourceId' | 'closeAt' | 'nextRevealAt' | 'isClosed' | 'releaseAt'
+  >;
+
+  const localCandidates: Candidate[] = workouts
     .filter((w) => w.type === 'cow' && w.status === 'published' && w.releaseAt <= asOf)
-    .sort((a, b) => b.releaseAt - a.releaseAt)[0];
+    .map((w) => ({
+      releaseAt: w.releaseAt,
+      id: w.id,
+      title: w.name,
+      format: w.format,
+      formatDescription: w.formatDescription,
+      movements: w.movements,
+      videoUrl: w.videoUrl,
+      scoringType: w.scoringType ?? null,
+      kettlebellsDudes: w.kettlebellsDudes,
+      kettlebellsFemales: w.kettlebellsFemales,
+      theWork: w.theWork,
+      catchIntro: w.catchIntro,
+      catchPenalties: w.catchPenalties,
+      catchFollowUp: w.catchFollowUp,
+      finishNote: w.finishNote,
+    }));
+
+  const scheduledCandidates: Candidate[] = scheduledWeeks
+    .filter((w) => !!w.cow && w.releaseAt <= asOf)
+    .map((w) => ({
+      releaseAt: w.releaseAt,
+      id: w.cow!.id,
+      title: w.cow!.name,
+      format: '',
+      formatDescription: '',
+      movements: [],
+      videoUrl: w.cow!.videoUrl,
+      scoringType: w.cow!.scoringType,
+      theWork: w.cow!.theWork,
+      finishNote: w.cow!.finishNote,
+      kettlebells: w.cow!.kettlebells,
+      catchText: w.cow!.theCatch,
+    }));
+
+  const live = [...localCandidates, ...scheduledCandidates].sort((a, b) => b.releaseAt - a.releaseAt)[0];
 
   const cycleFields = {
     closeAt: cycle.closeAt.getTime(),
@@ -282,12 +339,12 @@ export function useCurrentChallenge(): CurrentChallenge {
   if (!live) return { ...EMPTY_CHALLENGE, ...cycleFields };
 
   return {
-    title: live.name,
+    title: live.title,
     format: live.format,
     formatDescription: live.formatDescription,
     movements: live.movements,
     videoUrl: live.videoUrl,
-    scoringType: live.scoringType ?? null,
+    scoringType: live.scoringType,
     kettlebellsDudes: live.kettlebellsDudes,
     kettlebellsFemales: live.kettlebellsFemales,
     theWork: live.theWork,
@@ -295,6 +352,8 @@ export function useCurrentChallenge(): CurrentChallenge {
     catchPenalties: live.catchPenalties,
     catchFollowUp: live.catchFollowUp,
     finishNote: live.finishNote,
+    kettlebells: live.kettlebells,
+    catchText: live.catchText,
     sourceId: live.id,
     ...cycleFields,
   };

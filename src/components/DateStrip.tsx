@@ -16,6 +16,13 @@ type Props = {
   onSelect: (index: number) => void;
   isUnlocked: (index: number) => boolean;
   isCompleted: (index: number) => boolean;
+  // Round 46: true for Wednesday only when a real released scheduled week
+  // covers this strip's week — that cell shows "COW" instead of a numeric
+  // fraction or "REST," and the fraction's own denominator (below) counts
+  // only real WOD-bearing days, so a 4-WOD covered week correctly reads
+  // 1/4..4/4 instead of 1/5..5/5. Omitted entirely by every caller that
+  // isn't a Mon-Sun week (the booking strip), where it's simply never true.
+  isCowDayAt?: (index: number) => boolean;
   // Fixed-width, horizontally scrollable cells for a rolling multi-week range
   // (the booking strip) instead of the default 7-cell Mon-Sun row that fills
   // the screen width edge to edge.
@@ -25,7 +32,16 @@ type Props = {
   leading?: React.ReactNode;
 };
 
-export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isCompleted, scrollable = false, leading }: Props) {
+export function DateStrip({
+  week,
+  selectedIndex,
+  onSelect,
+  isUnlocked,
+  isCompleted,
+  isCowDayAt,
+  scrollable = false,
+  leading,
+}: Props) {
   const { registerTarget } = useTour();
   const scrollRef = useRef<ScrollView>(null);
 
@@ -41,9 +57,10 @@ export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isComplet
 
   const cells = week.map((day, index) => {
     const selected = index === selectedIndex;
-    const hasContent = dayHasContent(day);
-    const locked = hasContent && !isUnlocked(index);
-    const completed = hasContent && isCompleted(index);
+    const cowDay = isCowDayAt?.(index) ?? false;
+    const hasContent = dayHasContent(day) || cowDay;
+    const locked = hasContent && !cowDay && !isUnlocked(index);
+    const completed = hasContent && !cowDay && isCompleted(index);
 
     return (
       <Pressable
@@ -68,9 +85,11 @@ export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isComplet
           <Ionicons name="lock-closed" size={11} color={selected ? colors.white : colors.textMuted} />
         ) : completed ? (
           <Ionicons name="checkmark" size={13} color={selected ? colors.white : colors.gold} />
+        ) : cowDay ? (
+          <Text style={[styles.cowLabel, selected && styles.textSelected]}>COW</Text>
         ) : (
           <Text style={[styles.fractionLabel, selected && styles.textSelected, !hasContent && !selected && styles.textDim]}>
-            {!hasContent ? 'REST' : day.weekendKind ? '' : `${weekdayNumber(day)}/5`}
+            {!hasContent ? 'REST' : day.weekendKind ? '' : weekdayFraction(day, index, week, isCowDayAt)}
           </Text>
         )}
       </Pressable>
@@ -102,8 +121,26 @@ export function DateStrip({ week, selectedIndex, onSelect, isUnlocked, isComplet
   return <View style={styles.row}>{cells}</View>;
 }
 
-function weekdayNumber(day: WeekDay): number {
-  return ['MON', 'TUE', 'WED', 'THU', 'FRI'].indexOf(day.label) + 1;
+function mondayStartOf(date: Date): number {
+  const d = new Date(date);
+  const jsDay = d.getDay();
+  d.setDate(d.getDate() + (jsDay === 0 ? -6 : 1 - jsDay));
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+// "N/5" (legacy) or "N/4" (a real Round 46 scheduled week, Wednesday
+// excluded as COW day) — scoped to THIS day's own Monday-Sunday week, never
+// the full `week` array, since the booking strip's own `week` can span
+// several calendar weeks back to back (a flat position within the whole
+// array would read "6/9" instead of resetting to "1/4" at the next Monday).
+function weekdayFraction(day: WeekDay, index: number, week: WeekDay[], isCowDayAt?: (i: number) => boolean): string {
+  const monday = mondayStartOf(day.date);
+  const sameWeekWodDays = week.filter(
+    (d, i) => !!d.wod && mondayStartOf(d.date) === monday && !(isCowDayAt?.(i) ?? false)
+  );
+  const position = sameWeekWodDays.indexOf(day) + 1;
+  return `${position}/${sameWeekWodDays.length}`;
 }
 
 const styles = StyleSheet.create({
@@ -185,5 +222,11 @@ const styles = StyleSheet.create({
     color: colors.green,
     fontFamily: fonts.labelSemiBold,
     fontSize: 10,
+  },
+  cowLabel: {
+    color: colors.gold,
+    fontFamily: fonts.labelBold,
+    fontSize: 10,
+    letterSpacing: 0.3,
   },
 });

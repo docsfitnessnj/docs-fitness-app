@@ -4,11 +4,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { DateStrip } from '../components/DateStrip';
+import { ScheduledReleaseCountdown } from '../components/ScheduledReleaseCountdown';
 import { LogResultsModal } from '../components/LogResultsModal';
 import { UpgradeBanner } from '../components/UpgradeBanner';
 import { WorkoutVideoBreakdown } from '../components/WorkoutVideoBreakdown';
 import { TappableMovementText } from '../components/movement/TappableMovementText';
 import { useMembership } from '../context/MembershipContext';
+import { useScheduledContent } from '../context/ScheduledContentContext';
 import { useWorkoutLog } from '../context/WorkoutLogContext';
 import {
   formatFullDate,
@@ -21,10 +23,36 @@ import {
   SUNDAY_SETUP_NAME,
 } from '../data/content';
 import { openCompletionShareCard } from '../lib/completionShareCard';
+import { navigateToTab } from '../lib/navigationRef';
 import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
-import { useSteadyStateSaturday, useSundaySetup, useTomorrowsWorkoutHidden, useWeekdayWod } from '../lib/weekendContent';
+import {
+  isCowDayFor,
+  useIsCowDay,
+  useSteadyStateSaturday,
+  useSundaySetup,
+  useTomorrowsWorkoutHidden,
+  useWeekdayWod,
+} from '../lib/weekendContent';
 import { colors, fonts } from '../theme';
+
+function CowDayCard() {
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardBody}>
+        <Text style={styles.cowDayLabel}>IT'S COW DAY</Text>
+        <Text style={styles.cowDayText}>This week's Challenge of the Week is open all week — drop in and post your score.</Text>
+        <Pressable
+          style={styles.cowDayButton}
+          onPress={() => navigateToTab('DocsCows')}
+          testID="wods-go-to-cow"
+        >
+          <Text style={styles.cowDayButtonText}>GO TO THIS WEEK'S COW</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
 
 function LockedDay() {
   return (
@@ -79,6 +107,8 @@ export default function DocsWodsScreen() {
 
   const selectedDay = week[selectedIndex];
   const wod = useWeekdayWod(selectedDay);
+  const isCowDay = useIsCowDay(selectedDay);
+  const { currentWeek: scheduledCurrentWeek } = useScheduledContent();
   const revealedTomorrow = useTomorrowsWorkoutHidden(selectedDay);
   const isSaturday = selectedDay.weekendKind === 'saturday';
   const isSunday = selectedDay.weekendKind === 'sunday';
@@ -119,13 +149,18 @@ export default function DocsWodsScreen() {
           if (d.weekendKind === 'saturday') return isCompleted(STEADY_STATE_SATURDAY_KEY);
           return false;
         }}
+        isCowDayAt={(index) => isCowDayFor(week[index], scheduledCurrentWeek)}
       />
 
-      {!wod && !isSaturday && !isSunday ? (
+      <ScheduledReleaseCountdown />
+
+      {isCowDay ? (
+        <CowDayCard />
+      ) : !wod && !isSaturday && !isSunday ? (
         <RestDay />
       ) : !isUnlocked(selectedIndex) ? (
         <>
-          {wodAccessLevel === 'partial' && <UpgradeBanner message="Unlock all 5 kettlebell workouts a week" />}
+          {wodAccessLevel === 'partial' && <UpgradeBanner message="Unlock all 4 kettlebell workouts a week" />}
           <LockedDay />
         </>
       ) : wod ? (
@@ -439,6 +474,32 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontFamily: fonts.labelSemiBold,
     fontSize: 12,
+    letterSpacing: 1,
+  },
+  cowDayLabel: {
+    color: colors.gold,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 13,
+    letterSpacing: 1,
+  },
+  cowDayText: {
+    color: colors.text,
+    fontFamily: fonts.body,
+    fontSize: 15,
+    lineHeight: 21,
+    marginTop: 10,
+    marginBottom: 16,
+  },
+  cowDayButton: {
+    backgroundColor: colors.green,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  cowDayButtonText: {
+    color: colors.goldBright,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
     letterSpacing: 1,
   },
 });
