@@ -368,10 +368,13 @@ export type MonthGroup = {
   weeks: WeekGroup[];
 };
 
-// The weekly rhythm: 5 Doc's WODs + 1 Challenge of the Week. Used both for
-// the month/week accordion's at-a-glance gap indicator and for the RELEASE
-// THIS WEEK review panel.
-export const WEEKLY_WOD_TARGET = 5;
+// The weekly rhythm: 4 Doc's WODs (Mon/Tue/Thu/Fri) + 1 Challenge of the
+// Week (Wed). Used both for the month/week accordion's at-a-glance gap
+// indicator and for the RELEASE THIS WEEK review panel — already matched
+// ContentLibraryScreen.tsx's own scheduleRowsForWeek, which has modeled a
+// week as exactly this shape since long before Round 46's real 4-WOD week;
+// this constant was the one place still saying 5.
+export const WEEKLY_WOD_TARGET = 4;
 export const WEEKLY_COW_TARGET = 1;
 
 // Groups every workout by month -> week (Monday-start), sorted chronologically.

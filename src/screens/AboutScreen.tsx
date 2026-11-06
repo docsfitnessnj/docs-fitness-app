@@ -39,7 +39,7 @@ const WHATS_INSIDE: WhatsInsideRow[] = [
   {
     key: 'wods',
     title: "DOC'S WODS",
-    text: "5 kettlebell workouts a week, programmed by Doc. Log your results, track everything.",
+    text: "4 kettlebell workouts a week, programmed by Doc. Log your results, track everything.",
     icon: (size) => <Ionicons name="flame-outline" size={size} color={colors.white} />,
   },
   {

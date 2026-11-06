@@ -74,7 +74,7 @@ export function useWeeklyUpgradeNudge() {
     saveJSON(STORAGE_KEY, Date.now());
     showAlert(
       'Unlock Everything',
-      "You're on the free plan — 2 of 5 kettlebell workouts a week, no COWS, no Deck. Upgrade any time for full access.",
+      "You're on the free plan — 2 of 4 kettlebell workouts a week, no COWS, no Deck. Upgrade any time for full access.",
       [
         { text: 'Not now', style: 'cancel', onPress: () => releaseInterruption('upgradeNudge') },
         {

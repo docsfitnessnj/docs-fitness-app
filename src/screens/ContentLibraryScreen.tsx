@@ -11,11 +11,15 @@ import {
   useContentLibrary,
   weekMonthKey,
 } from '../context/ContentLibraryContext';
+import { useScheduledContent } from '../context/ScheduledContentContext';
 import { getNextSunday, getWeekStart } from '../data/content';
 import { defaultQuoteIndexForSunday, SUNDAY_QUOTES } from '../data/sundayQuotes';
 import { showAlert } from '../lib/alert';
+import { getChallengeCycle } from '../lib/challengeSchedule';
 import { ContentBulkImportScreen } from './ContentBulkImportScreen';
 import { ContentWorkoutForm } from './ContentWorkoutForm';
+import { ScheduledWeekImportScreen } from './ScheduledWeekImportScreen';
+import { ScheduledWeeksScreen } from './ScheduledWeeksScreen';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -26,9 +30,10 @@ type Props = {
 type LibraryView =
   | { kind: 'list' }
   | { kind: 'form'; workout: ContentWorkout | null; defaultType?: ContentWorkoutType }
-  | { kind: 'bulk' };
+  | { kind: 'bulk' }
+  | { kind: 'scheduled-import' };
 
-type LibraryTab = 'wod' | 'cow' | 'weekend' | 'schedule';
+type LibraryTab = 'wod' | 'cow' | 'weekend' | 'schedule' | 'weekly-releases';
 type WeekendSubTab = 'saturday' | 'sunday';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -159,6 +164,7 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
     quoteCycleAnchor,
     restartQuoteCycle,
   } = useContentLibrary();
+  const { weeks: scheduledWeeks } = useScheduledContent();
   const [view, setView] = useState<LibraryView>({ kind: 'list' });
   // Kept in this same component instance (not reset by switching to the
   // form/bulk-import sub-views and back) so the tab choice persists while
@@ -236,6 +242,16 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
 
   if (!visible) return null;
 
+  // Part 6/edge case: the coming Sunday 6pm ET release instant — reusing
+  // getChallengeCycle's own DST-correct math (identical Sunday-6pm-ET
+  // anchor migration_030.sql's own release_at generated column uses) means
+  // this never needs its own date arithmetic. "No week loaded" is checked
+  // against every scheduled week this admin session can see (RLS lets
+  // admin see unreleased ones too), not just released ones — the whole
+  // point is catching the gap BEFORE it happens.
+  const comingSunday = getChallengeCycle(new Date()).nextCycleStart;
+  const weekLoadedForComingSunday = scheduledWeeks.some((w) => isSameCalendarDay(new Date(w.releaseAt), comingSunday));
+
   const toggleMonth = (key: string) => {
     setExpandedMonths((prev) => {
       const next = new Set(prev);
@@ -277,6 +293,12 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
           setView({ kind: 'list' });
         }}
       />
+    );
+  }
+
+  if (view.kind === 'scheduled-import') {
+    return (
+      <ScheduledWeekImportScreen onBack={() => setView({ kind: 'list' })} onImported={() => setView({ kind: 'list' })} />
     );
   }
 
@@ -547,6 +569,15 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
           </Text>
         </View>
 
+        {!weekLoadedForComingSunday && (
+          <View style={styles.noWeekBanner} testID="content-no-week-warning">
+            <Ionicons name="warning-outline" size={16} color={colors.scoreboardRed} />
+            <Text style={styles.noWeekBannerText}>
+              No week loaded for Sunday {comingSunday.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}.
+            </Text>
+          </View>
+        )}
+
         <Pressable style={styles.resetToSeedButton} onPress={handleResetToSeed} testID="content-reset-to-seed">
           <Ionicons name="refresh-outline" size={13} color={colors.textMuted} />
           <Text style={styles.resetToSeedButtonText}>RESET TO SEED LIBRARY</Text>
@@ -581,12 +612,20 @@ export function ContentLibraryScreen({ visible, onClose }: Props) {
           >
             <Text style={[styles.tabText, activeTab === 'schedule' && styles.tabTextActive]}>SCHEDULE</Text>
           </Pressable>
+          <Pressable
+            style={[styles.tab, activeTab === 'weekly-releases' && styles.tabActive]}
+            onPress={() => setActiveTab('weekly-releases')}
+            testID="content-tab-weekly-releases"
+          >
+            <Text style={[styles.tabText, activeTab === 'weekly-releases' && styles.tabTextActive]}>WEEKLY RELEASES</Text>
+          </Pressable>
         </View>
 
         {activeTab === 'wod' && renderInventoryList(wodList, 'wod')}
         {activeTab === 'cow' && renderInventoryList(cowList, 'cow')}
         {activeTab === 'weekend' && renderWeekend()}
         {activeTab === 'schedule' && renderSchedule()}
+        {activeTab === 'weekly-releases' && <ScheduledWeeksScreen onImport={() => setView({ kind: 'scheduled-import' })} />}
       </ScrollView>
     </View>
   );
@@ -619,6 +658,24 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.textMuted,
     fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  noWeekBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.scoreboardRed,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  noWeekBannerText: {
+    flex: 1,
+    color: colors.scoreboardRed,
+    fontFamily: fonts.bodySemiBold,
     fontSize: 12,
     lineHeight: 17,
   },

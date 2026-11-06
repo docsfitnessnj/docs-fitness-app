@@ -17,6 +17,7 @@ import { useClassBookingData } from '../context/ClassBookingContext';
 import { Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
 import { useMembership } from '../context/MembershipContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
+import { useScheduledContent } from '../context/ScheduledContentContext';
 import { useStories } from '../context/StoriesContext';
 import { useTour } from '../context/TourContext';
 import { getUpcomingDays, isDayWodUnlocked, isSameDay } from '../data/content';
@@ -24,6 +25,7 @@ import { showAlert } from '../lib/alert';
 import { useClassBooking } from '../lib/useClassBooking';
 import { openMemberships } from '../lib/membershipsModal';
 import { consumePilatesBookingIntent, hasPilatesBookingIntent } from '../lib/pilatesDeepLink';
+import { isCowDayFor } from '../lib/weekendContent';
 import { useIsDesktop } from '../lib/responsive';
 import { colors, fonts } from '../theme';
 
@@ -443,6 +445,7 @@ export default function CommunityScreen() {
   }, [jumpToDate]);
 
   const isUnlocked = (index: number) => isDayWodUnlocked(days[index], wodAccessLevel);
+  const { currentWeek: scheduledCurrentWeek } = useScheduledContent();
 
   const openComposer = () => {
     setEditingPost(null);
@@ -462,6 +465,7 @@ export default function CommunityScreen() {
         onSelect={setSelectedIndex}
         isUnlocked={isUnlocked}
         isCompleted={() => false}
+        isCowDayAt={(index) => isCowDayFor(days[index], scheduledCurrentWeek)}
         scrollable
         leading={activeStories.length > 0 ? <StoryRow compact /> : undefined}
       />

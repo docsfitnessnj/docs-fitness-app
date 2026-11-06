@@ -22,12 +22,19 @@ import { LOCATION_NAME, rowsForDate } from '../data/schedule';
 import { LOCATION_MAPS_URL } from '../lib/links';
 import { ExternalLinkPressable } from './ExternalLinkPressable';
 import { openCompletionShareCard } from '../lib/completionShareCard';
+import { navigateToTab } from '../lib/navigationRef';
 import { openMemberships } from '../lib/membershipsModal';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { useIsDesktop } from '../lib/responsive';
 import { openFullSchedule } from '../lib/scheduleModal';
 import { useClassBooking } from '../lib/useClassBooking';
-import { useSteadyStateSaturday, useSundaySetup, useTomorrowsWorkoutHidden, useWeekdayWod } from '../lib/weekendContent';
+import {
+  useIsCowDay,
+  useSteadyStateSaturday,
+  useSundaySetup,
+  useTomorrowsWorkoutHidden,
+  useWeekdayWod,
+} from '../lib/weekendContent';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -67,6 +74,7 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
   const sundaySetup = useSundaySetup(day.date);
 
   const wod = useWeekdayWod(day);
+  const isCowDay = useIsCowDay(day);
   const revealedTomorrow = useTomorrowsWorkoutHidden(day);
   const isSaturday = day.weekendKind === 'saturday';
   const isSunday = day.weekendKind === 'sunday';
@@ -85,7 +93,13 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
     () => sessions.find((s) => s.isGuestClass && s.dateKey === formatDateKey(day.date)),
     [sessions, day.date]
   );
-  const barLabel = isSaturday ? STEADY_STATE_SATURDAY_NAME : isSunday ? SUNDAY_SETUP_NAME : "DOC'S WORKOUT OF THE DAY";
+  const barLabel = isCowDay
+    ? "THIS WEEK'S COW"
+    : isSaturday
+    ? STEADY_STATE_SATURDAY_NAME
+    : isSunday
+    ? SUNDAY_SETUP_NAME
+    : "DOC'S WORKOUT OF THE DAY";
 
   const toggleComplete = () => {
     // Round 33: THE COMPLETION SHARE CARD opens only on the incomplete ->
@@ -251,7 +265,17 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
       {!showClassCard && <TrainingNearVentnorLine />}
 
       {wodExpanded &&
-        (wod || isSaturday || isSunday ? (
+        (isCowDay ? (
+          <View style={styles.card}>
+            <Text style={styles.cowDayLabel}>IT'S COW DAY</Text>
+            <Text style={styles.cowDayText}>
+              This week's Challenge of the Week is open all week — drop in and post your score.
+            </Text>
+            <AppPressable style={styles.completeButton} onPress={() => navigateToTab('DocsCows')} testID="day-panel-go-to-cow">
+              <Text style={styles.completeButtonText}>GO TO THIS WEEK'S COW</Text>
+            </AppPressable>
+          </View>
+        ) : wod || isSaturday || isSunday ? (
           wodUnlocked ? (
             wod ? (
               revealedTomorrow ? (
@@ -725,5 +749,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1,
     textDecorationLine: 'underline',
+  },
+  cowDayLabel: {
+    color: colors.gold,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  cowDayText: {
+    color: colors.text,
+    fontFamily: fonts.body,
+    fontSize: 15,
+    lineHeight: 21,
+    marginBottom: 14,
   },
 });

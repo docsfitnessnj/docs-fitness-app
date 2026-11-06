@@ -6,6 +6,7 @@ import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { MembershipGate } from '../components/MembershipGate';
 import { ChallengeVideoCover } from '../components/cows/ChallengeVideoCover';
 import { TappableMovementText } from '../components/movement/TappableMovementText';
+import { ScheduledReleaseCountdown } from '../components/ScheduledReleaseCountdown';
 import { useAuth } from '../context/AuthContext';
 import { useBadges } from '../context/BadgeContext';
 import { ContentCowScoringType, KettlebellLevels } from '../context/ContentLibraryContext';
@@ -103,7 +104,17 @@ function ChallengeHero({ current }: { current: CurrentChallenge }) {
   // set) falls back to the plain format description + movements list this
   // screen always had, never a half-rendered new section with nothing in
   // it.
-  const hasRichBody = !!(current.theWork || current.catchIntro || current.kettlebellsDudes || current.kettlebellsFemales);
+  const hasRichBody = !!(
+    current.theWork ||
+    current.catchIntro ||
+    current.kettlebellsDudes ||
+    current.kettlebellsFemales ||
+    // Round 46: a scheduled-system COW's own flatter shape (see
+    // ChallengeContext's own comment on CurrentChallenge.kettlebells/
+    // catchText) also counts as "has a real structured body."
+    current.kettlebells ||
+    current.catchText
+  );
 
   return (
     <View style={styles.hero} testID="cow-hero">
@@ -139,6 +150,16 @@ function ChallengeHero({ current }: { current: CurrentChallenge }) {
             </View>
           )}
 
+          {/* Round 46: a scheduled-system COW's own flat kettlebells text --
+              one plain-text box, since there's no dudes/females split to
+              render separately for this shape. */}
+          {!!current.kettlebells && (
+            <View style={styles.kettlebellBox} testID="cow-kettlebells-box">
+              <Text style={styles.sectionHeading}>DOC'S PRESCRIBED KETTLEBELLS</Text>
+              <Text style={styles.bodyText}>{current.kettlebells}</Text>
+            </View>
+          )}
+
           {!!current.theWork && (
             <View style={styles.bodySection}>
               <Text style={styles.sectionHeading}>THE WORK</Text>
@@ -168,6 +189,23 @@ function ChallengeHero({ current }: { current: CurrentChallenge }) {
                 </View>
               )}
               {!!current.catchFollowUp && <Text style={styles.followUpLine}>{current.catchFollowUp}</Text>}
+            </View>
+          )}
+
+          {/* Round 46: a scheduled-system COW's own flat "The Catch" text
+              -- one plain paragraph in the same box treatment, since there's
+              no intro/penalty-list/follow-up split for this shape. */}
+          {!!current.catchText && (
+            <View style={styles.bodySection}>
+              <Text style={styles.sectionHeading}>THE CATCH</Text>
+              <View style={styles.catchBox} testID="cow-catch-box">
+                <TappableMovementText
+                  style={styles.catchLine}
+                  linkStyle={styles.catchLineLink}
+                  text={current.catchText}
+                  onOpenMovement={(movementId) => openMovementVault(movementId, 'CHALLENGE')}
+                />
+              </View>
             </View>
           )}
 
@@ -572,6 +610,7 @@ function DocsCowsContent() {
 
   return (
     <View>
+      <ScheduledReleaseCountdown />
       {current.sourceId ? <ChallengeHero current={current} /> : <ClosedNoChallengeNotice current={current} />}
       {error ? (
         <BackendErrorNotice message={error} />

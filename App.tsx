@@ -41,6 +41,7 @@ import { FoundingFiftyProvider } from './src/context/FoundingFiftyContext';
 import { DocsInboxProvider } from './src/context/DocsInboxContext';
 import { ClassBookingProvider } from './src/context/ClassBookingContext';
 import { ContentLibraryProvider } from './src/context/ContentLibraryContext';
+import { ScheduledContentProvider } from './src/context/ScheduledContentContext';
 import { GroupChatUnreadProvider } from './src/context/GroupChatUnreadContext';
 import { TourProvider, useTour } from './src/context/TourContext';
 import { AppTopBar } from './src/components/AppTopBar';
@@ -1204,6 +1205,12 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
               <ProfileProvider>
                 <StoriesProvider>
                   <DeckProgressProvider>
+                    {/* Round 46: wraps ChallengeProvider so useCurrentChallenge
+                        (and anything else under here) can read the new
+                        server-side scheduled-week system — ScheduledContent
+                        needs no dependency on anything below it, just has to
+                        be an ancestor of every real caller. */}
+                    <ScheduledContentProvider>
                     <ChallengeProvider>
                       {/* Round 45: moved above BadgeProvider — LEGACY/
                           UPSTAIRS read this account's own class_bookings
@@ -1259,6 +1266,7 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
                       </BadgeProvider>
                       </ClassBookingProvider>
                     </ChallengeProvider>
+                    </ScheduledContentProvider>
                   </DeckProgressProvider>
                 </StoriesProvider>
               </ProfileProvider>

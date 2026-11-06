@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCommunity } from '../context/CommunityContext';
 import { useDeckProgress } from '../context/DeckProgressContext';
 import { useMembership } from '../context/MembershipContext';
+import { useScheduledContent } from '../context/ScheduledContentContext';
 import { getCurrentWeek, WEEKDAY_WODS } from '../data/content';
 import { DECK_CARDS, deckCardLabel } from '../data/deckCards';
 import { MOVEMENTS } from '../data/movements';
@@ -14,6 +15,7 @@ import { openMovementVault } from '../lib/movementVaultModal';
 import { navigateToTab } from '../lib/navigationRef';
 import { openPostDetail } from '../lib/postDetailModal';
 import { useFocusRing } from '../lib/useFocusRing';
+import { isCowDayFor } from '../lib/weekendContent';
 import { matchesWordStart } from '../lib/wordStartMatch';
 import { colors, fonts } from '../theme';
 
@@ -44,6 +46,19 @@ export function SearchModal({ visible, onClose, query, onQueryChange }: Props) {
   const { posts } = useCommunity();
   const { isComplete } = useDeckProgress();
   const { fullContentAccess } = useMembership();
+  const { currentWeek: scheduledCurrentWeek } = useScheduledContent();
+
+  // Round 46: Wednesday no longer has a real WOD at all once a scheduled
+  // week covers the current calendar week -- it's COW day now (see
+  // DocsWodsScreen/DayPanel) -- so its old static WEEKDAY_WODS entry
+  // ("THE GRINDER") must not show up as a confusing WORKOUTS result during
+  // a covered week. An unreleased week's own real content was never wired
+  // into this search index at all (it's drawn purely from the fixed
+  // WEEKDAY_WODS constant and the current week's own day keys, never from
+  // scheduled_wods/scheduled_weeks), so there's nothing further to hide --
+  // the one new piece needed is just this exclusion.
+  const coveredWeek = useMemo(() => getCurrentWeek(), []);
+  const wednesdayIsCowDay = isCowDayFor(coveredWeek[2], scheduledCurrentWeek);
 
   const results = useMemo<Result[]>(() => {
     const q = query.trim().toLowerCase();
@@ -55,7 +70,7 @@ export function SearchModal({ visible, onClose, query, onQueryChange }: Props) {
     // (what this used before) made a single common letter return almost
     // everything with that letter anywhere in it.
     const wodResults: Result[] = WEEKDAY_WODS.filter(
-      (w) => matchesWordStart(w.title, q) || w.moves.some((m) => matchesWordStart(m, q))
+      (w) => (w.key !== 'wed' || !wednesdayIsCowDay) && (matchesWordStart(w.title, q) || w.moves.some((m) => matchesWordStart(m, q)))
     ).map((w) => ({ id: `wod-${w.key}`, section: 'WORKOUTS', title: w.title, subtitle: w.moves[0], wodKey: w.key }));
 
     // Round 31, owner decision: deck cards do not appear in search results
@@ -112,7 +127,7 @@ export function SearchModal({ visible, onClose, query, onQueryChange }: Props) {
       .map((m) => ({ id: `movement-${m.id}`, section: 'MOVEMENTS', title: m.name, movementId: m.id }));
 
     return [...wodResults, ...deckResults, ...communityResults, ...memberResults, ...movementResults];
-  }, [query, posts, isComplete, fullContentAccess]);
+  }, [query, posts, isComplete, fullContentAccess, wednesdayIsCowDay]);
 
   // Every result opens its exact destination, never just the tab it lives
   // in. Deck card / post / member / movement destinations are their own
