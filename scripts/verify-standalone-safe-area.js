@@ -10056,7 +10056,12 @@ async function run() {
     }
     await page.getByTestId('post-card-r47-old-format-post').click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(400);
-    const plainNameVisible = await page.getByText('Jen Loves Counting', { exact: true }).last().isVisible().catch(() => false);
+    // A plain (non-link) line is rendered merged into the same enclosing
+    // <Text> as every other line, same as before this round -- there is
+    // no separate element whose own exact text is just this one name, so
+    // `exact: false` (substring) is the correct match here, same
+    // convention [scheduled/release-crossing-post] above already uses.
+    const plainNameVisible = await page.getByText('Jen Loves Counting', { exact: false }).last().isVisible().catch(() => false);
     const noRawSuffixLeaked = !(await page.getByText('|wod:', { exact: false }).first().isVisible().catch(() => false));
     const bodyText = await page.locator('body').innerText().catch(() => '');
     record(
