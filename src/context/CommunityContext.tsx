@@ -88,6 +88,12 @@ export type Post = {
   meta?: WodPostMeta;
   // Unseen activity (new post or new comment) — shows the gold dot / "New comment" label.
   unread: boolean;
+  // Round 47 — true only for the automatic Sunday-night "THE NEW WEEK IS
+  // LIVE" post (release_scheduled_weeks_if_due(), migration_031.sql). Gates
+  // the per-line `|wod:YYYY-MM-DD` / `|cow` link-parsing in PostCard/
+  // PostDetailModal so an ordinary member's own post text (which could in
+  // principle contain a literal "|") is never run through that parser.
+  isWeeklyRelease: boolean;
 };
 
 // Was ['🤙', '🔥', '💪', '❤️'] (and before that ['👍', '🔥', '💪', '❤️']) —
@@ -182,6 +188,7 @@ type PostRow = {
   workout_results_line: string | null;
   is_pb: boolean;
   pinned: boolean;
+  is_weekly_release: boolean;
   created_at: string;
   author_id: string;
   profiles: ProfileRef;
@@ -190,7 +197,7 @@ type PostRow = {
 };
 
 const POST_SELECT =
-  'id, title, body, category, kind, media_url, media_type, workout_title, workout_notes, workout_results_line, is_pb, pinned, created_at, author_id, profiles(display_name), community_comments(id, body, created_at, author_id, media_url, profiles(display_name), community_comment_reactions(emoji, author_id)), community_reactions(emoji, author_id)';
+  'id, title, body, category, kind, media_url, media_type, workout_title, workout_notes, workout_results_line, is_pb, pinned, is_weekly_release, created_at, author_id, profiles(display_name), community_comments(id, body, created_at, author_id, media_url, profiles(display_name), community_comment_reactions(emoji, author_id)), community_reactions(emoji, author_id)';
 
 function relativeTimeLabel(ms: number): string {
   const diffMs = Date.now() - ms;
@@ -250,6 +257,7 @@ function rowToPost(row: PostRow, userId: string | undefined, lastViewedAt: Recor
           }
         : undefined,
     unread: latestActivity > (lastViewedAt[row.id] ?? 0),
+    isWeeklyRelease: !!row.is_weekly_release,
   };
 }
 

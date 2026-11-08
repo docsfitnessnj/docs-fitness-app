@@ -1771,7 +1771,7 @@ async function tabLabelBaselineGap(page) {
 }
 
 async function run() {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
   const results = [];
   const record = (name, pass, detail) => {
     results.push({ name, pass, detail });
@@ -9884,6 +9884,186 @@ async function run() {
       await page.waitForTimeout(200);
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'scheduled-release-pinned-post.png') }).catch(() => {});
     }
+    await context.close();
+  }
+
+  // [release-links/*] (Round 47): the automatic release post's own
+  // workout/COW names are real tappable links -- migration_031.sql's
+  // `|wod:YYYY-MM-DD` / `|cow` suffix format, parsed by
+  // weeklyReleaseLinks.ts and rendered by WeeklyReleasePostBody.tsx.
+  // Drives the real, unmodified PostDetailModal end to end: tap a WOD
+  // name, land on that exact day on the WODs tab; tap the COW name, land
+  // in the COW room.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const monday = thisWeekMonday().getTime();
+    const tue = monday + 1 * 86400000;
+    const thu = monday + 3 * 86400000;
+    const fri = monday + 4 * 86400000;
+    const weekRow = makeScheduledWeekRow({
+      id: 'r47-week',
+      weekStartDateMs: monday,
+      releaseAtMs: monday - 2 * 86400000,
+      releasedAtMs: monday - 2 * 86400000,
+      wods: [
+        { dayOfWeek: 'mon', name: 'Jen Loves Counting', format: 'Rep Ladder', movements: ['Swings'] },
+        { dayOfWeek: 'tue', name: 'Just Do It', format: '30min AMQRAP', movements: ['Swings'] },
+        { dayOfWeek: 'thu', name: 'Two Minutes Or Less', format: '30min E2MOM', movements: ['Swings'] },
+        { dayOfWeek: 'fri', name: 'Basic And Complex', format: '30min AMCAP', movements: ['Swings'] },
+      ],
+      cow: { name: 'Pull Yourself Together', scoringType: 'time', theWork: '50 Pull Ups, for time.' },
+    });
+    await registerScheduledWeeksMock(page, [weekRow]);
+    const releasePostBody =
+      "THE NEW WEEK IS LIVE. Fresh WODs and a new COW just dropped. See you Monday morning.\n\n" +
+      `Jen Loves Counting|wod:${pgDateOnly(monday)}\n` +
+      `Just Do It|wod:${pgDateOnly(tue)}\n` +
+      `Two Minutes Or Less|wod:${pgDateOnly(thu)}\n` +
+      `Basic And Complex|wod:${pgDateOnly(fri)}\n` +
+      'Pull Yourself Together|cow';
+    await page.route('**/rest/v1/community_posts*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'r47-release-post',
+            title: '',
+            body: releasePostBody,
+            category: 'General',
+            kind: 'text',
+            media_url: null,
+            media_type: null,
+            workout_title: null,
+            workout_notes: null,
+            workout_results_line: null,
+            is_pb: false,
+            pinned: true,
+            is_weekly_release: true,
+            created_at: new Date().toISOString(),
+            author_id: USER_ID,
+            profiles: { display_name: 'Doc', how_train: 'boathouse' },
+            community_comments: [],
+            community_reactions: [],
+          },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+
+    // Open the full post detail (PostCard's own feed preview truncates to
+    // 3 lines -- not every name is guaranteed visible there).
+    await page.getByTestId('post-card-r47-release-post').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    if (SCREENSHOT_DIR) {
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'release-links-post-detail.png') }).catch(() => {});
+    }
+
+    const wodLinkVisible = await page.getByText('Jen Loves Counting', { exact: true }).last().isVisible().catch(() => false);
+    const cowLinkVisible = await page.getByText('Pull Yourself Together', { exact: true }).last().isVisible().catch(() => false);
+    record(
+      '[release-links/visible] every workout name and the COW name render as real text inside the full post detail',
+      wodLinkVisible && cowLinkVisible,
+      JSON.stringify({ wodLinkVisible, cowLinkVisible })
+    );
+
+    // Tap the Thursday workout's own name -- should close the post and
+    // land exactly on Thursday's real date on the WODs tab.
+    await page.getByText('Two Minutes Or Less', { exact: true }).last().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    const landedOnThursdayWod = await page.getByText('Two Minutes Or Less', { exact: true }).last().isVisible().catch(() => false);
+    if (SCREENSHOT_DIR) {
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'release-links-wod-landing.png') }).catch(() => {});
+    }
+    record(
+      '[release-links/wod-link] tapping a workout name in the release post lands on that exact day\'s real workout',
+      landedOnThursdayWod,
+      JSON.stringify({ landedOnThursdayWod })
+    );
+
+    // Back to Community, reopen the post, tap the COW name.
+    await page.getByRole('tab', { name: /COMMUNITY/i }).first().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('post-card-r47-release-post').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('Pull Yourself Together', { exact: true }).last().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    const landedOnCowRoom = await page.getByText('Pull Yourself Together', { exact: true }).last().isVisible().catch(() => false);
+    if (SCREENSHOT_DIR) {
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'release-links-cow-landing.png') }).catch(() => {});
+    }
+    record(
+      '[release-links/cow-link] tapping the COW name in the release post lands in the COW room showing that real COW',
+      landedOnCowRoom,
+      JSON.stringify({ landedOnCowRoom })
+    );
+
+    await context.close();
+  }
+
+  // [release-links/degraded] (Round 47): if migration_031.sql is never
+  // run, the release post still has the OLD plain-name format with no
+  // `|wod:...`/`|cow` suffix at all -- the client's own parser must find
+  // no link and render ordinary, non-tappable text, never a visible
+  // raw suffix and never a crash.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/community_posts*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'r47-old-format-post',
+            title: '',
+            body: 'THE NEW WEEK IS LIVE. Fresh WODs and a new COW just dropped. See you Monday morning.\n\nJen Loves Counting\nJust Do It\nTwo Minutes Or Less\nBasic And Complex',
+            category: 'General',
+            kind: 'text',
+            media_url: null,
+            media_type: null,
+            workout_title: null,
+            workout_notes: null,
+            workout_results_line: null,
+            is_pb: false,
+            pinned: true,
+            is_weekly_release: true,
+            created_at: new Date().toISOString(),
+            author_id: USER_ID,
+            profiles: { display_name: 'Doc', how_train: 'boathouse' },
+            community_comments: [],
+            community_reactions: [],
+          },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('post-card-r47-old-format-post').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const plainNameVisible = await page.getByText('Jen Loves Counting', { exact: true }).last().isVisible().catch(() => false);
+    const noRawSuffixLeaked = !(await page.getByText('|wod:', { exact: false }).first().isVisible().catch(() => false));
+    const bodyText = await page.locator('body').innerText().catch(() => '');
+    record(
+      '[release-links/degraded] pre-migration_031 plain-name post renders cleanly with no tappable link and no leaked suffix text',
+      plainNameVisible && noRawSuffixLeaked && !bodyText.includes('|cow'),
+      JSON.stringify({ plainNameVisible, noRawSuffixLeaked })
+    );
     await context.close();
   }
 

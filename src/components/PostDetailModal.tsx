@@ -8,6 +8,7 @@ import { GifPicker } from './GifPicker';
 import { MediaViewer } from './MediaViewer';
 import { ModalHeader } from './ModalHeader';
 import { PostAuthorBadges } from './PostAuthorBadges';
+import { renderWeeklyReleaseBody } from './WeeklyReleasePostBody';
 import { Comment, Post, REACTION_EMOJIS, useCommunity } from '../context/CommunityContext';
 import { useCanModerate, useDisplayName, useProfile } from '../context/ProfileContext';
 import { showAlert } from '../lib/alert';
@@ -135,7 +136,9 @@ export function PostDetailModal({ post, onClose, canInteract }: Props) {
           ) : (
             <>
               <Text style={styles.postTitle}>{post.title}</Text>
-              <Text style={styles.postText}>{post.text}</Text>
+              <Text style={styles.postText}>
+                {post.isWeeklyRelease ? renderWeeklyReleaseBody(post.text, onClose) : post.text}
+              </Text>
             </>
           )}
 

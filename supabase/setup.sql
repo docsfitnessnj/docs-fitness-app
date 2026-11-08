@@ -1104,14 +1104,30 @@ begin
     -- time) before inserting the new one, to stay under the 3-pin cap.
     update public.community_posts set pinned = false where is_weekly_release = true and pinned = true;
 
-    select string_agg(name, E'\n' order by
+    -- Round 47 — each WOD line carries its own real calendar date as a
+    -- `|wod:YYYY-MM-DD` suffix (mon/tue/thu/fri -> week_start_date +
+    -- 0/1/3/4 days); the COW line (new — the prior version never included
+    -- the COW name in the post body at all) carries a bare `|cow`. The
+    -- client (weeklyReleaseLinks.ts / WeeklyReleasePostBody.tsx) strips
+    -- this suffix and renders the name as a real tappable link straight
+    -- to that day's workout, or to the COW room — a plain name with no
+    -- suffix (the pre-migration_031 shape) just renders as ordinary text.
+    select string_agg(
+      name || '|wod:' || to_char(
+        w.week_start_date + case day_of_week
+          when 'mon' then 0 when 'tue' then 1 when 'thu' then 3 when 'fri' then 4
+        end,
+        'YYYY-MM-DD'
+      ),
+      E'\n' order by
       case day_of_week when 'mon' then 1 when 'tue' then 2 when 'thu' then 3 when 'fri' then 4 end)
       into wod_names
     from public.scheduled_wods
     where week_id = w.id;
 
     post_body := 'THE NEW WEEK IS LIVE. Fresh WODs and a new COW just dropped. See you Monday morning.'
-      || case when wod_names is not null then E'\n\n' || wod_names else '' end;
+      || case when wod_names is not null then E'\n\n' || wod_names else '' end
+      || case when cow.id is not null then E'\n' || cow.name || '|cow' else '' end;
 
     insert into public.community_posts (author_id, title, body, kind, pinned, is_weekly_release)
     values (admin_id, '', post_body, 'text', true, true);
