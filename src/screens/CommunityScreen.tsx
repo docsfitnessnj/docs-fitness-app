@@ -8,6 +8,7 @@ import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { CreatePostModal } from '../components/CreatePostModal';
 import { PostAuthorBadges } from '../components/PostAuthorBadges';
 import { PostDetailModal } from '../components/PostDetailModal';
+import { renderWeeklyReleaseBody } from '../components/WeeklyReleasePostBody';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { StatusBanner } from '../components/StatusBanner';
 import { StoryRow } from '../components/StoryRow';
@@ -220,7 +221,7 @@ function PostCard({
           </View>
           <View style={styles.previewRow}>
             <Text style={[styles.postText, isDesktop && styles.postTextDesktop]} numberOfLines={3}>
-              {post.text}
+              {post.isWeeklyRelease ? renderWeeklyReleaseBody(post.text) : post.text}
             </Text>
             {post.media && (
               <View style={styles.thumbnail}>
