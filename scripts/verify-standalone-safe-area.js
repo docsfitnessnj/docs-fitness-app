@@ -1771,7 +1771,7 @@ async function tabLabelBaselineGap(page) {
 }
 
 async function run() {
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const browser = await chromium.launch();
   const results = [];
   const record = (name, pass, detail) => {
     results.push({ name, pass, detail });
