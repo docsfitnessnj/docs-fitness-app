@@ -10089,7 +10089,7 @@ async function run() {
       }
       await page.getByTestId(`post-card-r48-closer-${i}`).click({ timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(400);
-      const closerVisible = await page.getByText(closers[i], { exact: false }).isVisible().catch(() => false);
+      const closerVisible = await page.getByText(closers[i], { exact: false }).last().isVisible().catch(() => false);
       record(
         `[release-links/closer-rotates] simulated release ${i + 1} of 2 shows its own real closer line ("${closers[i]}")`,
         closerVisible,
