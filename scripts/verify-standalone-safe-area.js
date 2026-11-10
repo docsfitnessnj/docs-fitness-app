@@ -9807,12 +9807,14 @@ async function run() {
     await context.close();
   }
 
-  // [scheduled/release-crossing-post]: the post-release state the real
-  // server-side release_scheduled_weeks_if_due() produces (already proven
-  // directly against a real local Postgres instance -- see this round's
-  // own PR description, not re-proven here): a pinned post carrying the
-  // exact copy and this week's real workout names, with the PREVIOUS auto-
-  // release post correctly left unpinned.
+  // [scheduled/release-crossing-post]: the post-release pin-replacement
+  // mechanism itself -- a new pinned post correctly replaces the PREVIOUS
+  // auto-release post's own pin, regardless of post-body format. These
+  // fixtures deliberately use the oldest (pre-migration_031) plain-name
+  // shape -- no `[[`/`]]`, no `|` suffix at all -- doubling as Round 48's
+  // own "a post created by the old format still renders fine in the feed"
+  // proof for that tier; [release-links/degraded] below covers the
+  // Round-47 (migration_031-only) whole-line-link tier the same way.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -9825,7 +9827,7 @@ async function run() {
           {
             id: 'r46-old-release-post',
             title: '',
-            body: 'THE NEW WEEK IS LIVE. Fresh WODs and a new COW just dropped. See you Monday morning.\n\nLast Monday\nLast Tuesday\nLast Thursday\nLast Friday',
+            body: 'THE NEW WEEK IS LIVE\n\nLast Monday\nLast Tuesday\nLast Thursday\nLast Friday',
             category: 'General',
             kind: 'text',
             media_url: null,
@@ -9845,7 +9847,7 @@ async function run() {
           {
             id: 'r46-new-release-post',
             title: '',
-            body: 'THE NEW WEEK IS LIVE. Fresh WODs and a new COW just dropped. See you Monday morning.\n\nR46 Monday Burner\nR46 Tuesday Torch\nR46 Thursday Thrasher\nR46 Friday Finisher',
+            body: 'THE NEW WEEK IS LIVE\n\nR46 Monday Burner\nR46 Tuesday Torch\nR46 Thursday Thrasher\nR46 Friday Finisher',
             category: 'General',
             kind: 'text',
             media_url: null,
@@ -9887,49 +9889,64 @@ async function run() {
     await context.close();
   }
 
-  // [release-links/*] (Round 47): the automatic release post's own
-  // workout/COW names are real tappable links -- migration_031.sql's
-  // `|wod:YYYY-MM-DD` / `|cow` suffix format, parsed by
-  // weeklyReleaseLinks.ts and rendered by WeeklyReleasePostBody.tsx.
-  // Drives the real, unmodified PostDetailModal end to end: tap a WOD
-  // name, land on that exact day on the WODs tab; tap the COW name, land
-  // in the COW room.
+  // [release-links/*] (Round 48): the automatic release post's own v2
+  // format -- a day-by-day YOUR WORKOUTS schedule, each line carrying a
+  // plain day/date prefix plus a real tappable workout name, a fixed
+  // Wednesday DOC'S COW line, and a rotating closer -- migration_032.sql's
+  // own `[[name]]<suffix>|wod:YYYY-MM-DD` / `...|cow` embedded-link format,
+  // parsed by weeklyReleaseLinks.ts's parseReleaseLineSegments() and
+  // rendered by WeeklyReleasePostBody.tsx. Drives the real, unmodified
+  // PostDetailModal end to end: tap a WOD name, land on that exact day on
+  // the WODs tab; tap the COW name, land in the COW room. The real SQL
+  // itself (day order, M/D/YY dates, the closer's own rotation across
+  // real release events) is proven directly against a real local Postgres
+  // instance -- see this round's own PR description -- not re-proven
+  // here; this block proves the CLIENT renders whatever body it's given
+  // correctly, including that only the name itself is tappable, never the
+  // day/date prefix or the COW line's own trailing parenthetical.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
     await setupMocks(page, USER_ID);
     const monday = thisWeekMonday().getTime();
     const tue = monday + 1 * 86400000;
+    const wed = monday + 2 * 86400000;
     const thu = monday + 3 * 86400000;
     const fri = monday + 4 * 86400000;
+    const dateLabel = (ms) => {
+      const d = new Date(ms);
+      return `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(-2)}`;
+    };
     const weekRow = makeScheduledWeekRow({
-      id: 'r47-week',
+      id: 'r48-week',
       weekStartDateMs: monday,
       releaseAtMs: monday - 2 * 86400000,
       releasedAtMs: monday - 2 * 86400000,
       wods: [
-        { dayOfWeek: 'mon', name: 'Jen Loves Counting', format: 'Rep Ladder', movements: ['Swings'] },
-        { dayOfWeek: 'tue', name: 'Just Do It', format: '30min AMQRAP', movements: ['Swings'] },
-        { dayOfWeek: 'thu', name: 'Two Minutes Or Less', format: '30min E2MOM', movements: ['Swings'] },
-        { dayOfWeek: 'fri', name: 'Basic And Complex', format: '30min AMCAP', movements: ['Swings'] },
+        { dayOfWeek: 'mon', name: 'THE FIRST TEE', format: 'Rep Ladder', movements: ['Swings'] },
+        { dayOfWeek: 'tue', name: 'RIPTIDE EMOM', format: '30min EMOM', movements: ['Swings'] },
+        { dayOfWeek: 'thu', name: 'LOW TIDE', format: '30min AMCAP', movements: ['Swings'] },
+        { dayOfWeek: 'fri', name: 'WALK OFF', format: 'For Time', movements: ['Swings'] },
       ],
-      cow: { name: 'Pull Yourself Together', scoringType: 'time', theWork: '50 Pull Ups, for time.' },
+      cow: { name: 'PULL YOURSELF TOGETHER', scoringType: 'time', theWork: '50 Pull Ups, for time.' },
     });
     await registerScheduledWeeksMock(page, [weekRow]);
     const releasePostBody =
-      "THE NEW WEEK IS LIVE. Fresh WODs and a new COW just dropped. See you Monday morning.\n\n" +
-      `Jen Loves Counting|wod:${pgDateOnly(monday)}\n` +
-      `Just Do It|wod:${pgDateOnly(tue)}\n` +
-      `Two Minutes Or Less|wod:${pgDateOnly(thu)}\n` +
-      `Basic And Complex|wod:${pgDateOnly(fri)}\n` +
-      'Pull Yourself Together|cow';
+      'THE NEW WEEK IS LIVE\n\n' +
+      'YOUR WORKOUTS\n\n' +
+      `MONDAY ${dateLabel(monday)}: [[THE FIRST TEE]]|wod:${pgDateOnly(monday)}\n` +
+      `TUESDAY ${dateLabel(tue)}: [[RIPTIDE EMOM]]|wod:${pgDateOnly(tue)}\n` +
+      `WEDNESDAY ${dateLabel(wed)}: DOC'S COW · [[PULL YOURSELF TOGETHER]] (THE CHALLENGE OF THE WEEK)|cow\n` +
+      `THURSDAY ${dateLabel(thu)}: [[LOW TIDE]]|wod:${pgDateOnly(thu)}\n` +
+      `FRIDAY ${dateLabel(fri)}: [[WALK OFF]]|wod:${pgDateOnly(fri)}\n\n` +
+      'Start your week off strong.';
     await page.route('**/rest/v1/community_posts*', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify([
           {
-            id: 'r47-release-post',
+            id: 'r48-release-post',
             title: '',
             body: releasePostBody,
             category: 'General',
@@ -9961,31 +9978,40 @@ async function run() {
 
     // Open the full post detail (PostCard's own feed preview truncates to
     // 3 lines -- not every name is guaranteed visible there).
-    await page.getByTestId('post-card-r47-release-post').click({ timeout: 8000 }).catch(() => {});
+    await page.getByTestId('post-card-r48-release-post').click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(400);
 
     if (SCREENSHOT_DIR) {
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'release-links-post-detail.png') }).catch(() => {});
     }
 
-    const wodLinkVisible = await page.getByText('Jen Loves Counting', { exact: true }).last().isVisible().catch(() => false);
-    const cowLinkVisible = await page.getByText('Pull Yourself Together', { exact: true }).last().isVisible().catch(() => false);
+    const fullBodyText = await page.locator('body').innerText().catch(() => '');
+    const dayDatePrefixesPresent =
+      fullBodyText.includes(`MONDAY ${dateLabel(monday)}:`) &&
+      fullBodyText.includes(`TUESDAY ${dateLabel(tue)}:`) &&
+      fullBodyText.includes(`WEDNESDAY ${dateLabel(wed)}: DOC'S COW`) &&
+      fullBodyText.includes(`THURSDAY ${dateLabel(thu)}:`) &&
+      fullBodyText.includes(`FRIDAY ${dateLabel(fri)}:`) &&
+      fullBodyText.includes('(THE CHALLENGE OF THE WEEK)') &&
+      fullBodyText.includes('Start your week off strong.');
+    const wodLinkVisible = await page.getByText('THE FIRST TEE', { exact: true }).last().isVisible().catch(() => false);
+    const cowLinkVisible = await page.getByText('PULL YOURSELF TOGETHER', { exact: true }).last().isVisible().catch(() => false);
     record(
-      '[release-links/visible] every workout name and the COW name render as real text inside the full post detail',
-      wodLinkVisible && cowLinkVisible,
-      JSON.stringify({ wodLinkVisible, cowLinkVisible })
+      '[release-links/visible] every workout name and the COW name render as real tappable text, with the day/date prefix, the COW parenthetical, and the closer all present as plain text',
+      wodLinkVisible && cowLinkVisible && dayDatePrefixesPresent,
+      JSON.stringify({ wodLinkVisible, cowLinkVisible, dayDatePrefixesPresent })
     );
 
     // Tap the Thursday workout's own name -- should close the post and
     // land exactly on Thursday's real date on the WODs tab.
-    await page.getByText('Two Minutes Or Less', { exact: true }).last().click({ timeout: 8000 }).catch(() => {});
+    await page.getByText('LOW TIDE', { exact: true }).last().click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(700);
-    const landedOnThursdayWod = await page.getByText('Two Minutes Or Less', { exact: true }).last().isVisible().catch(() => false);
+    const landedOnThursdayWod = await page.getByText('LOW TIDE', { exact: true }).last().isVisible().catch(() => false);
     if (SCREENSHOT_DIR) {
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'release-links-wod-landing.png') }).catch(() => {});
     }
     record(
-      '[release-links/wod-link] tapping a workout name in the release post lands on that exact day\'s real workout',
+      '[release-links/wod-link] tapping a workout name in the release post lands on that exact day\'s real workout, never the day/date prefix it sits next to',
       landedOnThursdayWod,
       JSON.stringify({ landedOnThursdayWod })
     );
@@ -9993,16 +10019,16 @@ async function run() {
     // Back to Community, reopen the post, tap the COW name.
     await page.getByRole('tab', { name: /COMMUNITY/i }).first().click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(400);
-    await page.getByTestId('post-card-r47-release-post').click({ timeout: 8000 }).catch(() => {});
+    await page.getByTestId('post-card-r48-release-post').click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(400);
-    await page.getByText('Pull Yourself Together', { exact: true }).last().click({ timeout: 8000 }).catch(() => {});
+    await page.getByText('PULL YOURSELF TOGETHER', { exact: true }).last().click({ timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(700);
-    const landedOnCowRoom = await page.getByText('Pull Yourself Together', { exact: true }).last().isVisible().catch(() => false);
+    const landedOnCowRoom = await page.getByText('PULL YOURSELF TOGETHER', { exact: true }).last().isVisible().catch(() => false);
     if (SCREENSHOT_DIR) {
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'release-links-cow-landing.png') }).catch(() => {});
     }
     record(
-      '[release-links/cow-link] tapping the COW name in the release post lands in the COW room showing that real COW',
+      '[release-links/cow-link] tapping the COW name on the Wednesday line lands in the COW room showing that real COW, never the surrounding "DOC\'S COW ·"/"(THE CHALLENGE OF THE WEEK)" plain text it sits between',
       landedOnCowRoom,
       JSON.stringify({ landedOnCowRoom })
     );
@@ -10010,11 +10036,81 @@ async function run() {
     await context.close();
   }
 
-  // [release-links/degraded] (Round 47): if migration_031.sql is never
-  // run, the release post still has the OLD plain-name format with no
-  // `|wod:...`/`|cow` suffix at all -- the client's own parser must find
-  // no link and render ordinary, non-tappable text, never a visible
-  // raw suffix and never a crash.
+  // [release-links/closer-rotates] (Round 48): the closer line at the
+  // bottom of the post is real, rendered text, not hardcoded anywhere in
+  // the client -- two separately-mocked release posts, each carrying a
+  // DIFFERENT real closer from the fixed six-line library, both render
+  // their own exact line. (The rotation's own real sequencing -- which
+  // closer a given release actually gets -- is a server-side SQL
+  // mechanism, proven directly against a real local Postgres instance
+  // releasing two weeks back to back; see this round's own PR
+  // description, not re-proven here.)
+  {
+    const closers = ['Start your week off strong.', 'Never miss a Monday.'];
+    for (let i = 0; i < closers.length; i++) {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      const body = `THE NEW WEEK IS LIVE\n\nYOUR WORKOUTS\n\nMONDAY 1/1/27: [[SAMPLE DAY]]|wod:2027-01-01\n\n${closers[i]}`;
+      await page.route('**/rest/v1/community_posts*', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([
+            {
+              id: `r48-closer-${i}`,
+              title: '',
+              body,
+              category: 'General',
+              kind: 'text',
+              media_url: null,
+              media_type: null,
+              workout_title: null,
+              workout_notes: null,
+              workout_results_line: null,
+              is_pb: false,
+              pinned: true,
+              is_weekly_release: true,
+              created_at: new Date().toISOString(),
+              author_id: USER_ID,
+              profiles: { display_name: 'Doc', how_train: 'boathouse' },
+              community_comments: [],
+              community_reactions: [],
+            },
+          ]),
+        })
+      );
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+        await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(400);
+      }
+      await page.getByTestId(`post-card-r48-closer-${i}`).click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const closerVisible = await page.getByText(closers[i], { exact: false }).last().isVisible().catch(() => false);
+      record(
+        `[release-links/closer-rotates] simulated release ${i + 1} of 2 shows its own real closer line ("${closers[i]}")`,
+        closerVisible,
+        JSON.stringify({ closerVisible })
+      );
+      await context.close();
+    }
+  }
+
+  // [release-links/degraded]: a post written before migration_031.sql
+  // ever ran (the original, plain Round-46 shape -- no `[[`/`]]`, no `|`
+  // suffix at all) is genuinely unparseable as a link by either of the
+  // two newer patterns, so it must render as ordinary, non-tappable text
+  // -- never a visible raw suffix, never a crash. [scheduled/release-
+  // crossing-post] above exercises this identical oldest tier too (its
+  // own pin-replacement fixtures use the same plain shape); the check
+  // right after this one, [release-links/migration-031-format-still-
+  // works], covers the DIFFERENT, newer middle tier -- a Round-47
+  // (migration_031-only) whole-line-link post, which is NOT degraded at
+  // all under this round's own parser and must still be a real, tappable
+  // link.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -10068,6 +10164,68 @@ async function run() {
       '[release-links/degraded] pre-migration_031 plain-name post renders cleanly with no tappable link and no leaked suffix text',
       plainNameVisible && noRawSuffixLeaked && !bodyText.includes('|cow'),
       JSON.stringify({ plainNameVisible, noRawSuffixLeaked })
+    );
+    await context.close();
+  }
+
+  // [release-links/migration-031-format-still-works] (Round 48): a post
+  // written while only migration_031.sql had run -- the Round-47 whole-
+  // line-link shape, `<name>|wod:YYYY-MM-DD` / `<name>|cow` with no
+  // `[[`/`]]` markers at all -- is NOT the degraded case; it must still
+  // resolve as a real, tappable link under this round's own parser
+  // (parseReleaseLineSegments()'s OLD_LINE_PATTERN fallback, checked
+  // second, right after the new `[[`/`]]` shape). This is Round 48's own
+  // "a post created by the old format still renders fine" proof for this
+  // specific tier.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const monday = thisWeekMonday().getTime();
+    await page.route('**/rest/v1/community_posts*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'r48-migration-031-format-post',
+            title: '',
+            body: `THE NEW WEEK IS LIVE. Fresh WODs and a new COW just dropped. See you Monday morning.\n\nMIGRATION 031 MONDAY|wod:${pgDateOnly(monday)}\nPULL YOURSELF TOGETHER|cow`,
+            category: 'General',
+            kind: 'text',
+            media_url: null,
+            media_type: null,
+            workout_title: null,
+            workout_notes: null,
+            workout_results_line: null,
+            is_pb: false,
+            pinned: true,
+            is_weekly_release: true,
+            created_at: new Date().toISOString(),
+            author_id: USER_ID,
+            profiles: { display_name: 'Doc', how_train: 'boathouse' },
+            community_comments: [],
+            community_reactions: [],
+          },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('post-card-r48-migration-031-format-post').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('MIGRATION 031 MONDAY', { exact: true }).last().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    const landedOnMonday = await page.getByText('MIGRATION 031 MONDAY', { exact: true }).last().isVisible().catch(() => false);
+    record(
+      '[release-links/migration-031-format-still-works] a whole-line (migration_031-only) release post still resolves as a real tappable link, not degraded text',
+      landedOnMonday,
+      JSON.stringify({ landedOnMonday })
     );
     await context.close();
   }

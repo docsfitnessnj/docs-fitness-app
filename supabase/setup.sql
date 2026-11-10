@@ -1048,6 +1048,16 @@ $$;
 
 grant execute on function public.next_scheduled_release_at() to authenticated;
 
+-- Round 48 — a plain, reusable "M/D/YY" date label, used by every line
+-- of the release post's own YOUR WORKOUTS schedule below.
+create or replace function public.scheduled_week_date_label(d date)
+returns text
+language sql
+immutable
+as $$
+  select trim(leading '0' from to_char(d, 'MM')) || '/' || trim(leading '0' from to_char(d, 'DD')) || '/' || to_char(d, 'YY');
+$$;
+
 -- Release moment: security definer (same as award_cow_champ_for_closed_
 -- challenges above) so it can insert a pinned post as Doc's own admin
 -- account and bypass RLS on every table it touches regardless of who (if
@@ -1062,7 +1072,15 @@ declare
   w record;
   admin_id uuid;
   cow record;
-  wod_names text;
+  mon_wod record;
+  tue_wod record;
+  thu_wod record;
+  fri_wod record;
+  closer_idx int;
+  closer text;
+  wed_date date;
+  wed_line text;
+  wod_lines text;
   post_body text;
 begin
   select id into admin_id from public.profiles where is_admin = true order by created_at asc limit 1;
@@ -1075,6 +1093,23 @@ begin
     where release_at <= now() and released_at is null
     order by release_at asc
   loop
+    -- Round 48 — the closer rotates through a fixed 6-line library, one
+    -- per real release event, wrapping after #6. Indexed by how many
+    -- weeks this table has already released BEFORE this one -- a plain
+    -- count of `released_at is not null` rows, read before this
+    -- iteration's own `update` below marks it released -- so the
+    -- rotation's whole memory is `released_at` itself, already this
+    -- app's own standing idempotency flag, with nothing new to persist.
+    select count(*) into closer_idx from public.scheduled_weeks where released_at is not null;
+    closer := (array[
+      'Start your week off strong.',
+      'Never miss a Monday.',
+      'The 2x Wednesday Protocol: get 2 workouts in by Wednesday. Any 2 count.',
+      'See you Monday morning.',
+      'The board runs on your wins. Post them.',
+      'New week, clean slate. Badges reset Monday. Earn them again.'
+    ])[(closer_idx % 6) + 1];
+
     update public.scheduled_weeks set released_at = now() where id = w.id;
 
     -- Mirror this week's COW into challenges — the same shape the client's
@@ -1104,30 +1139,41 @@ begin
     -- time) before inserting the new one, to stay under the 3-pin cap.
     update public.community_posts set pinned = false where is_weekly_release = true and pinned = true;
 
-    -- Round 47 — each WOD line carries its own real calendar date as a
-    -- `|wod:YYYY-MM-DD` suffix (mon/tue/thu/fri -> week_start_date +
-    -- 0/1/3/4 days); the COW line (new — the prior version never included
-    -- the COW name in the post body at all) carries a bare `|cow`. The
-    -- client (weeklyReleaseLinks.ts / WeeklyReleasePostBody.tsx) strips
-    -- this suffix and renders the name as a real tappable link straight
-    -- to that day's workout, or to the COW room — a plain name with no
-    -- suffix (the pre-migration_031 shape) just renders as ordinary text.
-    select string_agg(
-      name || '|wod:' || to_char(
-        w.week_start_date + case day_of_week
-          when 'mon' then 0 when 'tue' then 1 when 'thu' then 3 when 'fri' then 4
-        end,
-        'YYYY-MM-DD'
-      ),
-      E'\n' order by
-      case day_of_week when 'mon' then 1 when 'tue' then 2 when 'thu' then 3 when 'fri' then 4 end)
-      into wod_names
-    from public.scheduled_wods
-    where week_id = w.id;
+    select * into mon_wod from public.scheduled_wods where week_id = w.id and day_of_week = 'mon';
+    select * into tue_wod from public.scheduled_wods where week_id = w.id and day_of_week = 'tue';
+    select * into thu_wod from public.scheduled_wods where week_id = w.id and day_of_week = 'thu';
+    select * into fri_wod from public.scheduled_wods where week_id = w.id and day_of_week = 'fri';
 
-    post_body := 'THE NEW WEEK IS LIVE. Fresh WODs and a new COW just dropped. See you Monday morning.'
-      || case when wod_names is not null then E'\n\n' || wod_names else '' end
-      || case when cow.id is not null then E'\n' || cow.name || '|cow' else '' end;
+    -- Round 48 — YOUR WORKOUTS, one line per real weekday Mon-Fri, each
+    -- carrying its own day name + M/D/YY date + the tappable name inside
+    -- `[[`/`]]` markers (never the whole line -- see weeklyReleaseLinks.ts
+    -- / WeeklyReleasePostBody.tsx's own segment parser). The Wednesday
+    -- line always reads DOC'S COW, per the brief -- a scheduled week with
+    -- no COW row at all (shouldn't happen in real operation) falls back
+    -- to the same fixed label with no link rather than a broken line.
+    wed_date := w.week_start_date + 2;
+    if cow.id is not null then
+      wed_line := 'WEDNESDAY ' || public.scheduled_week_date_label(wed_date) || ': DOC''S COW · [[' || cow.name || ']] (THE CHALLENGE OF THE WEEK)|cow';
+    else
+      wed_line := 'WEDNESDAY ' || public.scheduled_week_date_label(wed_date) || ': DOC''S COW';
+    end if;
+
+    wod_lines := '';
+    if mon_wod.id is not null then
+      wod_lines := wod_lines || 'MONDAY ' || public.scheduled_week_date_label(w.week_start_date) || ': [[' || mon_wod.name || ']]|wod:' || to_char(w.week_start_date, 'YYYY-MM-DD') || E'\n';
+    end if;
+    if tue_wod.id is not null then
+      wod_lines := wod_lines || 'TUESDAY ' || public.scheduled_week_date_label(w.week_start_date + 1) || ': [[' || tue_wod.name || ']]|wod:' || to_char(w.week_start_date + 1, 'YYYY-MM-DD') || E'\n';
+    end if;
+    wod_lines := wod_lines || wed_line || E'\n';
+    if thu_wod.id is not null then
+      wod_lines := wod_lines || 'THURSDAY ' || public.scheduled_week_date_label(w.week_start_date + 3) || ': [[' || thu_wod.name || ']]|wod:' || to_char(w.week_start_date + 3, 'YYYY-MM-DD') || E'\n';
+    end if;
+    if fri_wod.id is not null then
+      wod_lines := wod_lines || 'FRIDAY ' || public.scheduled_week_date_label(w.week_start_date + 4) || ': [[' || fri_wod.name || ']]|wod:' || to_char(w.week_start_date + 4, 'YYYY-MM-DD') || E'\n';
+    end if;
+
+    post_body := 'THE NEW WEEK IS LIVE' || E'\n\n' || 'YOUR WORKOUTS' || E'\n\n' || rtrim(wod_lines, E'\n') || E'\n\n' || closer;
 
     insert into public.community_posts (author_id, title, body, kind, pinned, is_weekly_release)
     values (admin_id, '', post_body, 'text', true, true);
