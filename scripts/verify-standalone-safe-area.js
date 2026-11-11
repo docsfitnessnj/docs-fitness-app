@@ -10488,7 +10488,12 @@ async function run() {
       if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-top.png') }).catch(() => {});
 
       const heroTitle = await page.getByText("WELCOME TO", { exact: false }).first().isVisible().catch(() => false);
-      const tagline = await page.getByText('Look and feel better than you did 10 years ago', { exact: false }).isVisible().catch(() => false);
+      // .first(): this substring also opens the WHO'S DOC bio further down
+      // the same page (the bio's own copy deliberately echoes the
+      // tagline), so an unscoped locator resolves to two real elements --
+      // confirmed directly before trusting this fix, the same collision
+      // shape this file has hit before.
+      const tagline = await page.getByText('Look and feel better than you did 10 years ago', { exact: false }).first().isVisible().catch(() => false);
       const goldLine = await page.getByText('This is fitness made easy.', { exact: false }).isVisible().catch(() => false);
       record(
         '[about-v2/hero] the real hero title, tagline, and italic gold line all render',
@@ -10800,7 +10805,11 @@ async function run() {
       await page.waitForTimeout(900);
       await page.getByTestId('about-sign-in-upper').click();
       await page.waitForTimeout(700);
-      const signInHeading = await page.getByText('SIGN IN', { exact: false }).isVisible().catch(() => false);
+      // .first(): "SIGN IN" also renders as the submit button's own label
+      // further down the same screen -- confirmed directly, two real
+      // matches, the same unscoped-getByText collision shape this file
+      // has hit before (and fixed with .first()/.last() every time).
+      const signInHeading = await page.getByText('SIGN IN', { exact: false }).first().isVisible().catch(() => false);
       if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-after-sign-in.png') }).catch(() => {});
       record('[about-v2/routing-sign-in] Sign in. still routes to the real sign-in screen, unchanged', signInHeading, JSON.stringify({ signInHeading }));
       await context.close();
