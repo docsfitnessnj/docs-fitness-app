@@ -1,78 +1,154 @@
 import React, { useState } from 'react';
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { InviteFriendModal } from '../components/InviteFriendModal';
 import { ModalHeader } from '../components/ModalHeader';
 import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { WebScrollScreen } from '../components/WebScrollScreen';
+import { AboutKettlewaveMark } from '../components/about/AboutKettlewaveMark';
+import { AboutVideoBand } from '../components/about/AboutVideoBand';
+import { TestimonialCarousel, Testimonial } from '../components/about/TestimonialCarousel';
+import { FaqAccordion, FaqItem } from '../components/about/FaqAccordion';
+import { GlowPulseWrap } from '../components/about/GlowPulseWrap';
 import { FOUNDING_FIFTY_PRICE } from '../context/FoundingFiftyContext';
 import { FOUNDING_FIFTY_BANNER, FOUNDING_VALUE_LINE, ONLINE_PLANS, foundingDeadlineLabel, foundingSpotsLeftLabel } from '../data/plans';
 import { LOCATION_MAPS_URL } from '../lib/links';
 import { useFoundingFiftyPublicStatus } from '../lib/useFoundingFiftyPublicStatus';
-import { colors, fonts, TAGLINE, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
+import { colors, fonts, TAGLINE, LOCATION, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
 
 const STANDARD_ONLINE_PRICE = ONLINE_PLANS.find((p) => p.key === 'monthly')!.price;
 
-const CREW_PHOTO = require('../../assets/brand/crew-photo.jpg');
-// The photo's real pixel dimensions (1179x740). react-native-web's Image
-// doesn't reliably honor a CSS `aspectRatio` style here — it falls back to
-// the source asset's raw pixel height regardless of the rendered width,
-// which either crops (resizeMode="cover") or letterboxes with blank space
-// (resizeMode="contain") depending on how far off that guess is. Measuring
-// the container's actual width via onLayout and computing an explicit
-// pixel height from it sidesteps that entirely: full width, height fully
-// determined by the image's own proportions, no crop, no zoom.
-const CREW_PHOTO_RATIO = 1179 / 740;
+// Same convention as AboutKettlewaveMark's own FIXED_POSITION -- `fixed`
+// anchors to the real browser viewport only where no transformed ancestor
+// redefines the containing block (true for the unclipped 'onboarding'
+// shell; see useWebDocumentScroll.ts). Native has no `position: fixed`.
+const FIXED_POSITION = Platform.OS === 'web' ? ({ position: 'fixed' } as object) : {};
+
+const WHOS_DOC_PHOTO = require('../../assets/brand/whos-doc.jpg');
+// Real pixel size of the committed photo (confirmed directly before
+// relying on it) -- uncropped means an explicit box computed from this
+// real ratio, never a guessed one and never resizeMode="cover".
+const WHOS_DOC_PHOTO_RATIO = 1206 / 2040;
+const WHOS_DOC_PHOTO_WIDTH = 220;
+const WHOS_DOC_PHOTO_WIDTH_DESKTOP = 260;
 
 const DESKTOP_CONTENT_WIDTH = 1100;
+const CAROUSEL_WIDTH_DESKTOP = 640;
 
-type WhatsInsideRow = {
-  key: string;
-  title: string;
-  text: string;
-  icon: (size: number) => React.ReactNode;
-};
+const TESTIMONIALS: Testimonial[] = [
+  { name: 'ADAM', quote: "Doc's Fitness has me in the best shape of my life." },
+  {
+    name: 'STACEY',
+    quote:
+      "I came into Doc's looking for a good workout and what I found was a community of support, growth, and wellness.",
+  },
+  { name: 'JENNIFER', quote: "The vibe is unique, it's a family, and it's a badass one!" },
+  { name: 'BETH', quote: 'Simply put, it is well worth the drive every time.' },
+  { name: 'MIKE', quote: 'A perfect balance of competition and support.' },
+  {
+    name: 'ELLEN',
+    quote: "If you're looking to get stronger and have fun through the process, Doc's Fitness is the way to go!",
+  },
+];
 
-const WHATS_INSIDE: WhatsInsideRow[] = [
+// The one answer whose own text needs a real tappable Google Maps link
+// embedded inside it -- rendered as a function so the address segment can
+// be a genuine ExternalLinkPressable (the house's own popup-blocker-safe
+// real <a> technique) rather than a Text-onPress run, which would silently
+// reintroduce the exact Safari popup-blocking bug ExternalLinkPressable
+// exists to avoid.
+function GymAnswer() {
+  return (
+    <>
+      <ExternalLinkPressable href={LOCATION_MAPS_URL} testID="about-faq-gym-address">
+        <Text style={faqStyles.addressLink}>
+          Upstairs at the {LOCATION.name} in {LOCATION.city}.
+        </Text>
+      </ExternalLinkPressable>
+      <Text style={faqStyles.answer}>Tap the address for directions.</Text>
+    </>
+  );
+}
+
+const FAQS: FaqItem[] = [
   {
-    key: 'wods',
-    title: "DOC'S WODS",
-    text: "4 kettlebell workouts a week, programmed by Doc. Log your results, track everything.",
-    icon: (size) => <Ionicons name="flame-outline" size={size} color={colors.white} />,
+    key: 'what-is-the-app',
+    question: "WHAT IS THE DOC'S FITNESS APP?",
+    answer:
+      "Your one stop shop for all kettlebell training at Doc's Fitness. Whether you train online or in person, this is where it all lives: your weekly workouts, the Challenge of the Week with a live leaderboard, the community board, the full Deck of WODs, and class booking for upstairs of the boathouse in Ventnor City, NJ.",
   },
   {
-    key: 'cows',
-    title: 'THE CHALLENGE OF THE WEEK',
-    text: 'A weekly challenge with a live leaderboard. Post your time and see where you stand.',
-    icon: (size) => <Ionicons name="trophy-outline" size={size} color={colors.white} />,
+    key: 'how-long',
+    question: 'HOW LONG ARE THE WORKOUTS?',
+    answer: '30 minutes or less. 4 workouts a week plus an optional weekly challenge. About 2 hours a week total.',
   },
   {
-    key: 'deck',
-    title: 'THE DECK OF WODS',
-    text: '54 workouts built as a deck of cards. Shuffle it and let it deal you your day.',
-    icon: (size) => <MaterialCommunityIcons name="cards-playing-spade-outline" size={size} color={colors.white} />,
+    key: 'equipment',
+    question: 'WHAT EQUIPMENT DO I NEED?',
+    answer: 'One kettlebell is all you really need. More bells and a pull up bar help, but one bell gets it done.',
   },
   {
-    key: 'community',
-    title: 'THE COMMUNITY',
-    text: 'Supportive and friendly. Share your work if you want to, or just read along and get pushed by people doing the same thing.',
-    icon: (size) => <Ionicons name="people-outline" size={size} color={colors.white} />,
+    key: 'experience',
+    question: 'DO I NEED KETTLEBELL EXPERIENCE?',
+    answer: 'No. Tap any movement in any workout and a breakdown video from Doc opens.',
   },
   {
-    key: 'classes',
-    title: 'CLASS SIGN UP',
-    text: 'Book in person group training right from the app.',
-    icon: (size) => <Ionicons name="calendar-outline" size={size} color={colors.white} />,
+    key: 'online-vs-in-person',
+    question: "WHAT'S THE DIFFERENCE BETWEEN TRAINING ONLINE AND IN PERSON?",
+    answer:
+      'Online gets you the workouts, the challenge, and the community anywhere in the world. In person gets you coached classes at the gym in Ventnor City, booked right in the app. Same crew either way.',
   },
+  {
+    key: 'free-trial',
+    question: 'IS THERE A FREE TRIAL?',
+    answer:
+      "Online comes with a 2 week free trial. You won't be charged until it ends and you can cancel anytime. Training in person? Your first class is free.",
+  },
+  {
+    key: 'whats-cow',
+    question: "WHAT'S DOC'S COW?",
+    answer:
+      "Doc's Challenge of the Week. One extra challenging workout each week, built to push your limits and train your VO2 max. Post your score to the live leaderboard.",
+  },
+  {
+    key: 'when-drop',
+    question: 'WHEN DO NEW WORKOUTS DROP?',
+    answer: 'Every Sunday at 6pm Eastern. The whole week at once.',
+  },
+  {
+    key: 'cancel',
+    question: 'CAN I CANCEL ANYTIME?',
+    answer: 'Yes. Right in the app. No phone calls, no hoops.',
+  },
+  {
+    key: 'where-gym',
+    question: 'WHERE IS THE GYM?',
+    answer: () => <GymAnswer />,
+  },
+];
+
+const DOOR1_BULLETS = [
+  '4 workouts a week, 30 minutes or less, one kettlebell',
+  'Plus The Challenge of the Week with a live leaderboard',
+  'Every movement opens a breakdown video from Doc',
+];
+
+const DOOR2_BULLETS = [
+  'Book any class right in the app',
+  'Coached kettlebell classes 6 days a week',
+  'Full access to everything in this app with Monthly Unlimited',
 ];
 
 type Props = {
   // 'onboarding' = pre-signup entry point, full CTAs, no back header.
   // 'inApp' = reached via the hamburger's INVITE A FRIEND row — has a back
   // header, and the two doors route to Memberships instead of the
-  // onboarding flow since this member already has a plan.
+  // onboarding flow since this member already has a plan. (No live call
+  // site currently passes this variant — INVITE A FRIEND now opens
+  // InviteFriendModal directly — but the type and the render branch stay,
+  // since nothing asked for them to be removed.)
   variant: 'onboarding' | 'inApp';
   onBack?: () => void;
   onStartFree: () => void;
@@ -84,7 +160,8 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
   const isLargeDesktop = isDesktop && width >= LARGE_DESKTOP_BREAKPOINT;
-  const [photoWidth, setPhotoWidth] = useState(0);
+  const [contentWidth, setContentWidth] = useState(0);
+  const [bandWidth, setBandWidth] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
   const founding50 = useFoundingFiftyPublicStatus();
 
@@ -98,198 +175,176 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
   // in-app screen uses for exactly this reason.
   const Scroller = variant === 'inApp' ? ScrollView : WebScrollScreen;
 
+  const whosDocPhotoWidth = isDesktop ? WHOS_DOC_PHOTO_WIDTH_DESKTOP : WHOS_DOC_PHOTO_WIDTH;
+  const carouselWidth = isDesktop ? Math.min(CAROUSEL_WIDTH_DESKTOP, contentWidth || CAROUSEL_WIDTH_DESKTOP) : contentWidth;
+
   return (
-    <View style={[styles.container, variant === 'inApp' && styles.containerInApp]} nativeID="about-screen-root">
-      {/* 'onboarding': white, matching the hero right below it (the very
-          first visible thing on this variant) -- the same reasoning as the
-          hero's own paddingTop fix a few rounds back: a mismatched color
-          here would reopen that exact gray-band bug, just triggered by the
-          real top inset instead of a hardcoded padding value. 'inApp':
-          colors.background, matching ModalHeader's own transparency. */}
-      <SafeAreaTopFill backgroundColor={variant === 'inApp' ? colors.background : colors.white} />
+    <View
+      style={[styles.container, variant === 'inApp' && styles.containerInApp]}
+      nativeID="about-screen-root"
+    >
+      {/* A fixed, viewport-covering green fill -- not a plain background
+          color on this (or any ancestor) box. The real document here runs
+          far taller than one viewport, and every ancestor up through html/
+          body is deliberately flex/auto-sized for the unclipped pre-signup
+          scroll trick (see useWebDocumentScroll.ts) -- confirmed directly
+          that this leaves every one of those boxes' own real rendered
+          height pinned to exactly one viewport regardless, with the real
+          content simply overflowing past it (never clipped, just
+          unpainted-behind). A `position: fixed` layer sidesteps that
+          entirely, the same way AboutKettlewaveMark already does: it
+          always covers whatever's currently visible, at every scroll
+          position, with nothing needing to literally BE 3000+ px tall. */}
+      <View style={[styles.fixedBackdrop, FIXED_POSITION]} pointerEvents="none" testID="about-green-backdrop" />
+      <AboutKettlewaveMark />
+      {/* The whole page sits on deep green now — the top safe-area fill
+          matches it in both variants, instead of the old white/background
+          split (which existed only because the hero used to be white). */}
+      <SafeAreaTopFill backgroundColor={colors.greenDeep} />
       {variant === 'inApp' && onBack && (
         <ModalHeader title="ABOUT DOC'S FITNESS" onBack={onBack} backTestID="close-about" />
       )}
 
       <Scroller style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={[styles.hero, isDesktop && styles.heroDesktop]}>
-          <DocsBadge variant="white" size={isLargeDesktop ? 220 : isDesktop ? 190 : 104} />
+          <DocsBadge variant="black" size={isLargeDesktop ? 220 : isDesktop ? 190 : 104} />
           <Text
-            style={[
-              styles.heroTitle,
-              isDesktop && styles.heroTitleDesktop,
-              isLargeDesktop && styles.heroTitleLargeDesktop,
-            ]}
+            style={[styles.heroTitle, isDesktop && styles.heroTitleDesktop, isLargeDesktop && styles.heroTitleLargeDesktop]}
           >
             WELCOME TO{'\n'}DOC'S FITNESS
           </Text>
-          <Text
-            style={[
-              styles.heroTagline,
-              isDesktop && styles.heroTaglineDesktop,
-              isLargeDesktop && styles.heroTaglineLargeDesktop,
-            ]}
-          >
-            {TAGLINE.toUpperCase()}
+          <Text style={[styles.heroTagline, isDesktop && styles.heroTaglineDesktop, isLargeDesktop && styles.heroTaglineLargeDesktop]}>
+            {TAGLINE}
           </Text>
+          <Text style={[styles.heroGoldLine, isDesktop && styles.heroGoldLineDesktop]}>This is fitness made easy.</Text>
         </View>
 
-        <View onLayout={(e) => setPhotoWidth(e.nativeEvent.layout.width)}>
-          {photoWidth > 0 && (
-            <Image
-              source={CREW_PHOTO}
-              style={{ width: photoWidth, height: photoWidth / CREW_PHOTO_RATIO }}
-              resizeMode="contain"
-              testID="about-crew-photo"
-            />
-          )}
+        <View
+          style={isDesktop && styles.videoBandWrapDesktop}
+          onLayout={(e) => setBandWidth(e.nativeEvent.layout.width)}
+        >
+          <AboutVideoBand width={bandWidth} rounded={isDesktop} />
         </View>
 
-        <View style={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}>
-          <View style={[styles.section, isDesktop && styles.sectionDesktop]}>
-            <Text style={[styles.sectionHeading, isDesktop && styles.sectionHeadingDesktop]}>
-              TRAIN WITH THE DOC'S CREW, ANYWHERE
-            </Text>
-            <Text style={[styles.sectionBody, isDesktop && styles.sectionBodyDesktop]}>
-              Five kettlebell workouts a week, a weekly challenge with a live leaderboard, and a community that shows
-              up. Do it from your garage, a hotel room, or at the boathouse with us in Ventnor City.
-            </Text>
-          </View>
+        <View
+          style={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}
+          onLayout={(e) => setContentWidth(e.nativeEvent.layout.width)}
+        >
+          <View style={isDesktop && styles.doorsRowDesktop}>
+            <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
+              <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>TRAIN ONLINE ANYWHERE</Text>
+              <Text style={styles.doorSubtitle}>THE ONLINE HOME OF THE DOC'S CREW</Text>
+              <View style={styles.doorPill}>
+                <Text style={styles.doorPillText}>{founding50.isLive ? 'FOUNDING 50 RATE' : '2 WEEKS FREE'}</Text>
+              </View>
 
-          <View style={[styles.doorsSection, isDesktop && styles.doorsSectionDesktop]}>
-            <View style={isDesktop && styles.doorsRowDesktop}>
-              <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
-                <View style={styles.doorBanner}>
-                  <Text style={styles.doorBannerText}>{founding50.isLive ? 'FOUNDING 50 RATE' : '2 WEEKS FREE'}</Text>
-                </View>
-                <View style={styles.doorBody}>
-                  <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>TRAIN ONLINE</Text>
-                  {founding50.isLive && (
-                    <>
-                      <View style={styles.doorPriceRow}>
-                        <Text style={styles.doorFoundingPrice}>
-                          ${FOUNDING_FIFTY_PRICE}
-                          <Text style={styles.doorFoundingCadence}> / month</Text>
-                        </Text>
-                        <Text style={styles.doorStruckPrice}>{STANDARD_ONLINE_PRICE}</Text>
-                      </View>
-                      <Text style={styles.doorSpotsLeftLine} testID="about-founding-spots-left">
-                        {foundingSpotsLeftLabel(founding50.spotsRemaining)}
-                      </Text>
-                      {foundingDeadlineLabel(founding50.endsAt) && (
-                        <Text style={styles.doorDeadlineLine} testID="about-founding-deadline">
-                          {foundingDeadlineLabel(founding50.endsAt)}
-                        </Text>
-                      )}
-                      <Text style={styles.doorFoundingRateSentence}>{FOUNDING_FIFTY_BANNER.subtitle}</Text>
-                      <Text style={styles.doorFoundingValueLine}>{FOUNDING_VALUE_LINE}</Text>
-                    </>
-                  )}
-                  {!founding50.isLive && (
-                    <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
-                      Everything in the app, from anywhere. Your first two weeks are on us.
+              {founding50.isLive ? (
+                <>
+                  <View style={styles.doorPriceRow}>
+                    <Text style={styles.doorFoundingPrice}>
+                      ${FOUNDING_FIFTY_PRICE}
+                      <Text style={styles.doorFoundingCadence}> / month</Text>
+                    </Text>
+                    <Text style={styles.doorStruckPrice}>{STANDARD_ONLINE_PRICE}</Text>
+                  </View>
+                  <Text style={styles.doorSpotsLeftLine} testID="about-founding-spots-left">
+                    {foundingSpotsLeftLabel(founding50.spotsRemaining)}
+                  </Text>
+                  {foundingDeadlineLabel(founding50.endsAt) && (
+                    <Text style={styles.doorDeadlineLine} testID="about-founding-deadline">
+                      {foundingDeadlineLabel(founding50.endsAt)}
                     </Text>
                   )}
-                  <Pressable style={styles.doorButton} onPress={onStartFree} testID="about-start-free">
-                    <Text style={styles.doorButtonText}>{founding50.isLive ? 'CLAIM YOUR SPOT' : 'START FREE'}</Text>
-                  </Pressable>
+                  <Text style={styles.doorFoundingRateSentence}>{FOUNDING_FIFTY_BANNER.subtitle}</Text>
+                  <Text style={styles.doorFoundingValueLine}>{FOUNDING_VALUE_LINE}</Text>
+                </>
+              ) : (
+                <View style={styles.bulletList}>
+                  {DOOR1_BULLETS.map((b) => (
+                    <View key={b} style={styles.bulletRow}>
+                      <View style={styles.bulletDot} />
+                      <Text style={styles.bulletText}>{b}</Text>
+                    </View>
+                  ))}
                 </View>
-              </View>
+              )}
 
-              <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
-                <View style={styles.doorBanner}>
-                  <Text style={styles.doorBannerText}>FIRST CLASS FREE</Text>
-                </View>
-                <View style={styles.doorBody}>
-                  <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>
-                    TRAIN IN PERSON AT DOC'S FITNESS
+              <GlowPulseWrap borderRadius={10}>
+                <Pressable style={styles.doorButton} onPress={onStartFree} testID="about-start-free">
+                  <Text style={styles.doorButtonText}>
+                    {founding50.isLive ? 'CLAIM YOUR SPOT' : 'START FREE ONLINE'}
                   </Text>
-                  <Text style={[styles.doorText, isDesktop && styles.doorTextDesktop]}>
-                    Group training at Doc's Fitness in Ventnor City. Come see what it's like.
-                  </Text>
-                  <Pressable style={styles.doorButton} onPress={onBookClass} testID="about-book-class">
-                    <Text style={styles.doorButtonText}>BOOK YOUR CLASS</Text>
-                  </Pressable>
-                </View>
+                </Pressable>
+              </GlowPulseWrap>
+            </View>
+
+            <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
+              <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>TRAIN IN PERSON AT DOC'S FITNESS</Text>
+              <Text style={styles.doorSubtitle}>UPSTAIRS OF THE BOATHOUSE · VENTNOR CITY, NJ</Text>
+              <View style={styles.doorPill}>
+                <Text style={styles.doorPillText}>FIRST CLASS FREE</Text>
               </View>
+              <View style={styles.bulletList}>
+                {DOOR2_BULLETS.map((b) => (
+                  <View key={b} style={styles.bulletRow}>
+                    <View style={styles.bulletDot} />
+                    <Text style={styles.bulletText}>{b}</Text>
+                  </View>
+                ))}
+              </View>
+              <Pressable style={styles.doorButtonOutline} onPress={onBookClass} testID="about-book-class">
+                <Text style={styles.doorButtonOutlineText}>BOOK YOUR CLASS IN PERSON</Text>
+              </Pressable>
             </View>
           </View>
 
           {onSignIn && (
-            <Pressable
-              style={[styles.signInRowProminent, isDesktop && styles.signInRowProminentDesktop]}
-              onPress={onSignIn}
-              hitSlop={8}
-              testID="about-sign-in-upper"
-            >
-              <Text
-                style={[styles.signInTextProminent, isDesktop && styles.signInTextProminentDesktop]}
-              >
-                Already a member? <Text style={styles.signInLinkProminent}>Sign in.</Text>
-              </Text>
-            </Pressable>
-          )}
-
-          <View style={[styles.section, isDesktop && styles.sectionDesktop]}>
-            <Text style={[styles.sectionHeading, isDesktop && styles.sectionHeadingDesktop]}>WHAT'S INSIDE</Text>
-            <View style={isDesktop && styles.insideGridDesktop}>
-              {WHATS_INSIDE.map((row) => (
-                <View key={row.key} style={isDesktop ? styles.insideCardDesktop : styles.insideRow}>
-                  <View style={[styles.insideIconTile, isDesktop && styles.insideIconTileDesktop]}>
-                    {row.icon(isDesktop ? 26 : 22)}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.insideTitle, isDesktop && styles.insideTitleDesktop]}>{row.title}</Text>
-                    <Text style={[styles.insideText, isDesktop && styles.insideTextDesktop]}>{row.text}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.docBand}>
-          <View style={[styles.docBandInner, isDesktop && styles.docBandInnerDesktop]}>
-            <Text style={styles.docBandHeading}>WHO'S DOC</Text>
-            <Text style={[styles.docBandText, isDesktop && styles.docBandTextDesktop]}>
-              AJ Holland. The original Doc was his grandfather, and the name stuck. A former professional athlete
-              with over 20 years of kettlebell experience and part of the StrongFirst family, he built Doc's Fitness
-              on one promise: look and feel better than you did 10 years ago with just 2 hours a week of kettlebell
-              workouts.
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}>
-          <ExternalLinkPressable
-            href={LOCATION_MAPS_URL}
-            style={[styles.locationCard, isDesktop && styles.locationCardDesktop]}
-            testID="about-location-card"
-          >
-            <Ionicons name="location-outline" size={20} color={colors.gold} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.locationName}>Doc's Fitness</Text>
-              <Text style={styles.locationText}>Ventnor City, NJ. Group training six days a week.</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" />
-          </ExternalLinkPressable>
-
-          <Pressable
-            style={[styles.inviteButton, isDesktop && styles.inviteButtonDesktop]}
-            onPress={() => setInviteOpen(true)}
-            testID="about-invite-friend"
-          >
-            <Ionicons name="share-social-outline" size={18} color={colors.green} />
-            <Text style={styles.inviteButtonText}>INVITE A FRIEND</Text>
-          </Pressable>
-
-          {onSignIn && (
-            <Pressable style={styles.signInRow} onPress={onSignIn} hitSlop={8} testID="about-sign-in">
+            <Pressable style={styles.signInRow} onPress={onSignIn} hitSlop={8} testID="about-sign-in-upper">
               <Text style={styles.signInText}>
                 Already a member? <Text style={styles.signInLink}>Sign in.</Text>
               </Text>
             </Pressable>
           )}
+
+          <Text style={styles.crewHeading}>FROM THE CREW</Text>
+          <TestimonialCarousel testimonials={TESTIMONIALS} width={carouselWidth} />
+
+          <Text style={styles.faqHeading}>FREQUENTLY ASKED QUESTIONS</Text>
+          <FaqAccordion items={FAQS} defaultOpenKey="what-is-the-app" />
+
+          <View style={[styles.whosDocRow, isDesktop && styles.whosDocRowDesktop]}>
+            <Image
+              source={WHOS_DOC_PHOTO}
+              resizeMode="contain"
+              style={{ width: whosDocPhotoWidth, height: whosDocPhotoWidth / WHOS_DOC_PHOTO_RATIO }}
+              testID="about-whos-doc-photo"
+            />
+            <View style={styles.whosDocTextWrap}>
+              <Text style={styles.docBandHeading}>WHO'S DOC</Text>
+              <Text style={styles.docBandText}>
+                AJ Holland. The original Doc was his grandfather, and the name stuck. A former professional athlete
+                with over 20 years of kettlebell experience and part of the StrongFirst family, he built Doc's Fitness
+                on one promise: look and feel better than you did 10 years ago with just 2 hours a week of kettlebell
+                workouts.
+              </Text>
+            </View>
+          </View>
+
+          <ExternalLinkPressable href={LOCATION_MAPS_URL} style={styles.locationCard} testID="about-location-card">
+            <Ionicons name="location-outline" size={20} color={colors.gold} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.locationName}>Doc's Fitness</Text>
+              <Text style={styles.locationText}>Ventnor City, NJ. Group training six days a week.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </ExternalLinkPressable>
+
+          <Pressable style={styles.inviteButton} onPress={() => setInviteOpen(true)} testID="about-invite-friend">
+            <Ionicons name="share-social-outline" size={18} color={colors.white} />
+            <Text style={styles.inviteButtonText}>INVITE A FRIEND</Text>
+          </Pressable>
+
+          <Text style={styles.footerLine}>DOC'S FITNESS · {LOCATION.city.toUpperCase()}</Text>
         </View>
       </Scroller>
 
@@ -298,19 +353,68 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
+const faqStyles = StyleSheet.create({
+  addressLink: {
+    color: colors.green,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 14,
+    lineHeight: 21,
+    textDecorationLine: 'underline',
   },
-  // 'inApp' only: clears ModalHeader's own back/title row, which has no
-  // background of its own — matches colors.background underneath it, so
-  // there's no color seam like the one below.
+  answer: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 4,
+  },
+});
+
+const styles = StyleSheet.create({
+  // No background color here, deliberately -- see fixedBackdrop above in
+  // the render tree for why. No `flex` here either -- see containerInApp
+  // below for why.
+  container: {
+    width: '100%',
+  },
+  // position: fixed, covering the current viewport at any scroll position
+  // -- NOT a plain background color on `container` (or any ancestor box),
+  // which was the first thing tried here and didn't hold up. Confirmed
+  // directly: this screen's real document runs far taller than one
+  // viewport (3410px in testing), but #root/html/body/#about-screen-root
+  // all measured their own rendered box at exactly one viewport's height
+  // (844px) regardless -- every ancestor up through html/body is
+  // deliberately auto/flex-sized for the unclipped pre-signup scroll trick
+  // (see useWebDocumentScroll.ts), and WebScrollScreen's own web View adds
+  // `flexGrow: 1, flexBasis: 0` on top of that for the same reason --
+  // between the two, nothing in this chain ever has a definite height to
+  // resolve "auto" against, so the browser falls back to sizing every one
+  // of those boxes to exactly the one viewport height that minHeight: 100%
+  // DOES resolve against (the real initial containing block), while the
+  // real content simply overflows past it, unclipped (nothing overlaps or
+  // renders wrong) but also unpainted-behind, since a box's own background
+  // never extends past its own box. This bug almost certainly predates
+  // this round -- the old near-white-on-white palette made it invisible.
+  // A `position: fixed` layer sidesteps the whole ambiguity: it always
+  // covers whatever's currently visible, with nothing needing to literally
+  // BE 3000+ px tall, the identical technique AboutKettlewaveMark already
+  // uses one layer up.
+  fixedBackdrop: {
+    position: 'absolute', // overridden to 'fixed' on web, see below
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.greenDeep,
+    zIndex: -1,
+  },
   containerInApp: {
+    flex: 1,
+    // Clears ModalHeader's own back/title row, which has no background of
+    // its own -- matches colors.greenDeep underneath it, so there's no
+    // color seam.
     paddingTop: 60,
   },
-  // Passed through to WebScrollScreen — a real ScrollView on native, a
-  // plain View on web (see that component for why).
   scroll: {
     flex: 1,
   },
@@ -318,223 +422,81 @@ const styles = StyleSheet.create({
     paddingBottom: 48,
   },
   hero: {
-    backgroundColor: colors.white,
     alignItems: 'center',
     paddingHorizontal: 24,
-    // Was previously carried as `container`'s own paddingTop (60), which
-    // rendered in colors.background (#FBFBF9, a hair off pure white) above
-    // this hero's colors.white (#FFFFFF) -- a visible seam/band on a real
-    // iPhone screen, and extra distance before the badge. Living on hero
-    // itself instead means that space is painted the hero's own white, so
-    // the page background runs clean all the way to the top with no seam.
     paddingTop: 40,
     paddingBottom: 28,
   },
   heroDesktop: {
     paddingTop: 72,
-    paddingBottom: 80,
+    paddingBottom: 56,
   },
   heroTitle: {
-    color: colors.text,
+    color: colors.white,
     fontFamily: fonts.headline,
-    fontSize: 34,
-    lineHeight: 36,
+    fontSize: 42,
+    lineHeight: 44,
     letterSpacing: 0.5,
     textAlign: 'center',
-    marginTop: 14,
+    marginTop: 18,
   },
   heroTitleDesktop: {
-    fontSize: 66,
-    lineHeight: 68,
-    marginTop: 28,
+    fontSize: 72,
+    lineHeight: 74,
+    marginTop: 30,
   },
   heroTitleLargeDesktop: {
-    fontSize: 88,
-    lineHeight: 90,
-    marginTop: 32,
+    fontSize: 92,
+    lineHeight: 94,
+    marginTop: 34,
   },
   heroTagline: {
-    color: colors.text,
-    fontFamily: fonts.labelSemiBold,
+    color: 'rgba(255,255,255,0.78)',
+    fontFamily: fonts.body,
     fontSize: 15,
     lineHeight: 22,
-    letterSpacing: 1.2,
     textAlign: 'center',
-    marginTop: 12,
+    marginTop: 14,
+    maxWidth: 420,
   },
   heroTaglineDesktop: {
-    fontSize: 21,
-    lineHeight: 30,
-    marginTop: 20,
-    maxWidth: 700,
+    fontSize: 19,
+    lineHeight: 28,
+    marginTop: 22,
+    maxWidth: 640,
   },
   heroTaglineLargeDesktop: {
-    fontSize: 24,
-    lineHeight: 34,
-    marginTop: 24,
+    fontSize: 22,
+    lineHeight: 32,
   },
-  // Passthrough on mobile — sections keep their own paddingHorizontal.
-  // On desktop this becomes the centered ~1100px reading column, and the
-  // sections inside drop their own horizontal padding in favor of this one.
-  contentContainer: {},
+  heroGoldLine: {
+    color: colors.goldBright,
+    fontFamily: fonts.bodySemiBold,
+    fontStyle: 'italic',
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  heroGoldLineDesktop: {
+    fontSize: 19,
+    lineHeight: 28,
+    marginTop: 14,
+  },
+  videoBandWrapDesktop: {
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: DESKTOP_CONTENT_WIDTH,
+    paddingHorizontal: 40,
+  },
+  contentContainer: {
+    paddingHorizontal: 20,
+  },
   contentContainerDesktop: {
     alignSelf: 'center',
     width: '100%',
     maxWidth: DESKTOP_CONTENT_WIDTH,
     paddingHorizontal: 40,
-  },
-  section: {
-    paddingHorizontal: 20,
-    marginTop: 26,
-  },
-  sectionDesktop: {
-    paddingHorizontal: 0,
-    marginTop: 56,
-  },
-  sectionHeading: {
-    color: colors.text,
-    fontFamily: fonts.headline,
-    fontSize: 24,
-    letterSpacing: 0.5,
-    marginBottom: 10,
-  },
-  sectionHeadingDesktop: {
-    fontSize: 34,
-    marginBottom: 16,
-  },
-  sectionBody: {
-    color: colors.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 21,
-    marginBottom: 16,
-  },
-  sectionBodyDesktop: {
-    fontSize: 17,
-    lineHeight: 26,
-    maxWidth: 760,
-    marginBottom: 24,
-  },
-  locationCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: colors.greenDeep,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 24,
-    marginHorizontal: 20,
-  },
-  locationCardDesktop: {
-    marginTop: 32,
-    marginHorizontal: 0,
-  },
-  locationName: {
-    color: colors.white,
-    fontFamily: fonts.bodyBold,
-    fontSize: 15,
-  },
-  locationText: {
-    color: 'rgba(255,255,255,0.75)',
-    fontFamily: fonts.body,
-    fontSize: 13,
-    marginTop: 2,
-  },
-  insideRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-    marginBottom: 18,
-  },
-  // 3-across grid on desktop, wrapping to a 2nd row for the 5th card. Each
-  // card grows evenly to fill its row instead of hugging a fixed width.
-  insideGridDesktop: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 28,
-  },
-  insideCardDesktop: {
-    flexGrow: 1,
-    flexBasis: 280,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-  },
-  insideIconTile: {
-    width: 46,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: colors.green,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  insideIconTileDesktop: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-  },
-  insideTitle: {
-    color: colors.text,
-    fontFamily: fonts.bodyBold,
-    fontSize: 15,
-    letterSpacing: 0.3,
-    marginBottom: 3,
-  },
-  insideTitleDesktop: {
-    fontSize: 17,
-    marginBottom: 5,
-  },
-  insideText: {
-    color: colors.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 19,
-  },
-  insideTextDesktop: {
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  docBand: {
-    backgroundColor: colors.green,
-    paddingVertical: 32,
-    marginTop: 30,
-  },
-  docBandInner: {
-    paddingHorizontal: 24,
-  },
-  docBandInnerDesktop: {
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: DESKTOP_CONTENT_WIDTH,
-    paddingHorizontal: 40,
-    alignItems: 'center',
-  },
-  docBandHeading: {
-    color: colors.goldBright,
-    fontFamily: fonts.labelBold,
-    fontSize: 13,
-    letterSpacing: 2,
-    marginBottom: 10,
-  },
-  docBandText: {
-    color: colors.white,
-    fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  docBandTextDesktop: {
-    fontSize: 18,
-    lineHeight: 27,
-    maxWidth: 760,
-    textAlign: 'center',
-  },
-  doorsSection: {
-    paddingHorizontal: 20,
-    marginTop: 30,
-  },
-  doorsSectionDesktop: {
-    paddingHorizontal: 0,
-    marginTop: 56,
   },
   doorsRowDesktop: {
     flexDirection: 'row',
@@ -542,27 +504,69 @@ const styles = StyleSheet.create({
   },
   doorCard: {
     backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: 14,
-    overflow: 'hidden',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 24,
   },
   doorCardDesktop: {
     flex: 1,
+    marginTop: 40,
   },
-  doorBanner: {
-    backgroundColor: colors.gold,
-    paddingVertical: 8,
-    alignItems: 'center',
+  doorTitle: {
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 26,
+    letterSpacing: 0.5,
+    textAlign: 'center',
   },
-  doorBannerText: {
+  doorTitleDesktop: {
+    fontSize: 32,
+  },
+  doorSubtitle: {
+    color: colors.textMuted,
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 1,
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  doorPill: {
+    alignSelf: 'center',
+    backgroundColor: colors.goldBright,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginBottom: 16,
+  },
+  doorPillText: {
     color: colors.greenDeep,
     fontFamily: fonts.labelBold,
-    fontSize: 13,
-    letterSpacing: 1.5,
+    fontSize: 12,
+    letterSpacing: 1.2,
   },
-  doorBody: {
-    padding: 20,
+  bulletList: {
+    marginBottom: 18,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 10,
+  },
+  bulletDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.gold,
+    marginTop: 7,
+  },
+  bulletText: {
+    flex: 1,
+    color: colors.text,
+    fontFamily: fonts.body,
+    fontSize: 15,
+    lineHeight: 21,
   },
   doorPriceRow: {
     flexDirection: 'row',
@@ -581,17 +585,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textMuted,
   },
-  // Deliberately smaller/quieter than doorFoundingPrice so the real ($37)
-  // price wins the eye — same struck-price treatment as the Memberships
-  // screen's founding card, so both surfaces match.
   doorStruckPrice: {
     color: colors.textMuted,
     fontFamily: fonts.bodyMedium,
     fontSize: 16,
     textDecorationLine: 'line-through',
   },
-  // The loudest supporting element on the founding door: gold, Barlow
-  // Condensed caps, counting spots DOWN (never claimed-up).
   doorSpotsLeftLine: {
     color: colors.gold,
     fontFamily: fonts.labelBold,
@@ -606,9 +605,6 @@ const styles = StyleSheet.create({
     marginTop: 3,
     marginBottom: 12,
   },
-  // Plain sentence, not a boxed banner — the gold top strip already says
-  // FOUNDING 50 RATE once; repeating it in a second gold box read as
-  // stutter, so this is just the rate sentence on its own line.
   doorFoundingRateSentence: {
     color: colors.text,
     fontFamily: fonts.bodySemiBold,
@@ -623,33 +619,10 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginBottom: 14,
   },
-  doorTitle: {
-    color: colors.text,
-    fontFamily: fonts.headline,
-    fontSize: 24,
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  doorTitleDesktop: {
-    fontSize: 30,
-    marginBottom: 10,
-  },
-  doorText: {
-    color: colors.textMuted,
-    fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 19,
-    marginBottom: 16,
-  },
-  doorTextDesktop: {
-    fontSize: 16,
-    lineHeight: 22,
-    marginBottom: 20,
-  },
   doorButton: {
-    backgroundColor: colors.green,
+    backgroundColor: colors.greenDeep,
     borderRadius: 10,
-    paddingVertical: 14,
+    paddingVertical: 15,
     alignItems: 'center',
   },
   doorButtonText: {
@@ -658,28 +631,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 1,
   },
-  inviteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+  doorButtonOutline: {
     borderWidth: 1.5,
     borderColor: colors.green,
     borderRadius: 10,
-    paddingVertical: 14,
-    marginTop: 16,
+    paddingVertical: 15,
+    alignItems: 'center',
   },
-  // Centered below the location card instead of sandwiched between the doors.
-  inviteButtonDesktop: {
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: 400,
-    marginTop: 20,
-  },
-  inviteButtonText: {
+  doorButtonOutlineText: {
     color: colors.green,
     fontFamily: fonts.labelBold,
-    fontSize: 13,
+    fontSize: 14,
     letterSpacing: 1,
   },
   signInRow: {
@@ -687,36 +649,105 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   signInText: {
+    color: colors.white,
+    fontFamily: fonts.body,
+    fontSize: 14,
+  },
+  signInLink: {
+    color: colors.goldBright,
+    fontFamily: fonts.bodyBold,
+    textDecorationLine: 'underline',
+  },
+  crewHeading: {
+    color: colors.white,
+    fontFamily: fonts.headline,
+    fontSize: 26,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    marginTop: 40,
+    marginBottom: 20,
+  },
+  faqHeading: {
+    color: colors.white,
+    fontFamily: fonts.headline,
+    fontSize: 26,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    marginTop: 44,
+    marginBottom: 18,
+  },
+  whosDocRow: {
+    alignItems: 'center',
+    marginTop: 36,
+  },
+  whosDocRowDesktop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 32,
+    justifyContent: 'center',
+  },
+  whosDocTextWrap: {
+    marginTop: 16,
+    maxWidth: 520,
+  },
+  docBandHeading: {
+    color: colors.goldBright,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 2,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  docBandText: {
+    color: colors.white,
+    fontFamily: fonts.body,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  locationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 28,
+  },
+  locationName: {
+    color: colors.text,
+    fontFamily: fonts.bodyBold,
+    fontSize: 15,
+  },
+  locationText: {
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 13,
+    marginTop: 2,
   },
-  signInLink: {
-    color: colors.green,
-    fontFamily: fonts.bodySemiBold,
-    textDecorationLine: 'underline',
-  },
-  // The upper instance, right under the doors — heavier and a touch larger
-  // than the quiet footer version so it reads clearly to a returning member
-  // without competing with the two green door buttons above it.
-  signInRowProminent: {
+  inviteButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 20,
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.5)',
+    borderRadius: 10,
+    paddingVertical: 14,
+    marginTop: 16,
   },
-  signInRowProminentDesktop: {
-    marginTop: 28,
+  inviteButtonText: {
+    color: colors.white,
+    fontFamily: fonts.labelBold,
+    fontSize: 13,
+    letterSpacing: 1,
   },
-  signInTextProminent: {
-    color: colors.text,
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 15,
-  },
-  signInTextProminentDesktop: {
-    fontSize: 16,
-  },
-  signInLinkProminent: {
-    color: colors.green,
-    fontFamily: fonts.bodyBold,
-    textDecorationLine: 'underline',
+  footerLine: {
+    color: 'rgba(255,255,255,0.55)',
+    fontFamily: fonts.labelSemiBold,
+    fontSize: 12,
+    letterSpacing: 1.5,
+    textAlign: 'center',
+    marginTop: 36,
   },
 });
