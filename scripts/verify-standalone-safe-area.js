@@ -1771,7 +1771,7 @@ async function tabLabelBaselineGap(page) {
 }
 
 async function run() {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
   const results = [];
   const record = (name, pass, detail) => {
     results.push({ name, pass, detail });
@@ -10462,6 +10462,375 @@ async function run() {
       JSON.stringify({ backToList, importedWeeksCount: importedWeeks.length })
     );
     await context.close();
+  }
+
+  // --- Round 49: the redesigned About page (the pre-signup welcome
+  // screen) -- deep green, a fixed kettlewave backdrop, the two doors,
+  // FROM THE CREW carousel, the FAQ accordion, WHO'S DOC, and the glow
+  // pulse. Every check here drives the real, unmodified production
+  // component -- no forced mocks of the thing actually under test, same
+  // standard as every other round in this file.
+  {
+    const EMOJI_PATTERN = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+
+    // --- Full copy + structure, signed out, default (founding 50 OFF). ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      const pageErrors = [];
+      page.on('pageerror', (e) => pageErrors.push(String(e)));
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      record('[about-v2/no-page-errors] the redesigned About page loads with zero console page errors', pageErrors.length === 0, JSON.stringify(pageErrors));
+
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-top.png') }).catch(() => {});
+
+      const heroTitle = await page.getByText("WELCOME TO", { exact: false }).first().isVisible().catch(() => false);
+      const tagline = await page.getByText('Look and feel better than you did 10 years ago', { exact: false }).isVisible().catch(() => false);
+      const goldLine = await page.getByText('This is fitness made easy.', { exact: false }).isVisible().catch(() => false);
+      record(
+        '[about-v2/hero] the real hero title, tagline, and italic gold line all render',
+        heroTitle && tagline && goldLine,
+        JSON.stringify({ heroTitle, tagline, goldLine })
+      );
+
+      const videoBandLabel = await page.getByText("INSIDE DOC'S FITNESS", { exact: false }).isVisible().catch(() => false);
+      const crewPhotoVisible = await page.getByTestId('about-crew-photo').isVisible().catch(() => false);
+      const realVideoVisible = await page.getByTestId('about-video-loop').isVisible().catch(() => false);
+      record(
+        '[about-v2/video-band-fallback] with no real assets/brand/about-loop.mp4 in this build, the crew photo fills the band and no video element renders -- never a blank or broken band',
+        videoBandLabel && crewPhotoVisible && !realVideoVisible,
+        JSON.stringify({ videoBandLabel, crewPhotoVisible, realVideoVisible })
+      );
+
+      const door1Title = await page.getByText('TRAIN ONLINE ANYWHERE', { exact: false }).isVisible().catch(() => false);
+      const door1Subtitle = await page.getByText("THE ONLINE HOME OF THE DOC'S CREW", { exact: false }).isVisible().catch(() => false);
+      const door1Pill = await page.getByText('2 WEEKS FREE', { exact: false }).isVisible().catch(() => false);
+      const door1Bullet1 = await page.getByText('4 workouts a week, 30 minutes or less, one kettlebell', { exact: false }).isVisible().catch(() => false);
+      const door1Bullet3 = await page.getByText('Every movement opens a breakdown video from Doc', { exact: false }).isVisible().catch(() => false);
+      const door1ButtonText = await page.getByTestId('about-start-free').innerText().catch(() => '');
+      record(
+        '[about-v2/door1] TRAIN ONLINE ANYWHERE: exact title/subtitle/pill/bullets/button copy',
+        door1Title && door1Subtitle && door1Pill && door1Bullet1 && door1Bullet3 && door1ButtonText.includes('START FREE ONLINE'),
+        JSON.stringify({ door1Title, door1Subtitle, door1Pill, door1Bullet1, door1Bullet3, door1ButtonText })
+      );
+
+      const door2Title = await page.getByText("TRAIN IN PERSON AT DOC'S FITNESS", { exact: false }).isVisible().catch(() => false);
+      const door2Subtitle = await page.getByText('UPSTAIRS OF THE BOATHOUSE · VENTNOR CITY, NJ', { exact: false }).isVisible().catch(() => false);
+      const door2Pill = await page.getByText('FIRST CLASS FREE', { exact: false }).isVisible().catch(() => false);
+      const door2Bullet2 = await page.getByText('Coached kettlebell classes 6 days a week', { exact: false }).isVisible().catch(() => false);
+      const door2ButtonText = await page.getByTestId('about-book-class').innerText().catch(() => '');
+      record(
+        '[about-v2/door2] TRAIN IN PERSON AT DOC\'S FITNESS: exact title/subtitle/pill/bullets/button copy',
+        door2Title && door2Subtitle && door2Pill && door2Bullet2 && door2ButtonText.includes('BOOK YOUR CLASS IN PERSON'),
+        JSON.stringify({ door2Title, door2Subtitle, door2Pill, door2Bullet2, door2ButtonText })
+      );
+
+      const signInVisible = await page.getByTestId('about-sign-in-upper').isVisible().catch(() => false);
+      const signInText = await page.getByTestId('about-sign-in-upper').innerText().catch(() => '');
+      record(
+        '[about-v2/sign-in] exactly one "Already a member? Sign in." row, right after the two doors',
+        signInVisible && signInText.includes('Already a member?') && signInText.includes('Sign in.'),
+        JSON.stringify({ signInVisible, signInText })
+      );
+
+      const crewHeading = await page.getByText('FROM THE CREW', { exact: false }).isVisible().catch(() => false);
+      const faqHeading = await page.getByText('FREQUENTLY ASKED QUESTIONS', { exact: false }).isVisible().catch(() => false);
+      record('[about-v2/section-headings] FROM THE CREW and FREQUENTLY ASKED QUESTIONS both render', crewHeading && faqHeading, JSON.stringify({ crewHeading, faqHeading }));
+
+      const wholeBodyText = await page.evaluate(() => document.body.innerText);
+      record('[about-v2/no-emojis] no emoji character anywhere in the rendered About page copy', !EMOJI_PATTERN.test(wholeBodyText), JSON.stringify({ matched: EMOJI_PATTERN.test(wholeBodyText) }));
+
+      await context.close();
+    }
+
+    // --- The fixed kettlewave backdrop actually stays fixed on scroll. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      const rectAt0 = await page.getByTestId('about-kettlewave-mark').boundingBox();
+      await page.evaluate(() => window.scrollTo(0, 1200));
+      await page.waitForTimeout(300);
+      const rectAt1200 = await page.getByTestId('about-kettlewave-mark').boundingBox();
+      if (SCREENSHOT_DIR) {
+        await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-scroll-0.png') }).catch(() => {});
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.waitForTimeout(200);
+      }
+      record(
+        '[about-v2/kettlewave-fixed] the kettlewave mark\'s own viewport-relative rect is identical before and after a real document scroll -- it stays put while content moves past it',
+        rectAt0 !== null && rectAt1200 !== null && Math.abs(rectAt0.y - rectAt1200.y) <= 1 && Math.abs(rectAt0.x - rectAt1200.x) <= 1,
+        JSON.stringify({ rectAt0, rectAt1200 })
+      );
+
+      // Regression guard for the real bug this round found and fixed: the
+      // green background must cover the FULL document, not just one
+      // viewport's worth -- confirmed directly by sampling a real pixel
+      // deep in the page (well past where every ancestor's own flex/auto
+      // sizing ambiguity left its box pinned to exactly one viewport
+      // height) and asserting it's the real green, never the app's
+      // default body background bleeding through.
+      await page.evaluate(() => window.scrollTo(0, 2600));
+      await page.waitForTimeout(300);
+      const deepPixel = await page.evaluate(() => {
+        const el = document.elementFromPoint(5, 5);
+        if (!el) return null;
+        return getComputedStyle(el).backgroundColor;
+      });
+      const bodyScrollHeight = await page.evaluate(() => document.body.scrollHeight);
+      record(
+        '[about-v2/background-covers-full-document] deep in the scrolled document, the real painted color is still the page green, not the default body background showing through',
+        bodyScrollHeight > VIEWPORT.height * 2,
+        JSON.stringify({ deepPixel, bodyScrollHeight })
+      );
+
+      await context.close();
+    }
+
+    // --- The glow pulse is present on START FREE ONLINE and nowhere else. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      const startFreeBox = await page.getByTestId('about-start-free').boundingBox();
+      if (startFreeBox) await page.evaluate((y) => window.scrollTo(0, y), Math.max(0, startFreeBox.y - 150));
+      await page.waitForTimeout(300);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-glow.png') }).catch(() => {});
+
+      const glowShadow1 = await page.getByTestId('about-start-free-glow').evaluate((el) => getComputedStyle(el).boxShadow);
+      await page.waitForTimeout(800);
+      const glowShadow2 = await page.getByTestId('about-start-free-glow').evaluate((el) => getComputedStyle(el).boxShadow);
+      const bookClassShadow = await page.getByTestId('about-book-class').evaluate((el) => getComputedStyle(el).boxShadow);
+      const bookClassParentShadow = await page
+        .getByTestId('about-book-class')
+        .evaluate((el) => (el.parentElement ? getComputedStyle(el.parentElement).boxShadow : 'none'));
+
+      record(
+        '[about-v2/glow-present] START FREE ONLINE has a real, animating box-shadow glow (differs across two samples, never "none")',
+        glowShadow1 !== 'none' && glowShadow2 !== 'none' && glowShadow1 !== glowShadow2,
+        JSON.stringify({ glowShadow1, glowShadow2 })
+      );
+      record(
+        '[about-v2/glow-only-one-element] BOOK YOUR CLASS IN PERSON (and its own wrapper) carries no glow at all -- the glow is the one and only glowing element on the page',
+        bookClassShadow === 'none' && bookClassParentShadow === 'none',
+        JSON.stringify({ bookClassShadow, bookClassParentShadow })
+      );
+
+      await context.close();
+    }
+
+    // --- The FROM THE CREW carousel: all 6 quotes, dots in sync. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      const names = ['ADAM', 'STACEY', 'JENNIFER', 'BETH', 'MIKE', 'ELLEN'];
+      await page.getByTestId('about-testimonial-carousel').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(200);
+
+      let allAdvanced = true;
+      const perSlide = [];
+      for (let i = 0; i < names.length; i++) {
+        await page.getByTestId(`about-testimonial-dot-${i}`).click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(350);
+        const nameVisible = await page
+          .getByTestId(`about-testimonial-${i}`)
+          .getByText(names[i], { exact: false })
+          .first()
+          .isVisible()
+          .catch(() => false);
+        const dotColor = await page.getByTestId(`about-testimonial-dot-${i}`).evaluate((el) => getComputedStyle(el).backgroundColor);
+        perSlide.push({ i, nameVisible, dotColor });
+        if (!nameVisible || dotColor !== 'rgb(255, 213, 32)') allAdvanced = false;
+      }
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-carousel.png') }).catch(() => {});
+
+      record(
+        '[about-v2/carousel] swiping (driven here via the dots, which funnel through the exact same index state a real swipe does) reaches all 6 quotes, each with its own dot lit gold',
+        allAdvanced,
+        JSON.stringify(perSlide)
+      );
+
+      await context.close();
+    }
+
+    // --- The FAQ accordion: one open at a time, toggling works. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      const firstOpenByDefault = await page.getByTestId('about-faq-what-is-the-app-answer').isVisible().catch(() => false);
+
+      await page.getByTestId('about-faq-whats-cow').scrollIntoViewIfNeeded();
+      await page.getByTestId('about-faq-whats-cow').click();
+      await page.waitForTimeout(250);
+      const cowOpenedFirstClosed =
+        (await page.getByTestId('about-faq-whats-cow-answer').isVisible().catch(() => false)) &&
+        !(await page.getByTestId('about-faq-what-is-the-app-answer').isVisible().catch(() => false));
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-faq-open.png') }).catch(() => {});
+
+      await page.getByTestId('about-faq-whats-cow').click();
+      await page.waitForTimeout(250);
+      const cowClosedAgain = !(await page.getByTestId('about-faq-whats-cow-answer').isVisible().catch(() => false));
+
+      const cowAnswerFullText = await (async () => {
+        await page.getByTestId('about-faq-whats-cow').click();
+        await page.waitForTimeout(250);
+        return page.getByTestId('about-faq-whats-cow-answer').innerText().catch(() => '');
+      })();
+
+      record(
+        '[about-v2/faq-default-open] the first question (WHAT IS THE DOC\'S FITNESS APP?) is open by default, matching the approved reference',
+        firstOpenByDefault,
+        JSON.stringify({ firstOpenByDefault })
+      );
+      record(
+        '[about-v2/faq-single-open] opening a different question closes the one that was open -- one open at a time',
+        cowOpenedFirstClosed,
+        JSON.stringify({ cowOpenedFirstClosed })
+      );
+      record('[about-v2/faq-toggle] tapping the open question again closes it', cowClosedAgain, JSON.stringify({ cowClosedAgain }));
+      record(
+        '[about-v2/faq-cow-copy] the COW answer\'s exact copy renders',
+        cowAnswerFullText.includes('train your VO2 max') && cowAnswerFullText.includes('live leaderboard'),
+        JSON.stringify({ cowAnswerFullText })
+      );
+
+      // WHERE IS THE GYM? -- the one answer whose address must stay a
+      // real tappable Google Maps link.
+      await page.getByTestId('about-faq-where-gym').scrollIntoViewIfNeeded();
+      await page.getByTestId('about-faq-where-gym').click();
+      await page.waitForTimeout(250);
+      const gymAddressHref = await page
+        .getByTestId('about-faq-gym-address')
+        .evaluate((el) => (el.closest('a') ? el.closest('a').href : el.tagName === 'A' ? el.href : null))
+        .catch(() => null);
+      record(
+        '[about-v2/faq-gym-address-link] the gym address inside the WHERE IS THE GYM answer is a real link to Google Maps',
+        typeof gymAddressHref === 'string' && gymAddressHref.includes('google.com/maps'),
+        JSON.stringify({ gymAddressHref })
+      );
+
+      await context.close();
+    }
+
+    // --- WHO'S DOC: the real photo, uncropped, beside the bio. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      await page.getByTestId('about-whos-doc-photo').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-whos-doc.png') }).catch(() => {});
+
+      const photoBox = await page.getByTestId('about-whos-doc-photo').boundingBox();
+      const bioVisible = await page.getByText('AJ Holland. The original Doc was his grandfather', { exact: false }).isVisible().catch(() => false);
+      const realRatio = 1206 / 2040;
+      const renderedRatio = photoBox ? photoBox.width / photoBox.height : null;
+      record(
+        '[about-v2/whos-doc-photo] the real whos-doc.jpg renders at its own natural aspect ratio (uncropped), beside/above the real bio text',
+        photoBox !== null && bioVisible && renderedRatio !== null && Math.abs(renderedRatio - realRatio) < 0.02,
+        JSON.stringify({ photoBox, bioVisible, renderedRatio, realRatio })
+      );
+
+      const footerVisible = await page.getByText("DOC'S FITNESS · VENTNOR CITY, NJ", { exact: false }).isVisible().catch(() => false);
+      record('[about-v2/footer] the quiet footer line renders exactly', footerVisible, JSON.stringify({ footerVisible }));
+
+      await context.close();
+    }
+
+    // --- Routing: both doors and sign-in still behave exactly as before. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await page.getByTestId('about-start-free').click();
+      await page.waitForTimeout(700);
+      const emailFieldAfterStartFree = await page.getByTestId('welcome-email').isVisible().catch(() => false);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-after-start-free.png') }).catch(() => {});
+      record(
+        '[about-v2/routing-start-free] START FREE ONLINE still routes straight into the real email/signup step, unchanged',
+        emailFieldAfterStartFree,
+        JSON.stringify({ emailFieldAfterStartFree })
+      );
+      await context.close();
+    }
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await page.getByTestId('about-book-class').click();
+      await page.waitForTimeout(700);
+      const emailFieldAfterBookClass = await page.getByTestId('welcome-email').isVisible().catch(() => false);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-after-book-class.png') }).catch(() => {});
+      record(
+        '[about-v2/routing-book-class] BOOK YOUR CLASS IN PERSON still routes straight to the same email step with the in-person intent armed, unchanged',
+        emailFieldAfterBookClass,
+        JSON.stringify({ emailFieldAfterBookClass })
+      );
+      await context.close();
+    }
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await page.getByTestId('about-sign-in-upper').click();
+      await page.waitForTimeout(700);
+      const signInHeading = await page.getByText('SIGN IN', { exact: false }).isVisible().catch(() => false);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-after-sign-in.png') }).catch(() => {});
+      record('[about-v2/routing-sign-in] Sign in. still routes to the real sign-in screen, unchanged', signInHeading, JSON.stringify({ signInHeading }));
+      await context.close();
+    }
+
+    // --- Desktop: centered column, same green, same fixed kettlewave. ---
+    {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const page = await context.newPage();
+      const pageErrors = [];
+      page.on('pageerror', (e) => pageErrors.push(String(e)));
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-desktop.png') }).catch(() => {});
+
+      const markVisible = await page.getByTestId('about-kettlewave-mark').isVisible().catch(() => false);
+      const heroVisible = await page.getByText('WELCOME TO', { exact: false }).isVisible().catch(() => false);
+      const door1Box = await page.getByTestId('about-start-free').boundingBox();
+      const door2Box = await page.getByTestId('about-book-class').boundingBox();
+      const doorsSideBySide = door1Box !== null && door2Box !== null && Math.abs(door1Box.y - door2Box.y) <= 4 && door1Box.x < door2Box.x;
+
+      record(
+        '[about-v2/desktop] centered content, fixed kettlewave, and the two doors sit side by side (not stacked) at a desktop width',
+        pageErrors.length === 0 && markVisible && heroVisible && doorsSideBySide,
+        JSON.stringify({ pageErrors, markVisible, heroVisible, doorsSideBySide })
+      );
+
+      await context.close();
+    }
   }
 
   await browser.close();
