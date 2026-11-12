@@ -11151,14 +11151,42 @@ async function run() {
 
       const markVisible = await page.getByTestId('about-kettlewave-mark').isVisible().catch(() => false);
       const heroVisible = await page.getByText('WELCOME TO', { exact: false }).isVisible().catch(() => false);
-      const door1Box = await page.getByTestId('about-start-free').boundingBox();
-      const door2Box = await page.getByTestId('about-book-class').boundingBox();
-      const doorsSideBySide = door1Box !== null && door2Box !== null && Math.abs(door1Box.y - door2Box.y) <= 4 && door1Box.x < door2Box.x;
+      // Round 52 follow-up: measure the two door CARD containers themselves,
+      // not a button inside them. The prior version compared
+      // about-start-free/about-book-class's own boundingBox y -- a proxy
+      // that broke the moment door2's bullet text (this round's own one-word
+      // "membership" addition) wrapped onto an extra line at this viewport
+      // width: the button sits further down WITHIN its own (correctly
+      // equal-height, genuinely side-by-side) card the more content comes
+      // before it, which has nothing to do with whether the cards themselves
+      // are side by side. Confirmed directly before fixing this check: the
+      // two real card containers (white background, 16px radius -- the same
+      // DOM query [about-v2/video-band-framed] already uses to find a door
+      // card) sit at the identical y and the identical height, genuinely
+      // side by side, even while the two buttons inside them differ in y by
+      // 21px -- so the card-container comparison is the one that actually
+      // answers "are the doors side by side," immune to a bullet's own
+      // wrapped line count on either side.
+      const doorCards = await page.evaluate(() => {
+        const els = Array.from(document.querySelectorAll('div')).filter((el) => {
+          const cs = getComputedStyle(el);
+          return cs.borderRadius === '16px' && cs.backgroundColor === 'rgb(255, 255, 255)';
+        });
+        return els.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { x: r.x, y: r.y, width: r.width, height: r.height };
+        });
+      });
+      const [door1Card, door2Card] = doorCards;
+      const doorsSideBySide =
+        doorCards.length === 2 &&
+        Math.abs(door1Card.y - door2Card.y) <= 4 &&
+        door1Card.x < door2Card.x;
 
       record(
         '[about-v2/desktop] centered content, fixed kettlewave, and the two doors sit side by side (not stacked) at a desktop width',
         pageErrors.length === 0 && markVisible && heroVisible && doorsSideBySide,
-        JSON.stringify({ pageErrors, markVisible, heroVisible, doorsSideBySide })
+        JSON.stringify({ pageErrors, markVisible, heroVisible, doorCards, doorsSideBySide })
       );
 
       await context.close();

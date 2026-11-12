@@ -132,7 +132,7 @@ const DOOR1_BULLETS = [
 const DOOR2_BULLETS = [
   'Book any class right in the app',
   'Coached kettlebell classes 6 days a week',
-  'Full access to everything in this app with Monthly Unlimited',
+  'Full access to everything in this app with Monthly Unlimited membership',
 ];
 
 type Props = {
