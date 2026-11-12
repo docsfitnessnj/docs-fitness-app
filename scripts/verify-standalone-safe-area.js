@@ -10920,13 +10920,167 @@ async function run() {
       const realRatio = 1206 / 2040;
       const renderedRatio = photoBox ? photoBox.width / photoBox.height : null;
       record(
-        '[about-v2/whos-doc-photo] the real whos-doc.jpg renders at its own natural aspect ratio (uncropped), beside/above the real bio text',
+        '[about-v2/whos-doc-photo] the real whos-doc.jpg renders at its own natural aspect ratio (uncropped), beside/above the real bio text -- unmodified by Round 52\'s own framing (a border sits outside this same exact box, not a crop of it)',
         photoBox !== null && bioVisible && renderedRatio !== null && Math.abs(renderedRatio - realRatio) < 0.02,
         JSON.stringify({ photoBox, bioVisible, renderedRatio, realRatio })
       );
 
+      // Round 52, item 2: rounded corners (the same radius family the door
+      // cards/video band use) plus a real, visible translucent white
+      // hairline -- read off the real computed style, not assumed from the
+      // source.
+      const photoFrame = await page
+        .getByTestId('about-whos-doc-photo')
+        .evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return { borderRadius: cs.borderRadius, borderWidth: cs.borderWidth, borderColor: cs.borderColor };
+        })
+        .catch(() => null);
+      record(
+        '[about-v2/whos-doc-photo-frame] the photo has a real 16px rounded corner and a translucent white hairline border',
+        photoFrame !== null &&
+          photoFrame.borderRadius === '16px' &&
+          parseFloat(photoFrame.borderWidth) >= 1 &&
+          photoFrame.borderColor.replace(/\s/g, '') === 'rgba(255,255,255,0.18)',
+        JSON.stringify({ photoFrame })
+      );
+
       const footerVisible = await page.getByText("DOC'S FITNESS · VENTNOR CITY, NJ", { exact: false }).isVisible().catch(() => false);
       record('[about-v2/footer] the quiet footer line renders exactly', footerVisible, JSON.stringify({ footerVisible }));
+
+      await context.close();
+    }
+
+    // --- Round 52, item 1: the crew photo band's own container is framed
+    // to match the door cards -- same side margins, same radius family.
+    // Applied to the band's CONTAINER (not the photo/video element), so the
+    // real about-loop.mp4 video inherits this automatically once it lands,
+    // with zero further code change -- see AboutVideoBand.tsx's own drop-in
+    // comment, untouched by this round. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      const bandInfo = await page
+        .getByTestId('about-video-band')
+        .evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          return { left: r.left, right: r.right, borderRadius: cs.borderRadius };
+        })
+        .catch(() => null);
+
+      // The door card's own real rendered rect -- read directly rather
+      // than hardcoding its margin value a second time, so this check can
+      // never silently drift out of sync with whatever AboutScreen.tsx's
+      // own contentContainer padding actually is.
+      const doorCardInfo = await page.evaluate(() => {
+        const candidates = Array.from(document.querySelectorAll('div')).filter((el) => {
+          const cs = getComputedStyle(el);
+          return cs.borderRadius === '16px' && cs.backgroundColor === 'rgb(255, 255, 255)';
+        });
+        if (!candidates.length) return null;
+        const r = candidates[0].getBoundingClientRect();
+        return { left: r.left, right: r.right };
+      });
+
+      if (SCREENSHOT_DIR) {
+        await page.getByTestId('about-video-band').screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-video-band-framed.png') }).catch(() => {});
+      }
+
+      record(
+        '[about-v2/video-band-framed] the crew photo band\'s own container has real, nonzero side margins and the door cards\' own 16px radius family, with its left/right edges matching the door card\'s own exactly',
+        bandInfo !== null &&
+          doorCardInfo !== null &&
+          bandInfo.left > 0 &&
+          bandInfo.right < VIEWPORT.width &&
+          bandInfo.borderRadius === '16px' &&
+          Math.abs(bandInfo.left - doorCardInfo.left) <= 1 &&
+          Math.abs(bandInfo.right - doorCardInfo.right) <= 1,
+        JSON.stringify({ bandInfo, doorCardInfo, viewportWidth: VIEWPORT.width })
+      );
+
+      await context.close();
+    }
+
+    // --- Round 52, item 4: the footer gets a real base gap below it, which
+    // the real home-indicator inset stacks ON TOP of rather than eating. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      const paddingBeforeInset = await page
+        .evaluate(() => getComputedStyle(document.getElementById('about-footer')).paddingBottom)
+        .catch(() => null);
+
+      await page.addStyleTag({ content: FORCE_INSET_CSS });
+      await page.waitForTimeout(300);
+      const paddingAfterInset = await page
+        .evaluate(() => getComputedStyle(document.getElementById('about-footer')).paddingBottom)
+        .catch(() => null);
+
+      record(
+        '[about-v2/footer-breathing-room] the footer\'s own bottom gap is a real base value (36-48px) in ordinary browser chrome, and the real forced safe-area-bottom inset stacks exactly on top of it rather than replacing or competing with it',
+        paddingBeforeInset !== null &&
+          parseFloat(paddingBeforeInset) >= 36 &&
+          parseFloat(paddingBeforeInset) <= 48 &&
+          paddingAfterInset !== null &&
+          Math.abs(parseFloat(paddingAfterInset) - (parseFloat(paddingBeforeInset) + FORCED_BOTTOM)) <= 1,
+        JSON.stringify({ paddingBeforeInset, paddingAfterInset, FORCED_BOTTOM })
+      );
+
+      await context.close();
+    }
+
+    // --- Round 52, item 3: root cause was a separate flat fill
+    // (SafeAreaTopFill, colors.greenDeep) painted in normal document flow
+    // directly on top of AboutBackdrop's own fixed sheen, exactly sized to
+    // the real safe-area-top inset -- the backdrop itself already reached
+    // the true viewport top (`top: 0`, confirmed directly before writing
+    // this check); the fix makes that fill transparent, so the sheen's own
+    // already-bright top shows through unobstructed. Forcing a real inset
+    // (the same technique every other forced-inset check in this file
+    // already uses) and sampling real rendered pixels is the only way to
+    // prove this at rest, since ordinary desktop/headless Chromium never
+    // has a real notch to begin with. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      await page.addStyleTag({ content: FORCE_INSET_CSS });
+      await page.waitForTimeout(300);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(300);
+
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-top-forced-inset.png') }).catch(() => {});
+
+      // Sample the topmost rows -- exactly where the old flat fill used to
+      // paint (0 through the forced 59px inset) -- and assert every one of
+      // them already reads as a real, bright gradient sample, never the
+      // flat #054C3D base the fill used to paint over it.
+      const topRowSamples = [];
+      for (const y of [0, 10, 20, 30, 40, 50, 58]) {
+        topRowSamples.push({ y, px: await samplePagePixel(page, 195, y) });
+      }
+      const anyFlatBase = topRowSamples.some(
+        ({ px }) => Math.abs(px.r - 5) <= 2 && Math.abs(px.g - 76) <= 2 && Math.abs(px.b - 61) <= 2
+      );
+      const allBrighterThanMidGreen = topRowSamples.every(({ px }) => px.g > 102); // #076652's own G channel
+
+      record(
+        '[about-v2/top-band-reaches-sheen] under a forced safe-area-top inset, the topmost rows (where a flat SafeAreaTopFill used to paint) already read as the real bright gradient, never the flat #054C3D base -- no dark band',
+        !anyFlatBase && allBrighterThanMidGreen,
+        JSON.stringify({ topRowSamples })
+      );
 
       await context.close();
     }

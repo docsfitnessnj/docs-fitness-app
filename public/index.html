@@ -1478,6 +1478,18 @@
         min-height: 100vh;
         min-height: 100dvh;
       }
+      /* Round 52: the About page's own footer line needs real room below
+         it, not a flat value the real home-indicator inset can eat into --
+         40px base (AboutScreen.tsx's own former flat 48 scrollContent
+         padding is gone, folded into this one rule instead of stacking a
+         second bottom gap behind it) PLUS the real --real-safe-bottom, so
+         a standalone iPhone's inset stacks on top of the base gap rather
+         than competing with it. 0px (the base alone) in ordinary browser
+         chrome, same additive calc() convention as every other real-inset
+         rule in this file. Scoped to this one screen's own footer. */
+      #about-footer {
+        padding-bottom: calc(40px + var(--real-safe-bottom, 0px)) !important;
+      }
       /* Round 13: in standalone mode, size the shell with 100lvh instead
          of 100dvh -- measured directly via the debug overlay on a real
          installed iPhone: 100lvh read 874px while 100dvh/
