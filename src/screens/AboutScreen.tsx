@@ -191,10 +191,22 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
           literally BE 3000+ px tall. See AboutBackdrop.tsx for why this is
           now ONE clipped wrapper rather than separate fixed layers. */}
       <AboutBackdrop />
-      {/* The whole page sits on deep green now — the top safe-area fill
-          matches it in both variants, instead of the old white/background
-          split (which existed only because the hero used to be white). */}
-      <SafeAreaTopFill backgroundColor={colors.greenDeep} />
+      {/* Round 52: transparent, not colors.greenDeep. Root-caused directly
+          with a real pixel sample under a forced --real-safe-top: the old
+          flat colors.greenDeep fill here painted an OPAQUE box, sized to
+          exactly the real safe-area-top inset, sitting in normal document
+          flow right above the hero -- which visually sits ON TOP OF (not
+          behind) AboutBackdrop's own fixed sheen layer, since that layer is
+          z-index:-1 specifically so real content can render over it. The
+          fixed backdrop itself already reaches the true top edge (`top: 0`,
+          confirmed directly) -- the dark flat band a real device reported
+          was never "the backdrop doesn't reach the status bar," it was this
+          fill's own flat paint sitting in front of a brighter gradient that
+          was already there. This element still needs to occupy the same
+          real-safe-top-tall layout space (so the hero's own badge/title
+          don't render under the status bar) -- only the paint changes, so
+          the sheen's own already-bright top shows through unobstructed. */}
+      <SafeAreaTopFill backgroundColor="transparent" />
       {variant === 'inApp' && onBack && (
         <ModalHeader title="ABOUT DOC'S FITNESS" onBack={onBack} backTestID="close-about" />
       )}
@@ -213,11 +225,27 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
           <Text style={[styles.heroGoldLine, isDesktop && styles.heroGoldLineDesktop]}>This is fitness made easy.</Text>
         </View>
 
-        <View
-          style={isDesktop && styles.videoBandWrapDesktop}
-          onLayout={(e) => setBandWidth(e.nativeEvent.layout.width)}
-        >
-          <AboutVideoBand width={bandWidth} rounded={isDesktop} />
+        {/* Round 52: a designed frame on the band's own CONTAINER, not the
+            photo/video element -- side margins matching the door cards' own
+            horizontal inset (20px mobile, 40px desktop, same as
+            contentContainer below) and the identical 16px radius family.
+            Framing the container means the real assets/brand/about-loop.mp4
+            video (see AboutVideoBand.tsx's own drop-in comment) inherits
+            this treatment automatically once it lands, with zero further
+            code change here. The width measurement is taken on a plain,
+            unpadded `width:'100%'` child placed INSIDE the padded wrapper,
+            not on the padded wrapper itself -- the exact Round 50 fix for
+            the sideways-drift bug (onLayout reports a View's own OUTER
+            border-box width, not its narrower post-padding content width;
+            measuring the padded box directly would have handed the band a
+            width wider than the room its own frame margins actually leave,
+            overflowing past them). */}
+        <View style={isDesktop && styles.videoBandWrapDesktop}>
+          <View style={[styles.videoBandPad, isDesktop && styles.videoBandPadDesktop]}>
+            <View style={{ width: '100%' }} onLayout={(e) => setBandWidth(e.nativeEvent.layout.width)}>
+              <AboutVideoBand width={bandWidth} rounded />
+            </View>
+          </View>
         </View>
 
         <View style={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}>
@@ -326,7 +354,10 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
             <Image
               source={WHOS_DOC_PHOTO}
               resizeMode="contain"
-              style={{ width: whosDocPhotoWidth, height: whosDocPhotoWidth / WHOS_DOC_PHOTO_RATIO }}
+              style={[
+                styles.whosDocPhoto,
+                { width: whosDocPhotoWidth, height: whosDocPhotoWidth / WHOS_DOC_PHOTO_RATIO },
+              ]}
               testID="about-whos-doc-photo"
             />
             <View style={styles.whosDocTextWrap}>
@@ -354,7 +385,18 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
             <Text style={styles.inviteButtonText}>INVITE A FRIEND</Text>
           </Pressable>
 
-          <Text style={styles.footerLine}>DOC'S FITNESS · {LOCATION.city.toUpperCase()}</Text>
+          {/* Round 52: nativeID, not a plain RN style, because the real
+              breathing room this needs (a 40px base PLUS the real home-
+              indicator inset in standalone, so the inset stacks on top of
+              the base gap instead of eating it) is the house's own
+              calc()-var(--real-safe-bottom) convention -- see index.html.
+              scrollContent's own former flat paddingBottom (48, now folded
+              into this one footer-scoped rule instead of stacking a second
+              bottom gap behind it) is removed below so nothing else on the
+              page's own trailing space changes beyond this one line. */}
+          <View nativeID="about-footer">
+            <Text style={styles.footerLine}>DOC'S FITNESS · {LOCATION.city.toUpperCase()}</Text>
+          </View>
         </View>
       </Scroller>
 
@@ -411,9 +453,10 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
   },
-  scrollContent: {
-    paddingBottom: 48,
-  },
+  // Round 52: the flat 48 here is gone -- folded into #about-footer's own
+  // calc(40px + var(--real-safe-bottom, 0px)) rule in index.html instead of
+  // stacking a second, unrelated bottom gap behind it.
+  scrollContent: {},
   hero: {
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -480,6 +523,14 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
     maxWidth: DESKTOP_CONTENT_WIDTH,
+  },
+  // Round 52: the band's own frame margins -- identical values to
+  // contentContainer/contentContainerDesktop below, so the band's left/
+  // right inset always matches the door cards' own.
+  videoBandPad: {
+    paddingHorizontal: 20,
+  },
+  videoBandPadDesktop: {
     paddingHorizontal: 40,
   },
   contentContainer: {
@@ -682,6 +733,17 @@ const styles = StyleSheet.create({
   whosDocTextWrap: {
     marginTop: 16,
     maxWidth: 520,
+  },
+  // Round 52: the same 16px radius family as the door cards/video band,
+  // plus a thin translucent white hairline that reads cleanly against the
+  // deep green backdrop -- the standing "renders uncropped at its real
+  // natural aspect ratio" rule is untouched; the box's own width/height are
+  // still computed from WHOS_DOC_PHOTO_RATIO exactly as before, just with a
+  // border added around that same exact box.
+  whosDocPhoto: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
   },
   docBandHeading: {
     color: colors.goldBright,

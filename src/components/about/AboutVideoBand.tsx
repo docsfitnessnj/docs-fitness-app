@@ -96,8 +96,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.greenDeep,
   },
+  // Round 52: 16, not 14 -- the exact radius AboutScreen.tsx's own door
+  // cards use, so this band reads as one designed card language with the
+  // rest of the page rather than a slightly different rounding.
   rounded: {
-    borderRadius: 14,
+    borderRadius: 16,
   },
   scrim: {
     position: 'absolute',
