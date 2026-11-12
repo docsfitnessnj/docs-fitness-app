@@ -196,6 +196,22 @@ const ASPECT_RATIO_FIXTURE_RATIO = 300 / 200;
 // test against each can't be satisfied by the same wrong number).
 const jpeg = require('jpeg-js');
 const XLSX = require('xlsx');
+const { PNG } = require('pngjs');
+
+// Round 51: samples a real rendered pixel off an actual Playwright
+// screenshot -- needed for the About page's two-layer CSS radial-gradient
+// backdrop, which paints as `background-image` (not a flat
+// `backgroundColor`), so `document.elementFromPoint(...)` + computed style
+// only ever reports whatever TRANSPARENT in-flow element sits on top (if
+// any), never the real composited color a person actually sees. A screenshot
+// decoded with pngjs is the one way to read what Chromium genuinely painted,
+// the identical "real pixels, not a parallel computation" standard this file
+// already applies to canvas-based checks (share-card) via getImageData.
+async function samplePagePixel(page, x, y) {
+  const buffer = await page.screenshot({ clip: { x, y, width: 1, height: 1 } });
+  const png = PNG.sync.read(buffer);
+  return { r: png.data[0], g: png.data[1], b: png.data[2] };
+}
 function buildSolidJpeg(width, height, [r, g, b]) {
   const rgba = Buffer.alloc(width * height * 4);
   for (let i = 0; i < width * height; i++) {
@@ -10598,7 +10614,7 @@ async function run() {
       await context.close();
     }
 
-    // --- Round 50: the radial sheen + both kettlewave marks. ---
+    // --- Round 51: the two-glow sheen, with no kettlewave marks at all. ---
     {
       const context = await browser.newContext({ viewport: VIEWPORT });
       const page = await context.newPage();
@@ -10608,40 +10624,99 @@ async function run() {
 
       const sheenBg = await page.getByTestId('about-kettlewave-mark').evaluate((el) => getComputedStyle(el).backgroundImage);
       record(
-        '[about-v2/sheen-gradient] the fixed backdrop carries a real radial-gradient background-image (the sheen), not a flat color',
-        typeof sheenBg === 'string' && sheenBg.includes('radial-gradient') && sheenBg.includes('rgb(5, 76, 61)'),
+        '[about-v2/sheen-gradient] the fixed backdrop carries the real two-layer radial-gradient (rising bottom glow + top spotlight), not a flat color',
+        typeof sheenBg === 'string' &&
+          (sheenBg.match(/radial-gradient/g) || []).length === 2 &&
+          sheenBg.includes('rgb(5, 76, 61)') && // the top gradient's own last stop, the base color
+          sheenBg.includes('rgba(25, 180, 142') && // the bottom glow's own distinguishing color
+          sheenBg.includes('rgb(27, 186, 147)'), // the top gradient's own brightest (first) stop
         JSON.stringify({ sheenBg })
       );
 
-      // A real pixel sample confirming "never darker than #054C3D anywhere,
-      // no vignette" -- sampled both near the gradient's own light source
-      // (top center) and far from it (bottom corners, where a vignette
-      // would show up as something darker than the base green).
-      const topCenterColor = await page.evaluate(() => {
-        const el = document.elementFromPoint(195, 2);
-        return el ? getComputedStyle(el).backgroundColor : null;
-      });
-      const bottomCornerColor = await page.evaluate(() => {
-        const el = document.elementFromPoint(2, 840);
-        return el ? getComputedStyle(el).backgroundColor : null;
-      });
+      // Round 51 (owner decision, final): both kettlewave background marks
+      // are gone -- confirmed by asserting the opposite of what Round 50's
+      // own check asserted: zero <img> elements anywhere on the page are
+      // sourced from the kettlewave asset, at any opacity. Checked at two
+      // different scroll positions (the marks were themselves fixed, so a
+      // single check would already be sufficient, but this costs nothing
+      // and matches the same before/after-scroll discipline the fixed
+      // backdrop check below already uses).
+      const kettlewaveImgCountAtTop = await page.evaluate(
+        () => Array.from(document.querySelectorAll('img')).filter((img) => (img.src || '').toLowerCase().includes('kettlewave')).length
+      );
+      await page.evaluate(() => window.scrollTo(0, 900));
+      await page.waitForTimeout(300);
+      const kettlewaveImgCountScrolled = await page.evaluate(
+        () => Array.from(document.querySelectorAll('img')).filter((img) => (img.src || '').toLowerCase().includes('kettlewave')).length
+      );
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(300);
       record(
-        '[about-v2/sheen-never-darker-than-base] the bottom corner (farthest from the sheen) never reads darker than the base #054C3D -- no vignette',
-        bottomCornerColor === 'rgba(0, 0, 0, 0)' || bottomCornerColor === 'rgb(5, 76, 61)',
-        JSON.stringify({ topCenterColor, bottomCornerColor })
+        '[about-v2/no-kettlewave-marks] no background kettlebell imagery renders anywhere on the About page, at rest or scrolled',
+        kettlewaveImgCountAtTop === 0 && kettlewaveImgCountScrolled === 0,
+        JSON.stringify({ kettlewaveImgCountAtTop, kettlewaveImgCountScrolled })
       );
 
-      const markTopRight = await page.getByTestId('about-mark-top-right').boundingBox();
-      const markBottomLeft = await page.getByTestId('about-mark-bottom-left').boundingBox();
+      // Real rendered pixels, not computed style -- the backdrop paints as
+      // `background-image`, so `elementFromPoint` + getComputedStyle only
+      // ever reports whatever transparent in-flow element happens to sit on
+      // top (if any), never the real composited color. samplePagePixel
+      // decodes an actual screenshot, the same "real pixels" standard this
+      // file already holds canvas-based checks (share-card) to.
+      //
+      // Coordinates below were found by a direct sweep of real screenshots
+      // before writing this check (never guessed): at scroll=0, y=260 sits
+      // in the hero's own open green, well above the video band; scrolled
+      // to the bottom of the document, y=600 and y=840 are both open green
+      // below WHO'S DOC and the footer, with nothing opaque between them.
+      const topSample = await samplePagePixel(page, 195, 260);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(300);
+      const midSample = await samplePagePixel(page, 195, 600);
+      const bottomSample = await samplePagePixel(page, 195, 840);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(300);
+
       record(
-        '[about-v2/marks-present] both kettlewave marks render, one bleeding off the top-right, one off the bottom-left',
-        markTopRight !== null &&
-          markBottomLeft !== null &&
-          markTopRight.x + markTopRight.width > VIEWPORT.width && // bleeds past the right edge
-          markTopRight.y < 100 && // sits near the top
-          markBottomLeft.x < 0 && // bleeds past the left edge
-          markBottomLeft.y + markBottomLeft.height > VIEWPORT.height - 50, // sits near the bottom
-        JSON.stringify({ markTopRight, markBottomLeft })
+        '[about-v2/sheen-top-spotlight] near the top center, the real rendered pixel is clearly brighter than the mid-gradient stop #076652',
+        topSample.g > 102 + 10, // #076652's own G channel is 102; the spotlight must clear it with real margin
+        JSON.stringify({ topSample })
+      );
+      record(
+        '[about-v2/sheen-mid-baseline] at mid page over open green, the real rendered pixel sits at or very near the base #054C3D',
+        Math.abs(midSample.r - 5) <= 6 && Math.abs(midSample.g - 76) <= 10 && Math.abs(midSample.b - 61) <= 10,
+        JSON.stringify({ midSample })
+      );
+      record(
+        '[about-v2/sheen-bottom-glow] near the bottom center, the real rendered pixel is measurably brighter than the mid-page sample -- the rising bottom glow is real, not a flat fade',
+        bottomSample.g > midSample.g + 4,
+        JSON.stringify({ midSample, bottomSample })
+      );
+
+      // A vertical sweep across both open-green bands above, asserting no
+      // sample is ever darker than the base #054C3D on any channel (a small
+      // -2 tolerance absorbs ordinary PNG rounding at the exact color this
+      // gradient bottoms out at, nothing more).
+      const sweepPointsTop = [20, 50, 100, 150, 220, 260, 300, 330, 350].map((y) => ({ y, scroll: 0 }));
+      const sweepPointsBottom = [580, 600, 620, 640, 750, 800, 840].map((y) => ({ y, scroll: 'bottom' }));
+      const sweepResults = [];
+      for (const { y, scroll } of sweepPointsTop) {
+        const px = await samplePagePixel(page, 195, y);
+        sweepResults.push({ y, scroll, px });
+      }
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(300);
+      for (const { y, scroll } of sweepPointsBottom) {
+        const px = await samplePagePixel(page, 195, y);
+        sweepResults.push({ y, scroll, px });
+      }
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(300);
+      const anyDarkerThanBase = sweepResults.some(({ px }) => px.r < 5 - 2 || px.g < 76 - 2 || px.b < 61 - 2);
+      record(
+        '[about-v2/sheen-never-darker-than-base] a vertical sweep across the open-green bands never reads darker than the base #054C3D on any channel -- no vignette',
+        !anyDarkerThanBase,
+        JSON.stringify({ sweepResults })
       );
 
       await context.close();
