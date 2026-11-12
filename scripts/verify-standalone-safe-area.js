@@ -8260,6 +8260,49 @@ async function run() {
     await context.close();
   }
 
+  // Round 53: the signed-in hamburger drawer's own INVITE A FRIEND row
+  // must keep working exactly as before -- it never passes the new
+  // `fixedOverlay` prop (App.tsx's own InviteFriendModal usage is
+  // unchanged), so it still opens through AppModal's shared portal, which
+  // is correct here: every signed-in screen's own tab-bar shell is locked
+  // to exactly one viewport tall, so AppModal's position:absolute portal
+  // and a genuinely viewport-fixed one are indistinguishable in that
+  // context -- there was never a bug to fix on this path, only a
+  // regression to guard against.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-invite').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const previewVisible = await page.getByTestId('invite-link-preview').isVisible().catch(() => false);
+    const shareVisible = await page.getByTestId('invite-share-button').isVisible().catch(() => false);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'signed-in-invite-friend.png') }).catch(() => {});
+
+    await page.getByTestId('close-invite-friend').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const stillClosed = await page.getByTestId('invite-share-button').isVisible().catch(() => false);
+
+    record(
+      '[nav/invite-friend-signed-in] the hamburger drawer\'s own INVITE A FRIEND row still opens the real invite screen and closes cleanly -- unaffected by the About page\'s own new fixedOverlay opt-in',
+      previewVisible && shareVisible && !stillClosed,
+      JSON.stringify({ previewVisible, shareVisible, stillClosed })
+    );
+
+    await context.close();
+  }
+
   // [structured-log/*]: Round 44.5 (owner decision, final) -- the per-
   // movement weight grid Round 44 shipped, and its cross-workout prefill,
   // are REMOVED entirely: "logging results must be as simple as humanly
@@ -11080,6 +11123,97 @@ async function run() {
         '[about-v2/top-band-reaches-sheen] under a forced safe-area-top inset, the topmost rows (where a flat SafeAreaTopFill used to paint) already read as the real bright gradient, never the flat #054C3D base -- no dark band',
         !anyFlatBase && allBrighterThanMidGreen,
         JSON.stringify({ topRowSamples })
+      );
+
+      await context.close();
+    }
+
+    // --- Round 53: INVITE A FRIEND must open covering the member's current
+    // viewport, at any scroll position, with real tap feedback. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      // Real pressed-state feedback: AppPressable's own default opacity
+      // dim, confirmed via computed style under a real pointer-down (the
+      // same technique already established for the glow-pulse checks
+      // above) -- the button had no pressed treatment at all before this
+      // round.
+      await page.getByTestId('about-invite-friend').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+      const opacityAtRest = await page.getByTestId('about-invite-friend').evaluate((el) => getComputedStyle(el).opacity);
+      const btnBox = await page.getByTestId('about-invite-friend').boundingBox();
+      await page.mouse.move(btnBox.x + btnBox.width / 2, btnBox.y + btnBox.height / 2);
+      await page.mouse.down();
+      await page.waitForTimeout(100);
+      const opacityPressed = await page.getByTestId('about-invite-friend').evaluate((el) => getComputedStyle(el).opacity);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-invite-pressed.png') }).catch(() => {});
+      await page.mouse.up();
+      await page.waitForTimeout(300);
+
+      record(
+        '[about-v2/invite-button-pressed-state] INVITE A FRIEND gives a real, visible pressed response (a genuine computed-opacity delta) the instant a finger lands on it',
+        opacityAtRest === '1' && opacityPressed !== '1' && parseFloat(opacityPressed) < parseFloat(opacityAtRest),
+        JSON.stringify({ opacityAtRest, opacityPressed })
+      );
+
+      // The mouse-down/mouse-up pair just above is a genuine press-then-
+      // release at the same point -- a real tap, which already opened the
+      // invite screen as a side effect of proving the pressed-state
+      // delta. Close it before the next check's own fresh scroll+tap
+      // flow, or that click would hit an already-open, screen-covering
+      // overlay instead of the button.
+      await page.getByTestId('close-invite-friend').click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(300);
+
+      // Root cause, confirmed directly before this round's fix existed:
+      // AppModal's own shared portal (ModalRootContext, position: absolute)
+      // anchors to mainColumn's box, which collapses to exactly one
+      // viewport tall and sits pinned at document y=0 in this screen's own
+      // natural-document-scroll mode -- scrolled near the bottom and
+      // tapping INVITE A FRIEND opened the modal entirely off screen,
+      // above the member's own viewport. The fix (ViewportFixedOverlay,
+      // opt-in via InviteFriendModal's new `fixedOverlay` prop, used only
+      // by this screen's own call site) must land the real invite content
+      // inside the CURRENT viewport with zero scrolling performed by
+      // anyone -- this check scrolls near the document's own bottom,
+      // taps, and asserts the real SHARE button is already on screen,
+      // with no scroll of its own.
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(400);
+      const scrollYBeforeTap = await page.evaluate(() => window.scrollY);
+
+      await page.getByTestId('about-invite-friend').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+
+      const scrollYAfterTap = await page.evaluate(() => window.scrollY);
+      const shareBox = await page.getByTestId('invite-share-button').boundingBox().catch(() => null);
+      const previewVisible = await page.getByTestId('invite-link-preview').isVisible().catch(() => false);
+      const onScreen =
+        shareBox !== null && shareBox.y >= 0 && shareBox.y + shareBox.height <= VIEWPORT.height;
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-invite-on-screen.png') }).catch(() => {});
+
+      record(
+        '[about-v2/invite-opens-on-screen] tapping INVITE A FRIEND near the bottom of the document lands the real invite content inside the current viewport immediately, with no scroll performed by the test',
+        scrollYBeforeTap === scrollYAfterTap && previewVisible && onScreen,
+        JSON.stringify({ scrollYBeforeTap, scrollYAfterTap, previewVisible, shareBox, onScreen, viewportHeight: VIEWPORT.height })
+      );
+
+      // Closing returns cleanly to the About page, at the exact same
+      // scroll position -- no stuck overlay, no surprise jump.
+      await page.getByTestId('close-invite-friend').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const backOnAbout = await page.getByText("DOC'S FITNESS", { exact: false }).first().isVisible().catch(() => false);
+      const overlayGone = await page.getByTestId('invite-share-button').isVisible().catch(() => false);
+      const scrollYAfterClose = await page.evaluate(() => window.scrollY);
+
+      record(
+        '[about-v2/invite-closes-cleanly] closing the invite screen returns to the About page with no stuck overlay, at the exact same scroll position',
+        backOnAbout && !overlayGone && scrollYAfterClose === scrollYBeforeTap,
+        JSON.stringify({ backOnAbout, overlayGone, scrollYAfterClose, scrollYBeforeTap })
       );
 
       await context.close();
