@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { AppPressable } from '../components/AppPressable';
 import { DocsBadge } from '../components/brand/DocsBadge';
 import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { InviteFriendModal } from '../components/InviteFriendModal';
@@ -380,10 +381,14 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
             <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
           </ExternalLinkPressable>
 
-          <Pressable style={styles.inviteButton} onPress={() => setInviteOpen(true)} testID="about-invite-friend">
+          {/* Round 53: this button had no pressed treatment at all --
+              AppPressable is the house's own shared press-feedback
+              mechanism (a quiet opacity dim by default), reused here
+              rather than hand-rolling a one-off pressed style. */}
+          <AppPressable style={styles.inviteButton} onPress={() => setInviteOpen(true)} testID="about-invite-friend">
             <Ionicons name="share-social-outline" size={18} color={colors.white} />
             <Text style={styles.inviteButtonText}>INVITE A FRIEND</Text>
-          </Pressable>
+          </AppPressable>
 
           {/* Round 52: nativeID, not a plain RN style, because the real
               breathing room this needs (a 40px base PLUS the real home-
@@ -400,7 +405,14 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
         </View>
       </Scroller>
 
-      <InviteFriendModal visible={inviteOpen} onClose={() => setInviteOpen(false)} />
+      {/* Round 53: fixedOverlay, since this screen runs in natural
+          document-scroll mode -- AppModal's own shared portal opens the
+          modal pinned to document top regardless of scroll position
+          (confirmed directly, see ViewportFixedOverlay.web.tsx's own
+          comment). The signed-in hamburger drawer's own InviteFriendModal
+          usage, App.tsx, omits this prop and keeps using AppModal exactly
+          as before. */}
+      <InviteFriendModal visible={inviteOpen} onClose={() => setInviteOpen(false)} fixedOverlay />
     </View>
   );
 }

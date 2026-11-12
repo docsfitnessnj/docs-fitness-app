@@ -3,6 +3,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { ModalHeader } from './ModalHeader';
+import { ViewportFixedOverlay } from './ViewportFixedOverlay';
 import { APP_SHARE_DESCRIPTION, APP_SHARE_MESSAGE, APP_SHARE_TITLE, APP_SHARE_URL, copyInviteLink, shareInvite } from '../lib/links';
 import { useIsDesktop } from '../lib/responsive';
 import { colors, fonts } from '../theme';
@@ -10,6 +11,14 @@ import { colors, fonts } from '../theme';
 type Props = {
   visible: boolean;
   onClose: () => void;
+  // Round 53: opt-in only, default unset -- every existing caller (the
+  // hamburger drawer's own signed-in INVITE A FRIEND row, App.tsx) keeps
+  // going through AppModal exactly as before. The About page's own
+  // pre-signup instance passes this true, since AppModal's shared portal
+  // opens this modal pinned to document top in that screen's own natural-
+  // document-scroll mode -- see ViewportFixedOverlay.web.tsx's own comment
+  // for the full, directly-measured root cause.
+  fixedOverlay?: boolean;
 };
 
 const SHARE_IMAGE = require('../../assets/brand/share-image-v3.jpg');
@@ -27,7 +36,7 @@ const DESKTOP_CONTENT_MAX_WIDTH = 560;
 // What the member sees before the native share sheet opens — a preview of
 // exactly what a recipient will get (the link card a chat app will render,
 // plus the message text), with SHARE and a COPY LINK shortcut.
-export function InviteFriendModal({ visible, onClose }: Props) {
+export function InviteFriendModal({ visible, onClose, fixedOverlay }: Props) {
   const isDesktop = useIsDesktop();
   const [cardWidth, setCardWidth] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -54,10 +63,9 @@ export function InviteFriendModal({ visible, onClose }: Props) {
     }
   };
 
-  return (
-    <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container} nativeID="invite-friend-safe-top">
-        <ModalHeader title="INVITE A FRIEND" onBack={onClose} backTestID="close-invite-friend" />
+  const content = (
+    <View style={styles.container} nativeID="invite-friend-safe-top">
+      <ModalHeader title="INVITE A FRIEND" onBack={onClose} backTestID="close-invite-friend" />
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={[styles.body, isDesktop && { maxWidth: DESKTOP_CONTENT_MAX_WIDTH, alignSelf: 'center' }]}>
@@ -113,7 +121,20 @@ export function InviteFriendModal({ visible, onClose }: Props) {
             </Pressable>
           </View>
         </ScrollView>
-      </View>
+    </View>
+  );
+
+  if (fixedOverlay) {
+    return (
+      <ViewportFixedOverlay visible={visible} onRequestClose={onClose}>
+        {content}
+      </ViewportFixedOverlay>
+    );
+  }
+
+  return (
+    <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
+      {content}
     </AppModal>
   );
 }
