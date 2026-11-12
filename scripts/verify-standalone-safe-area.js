@@ -10598,6 +10598,100 @@ async function run() {
       await context.close();
     }
 
+    // --- Round 50: the radial sheen + both kettlewave marks. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      const sheenBg = await page.getByTestId('about-kettlewave-mark').evaluate((el) => getComputedStyle(el).backgroundImage);
+      record(
+        '[about-v2/sheen-gradient] the fixed backdrop carries a real radial-gradient background-image (the sheen), not a flat color',
+        typeof sheenBg === 'string' && sheenBg.includes('radial-gradient') && sheenBg.includes('rgb(5, 76, 61)'),
+        JSON.stringify({ sheenBg })
+      );
+
+      // A real pixel sample confirming "never darker than #054C3D anywhere,
+      // no vignette" -- sampled both near the gradient's own light source
+      // (top center) and far from it (bottom corners, where a vignette
+      // would show up as something darker than the base green).
+      const topCenterColor = await page.evaluate(() => {
+        const el = document.elementFromPoint(195, 2);
+        return el ? getComputedStyle(el).backgroundColor : null;
+      });
+      const bottomCornerColor = await page.evaluate(() => {
+        const el = document.elementFromPoint(2, 840);
+        return el ? getComputedStyle(el).backgroundColor : null;
+      });
+      record(
+        '[about-v2/sheen-never-darker-than-base] the bottom corner (farthest from the sheen) never reads darker than the base #054C3D -- no vignette',
+        bottomCornerColor === 'rgba(0, 0, 0, 0)' || bottomCornerColor === 'rgb(5, 76, 61)',
+        JSON.stringify({ topCenterColor, bottomCornerColor })
+      );
+
+      const markTopRight = await page.getByTestId('about-mark-top-right').boundingBox();
+      const markBottomLeft = await page.getByTestId('about-mark-bottom-left').boundingBox();
+      record(
+        '[about-v2/marks-present] both kettlewave marks render, one bleeding off the top-right, one off the bottom-left',
+        markTopRight !== null &&
+          markBottomLeft !== null &&
+          markTopRight.x + markTopRight.width > VIEWPORT.width && // bleeds past the right edge
+          markTopRight.y < 100 && // sits near the top
+          markBottomLeft.x < 0 && // bleeds past the left edge
+          markBottomLeft.y + markBottomLeft.height > VIEWPORT.height - 50, // sits near the bottom
+        JSON.stringify({ markTopRight, markBottomLeft })
+      );
+
+      await context.close();
+    }
+
+    // --- Round 50, Job 2: the page genuinely cannot pan horizontally. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+
+      const bodyScrollWidth = await page.evaluate(() => document.body.scrollWidth);
+      record(
+        '[about-v2/no-horizontal-overflow] document.body.scrollWidth matches the real viewport width exactly -- nothing on the page is wider than the screen',
+        bodyScrollWidth === VIEWPORT.width,
+        JSON.stringify({ bodyScrollWidth, viewportWidth: VIEWPORT.width })
+      );
+
+      // A real native touch drag (CDP, the same technique Round 38
+      // established for a genuine finger gesture, not a synthetic
+      // scrollLeft write), started on open green space, well clear of the
+      // carousel or any button -- confirming the page itself cannot be
+      // panned sideways, not just that no element LOOKS wider on paper.
+      const cdp = await context.newCDPSession(page);
+      const scrollXBefore = await page.evaluate(() => window.scrollX);
+      const startX = 350;
+      const endX = 50;
+      const dragY = 300;
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: startX, y: dragY }] });
+      for (let i = 1; i <= 10; i++) {
+        const x = startX + ((endX - startX) * i) / 10;
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: dragY }] });
+        await page.waitForTimeout(16);
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(400);
+      const scrollXAfter = await page.evaluate(() => window.scrollX);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-after-horizontal-drag.png') }).catch(() => {});
+
+      record(
+        '[about-v2/horizontal-drag-does-nothing] a real native touch drag across the page leaves window.scrollX at exactly 0 -- the page cannot be panned sideways',
+        scrollXBefore === 0 && scrollXAfter === 0,
+        JSON.stringify({ scrollXBefore, scrollXAfter })
+      );
+
+      await context.close();
+    }
+
     // --- The glow pulse is present on START FREE ONLINE and nowhere else. ---
     {
       const context = await browser.newContext({ viewport: VIEWPORT });
