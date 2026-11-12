@@ -1,28 +1,39 @@
 import React from 'react';
-import { Image, Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { colors } from '../../theme';
 
-const KETTLEWAVE_FILLED = require('../../../assets/brand/kettlewave-filled.png');
-// Real pixel size of the committed asset (confirmed directly before relying
-// on it) -- already pure white with alpha (the "filled" mark, handle hole
-// open), so unlike Round 49's own kettlewave-green.png this needs no
-// recolor filter at all, just opacity.
-const KETTLEWAVE_RATIO = 219 / 311;
+// Round 51 (owner decision, final): both kettlewave background marks are
+// removed entirely -- a real iPhone test found them a distraction. No
+// background kettlebell imagery anywhere on the About page anymore, at any
+// opacity. The committed assets/brand/kettlewave-filled.png asset itself is
+// untouched in the repo (it may be used elsewhere later); only this
+// backdrop stops rendering it, so the import and every mark-specific style
+// below are deleted outright rather than left dormant.
 
-const MARK_TOP_RIGHT_WIDTH = 250;
-const MARK_BOTTOM_LEFT_WIDTH = 290;
-
-// Round 50: the radial sheen, replacing Round 49's flat colors.greenDeep
-// fill. CSS-only (the same unconditional `as object` cast ChallengeVideoCover
-// already established for its own gradient) -- a radial-gradient's own
-// color stops never produce anything darker than its last stop, and
-// nothing past 100% is ever rendered, so "never darker than #054C3D
-// anywhere" is true by construction as long as that's the final stop, with
-// no vignette layered on top. Percentage-sized (not px) so it scales
-// correctly to any real device viewport rather than being calibrated to
-// one specific screen height.
+// Round 51: the sheen upgrades from Round 50's single top-down radial to
+// the approved two-glow design (design-references/bg-E4.png, confirmed via
+// direct pixel sampling before implementing -- the top-center sample read
+// exactly #1BBA93, matching this gradient's own first stop, and a vertical
+// sweep down the bottom third brightened steadily toward the physical
+// bottom edge, confirming the real rising glow rather than a flat fade).
+// Two layered radial-gradients, CSS-only (the same unconditional `as
+// object` style-cast `ChallengeVideoCover`'s own gradient already
+// established) -- a brighter, wider spotlight pouring down from the very
+// top (the second, lower layer) plus a soft glow rising from the bottom
+// center (the first, upper layer, painted on top since CSS stacks
+// comma-separated background-image layers front-to-back in the order
+// listed). "Never darker than #054C3D anywhere, no vignette" is still true
+// by construction: the top gradient's own last color stop IS #054C3D, and
+// the bottom gradient's own last stop is fully transparent (rgba(...,0)),
+// which only ever lightens whatever the top gradient already painted
+// beneath it -- there is no stop in either gradient capable of producing
+// anything darker than the base #054C3D. Percentage-sized (not px) so both
+// layers scale correctly to any real device viewport, exactly as Round 50's
+// own single gradient already did.
 const SHEEN_GRADIENT = {
-  backgroundImage: 'radial-gradient(ellipse 140% 85% at 50% 0%, #0E8A6E 0%, #076652 45%, #054C3D 85%)',
+  backgroundImage:
+    'radial-gradient(ellipse 120% 55% at 50% 104%, rgba(25,180,142,0.42) 0%, rgba(25,180,142,0) 60%), ' +
+    'radial-gradient(ellipse 150% 85% at 50% 0%, #1BBA93 0%, #0C8B6C 32%, #076652 58%, #054C3D 85%)',
 } as object;
 
 // `fixed` anchors to the real browser viewport only where no transformed
@@ -41,35 +52,21 @@ const FIXED_POSITION = Platform.OS === 'web' ? ({ position: 'fixed' } as object)
 // positioned via left/transform with no containing clip, and the result
 // was genuinely draggable empty space past the physical edges.
 //
-// The fix is structural, not a patch: there is now exactly ONE fixed,
+// The fix is structural, not a patch: there is exactly ONE fixed,
 // viewport-bound box (this one, `top/left/right/bottom: 0`) and it carries
-// `overflow: hidden`. Both marks live INSIDE it as plain `position:
-// absolute` children, positioned and sized to bleed off its own edges --
-// but since the wrapper IS the viewport-exact box and clips its own
-// overflowing children, nothing in this component can ever register as
-// wider than the real viewport at the DOM level, regardless of how far a
-// mark's own rotated/offset box would otherwise extend. This is a
-// guarantee by construction, not a size that merely happens to fit today.
+// `overflow: hidden`. Round 51 removed the two mark children this
+// guarantee was originally built to contain, but the guarantee itself is
+// still load-bearing for the backdrop's own gradient layers (which, per
+// the sheen comment above, are already sized well past 100% on both axes)
+// -- this remains a structural guarantee, not a size that merely happens
+// to fit today.
 export function AboutBackdrop() {
   return (
     <View
       style={[styles.wrap, FIXED_POSITION, SHEEN_GRADIENT]}
       pointerEvents="none"
       testID="about-kettlewave-mark"
-    >
-      <Image
-        source={KETTLEWAVE_FILLED}
-        resizeMode="contain"
-        style={styles.markTopRight}
-        testID="about-mark-top-right"
-      />
-      <Image
-        source={KETTLEWAVE_FILLED}
-        resizeMode="contain"
-        style={styles.markBottomLeft}
-        testID="about-mark-bottom-left"
-      />
-    </View>
+    />
   );
 }
 
@@ -83,26 +80,5 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.greenDeep,
     zIndex: -1,
-  },
-  // Upper right, partially off the right edge -- a visible emblem sitting
-  // in the open green above the hero, never centered behind a white card.
-  markTopRight: {
-    position: 'absolute',
-    top: 20,
-    right: -70,
-    width: MARK_TOP_RIGHT_WIDTH,
-    height: MARK_TOP_RIGHT_WIDTH / KETTLEWAVE_RATIO,
-    opacity: 0.12,
-    transform: [{ rotate: '10deg' }],
-  },
-  // Lower left, partially off both the left and bottom edges.
-  markBottomLeft: {
-    position: 'absolute',
-    bottom: -60,
-    left: -90,
-    width: MARK_BOTTOM_LEFT_WIDTH,
-    height: MARK_BOTTOM_LEFT_WIDTH / KETTLEWAVE_RATIO,
-    opacity: 0.12,
-    transform: [{ rotate: '-9deg' }],
   },
 });
