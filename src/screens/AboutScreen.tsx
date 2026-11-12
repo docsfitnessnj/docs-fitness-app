@@ -7,7 +7,7 @@ import { InviteFriendModal } from '../components/InviteFriendModal';
 import { ModalHeader } from '../components/ModalHeader';
 import { SafeAreaTopFill } from '../components/SafeAreaTopFill';
 import { WebScrollScreen } from '../components/WebScrollScreen';
-import { AboutKettlewaveMark } from '../components/about/AboutKettlewaveMark';
+import { AboutBackdrop } from '../components/about/AboutBackdrop';
 import { AboutVideoBand } from '../components/about/AboutVideoBand';
 import { TestimonialCarousel, Testimonial } from '../components/about/TestimonialCarousel';
 import { FaqAccordion, FaqItem } from '../components/about/FaqAccordion';
@@ -19,12 +19,6 @@ import { useFoundingFiftyPublicStatus } from '../lib/useFoundingFiftyPublicStatu
 import { colors, fonts, TAGLINE, LOCATION, DESKTOP_BREAKPOINT, LARGE_DESKTOP_BREAKPOINT } from '../theme';
 
 const STANDARD_ONLINE_PRICE = ONLINE_PLANS.find((p) => p.key === 'monthly')!.price;
-
-// Same convention as AboutKettlewaveMark's own FIXED_POSITION -- `fixed`
-// anchors to the real browser viewport only where no transformed ancestor
-// redefines the containing block (true for the unclipped 'onboarding'
-// shell; see useWebDocumentScroll.ts). Native has no `position: fixed`.
-const FIXED_POSITION = Platform.OS === 'web' ? ({ position: 'fixed' } as object) : {};
 
 const WHOS_DOC_PHOTO = require('../../assets/brand/whos-doc.jpg');
 // Real pixel size of the committed photo (confirmed directly before
@@ -183,20 +177,20 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
       style={[styles.container, variant === 'inApp' && styles.containerInApp]}
       nativeID="about-screen-root"
     >
-      {/* A fixed, viewport-covering green fill -- not a plain background
-          color on this (or any ancestor) box. The real document here runs
-          far taller than one viewport, and every ancestor up through html/
-          body is deliberately flex/auto-sized for the unclipped pre-signup
-          scroll trick (see useWebDocumentScroll.ts) -- confirmed directly
-          that this leaves every one of those boxes' own real rendered
-          height pinned to exactly one viewport regardless, with the real
-          content simply overflowing past it (never clipped, just
-          unpainted-behind). A `position: fixed` layer sidesteps that
-          entirely, the same way AboutKettlewaveMark already does: it
-          always covers whatever's currently visible, at every scroll
-          position, with nothing needing to literally BE 3000+ px tall. */}
-      <View style={[styles.fixedBackdrop, FIXED_POSITION]} pointerEvents="none" testID="about-green-backdrop" />
-      <AboutKettlewaveMark />
+      {/* A fixed, viewport-covering sheen + two kettlewave marks -- not a
+          plain background color on this (or any ancestor) box. The real
+          document here runs far taller than one viewport, and every
+          ancestor up through html/body is deliberately flex/auto-sized for
+          the unclipped pre-signup scroll trick (see useWebDocumentScroll.ts)
+          -- confirmed directly that this leaves every one of those boxes'
+          own real rendered height pinned to exactly one viewport
+          regardless, with the real content simply overflowing past it
+          (never clipped, just unpainted-behind). A `position: fixed` layer
+          sidesteps that entirely: it always covers whatever's currently
+          visible, at every scroll position, with nothing needing to
+          literally BE 3000+ px tall. See AboutBackdrop.tsx for why this is
+          now ONE clipped wrapper rather than separate fixed layers. */}
+      <AboutBackdrop />
       {/* The whole page sits on deep green now — the top safe-area fill
           matches it in both variants, instead of the old white/background
           split (which existed only because the hero used to be white). */}
@@ -226,10 +220,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
           <AboutVideoBand width={bandWidth} rounded={isDesktop} />
         </View>
 
-        <View
-          style={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}
-          onLayout={(e) => setContentWidth(e.nativeEvent.layout.width)}
-        >
+        <View style={[styles.contentContainer, isDesktop && styles.contentContainerDesktop]}>
           <View style={isDesktop && styles.doorsRowDesktop}>
             <View style={[styles.doorCard, isDesktop && styles.doorCardDesktop]}>
               <Text style={[styles.doorTitle, isDesktop && styles.doorTitleDesktop]}>TRAIN ONLINE ANYWHERE</Text>
@@ -307,7 +298,26 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
           )}
 
           <Text style={styles.crewHeading}>FROM THE CREW</Text>
-          <TestimonialCarousel testimonials={TESTIMONIALS} width={carouselWidth} />
+          {/* Round 50, Job 2: measuring onLayout directly on
+              contentContainer (the padded parent) reports that parent's
+              OWN outer box -- the full available width, before its
+              paddingHorizontal is subtracted -- not the narrower padded
+              area a child actually has room for. Confirmed directly to be
+              the real cause of the real device's horizontal drag: the
+              carousel's own slide was being sized to that too-wide
+              measurement, so its first slide's own right edge landed
+              exactly padding-amount past the real viewport edge, which
+              (unlike the two kettlewave marks, independently confirmed
+              innocent) genuinely did enlarge the document's own
+              scrollWidth, since a ScrollView's off-flow children are real
+              siblings in the page's own layout, not clipped by a fixed/
+              overflow:hidden ancestor the way the backdrop's marks are.
+              A plain `width:'100%'` wrapper, as a normal child already
+              inside the padded container, reports the correct narrower
+              width instead. */}
+          <View style={{ width: '100%' }} onLayout={(e) => setContentWidth(e.nativeEvent.layout.width)}>
+            <TestimonialCarousel testimonials={TESTIMONIALS} width={carouselWidth} />
+          </View>
 
           <Text style={styles.faqHeading}>FREQUENTLY ASKED QUESTIONS</Text>
           <FaqAccordion items={FAQS} defaultOpenKey="what-is-the-app" />
@@ -371,42 +381,25 @@ const faqStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  // No background color here, deliberately -- see fixedBackdrop above in
-  // the render tree for why. No `flex` here either -- see containerInApp
-  // below for why.
-  container: {
-    width: '100%',
-  },
-  // position: fixed, covering the current viewport at any scroll position
-  // -- NOT a plain background color on `container` (or any ancestor box),
-  // which was the first thing tried here and didn't hold up. Confirmed
-  // directly: this screen's real document runs far taller than one
-  // viewport (3410px in testing), but #root/html/body/#about-screen-root
-  // all measured their own rendered box at exactly one viewport's height
-  // (844px) regardless -- every ancestor up through html/body is
+  // No background color here, deliberately -- AboutBackdrop.tsx's own
+  // fixed, viewport-covering layer is what paints the page's real green
+  // (and now the Round 50 sheen + marks), not this or any ancestor box.
+  // Confirmed directly: this screen's real document runs far taller than
+  // one viewport (3410px in Round 49's own testing), but #root/html/body/
+  // #about-screen-root all measured their own rendered box at exactly one
+  // viewport's height regardless -- every ancestor up through html/body is
   // deliberately auto/flex-sized for the unclipped pre-signup scroll trick
   // (see useWebDocumentScroll.ts), and WebScrollScreen's own web View adds
   // `flexGrow: 1, flexBasis: 0` on top of that for the same reason --
   // between the two, nothing in this chain ever has a definite height to
-  // resolve "auto" against, so the browser falls back to sizing every one
-  // of those boxes to exactly the one viewport height that minHeight: 100%
-  // DOES resolve against (the real initial containing block), while the
-  // real content simply overflows past it, unclipped (nothing overlaps or
-  // renders wrong) but also unpainted-behind, since a box's own background
-  // never extends past its own box. This bug almost certainly predates
-  // this round -- the old near-white-on-white palette made it invisible.
-  // A `position: fixed` layer sidesteps the whole ambiguity: it always
-  // covers whatever's currently visible, with nothing needing to literally
-  // BE 3000+ px tall, the identical technique AboutKettlewaveMark already
-  // uses one layer up.
-  fixedBackdrop: {
-    position: 'absolute', // overridden to 'fixed' on web, see below
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: colors.greenDeep,
-    zIndex: -1,
+  // resolve "auto" against, so a plain background color here would stop
+  // at exactly one viewport's height while the real content overflows
+  // past it, unpainted-behind. A `position: fixed` layer sidesteps the
+  // whole ambiguity: it always covers whatever's currently visible, with
+  // nothing needing to literally BE 3000+ px tall. No `flex` here either
+  // -- see containerInApp below for why.
+  container: {
+    width: '100%',
   },
   containerInApp: {
     flex: 1,
