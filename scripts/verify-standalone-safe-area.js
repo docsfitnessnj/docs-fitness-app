@@ -8116,6 +8116,11 @@ async function run() {
     await context.close();
   }
 
+  // Round 54: the short-name fixture's own measured name font size, read
+  // in the block below and compared against the long-name fixture's own
+  // measured size afterward -- declared here so both blocks share it.
+  let shortNameFontSizePx = 0;
+
   // [community/wod-video]: Part 6 -- the Community tab's own expanded
   // "DOC'S WORKOUT OF THE DAY" (DayPanel, shared verbatim with the WODS
   // tab) must show the workout's real video breakdown thumbnail above the
@@ -8165,22 +8170,139 @@ async function run() {
     }
     await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(500);
+    // Round 54: right after expanding, the cover's own bottom edge (where
+    // the badge and tag sit) can land directly behind the real fixed tab
+    // bar -- confirmed directly, not assumed: elementFromPoint there
+    // resolved to the tab bar's own box, not the cover, until the feed was
+    // scrolled a little further. scrollIntoViewIfNeeded() alone isn't
+    // enough, since the browser's own native scroll-into-view has no idea
+    // a fixed sibling is occupying the bottom of the viewport -- a small
+    // extra nudge clears it the same way a member would naturally keep
+    // scrolling to see the rest of the card.
+    await page.getByTestId('watch-video-breakdown').scrollIntoViewIfNeeded().catch(() => {});
+    await page.mouse.wheel(0, 150);
+    await page.waitForTimeout(300);
     const videoThumbVisible = await page.getByTestId('watch-video-breakdown').isVisible().catch(() => false);
     const wodTitleVisible = await page.getByText('ROUND 39 VIDEO TEST WOD', { exact: true }).first().isVisible().catch(() => false);
+
+    // Round 54: the cover's own new name/badge layers -- read directly off
+    // the real rendered DOM, before anything is tapped (tapping swaps the
+    // cover for the iframe permanently, so every cover-level measurement
+    // has to happen first).
+    const nameInfo = await page
+      .getByTestId('watch-video-breakdown-name')
+      .evaluate((el) => ({
+        text: el.textContent,
+        fontSize: parseFloat(getComputedStyle(el).fontSize),
+        color: getComputedStyle(el).color,
+        fontFamily: getComputedStyle(el).fontFamily,
+      }))
+      .catch(() => null);
+    const badgeInfo = await page
+      .getByTestId('watch-video-breakdown-badge')
+      .evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        // react-native-web's own Image renders the testID onto an OUTER
+        // View wrapping two children: a painted inner View using a CSS
+        // background-image (no src attribute at all), and a visually
+        // hidden real <img src=...> kept only for accessibility/context-
+        // menu support -- the real src lives on that nested <img>, never
+        // on the outer testID element itself.
+        const imgEl = el.querySelector('img');
+        return {
+          src: (imgEl && imgEl.getAttribute('src')) || '',
+          width: rect.width,
+          height: rect.height,
+          opacity: getComputedStyle(el.parentElement).opacity,
+        };
+      })
+      .catch(() => null);
+    const tagInfo = await page
+      .getByText('WATCH THE BREAKDOWN', { exact: true })
+      .first()
+      .evaluate((el) => ({ text: el.textContent, fontSize: parseFloat(getComputedStyle(el).fontSize) }))
+      .catch(() => null);
+    shortNameFontSizePx = (nameInfo && nameInfo.fontSize) || 0;
+
+    // The real elementFromPoint proof that neither new layer can ever win
+    // hit-testing over the Pressable underneath it -- the house's own
+    // standing "fills are paint, not controls" rule (SafeAreaTopFill etc.),
+    // applied here to these two new layers via the same technique
+    // hitTestsControl() already established, just checking the OPPOSITE
+    // direction: the hit at each layer's own center must land on the
+    // cover (or a sibling of the layer), never the layer itself.
+    const tapThroughHitTest = await page.evaluate(() => {
+      const covers = document.querySelectorAll('[data-testid="watch-video-breakdown"]');
+      const cover = covers[0];
+      function hitAt(testId) {
+        const matches = document.querySelectorAll(`[data-testid="${testId}"]`);
+        const el = matches[0];
+        if (!el || !cover) return { found: false, matchCount: matches.length };
+        const rect = el.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        return {
+          found: true,
+          matchCount: matches.length,
+          coverCount: covers.length,
+          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          hitIsCover: !!hit && cover.contains(hit),
+          hitIsSelf: hit === el,
+          hitTag: hit ? hit.tagName : null,
+          hitTestId: hit ? hit.getAttribute && hit.getAttribute('data-testid') : null,
+          hitPointerEvents: hit ? getComputedStyle(hit).pointerEvents : null,
+          elPointerEvents: getComputedStyle(el).pointerEvents,
+        };
+      }
+      return { name: hitAt('watch-video-breakdown-name'), badge: hitAt('watch-video-breakdown-badge') };
+    });
+
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'community-wod-video.png') }).catch(() => {});
-    await page.getByTestId('watch-video-breakdown').click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(500);
-    const iframeSrc = await page.locator('iframe').first().getAttribute('src').catch(() => null);
+
     record(
       '[community/wod-video] the expanded DOC\'S WORKOUT OF THE DAY on Community shows the real video breakdown thumbnail above the movements',
       videoThumbVisible && wodTitleVisible,
       JSON.stringify({ videoThumbVisible, wodTitleVisible })
     );
     record(
+      '[community/wod-video-name] the cover shows the real workout name, top left, faded white, Bebas Neue',
+      !!nameInfo && nameInfo.text === 'ROUND 39 VIDEO TEST WOD' && nameInfo.color === 'rgba(255, 255, 255, 0.35)' && nameInfo.fontFamily.includes('BebasNeue') && nameInfo.fontSize > 0,
+      JSON.stringify(nameInfo)
+    );
+    record(
+      '[community/wod-video-badge] the real badge-black.png renders bottom right at a real nonzero size, 90% opacity',
+      !!badgeInfo && badgeInfo.src.includes('badge-black') && badgeInfo.width > 0 && badgeInfo.height > 0 && badgeInfo.opacity === '0.9',
+      JSON.stringify(badgeInfo)
+    );
+    record(
+      '[community/wod-video-tag-bigger] the WATCH THE BREAKDOWN tag is the exact same copy, at a visibly bigger font size than Round 40\'s 11px',
+      !!tagInfo && tagInfo.text === 'WATCH THE BREAKDOWN' && tagInfo.fontSize > 11,
+      JSON.stringify(tagInfo)
+    );
+    record(
+      '[community/wod-video-tap-through-hit-test] elementFromPoint at the name\'s and the badge\'s own center both resolve to the cover, never the overlay layer itself',
+      tapThroughHitTest.name.found &&
+        tapThroughHitTest.name.hitIsCover &&
+        !tapThroughHitTest.name.hitIsSelf &&
+        tapThroughHitTest.badge.found &&
+        tapThroughHitTest.badge.hitIsCover &&
+        !tapThroughHitTest.badge.hitIsSelf,
+      JSON.stringify(tapThroughHitTest)
+    );
+
+    await page.getByTestId('watch-video-breakdown').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const iframeSrc = await page.locator('iframe').first().getAttribute('src').catch(() => null);
+    record(
       '[community/wod-video-plays] tapping the thumbnail plays the real video in-app, same treatment as the rest of the app',
       !!iframeSrc && iframeSrc.includes('uYRgU5aM4MU'),
       JSON.stringify({ iframeSrc })
     );
+    // Round 54: a dedicated capture of the real playing state itself, per
+    // the brief's own explicit screenshot requirement -- not just the
+    // cover before the tap.
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'community-wod-video-playing.png') }).catch(() => {});
     if (SCREENSHOT_DIR) {
       // Round 40: a second full-page capture of the YOUR WORKOUTS tab
       // itself (not just Community's own expanded card) for direct
@@ -8191,6 +8313,169 @@ async function run() {
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'r40-wods-tab-full.png'), fullPage: true }).catch(() => {});
     }
     await context.close();
+  }
+
+  // [community/wod-video-long-name]: Round 54 -- a genuinely long workout
+  // name (the same shape as a real deck card title, e.g. "DEVIL WENT DOWN
+  // TO GEORGIA") must still render on exactly one line at phone width,
+  // never wrapped, never truncated with an ellipsis -- at a computed font
+  // size smaller than the short-name fixture above measured, proving the
+  // fit-to-width shrink is genuinely driven by the real text, not a flat
+  // ratio that happens to look right for one name.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const longNameReleaseAt = dateAtOffsetDays(0, 6, 0).getTime();
+    await page.addInitScript((releaseAt) => {
+      try {
+        window.localStorage.setItem(
+          'contentLibraryDrafts.v1',
+          JSON.stringify([
+            {
+              id: 'r54-wod-video-long-name-test',
+              name: 'DEVIL WENT DOWN TO GEORGIA',
+              originalTitle: 'DEVIL WENT DOWN TO GEORGIA',
+              type: 'wod',
+              format: '5 Rounds For Time',
+              formatDescription: '',
+              movements: ['Kettlebell Swings', 'Push-Ups'],
+              videoUrl: 'https://youtu.be/uYRgU5aM4MU',
+              notes: '',
+              releaseAt,
+              status: 'published',
+              scheduled: true,
+              createdAt: releaseAt,
+              updatedAt: releaseAt,
+            },
+          ])
+        );
+        window.localStorage.setItem('contentLibraryDrafts.v1.seedVersion', '999');
+      } catch {}
+    }, longNameReleaseAt);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const longNudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (longNudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const coverBox = await page.getByTestId('watch-video-breakdown').boundingBox().catch(() => null);
+    const longNameInfo = await page
+      .getByTestId('watch-video-breakdown-name')
+      .evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        return {
+          text: el.textContent,
+          fontSize: parseFloat(getComputedStyle(el).fontSize),
+          width: rect.width,
+          height: rect.height,
+        };
+      })
+      .catch(() => null);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'community-wod-video-long-name.png') }).catch(() => {});
+    // A single line of this font size has a line box only a little taller
+    // than the font size itself; a genuine wrap to a second line would
+    // roughly double it -- 1.6x is comfortably above any single-line
+    // leading and comfortably below a real two-line wrap.
+    const singleLine = !!longNameInfo && longNameInfo.height <= longNameInfo.fontSize * 1.6;
+    const fitsInsideCover = !!longNameInfo && !!coverBox && longNameInfo.width <= coverBox.width - 2 * 16 + 1;
+    record(
+      '[community/wod-video-long-name] a genuinely long workout name still renders on exactly one line, fully inside the cover, at phone width',
+      !!longNameInfo && longNameInfo.text === 'DEVIL WENT DOWN TO GEORGIA' && singleLine && fitsInsideCover,
+      JSON.stringify({ longNameInfo, coverBox, singleLine, fitsInsideCover })
+    );
+    record(
+      '[community/wod-video-long-name-smaller-font] the long name\'s computed font size is smaller than the short name\'s, proving the fit-to-width shrink is real',
+      !!longNameInfo && shortNameFontSizePx > 0 && longNameInfo.fontSize < shortNameFontSizePx,
+      JSON.stringify({ longNameFontSize: longNameInfo && longNameInfo.fontSize, shortNameFontSizePx })
+    );
+    await context.close();
+  }
+
+  // [community/wod-video-tap-through]: Round 54 -- the DOM-level
+  // elementFromPoint proof above already shows the browser's own
+  // hit-testing skips both new layers, but a real Playwright mouse click
+  // dispatched at those exact screen coordinates (not through a locator,
+  // which would refuse to click a pointer-events:none target at all) is
+  // the stronger, end-to-end proof: the tap must still genuinely start the
+  // real video. Each needs its own fresh page, since a successful tap
+  // replaces the cover with the iframe permanently.
+  async function tapThroughStartsVideo(positionTestId) {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    const releaseAt = dateAtOffsetDays(0, 6, 0).getTime();
+    await page.addInitScript((ra) => {
+      try {
+        window.localStorage.setItem(
+          'contentLibraryDrafts.v1',
+          JSON.stringify([
+            {
+              id: 'r54-wod-video-tap-through-test',
+              name: 'ROUND 54 TAP THROUGH TEST WOD',
+              originalTitle: 'ROUND 54 TAP THROUGH TEST WOD',
+              type: 'wod',
+              format: '5 Rounds For Time',
+              formatDescription: '',
+              movements: ['Kettlebell Swings', 'Push-Ups'],
+              videoUrl: 'https://youtu.be/uYRgU5aM4MU',
+              notes: '',
+              releaseAt: ra,
+              status: 'published',
+              scheduled: true,
+              createdAt: ra,
+              updatedAt: ra,
+            },
+          ])
+        );
+        window.localStorage.setItem('contentLibraryDrafts.v1.seedVersion', '999');
+      } catch {}
+    }, releaseAt);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const tapNudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (tapNudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('wod-bar-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    // Same scroll-clear nudge as the main [community/wod-video] context
+    // above -- right after expanding, the cover's own bottom edge can sit
+    // directly behind the real fixed tab bar, which would otherwise
+    // absorb this mouse.click() instead of the cover underneath it.
+    await page.getByTestId('watch-video-breakdown').scrollIntoViewIfNeeded().catch(() => {});
+    await page.mouse.wheel(0, 150);
+    await page.waitForTimeout(300);
+    const box = await page.getByTestId(positionTestId).boundingBox().catch(() => null);
+    let iframeSrcAfter = null;
+    if (box) {
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await page.waitForTimeout(500);
+      iframeSrcAfter = await page.locator('iframe').first().getAttribute('src').catch(() => null);
+    }
+    await context.close();
+    return { box, iframeSrcAfter };
+  }
+
+  {
+    const nameTap = await tapThroughStartsVideo('watch-video-breakdown-name');
+    record(
+      '[community/wod-video-tap-through/name] a real tap landing exactly where the name renders still starts the video',
+      !!nameTap.box && !!nameTap.iframeSrcAfter && nameTap.iframeSrcAfter.includes('uYRgU5aM4MU'),
+      JSON.stringify(nameTap)
+    );
+    const badgeTap = await tapThroughStartsVideo('watch-video-breakdown-badge');
+    record(
+      '[community/wod-video-tap-through/badge] a real tap landing exactly where the badge renders still starts the video',
+      !!badgeTap.box && !!badgeTap.iframeSrcAfter && badgeTap.iframeSrcAfter.includes('uYRgU5aM4MU'),
+      JSON.stringify(badgeTap)
+    );
   }
 
   // [badges/the-regular-strike]: Round 42, Part 2 -- THE REGULAR badge's
