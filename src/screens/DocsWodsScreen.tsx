@@ -174,7 +174,7 @@ export default function DocsWodsScreen() {
               </>
             ) : (
               <>
-                <WorkoutVideoBreakdown videoUrl={wod.videoUrl} />
+                <WorkoutVideoBreakdown videoUrl={wod.videoUrl} name={wod.title} />
 
                 <Text style={styles.cardHeadline}>{wod.title}</Text>
 
@@ -232,7 +232,7 @@ export default function DocsWodsScreen() {
               </>
             ) : saturdayContent ? (
               <>
-                <WorkoutVideoBreakdown videoUrl={saturdayContent.videoUrl} />
+                <WorkoutVideoBreakdown videoUrl={saturdayContent.videoUrl} name={saturdayContent.title} />
                 <Text style={styles.cardHeadline}>{saturdayContent.title}</Text>
                 <View style={styles.divider} />
                 <Text style={styles.weekendDescription}>{saturdayContent.description}</Text>

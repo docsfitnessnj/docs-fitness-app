@@ -287,7 +287,7 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                 </View>
               ) : (
               <View style={styles.card}>
-                <WorkoutVideoBreakdown videoUrl={wod.videoUrl} />
+                <WorkoutVideoBreakdown videoUrl={wod.videoUrl} name={wod.title} />
                 <Text style={[styles.wodCardHeading, isDesktop && styles.cardHeadingDesktop]} testID="day-panel-wod-title">
                   {wod.title}
                 </Text>
@@ -334,7 +334,7 @@ export function DayPanel({ day, wodUnlocked, showClassCard }: Props) {
                   </>
                 ) : saturdayContent ? (
                   <>
-                    <WorkoutVideoBreakdown videoUrl={saturdayContent.videoUrl} />
+                    <WorkoutVideoBreakdown videoUrl={saturdayContent.videoUrl} name={saturdayContent.title} />
                     <Text style={[styles.wodCardHeading, isDesktop && styles.cardHeadingDesktop]}>
                       {saturdayContent.title}
                     </Text>
