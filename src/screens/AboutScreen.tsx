@@ -345,7 +345,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
               inside the padded container, reports the correct narrower
               width instead. */}
           <View style={{ width: '100%' }} onLayout={(e) => setContentWidth(e.nativeEvent.layout.width)}>
-            <TestimonialCarousel testimonials={TESTIMONIALS} width={carouselWidth} />
+            <TestimonialCarousel testimonials={TESTIMONIALS} width={carouselWidth} isDesktop={isDesktop} />
           </View>
 
           <Text style={styles.faqHeading}>FREQUENTLY ASKED QUESTIONS</Text>
@@ -361,9 +361,9 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
               ]}
               testID="about-whos-doc-photo"
             />
-            <View style={styles.whosDocTextWrap}>
+            <View style={[styles.whosDocTextWrap, isDesktop && styles.whosDocTextWrapDesktop]}>
               <Text style={styles.docBandHeading}>WHO'S DOC</Text>
-              <Text style={styles.docBandText}>
+              <Text style={[styles.docBandText, isDesktop && styles.docBandTextDesktop]}>
                 AJ Holland. The original Doc was his grandfather, and the name stuck. A former professional athlete
                 with over 20 years of kettlebell experience and part of the StrongFirst family, he built Doc's Fitness
                 on one promise: look and feel better than you did 10 years ago with just 2 hours a week of kettlebell
@@ -736,15 +736,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 36,
   },
+  // Round 55: alignItems changed from 'flex-start' to 'center'. Root-caused
+  // directly, not guessed: this row's own height is set by the TALLER of
+  // its two children, the photo (440px tall at the desktop photo width) --
+  // the text column, at its old small font size, was only ~110px tall, so
+  // top-aligning it left the entire ~330px difference as a single empty
+  // block below the text, read as "dead space below WHO'S DOC." Vertically
+  // centering the text column within the row (rather than top-aligning it
+  // against a photo nearly 4x its own height) distributes that same
+  // leftover space evenly above and below instead of dumping all of it
+  // beneath the text -- combined with docBandTextDesktop's own bigger font
+  // (which also genuinely grows the text block's real height, shrinking
+  // the leftover gap further), this is what actually closes the gap, not
+  // a guessed spacer or margin value.
   whosDocRowDesktop: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 32,
     justifyContent: 'center',
   },
   whosDocTextWrap: {
     marginTop: 16,
     maxWidth: 520,
+  },
+  whosDocTextWrapDesktop: {
+    marginTop: 0,
   },
   // Round 52: the same 16px radius family as the door cards/video band,
   // plus a thin translucent white hairline that reads cleanly against the
@@ -771,6 +787,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     textAlign: 'center',
+  },
+  docBandTextDesktop: {
+    fontSize: 20,
+    lineHeight: 30,
   },
   locationCard: {
     flexDirection: 'row',
