@@ -11608,6 +11608,156 @@ async function run() {
         JSON.stringify({ pageErrors, markVisible, heroVisible, doorCards, doorsSideBySide })
       );
 
+      // --- Round 55: the testimonials and bio read too small on a laptop,
+      // with a wide dead gap below WHO'S DOC, and a wheel/trackpad scroll
+      // with the cursor over the carousel did nothing. Reuses this same
+      // already-open desktop context/page. ---
+
+      await page.locator('[data-testid="about-testimonial-carousel"]').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+      const testimonialInfo = await page.evaluate(() => {
+        const slide = document.querySelector('[data-testid="about-testimonial-0"]');
+        const carousel = document.querySelector('[data-testid="about-testimonial-carousel"]');
+        let quoteEl = null;
+        if (slide) {
+          const walker = document.createTreeWalker(slide, NodeFilter.SHOW_ELEMENT);
+          let n;
+          while ((n = walker.nextNode())) {
+            if (n.children.length === 0 && n.textContent && n.textContent.includes('best shape')) quoteEl = n;
+          }
+        }
+        function rect(el) {
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { x: r.x, width: r.width, centerX: r.x + r.width / 2 };
+        }
+        const carouselRect = carousel ? carousel.getBoundingClientRect() : null;
+        return {
+          quoteFontSize: quoteEl ? parseFloat(getComputedStyle(quoteEl).fontSize) : null,
+          quoteRect: rect(quoteEl),
+          carouselCenterX: carouselRect ? carouselRect.x + carouselRect.width / 2 : null,
+        };
+      });
+      // "Centered within a small tolerance" -- the quote text's own
+      // rendered box center should land within a few px of the carousel's
+      // own full-width center (the outer View spans the whole content
+      // column), not exactly 0 given sub-pixel text-measurement rounding.
+      const testimonialCentered =
+        !!testimonialInfo.quoteRect &&
+        !!testimonialInfo.carouselCenterX &&
+        Math.abs(testimonialInfo.quoteRect.centerX - testimonialInfo.carouselCenterX) <= 4;
+      record(
+        '[about-v2/desktop-testimonial-bigger] the testimonial quote reads at a genuinely bigger desktop font size and its own text block is centered in the content column',
+        testimonialInfo.quoteFontSize !== null && testimonialInfo.quoteFontSize > 18 && testimonialCentered,
+        JSON.stringify(testimonialInfo)
+      );
+
+      await page.locator('[data-testid="about-whos-doc-photo"]').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+      const whosDocInfo = await page.evaluate(() => {
+        const photo = document.querySelector('[data-testid="about-whos-doc-photo"]');
+        const locationCard = document.querySelector('[data-testid="about-location-card"]');
+        let bioEl = null;
+        const all = document.querySelectorAll('div, span');
+        for (const el of all) {
+          if (el.children.length === 0 && el.textContent && el.textContent.includes('AJ Holland')) {
+            bioEl = el;
+            break;
+          }
+        }
+        function rect(el) {
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom, height: r.height };
+        }
+        return {
+          bioFontSize: bioEl ? parseFloat(getComputedStyle(bioEl).fontSize) : null,
+          bioRect: rect(bioEl),
+          photoRect: rect(photo),
+          locationCardRect: rect(locationCard),
+        };
+      });
+      // The real bug, measured directly (see TestimonialCarousel.tsx's own
+      // and AboutScreen.tsx's own Round 55 comments): the WHO'S DOC row's
+      // height is set by the photo, far taller than the old small-font
+      // bio text -- top-aligning the two left the entire difference as one
+      // dead block below the text. A genuine pixel ceiling on the gap
+      // between the bio's own real rendered bottom and whatever comes
+      // next (the location card) is the actual regression guard, not a
+      // screenshot alone -- this measured 315.8px before this round's own
+      // fix (centering + the bigger font) and 144.9px after it on this
+      // exact build; 220 gives real margin above the fixed value while
+      // still unambiguously ruling out the old, unfixed gap.
+      const whosDocGap =
+        whosDocInfo.bioRect && whosDocInfo.locationCardRect ? whosDocInfo.locationCardRect.top - whosDocInfo.bioRect.bottom : null;
+      record(
+        '[about-v2/desktop-bio-bigger-gap-closed] the WHO\'S DOC bio reads at a genuinely bigger desktop font size, and the gap below it before the location card is bounded, not a dead block',
+        whosDocInfo.bioFontSize !== null && whosDocInfo.bioFontSize > 15 && whosDocGap !== null && whosDocGap > 0 && whosDocGap <= 220,
+        JSON.stringify({ ...whosDocInfo, whosDocGap })
+      );
+
+      if (SCREENSHOT_DIR) {
+        await page.locator('[data-testid="about-testimonial-carousel"]').scrollIntoViewIfNeeded();
+        await page.waitForTimeout(200);
+        await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-desktop-testimonials.png') }).catch(() => {});
+        await page.locator('[data-testid="about-whos-doc-photo"]').scrollIntoViewIfNeeded();
+        await page.waitForTimeout(200);
+        await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-desktop-whos-doc.png') }).catch(() => {});
+      }
+
+      // The scroll-swallow bug itself. Reproduced directly against the real,
+      // unmodified Round 54 build BEFORE writing this check or touching
+      // TestimonialCarousel.tsx at all (the house's own standing reproduce-
+      // before-fix rule) -- a real CDP wheel dispatch with the cursor held
+      // over the carousel's own slide area left window.scrollY completely
+      // unmoved, while the identical wheel sequence with the cursor moved
+      // off the carousel scrolled the document normally; see
+      // TestimonialCarousel.tsx's own Round 55 comment for the confirmed
+      // root cause (a horizontal ScrollView is still a genuine scroll
+      // container even with overflow-y:hidden, and the universal
+      // overscroll-behavior-y:contain rule refuses to let its unused
+      // vertical delta chain up). This check drives the real, fixed,
+      // unmodified production listener end to end -- no forced CSS, no
+      // simulated scrollTop write, a genuine wheel event at the real
+      // on-screen coordinates of the carousel's own slide.
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(200);
+      await page.locator('[data-testid="about-testimonial-carousel"]').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(200);
+      const carouselBoxForWheel = await page.locator('[data-testid="about-testimonial-carousel"]').boundingBox();
+      const scrollBeforeWheel = await page.evaluate(() => window.scrollY);
+      if (carouselBoxForWheel) {
+        await page.mouse.move(carouselBoxForWheel.x + carouselBoxForWheel.width / 2, carouselBoxForWheel.y + carouselBoxForWheel.height * 0.3);
+        await page.waitForTimeout(100);
+        for (let i = 0; i < 10; i++) {
+          await page.mouse.wheel(0, 40);
+          await page.waitForTimeout(30);
+        }
+      }
+      const scrollAfterWheelOverCarousel = await page.evaluate(() => window.scrollY);
+      record(
+        '[about-v2/carousel-scroll-chains-to-document] a real wheel scroll with the cursor over the testimonial carousel still scrolls the page',
+        !!carouselBoxForWheel && scrollAfterWheelOverCarousel > scrollBeforeWheel,
+        JSON.stringify({ scrollBeforeWheel, scrollAfterWheelOverCarousel, carouselBoxForWheel })
+      );
+
+      // Dots and horizontal paging must keep working at desktop width too
+      // -- the fix only ever touches overscrollBehaviorY, never the
+      // horizontal scroll/paging mechanism.
+      await page.getByTestId('about-testimonial-dot-2').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(350);
+      const desktopDotWorks = await page
+        .getByTestId('about-testimonial-2')
+        .getByText('JENNIFER', { exact: false })
+        .first()
+        .isVisible()
+        .catch(() => false);
+      record(
+        '[about-v2/carousel-dots-still-work-desktop] the dots still switch slides at the desktop viewport after the scroll fix',
+        desktopDotWorks,
+        JSON.stringify({ desktopDotWorks })
+      );
+
       await context.close();
     }
   }
