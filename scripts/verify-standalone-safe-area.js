@@ -12166,7 +12166,11 @@ async function run() {
       JSON.stringify({ weeklyReleaseImportsDispatch, weeklyReleaseCallsDispatch })
     );
 
-    const testEmailNeverImportsDispatch = !/memberEmailDispatch/.test(testEmailSrc);
+    // A bare substring check would false-positive on this file's own header
+    // comment, which deliberately NAMES memberEmailDispatch.ts in prose to
+    // explain why it's never imported -- scoped to a real `import` line
+    // instead, confirmed directly against the real file before trusting it.
+    const testEmailNeverImportsDispatch = !/^import\s.*memberEmailDispatch/m.test(testEmailSrc);
     const testEmailAlwaysTargetsOwner = /to:\s*OWNER_EMAIL/.test(testEmailSrc) && /sendEmail\(/.test(testEmailSrc);
     const testEmailUsesSharedRenderer = /buildWeeklyReleaseEmail\(/.test(testEmailSrc);
     const testEmailChecksAdmin = /profile\?\.is_admin/.test(testEmailSrc);
@@ -12177,7 +12181,7 @@ async function run() {
     );
 
     const signupAlertChecksWebhookSecret = /verifyWebhookSecret\(req\)/.test(signupAlertSrc);
-    const signupAlertNeverImportsDispatch = !/memberEmailDispatch/.test(signupAlertSrc);
+    const signupAlertNeverImportsDispatch = !/^import\s.*memberEmailDispatch/m.test(signupAlertSrc);
     record(
       '[email/edge-fn/signup-alert-wiring] notify-new-signup checks the shared webhook secret (no Supabase JWT exists inside a Postgres trigger) and never touches EMAIL TEST MODE -- it only ever reaches the owner',
       signupAlertChecksWebhookSecret && signupAlertNeverImportsDispatch,
@@ -12187,7 +12191,7 @@ async function run() {
     const paymentAlertCallSiteWrapped = /try\s*\{\s*await sendPaymentAlert\(admin, userId, plan, session\.amount_total\);\s*\}\s*catch/.test(
       stripeWebhookSrc
     );
-    const paymentAlertNeverImportsDispatch = !/memberEmailDispatch/.test(stripeWebhookSrc);
+    const paymentAlertNeverImportsDispatch = !/^import\s.*memberEmailDispatch/m.test(stripeWebhookSrc);
     const paymentAlertSubjectHasEmoji = /subject:\s*`\\u\{1F4B0\}/.test(stripeWebhookSrc);
     record(
       '[email/edge-fn/payment-alert-wiring] the owner Payment Alert is wrapped in its own try/catch at the real call site (a Resend failure can never surface as a failed webhook) and never touches EMAIL TEST MODE',
