@@ -5,7 +5,7 @@
 // Deno's own built-in Node compat layer (no network fetch needed — this is
 // bundled with the Deno binary itself, unlike a deno.land/std import).
 import { strict as nodeAssert } from 'node:assert';
-import { decideDispatch, OWNER_EMAIL, FROM_MEMBER, Recipient } from './memberEmailDispatchCore.ts';
+import { decideDispatch, OWNER_EMAIL, FROM_MEMBER, MEMBER_REPLY_TO, Recipient } from './memberEmailDispatchCore.ts';
 
 function assertEquals<T>(actual: T, expected: T) {
   nodeAssert.deepStrictEqual(actual, expected);
@@ -75,4 +75,16 @@ Deno.test('TEST mode with zero recipients still produces exactly one owner-addre
 Deno.test('singular "member" (not "members") when exactly one recipient', () => {
   const envelopes = decideDispatch('test', [RECIPIENTS[0]], 'Subject', '<p>body</p>');
   assertEquals((envelopes[0].html ?? '').includes('1 member.'), true);
+});
+
+Deno.test('Round 57: LIVE mode sets reply_to on every real recipient envelope', () => {
+  const envelopes = decideDispatch('live', RECIPIENTS, 'Subject', '<p>body</p>');
+  for (const e of envelopes) {
+    assertEquals(e.reply_to, MEMBER_REPLY_TO);
+  }
+});
+
+Deno.test('Round 57: TEST mode also sets reply_to on its one owner-addressed envelope', () => {
+  const envelopes = decideDispatch('test', RECIPIENTS, 'Subject', '<p>body</p>');
+  assertEquals(envelopes[0].reply_to, MEMBER_REPLY_TO);
 });

@@ -10857,13 +10857,33 @@ async function run() {
       const door1Title = await page.getByText('TRAIN ONLINE ANYWHERE', { exact: false }).isVisible().catch(() => false);
       const door1Subtitle = await page.getByText("THE ONLINE HOME OF THE DOC'S CREW", { exact: false }).isVisible().catch(() => false);
       const door1Pill = await page.getByText('2 WEEKS FREE', { exact: false }).isVisible().catch(() => false);
-      const door1Bullet1 = await page.getByText('4 workouts a week, 30 minutes or less, one kettlebell', { exact: false }).isVisible().catch(() => false);
+      const door1Bullet1 = await page.getByText('5 workouts a week, 30 minutes or less, one kettlebell', { exact: false }).isVisible().catch(() => false);
+      // Round 57: "Plus" comes out of the second bullet now that the COW
+      // counts as the 5th weekly workout, not an extra on top of 4.
+      const door1Bullet2NoPlus = await page.getByText('The Challenge of the Week with a live leaderboard', { exact: false }).isVisible().catch(() => false);
+      const door1Bullet2OldPlusGone = !(await page.getByText('Plus The Challenge of the Week', { exact: false }).isVisible().catch(() => false));
       const door1Bullet3 = await page.getByText('Every movement opens a breakdown video from Doc', { exact: false }).isVisible().catch(() => false);
       const door1ButtonText = await page.getByTestId('about-start-free').innerText().catch(() => '');
       record(
         '[about-v2/door1] TRAIN ONLINE ANYWHERE: exact title/subtitle/pill/bullets/button copy',
-        door1Title && door1Subtitle && door1Pill && door1Bullet1 && door1Bullet3 && door1ButtonText.includes('START FREE ONLINE'),
-        JSON.stringify({ door1Title, door1Subtitle, door1Pill, door1Bullet1, door1Bullet3, door1ButtonText })
+        door1Title &&
+          door1Subtitle &&
+          door1Pill &&
+          door1Bullet1 &&
+          door1Bullet2NoPlus &&
+          door1Bullet2OldPlusGone &&
+          door1Bullet3 &&
+          door1ButtonText.includes('START FREE ONLINE'),
+        JSON.stringify({
+          door1Title,
+          door1Subtitle,
+          door1Pill,
+          door1Bullet1,
+          door1Bullet2NoPlus,
+          door1Bullet2OldPlusGone,
+          door1Bullet3,
+          door1ButtonText,
+        })
       );
 
       const door2Title = await page.getByText("TRAIN IN PERSON AT DOC'S FITNESS", { exact: false }).isVisible().catch(() => false);
@@ -10873,7 +10893,7 @@ async function run() {
       const door2ButtonText = await page.getByTestId('about-book-class').innerText().catch(() => '');
       record(
         '[about-v2/door2] TRAIN IN PERSON AT DOC\'S FITNESS: exact title/subtitle/pill/bullets/button copy',
-        door2Title && door2Subtitle && door2Pill && door2Bullet2 && door2ButtonText.includes('BOOK YOUR CLASS IN PERSON'),
+        door2Title && door2Subtitle && door2Pill && door2Bullet2 && door2ButtonText.includes("START TRAINING AT DOC'S"),
         JSON.stringify({ door2Title, door2Subtitle, door2Pill, door2Bullet2, door2ButtonText })
       );
 
@@ -11122,7 +11142,7 @@ async function run() {
         JSON.stringify({ glowShadow1, glowShadow2 })
       );
       record(
-        '[about-v2/glow-only-one-element] BOOK YOUR CLASS IN PERSON (and its own wrapper) carries no glow at all -- the glow is the one and only glowing element on the page',
+        '[about-v2/glow-only-one-element] START TRAINING AT DOC\'S (and its own wrapper) carries no glow at all -- the glow is the one and only glowing element on the page',
         bookClassShadow === 'none' && bookClassParentShadow === 'none',
         JSON.stringify({ bookClassShadow, bookClassParentShadow })
       );
@@ -11533,7 +11553,7 @@ async function run() {
       const emailFieldAfterBookClass = await page.getByTestId('welcome-email').isVisible().catch(() => false);
       if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-v2-after-book-class.png') }).catch(() => {});
       record(
-        '[about-v2/routing-book-class] BOOK YOUR CLASS IN PERSON still routes straight to the same email step with the in-person intent armed, unchanged',
+        '[about-v2/routing-book-class] START TRAINING AT DOC\'S still routes straight to the same email step with the in-person intent armed, unchanged',
         emailFieldAfterBookClass,
         JSON.stringify({ emailFieldAfterBookClass })
       );
@@ -11776,7 +11796,9 @@ async function run() {
   // Edge Functions confirming the wiring the brief required.
 
   // --- Signup metadata, end to end through the real onboarding flow.
-  // BOOK YOUR CLASS IN PERSON is used rather than TRAIN ONLINE -- its
+  // START TRAINING AT DOC'S (the real button label as of Round 57; this
+  // onboarding step is reached the same way regardless of door label) is
+  // used rather than TRAIN ONLINE -- its
   // post-signup path is a local enterFreeTier() call, not a real Stripe
   // Checkout redirect, so this stays scoped to the signup request itself.
   function fulfillSignupSuccess(email) {
@@ -11815,7 +11837,7 @@ async function run() {
     await page.waitForTimeout(800);
 
     record(
-      '[email/signup-metadata] a real signup through BOOK YOUR CLASS IN PERSON sends signup_path=book_class and newsletter_opt_in=true (the checkbox is pre-checked)',
+      '[email/signup-metadata] a real signup through START TRAINING AT DOC\'S sends signup_path=book_class and newsletter_opt_in=true (the checkbox is pre-checked)',
       !!capturedSignupBody &&
         capturedSignupBody.data?.signup_path === 'book_class' &&
         capturedSignupBody.data?.newsletter_opt_in === true,
@@ -12155,6 +12177,7 @@ async function run() {
     const signupAlertSrc = fs.readFileSync(path.join(srcDir, 'notify-new-signup', 'index.ts'), 'utf8');
     const stripeWebhookSrc = fs.readFileSync(path.join(srcDir, 'stripe-webhook', 'index.ts'), 'utf8');
     const resendSrc = fs.readFileSync(path.join(srcDir, '_shared', 'resend.ts'), 'utf8');
+    const dispatchCoreSrc = fs.readFileSync(path.join(srcDir, '_shared', 'memberEmailDispatchCore.ts'), 'utf8');
 
     const weeklyReleaseImportsDispatch = /import\s*\{\s*dispatchToMembers\s*\}\s*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/.test(
       weeklyReleaseSrc
@@ -12170,7 +12193,7 @@ async function run() {
     // comment, which deliberately NAMES memberEmailDispatch.ts in prose to
     // explain why it's never imported -- scoped to a real `import` line
     // instead, confirmed directly against the real file before trusting it.
-    const testEmailNeverImportsDispatch = !/^import\s.*memberEmailDispatch/m.test(testEmailSrc);
+    const testEmailNeverImportsDispatch = !/^import\s.*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/m.test(testEmailSrc);
     const testEmailAlwaysTargetsOwner = /to:\s*OWNER_EMAIL/.test(testEmailSrc) && /sendEmail\(/.test(testEmailSrc);
     const testEmailUsesSharedRenderer = /buildWeeklyReleaseEmail\(/.test(testEmailSrc);
     const testEmailChecksAdmin = /profile\?\.is_admin/.test(testEmailSrc);
@@ -12181,7 +12204,7 @@ async function run() {
     );
 
     const signupAlertChecksWebhookSecret = /verifyWebhookSecret\(req\)/.test(signupAlertSrc);
-    const signupAlertNeverImportsDispatch = !/^import\s.*memberEmailDispatch/m.test(signupAlertSrc);
+    const signupAlertNeverImportsDispatch = !/^import\s.*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/m.test(signupAlertSrc);
     record(
       '[email/edge-fn/signup-alert-wiring] notify-new-signup checks the shared webhook secret (no Supabase JWT exists inside a Postgres trigger) and never touches EMAIL TEST MODE -- it only ever reaches the owner',
       signupAlertChecksWebhookSecret && signupAlertNeverImportsDispatch,
@@ -12191,7 +12214,7 @@ async function run() {
     const paymentAlertCallSiteWrapped = /try\s*\{\s*await sendPaymentAlert\(admin, userId, plan, session\.amount_total\);\s*\}\s*catch/.test(
       stripeWebhookSrc
     );
-    const paymentAlertNeverImportsDispatch = !/^import\s.*memberEmailDispatch/m.test(stripeWebhookSrc);
+    const paymentAlertNeverImportsDispatch = !/^import\s.*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/m.test(stripeWebhookSrc);
     const paymentAlertSubjectHasEmoji = /subject:\s*`\\u\{1F4B0\}/.test(stripeWebhookSrc);
     record(
       '[email/edge-fn/payment-alert-wiring] the owner Payment Alert is wrapped in its own try/catch at the real call site (a Resend failure can never surface as a failed webhook) and never touches EMAIL TEST MODE',
@@ -12207,6 +12230,180 @@ async function run() {
       '[email/edge-fn/resend-key-hygiene] RESEND_API_KEY is read from the environment, never hardcoded, and never passed to a console.log/error/warn call anywhere across the new email functions',
       resendKeyFromEnv && noKeyLogging,
       JSON.stringify({ resendKeyFromEnv, noKeyLogging })
+    );
+
+    // Round 57: reply_to on the Sunday Drop -- a member who hits reply
+    // must reach a real inbox. The real end-to-end decision (both LIVE and
+    // TEST) is exercised directly by memberEmailDispatchCore.test.ts via
+    // `deno test`, run and confirmed during this round's own development
+    // (see AGENTS.md) -- this Playwright suite has no Deno runtime of its
+    // own to re-run that file, so this is the matching static check for
+    // the one OTHER real reply_to call site: admin-send-test-email's own
+    // direct sendEmail() call (it never goes through decideDispatch() at
+    // all, by design, so it needed its own explicit reply_to).
+    const dispatchCoreSetsReplyTo = /reply_to:\s*MEMBER_REPLY_TO/.test(dispatchCoreSrc) && /export const MEMBER_REPLY_TO = 'docsfitnessnj@gmail\.com'/.test(dispatchCoreSrc);
+    const testEmailSetsReplyTo = /MEMBER_REPLY_TO/.test(testEmailSrc) && /reply_to:\s*MEMBER_REPLY_TO/.test(testEmailSrc);
+    record(
+      '[email/edge-fn/reply-to-set] both real reply_to call sites (decideDispatch and the admin preview) address a member\'s reply to the real owner inbox',
+      dispatchCoreSetsReplyTo && testEmailSetsReplyTo,
+      JSON.stringify({ dispatchCoreSetsReplyTo, testEmailSetsReplyTo })
+    );
+
+    // Round 57: the owner alerts (New Member Alert, Payment Alert) do NOT
+    // need reply_to at all per the brief -- a reply to either already
+    // reaches the owner's own inbox, there's nothing to redirect. Confirms
+    // that by omission, not just by absence of a requirement elsewhere.
+    const signupAlertNeverSetsReplyTo = !/reply_to/.test(signupAlertSrc);
+    const paymentAlertNeverSetsReplyTo = !/reply_to/.test(stripeWebhookSrc);
+    record(
+      '[email/edge-fn/owner-alerts-no-reply-to] the owner-only alerts never set reply_to -- a reply to either already reaches the owner directly',
+      signupAlertNeverSetsReplyTo && paymentAlertNeverSetsReplyTo,
+      JSON.stringify({ signupAlertNeverSetsReplyTo, paymentAlertNeverSetsReplyTo })
+    );
+  }
+
+  // --- Round 57: brand the Sunday Drop email. The real Deno runtime can't
+  // render the real template from this harness (same documented gap as
+  // every other Edge-Function-internals check in this file) -- the real
+  // rendered HTML (both light and dark `prefers-color-scheme`, and a
+  // webfonts-blocked Gmail-fallback pass) was verified directly during
+  // this round's own development by running the real, unmodified
+  // buildWeeklyReleaseEmail() through `deno run` and screenshotting the
+  // output in a real browser -- see AGENTS.md for those screenshots and
+  // findings. What follows are static source checks confirming the real,
+  // committed template is actually built the way that verification
+  // depended on -- a real hosted logo URL (never a data URI), the real
+  // brand fonts with safe fallback stacks, the dark-mode meta tags and
+  // media query, and the gold/deep-green CTA treatment.
+  {
+    const emailTemplateSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'weeklyReleaseEmail.ts'),
+      'utf8'
+    );
+
+    const logoIsHostedHttpsUrl = /BADGE_LOGO_URL\s*=\s*`\$\{APP_URL\}\/badge-black\.png`/.test(emailTemplateSrc);
+    const appUrlIsGithubPages = /const APP_URL = 'https:\/\/docsfitnessnj\.github\.io\/docs-fitness-app'/.test(emailTemplateSrc);
+    const noDataUriAnywhere = !/data:image/.test(emailTemplateSrc);
+    record(
+      '[email/brand/logo-hosted-url] the header logo is a real, stable, hosted https URL off GitHub Pages -- never a data URI, never the fragile Metro-hashed bundle path',
+      logoIsHostedHttpsUrl && appUrlIsGithubPages && noDataUriAnywhere,
+      JSON.stringify({ logoIsHostedHttpsUrl, appUrlIsGithubPages, noDataUriAnywhere })
+    );
+
+    const hasBebasFontFace = /font-family: 'Bebas Neue';[\s\S]{0,120}src: url\(https:\/\/fonts\.gstatic\.com/.test(emailTemplateSrc);
+    const hasBarlowFontFace = /font-family: 'Barlow Condensed';[\s\S]{0,120}src: url\(https:\/\/fonts\.gstatic\.com/.test(emailTemplateSrc);
+    const headlineHasFallback = /HEADLINE_FONT_STACK = "'Bebas Neue', Impact,/.test(emailTemplateSrc);
+    const labelHasFallback = /LABEL_FONT_STACK = "'Barlow Condensed', 'Arial Narrow',/.test(emailTemplateSrc);
+    record(
+      "[email/brand/fonts] the real brand fonts are embedded via @font-face for clients that honor it (Apple Mail), with a deliberately chosen non-webfont fallback stack for Gmail (which strips @font-face outright)",
+      hasBebasFontFace && hasBarlowFontFace && headlineHasFallback && labelHasFallback,
+      JSON.stringify({ hasBebasFontFace, hasBarlowFontFace, headlineHasFallback, labelHasFallback })
+    );
+
+    const hasColorSchemeMeta = /name="color-scheme" content="light dark"/.test(emailTemplateSrc);
+    const hasSupportedColorSchemesMeta = /name="supported-color-schemes" content="light dark"/.test(emailTemplateSrc);
+    const hasDarkMediaQuery = /@media \(prefers-color-scheme: dark\)/.test(emailTemplateSrc);
+    const darkOverridesCardAndText = /\.card-bg \{ background-color: \$\{DARK\.cardBg\}/.test(emailTemplateSrc) &&
+      /\.text-strong \{ color: \$\{DARK\.text\}/.test(emailTemplateSrc);
+    record(
+      '[email/brand/dark-mode] the real template declares color-scheme/supported-color-schemes and a prefers-color-scheme: dark override for the card background and text -- legible and on-brand in dark mode, not left to a client\'s own automatic inversion',
+      hasColorSchemeMeta && hasSupportedColorSchemesMeta && hasDarkMediaQuery && darkOverridesCardAndText,
+      JSON.stringify({ hasColorSchemeMeta, hasSupportedColorSchemesMeta, hasDarkMediaQuery, darkOverridesCardAndText })
+    );
+
+    const ctaGoldBackground = /bgcolor="\$\{LIGHT\.gold\}"/.test(emailTemplateSrc);
+    const ctaDeepGreenText = /color:\$\{LIGHT\.greenDeep\};font-weight:700/.test(emailTemplateSrc);
+    const ctaIsBulletproofTable = /<table role="presentation" cellpadding="0" cellspacing="0" align="center"[\s\S]{0,40}<tr><td align="center" bgcolor=/.test(
+      emailTemplateSrc
+    );
+    record(
+      '[email/brand/cta-button] OPEN THE APP uses the real gold background + deep green text, built as a table-cell-background button (not just a styled anchor), the standard bulletproof technique for an email client that strips an anchor\'s own background-color',
+      ctaGoldBackground && ctaDeepGreenText && ctaIsBulletproofTable,
+      JSON.stringify({ ctaGoldBackground, ctaDeepGreenText, ctaIsBulletproofTable })
+    );
+
+    const headerOrderCorrect =
+      /<img src="\$\{BADGE_LOGO_URL\}"[\s\S]{0,400}DOC'S FITNESS<\/div>[\s\S]{0,200}THE NEW WEEK IS LIVE/.test(emailTemplateSrc);
+    record(
+      '[email/brand/header-order] the header renders logo, then the DOC\'S FITNESS eyebrow, then THE NEW WEEK IS LIVE as a large headline, in that order',
+      headerOrderCorrect,
+      JSON.stringify({ headerOrderCorrect })
+    );
+
+    const noEmojis = !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(emailTemplateSrc);
+    record(
+      '[email/brand/no-emojis] the member-facing Sunday Drop template contains no emojis anywhere',
+      noEmojis,
+      JSON.stringify({ noEmojis })
+    );
+  }
+
+  // --- Round 57: the OPEN THE APP link. Investigated directly before
+  // writing any fix -- a genuinely signed-in browser context (a real
+  // seeded Supabase session, the identical technique seedSignedInSession()
+  // already uses everywhere else in this file) landing on the bare root
+  // URL (the exact target the email's own button points to) already lands
+  // in Community, never About; the owner's own real-device report (landed
+  // on About) is fully explained by his mail app's browser context not
+  // sharing localStorage with wherever he's actually signed in -- a real,
+  // unavoidable platform characteristic of a webapp whose session lives in
+  // one browser context's storage, not a shared cookie jar, never a bug in
+  // this app's own routing. No fix was needed; these are the permanent
+  // regression checks proving that investigation's own finding.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await seedSignedInSession(page);
+    // The EXACT bare root URL the email's own OPEN THE APP button targets
+    // -- no trailing path, no query string.
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    const communityVisible = await page.getByTestId('open-sidebar').isVisible().catch(() => false);
+    const aboutVisible = await page.getByTestId('about-start-free').isVisible().catch(() => false);
+    record(
+      '[email/open-the-app-link/signed-in] a genuinely signed-in session landing on the exact OPEN THE APP URL goes straight into the app (Community), never the About page',
+      communityVisible && !aboutVisible,
+      JSON.stringify({ communityVisible, aboutVisible })
+    );
+
+    await context.close();
+  }
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    // No seeded session at all -- the same bare root URL, signed out.
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+
+    const aboutVisible = await page.getByTestId('about-start-free').isVisible().catch(() => false);
+    const signInVisible = await page.getByText('Sign in.', { exact: false }).first().isVisible().catch(() => false);
+    record(
+      '[email/open-the-app-link/signed-out] a signed-out session landing on the exact same URL correctly lands on the About page with Sign in available -- this is the correct behavior, not a bug',
+      aboutVisible && signInVisible,
+      JSON.stringify({ aboutVisible, signInVisible })
+    );
+
+    await context.close();
+  }
+  {
+    // Cross-file consistency: the email's own APP_URL constant is kept in
+    // sync with src/lib/links.ts's APP_SHARE_URL by hand (a Deno function
+    // can't import a React Native app module directly) -- confirmed here
+    // rather than just trusted from the comment saying so.
+    const linksSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'links.ts'), 'utf8');
+    const appShareUrlMatch = linksSrc.match(/export const APP_SHARE_URL = '([^']+)'/);
+    const emailTemplateSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'weeklyReleaseEmail.ts'),
+      'utf8'
+    );
+    const emailAppUrlMatch = emailTemplateSrc.match(/const APP_URL = '([^']+)'/);
+    record(
+      '[email/open-the-app-link/url-matches-app-share-url] the email template\'s own APP_URL is byte-identical to src/lib/links.ts\'s APP_SHARE_URL, kept in sync by hand across the Deno/React-Native boundary',
+      !!appShareUrlMatch && !!emailAppUrlMatch && appShareUrlMatch[1] === emailAppUrlMatch[1],
+      JSON.stringify({ appShareUrl: appShareUrlMatch?.[1], emailAppUrl: emailAppUrlMatch?.[1] })
     );
   }
 

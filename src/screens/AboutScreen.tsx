@@ -124,9 +124,17 @@ const FAQS: FaqItem[] = [
   },
 ];
 
+// Round 57: 5, not 4 -- the COW now counts as the 5th weekly workout,
+// which is also why "Plus" comes out of the second bullet (it's no longer
+// an extra on top of the 4 WODs, it's one of the 5). Scoped to these two
+// bullets only -- every other "4 WODs"/"2 of 4" copy elsewhere in the app
+// (tiers, badges, the tour, upgrade nudges) correctly counts WODs alone
+// and stays exactly as Round 46 left it; this FAQ's own "4 workouts a week
+// plus an optional weekly challenge" line above is deliberately untouched
+// for the same reason.
 const DOOR1_BULLETS = [
-  '4 workouts a week, 30 minutes or less, one kettlebell',
-  'Plus The Challenge of the Week with a live leaderboard',
+  '5 workouts a week, 30 minutes or less, one kettlebell',
+  'The Challenge of the Week with a live leaderboard',
   'Every movement opens a breakdown video from Doc',
 ];
 
@@ -313,7 +321,7 @@ export function AboutScreen({ variant, onBack, onStartFree, onBookClass, onSignI
                 ))}
               </View>
               <Pressable style={styles.doorButtonOutline} onPress={onBookClass} testID="about-book-class">
-                <Text style={styles.doorButtonOutlineText}>BOOK YOUR CLASS IN PERSON</Text>
+                <Text style={styles.doorButtonOutlineText}>START TRAINING AT DOC'S</Text>
               </Pressable>
             </View>
           </View>
