@@ -67,9 +67,9 @@ function Toggle({ on }: { on: boolean }) {
 
 export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
   const membership = useMembership();
-  const { newsletterOptIn, setNewsletterOptIn } = membership;
   const { signOut: authSignOut } = useAuth();
-  const { showTomorrowsWorkout, setShowTomorrowsWorkout } = useProfile();
+  const { showTomorrowsWorkout, setShowTomorrowsWorkout, newsletterOptIn, setNewsletterOptIn, weeklyEmailOptIn, setWeeklyEmailOptIn } =
+    useProfile();
   const [prefs, setPrefs] = useState<NotificationPrefs>(() => loadJSON(NOTIFICATIONS_STORAGE_KEY, DEFAULT_NOTIFICATION_PREFS));
   const [cancelStage, setCancelStage] = useState<'none' | 'confirmed'>('none');
   const [openingPortal, setOpeningPortal] = useState(false);
@@ -278,10 +278,10 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
           ))}
         </View>
 
-        <Text style={[styles.sectionHeading, styles.sectionHeadingSpaced]}>NEWSLETTER</Text>
+        <Text style={[styles.sectionHeading, styles.sectionHeadingSpaced]}>EMAIL</Text>
         <View style={styles.rowGroup}>
           <Pressable
-            style={[styles.row, styles.rowLast]}
+            style={styles.row}
             onPress={() => setNewsletterOptIn(!newsletterOptIn)}
             testID="newsletter-toggle"
           >
@@ -290,6 +290,17 @@ export function SettingsScreen({ visible, onClose, onOpenMemberships }: Props) {
               <Text style={styles.rowSubtext}>Doc's weekly newsletter, straight to your inbox.</Text>
             </View>
             <Toggle on={newsletterOptIn} />
+          </Pressable>
+          <Pressable
+            style={[styles.row, styles.rowLast]}
+            onPress={() => setWeeklyEmailOptIn(!weeklyEmailOptIn)}
+            testID="weekly-email-toggle"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowLabel}>New Week Email</Text>
+              <Text style={styles.rowSubtext}>A heads up every Sunday night when the new week drops.</Text>
+            </View>
+            <Toggle on={weeklyEmailOptIn} />
           </Pressable>
         </View>
 

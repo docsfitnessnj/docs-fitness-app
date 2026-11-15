@@ -34,6 +34,7 @@ type Props = {
   onOpenTrophyCase: () => void;
   onOpenMemberManager: () => void;
   onOpenFoundingFiftyAdmin: () => void;
+  onOpenEmailAdmin: () => void;
   onOpenContentLibrary: () => void;
   onOpenDocsInbox: () => void;
   onOpenInvite: () => void;
@@ -74,6 +75,7 @@ export function SidebarDrawer({
   onOpenTrophyCase,
   onOpenMemberManager,
   onOpenFoundingFiftyAdmin,
+  onOpenEmailAdmin,
   onOpenContentLibrary,
   onOpenDocsInbox,
   onOpenInvite,
@@ -222,6 +224,12 @@ export function SidebarDrawer({
             label: 'CONTENT LIBRARY',
             icon: 'file-tray-full-outline' as const,
             onPress: () => openNested(onOpenContentLibrary),
+          },
+          {
+            key: 'email-admin',
+            label: 'EMAIL',
+            icon: 'paper-plane-outline' as const,
+            onPress: () => openNested(onOpenEmailAdmin),
           },
         ]
       : []),
