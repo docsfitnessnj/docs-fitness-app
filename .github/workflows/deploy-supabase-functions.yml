@@ -30,4 +30,8 @@ jobs:
             echo "::error::SUPABASE_ACCESS_TOKEN repository secret is not set — Edge Functions were NOT deployed. See supabase/functions/README.md."
             exit 1
           fi
-          supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF"
+          # --yes: newer Supabase CLI versions require explicit confirmation
+          # in non-interactive runs (without it the deploy exits 1 having
+          # changed nothing — "This run can't ask because stdout is not a
+          # terminal"), which is exactly what broke the Round 56 deploy.
+          supabase functions deploy --yes --project-ref "$SUPABASE_PROJECT_REF"
