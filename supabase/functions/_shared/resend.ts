@@ -19,6 +19,13 @@ export type SendEmailInput = {
   subject: string;
   html?: string;
   text?: string;
+  // Round 57: Resend's own field name, passed straight through in the
+  // request body below — set on the Sunday Drop so a member who hits
+  // reply reaches a real inbox (docsfitnessnj@gmail.com), never an address
+  // nobody reads. Owner alerts (New Member Alert, Payment Alert) don't set
+  // this at all — a reply to those is already going to the owner's own
+  // inbox, there's nothing to redirect.
+  reply_to?: string;
 };
 
 export async function sendEmail(input: SendEmailInput): Promise<{ ok: boolean; error?: string }> {
