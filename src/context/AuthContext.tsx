@@ -35,7 +35,23 @@ type AuthContextValue = {
   // may not have re-rendered from the auth listener yet, which would make
   // the write silently no-op. Writing directly here, using the id Supabase
   // just handed back in this same call, has no such race.
-  signUp: (email: string, password: string, howTrain?: 'online' | 'boathouse') => Promise<AuthResult>;
+  // signupMeta carries the two things Round 56's email round needs at the
+  // exact instant an account is created, via Supabase Auth's own
+  // signUp(options.data) — which lands in auth.users.raw_user_meta_data
+  // atomically with account creation, so migration_033.sql's
+  // handle_new_user() trigger can read both in the SAME insert that
+  // creates the profile row (no race, no second write). signupPath is the
+  // most "reliably known" thing signup actually has at that moment — which
+  // door it came through, feeding the owner's New Member Alert.
+  // newsletterOptIn persists the Welcome screen's own checkbox for real
+  // (it used to be pure client-local state — see MembershipContext's old
+  // newsletterOptIn field, now removed).
+  signUp: (
+    email: string,
+    password: string,
+    howTrain?: 'online' | 'boathouse',
+    signupMeta?: { signupPath: 'online_trial' | 'book_class' | 'undecided'; newsletterOptIn: boolean }
+  ) => Promise<AuthResult>;
   signInWithPassword: (email: string, password: string) => Promise<AuthResult>;
   signOut: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<AuthResult>;
@@ -110,8 +126,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user: session?.user ?? null,
       passwordRecovery,
       clearPasswordRecovery: () => setPasswordRecovery(false),
-      signUp: async (email, password, howTrain) => {
-        const { data, error } = await supabase.auth.signUp({ email, password });
+      signUp: async (email, password, howTrain, signupMeta) => {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              signup_path: signupMeta?.signupPath ?? null,
+              newsletter_opt_in: signupMeta?.newsletterOptIn ?? false,
+            },
+          },
+        });
         if (error) {
           const lower = error.message.toLowerCase();
           const emailAlreadyExists = lower.includes('already registered') || lower.includes('already exists');

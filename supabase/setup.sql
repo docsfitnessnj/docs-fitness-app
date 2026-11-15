@@ -58,6 +58,26 @@ create table if not exists public.profiles (
   -- added to the member's own real in-app class_bookings count to get their
   -- full lifetime total.
   legacy_starting_count integer not null default 0 check (legacy_starting_count >= 0),
+  -- Round 56 (migration_033): which door signup came through -- captured
+  -- via Supabase Auth's own signUp() options.data, landing here straight
+  -- off auth.users.raw_user_meta_data in the same trigger that creates
+  -- this row (see handle_new_user below), so there's no race and no
+  -- second write. The most "reliably known" thing signup actually has at
+  -- the moment an account is created -- feeds the owner's New Member
+  -- Alert.
+  signup_path text check (signup_path is null or signup_path in ('online_trial', 'book_class', 'undecided')),
+  -- Opted in to The Weekly Kettlebell newsletter -- closes a real,
+  -- pre-existing gap: the Welcome screen's pre-checked box used to persist
+  -- nowhere at all (pure client-local state in MembershipContext). Set at
+  -- signup the same way as signup_path above; editable later in Settings.
+  -- Defaults false at the column level as a safety net for any row
+  -- created outside the normal signup path -- the real signup flow always
+  -- writes an explicit true/false from the checkbox regardless.
+  newsletter_opt_in boolean not null default false,
+  -- The Sunday Drop email's own opt-out (separate audience/decision from
+  -- the newsletter above) -- defaults true, since every signed-in member
+  -- gets this email unless they turn it off in Settings.
+  weekly_email_opt_in boolean not null default true,
   created_at timestamptz not null default now()
 );
 
@@ -154,17 +174,55 @@ create trigger profiles_legacy_starting_count_admin_only
   for each row execute function public.enforce_legacy_starting_count_admin_only();
 
 -- A brand-new login (sign-up) automatically gets a blank profile row, so the
--- rest of the app never has to special-case "no profile yet."
+-- rest of the app never has to special-case "no profile yet." Round 56
+-- (migration_033) extended this to persist signup_path/newsletter_opt_in
+-- from the client's own signUp() options.data (landing in
+-- raw_user_meta_data atomically with account creation) and to dispatch the
+-- owner's New Member Alert (and, if opted in, the newsletter Audience add)
+-- over pg_net -- see migration_033.sql's own top comment for the full
+-- design, including the one-time Vault secret setup this depends on. The
+-- vault secret read and the net.http_post() call are both wrapped in their
+-- own exception handler: a missing pg_net/Vault setup (a fresh local test
+-- database, or before the owner's own one-time Vault step) can only ever
+-- skip the email side effect, never block real account creation above it.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_display_name text;
+  v_signup_path text;
+  v_newsletter boolean;
+  v_secret text;
 begin
-  insert into public.profiles (id, display_name, created_at)
-  values (new.id, coalesce(nullif(split_part(new.email, '@', 1), ''), 'Member'), now())
+  v_display_name := coalesce(nullif(split_part(new.email, '@', 1), ''), 'Member');
+  v_signup_path := new.raw_user_meta_data->>'signup_path';
+  v_newsletter := coalesce((new.raw_user_meta_data->>'newsletter_opt_in')::boolean, false);
+
+  insert into public.profiles (id, display_name, created_at, signup_path, newsletter_opt_in)
+  values (new.id, v_display_name, now(), v_signup_path, v_newsletter)
   on conflict (id) do nothing;
+
+  begin
+    select decrypted_secret into v_secret from vault.decrypted_secrets where name = 'db_webhook_secret';
+    if v_secret is not null then
+      perform net.http_post(
+        url := 'https://qooezwnskaqvmquydijg.supabase.co/functions/v1/notify-new-signup',
+        body := jsonb_build_object(
+          'email', new.email,
+          'display_name', v_display_name,
+          'signup_path', v_signup_path,
+          'newsletter_opt_in', v_newsletter
+        ),
+        headers := jsonb_build_object('Content-Type', 'application/json', 'x-webhook-secret', v_secret)
+      );
+    end if;
+  exception when others then
+    raise warning 'handle_new_user: could not dispatch notify-new-signup (%)', sqlerrm;
+  end;
+
   return new;
 end;
 $$;
@@ -1082,6 +1140,7 @@ declare
   wed_line text;
   wod_lines text;
   post_body text;
+  v_secret text;
 begin
   select id into admin_id from public.profiles where is_admin = true order by created_at asc limit 1;
   if admin_id is null then
@@ -1178,10 +1237,26 @@ begin
     insert into public.community_posts (author_id, title, body, kind, pinned, is_weekly_release)
     values (admin_id, '', post_body, 'text', true, true);
 
-    -- A future round can add a transactional-email hook right here (same
-    -- loop iteration, same "this week just went live" instant) without any
-    -- restructuring — everything this round builds already resolves "the
-    -- week that just released" and "who to notify" at exactly this point.
+    -- Round 56 (migration_033) — the Sunday Drop email, same loop
+    -- iteration, same exactly-once guarantee the post insert above
+    -- already has (this whole loop body only ever runs once per week,
+    -- guarded by `released_at is null` above) -- no separate idempotency
+    -- flag needed. Wrapped exactly like handle_new_user()'s own dispatch:
+    -- a missing pg_net/Vault setup must never roll back or interrupt the
+    -- real release, which has already committed as part of this same
+    -- function call by the time this runs.
+    begin
+      select decrypted_secret into v_secret from vault.decrypted_secrets where name = 'db_webhook_secret';
+      if v_secret is not null then
+        perform net.http_post(
+          url := 'https://qooezwnskaqvmquydijg.supabase.co/functions/v1/send-weekly-release-email',
+          body := jsonb_build_object('week_id', w.id),
+          headers := jsonb_build_object('Content-Type', 'application/json', 'x-webhook-secret', v_secret)
+        );
+      end if;
+    exception when others then
+      raise warning 'release_scheduled_weeks_if_due: could not dispatch send-weekly-release-email for week % (%)', w.id, sqlerrm;
+    end;
   end loop;
 end;
 $$;
@@ -1225,6 +1300,68 @@ begin
   end loop;
 end;
 $$;
+
+-- ----------------------------------------------------------------------------
+-- Round 56 (migration_033): EMAIL. email_settings is the TEST/LIVE master
+-- safety switch (same singleton shape as founding_fifty_settings just
+-- below) -- defaults to 'test' so a fresh install can never accidentally
+-- email a real member. Admin-only read/write; the two member-email-sending
+-- Edge Functions read it with the service role, which bypasses RLS anyway.
+-- weekly_release_email_recipients() is the one place "who gets the Sunday
+-- Drop email" is decided -- see migration_033.sql's own top comment for the
+-- full design and the confirmed exclusion rule.
+-- ----------------------------------------------------------------------------
+create extension if not exists pg_net;
+
+create table if not exists public.email_settings (
+  id int primary key default 1,
+  mode text not null default 'test' check (mode in ('test', 'live')),
+  constraint email_settings_singleton check (id = 1)
+);
+
+alter table public.email_settings enable row level security;
+
+drop policy if exists "only admin can read email settings" on public.email_settings;
+create policy "only admin can read email settings"
+  on public.email_settings for select
+  to authenticated
+  using (public.is_admin(auth.uid()));
+
+drop policy if exists "only admin can set email mode" on public.email_settings;
+create policy "only admin can set email mode"
+  on public.email_settings for update
+  to authenticated
+  using (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
+
+insert into public.email_settings (id, mode) values (1, 'test') on conflict (id) do nothing;
+
+create or replace function public.weekly_release_email_recipients()
+returns table(user_id uuid, email text, display_name text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return query
+  select p.id, u.email, p.display_name
+  from public.profiles p
+  join auth.users u on u.id = p.id
+  where p.weekly_email_opt_in = true
+    and not (
+      exists (
+        select 1 from public.class_packs cp
+        where cp.user_id = p.id and cp.credits_remaining > 0 and cp.expires_at > now()
+      )
+      and not exists (
+        select 1 from public.subscriptions s
+        where s.user_id = p.id and s.status in ('trialing', 'active')
+      )
+    );
+end;
+$$;
+
+grant execute on function public.weekly_release_email_recipients() to service_role;
 
 do $$
 begin

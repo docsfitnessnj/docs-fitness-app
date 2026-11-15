@@ -37,6 +37,7 @@ import { StoriesProvider } from './src/context/StoriesContext';
 import { DeckProgressProvider, useDeckProgress } from './src/context/DeckProgressContext';
 import { ChallengeProvider } from './src/context/ChallengeContext';
 import { BadgeProvider } from './src/context/BadgeContext';
+import { EmailProvider } from './src/context/EmailContext';
 import { FoundingFiftyProvider } from './src/context/FoundingFiftyContext';
 import { DocsInboxProvider } from './src/context/DocsInboxContext';
 import { ClassBookingProvider } from './src/context/ClassBookingContext';
@@ -106,6 +107,7 @@ import { MessagesScreen } from './src/screens/MessagesScreen';
 import { MyWorkoutsScreen } from './src/screens/MyWorkoutsScreen';
 import { MembershipsScreen } from './src/screens/MembershipsScreen';
 import { AdminRosterScreen } from './src/screens/AdminRosterScreen';
+import { EmailAdminScreen } from './src/screens/EmailAdminScreen';
 import { FoundingFiftyAdminScreen } from './src/screens/FoundingFiftyAdminScreen';
 import { CloseFriendsScreen } from './src/screens/CloseFriendsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
@@ -305,7 +307,7 @@ type OnboardingFlowProps = {
 // BOATHOUSE goes straight to plan selection. Every path captures an email
 // on the way through — there's no anonymous/browse-without-an-account exit.
 function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
-  const { enterFreeTier, setNewsletterOptIn } = useMembership();
+  const { enterFreeTier } = useMembership();
   const { signUp, signInWithPassword, sendPasswordReset } = useAuth();
   const { setHowTrain } = useProfile();
   const [intent, setIntent] = useState<EntryIntent>(null);
@@ -344,6 +346,11 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
             // question by design — this is the only place that answer's
             // ever recorded for them, so it has to happen at signup itself.
             const howTrainForDoor = intent === 'onlineTrial' ? 'online' : intent === 'bookClass' ? 'boathouse' : undefined;
+            // Round 56: the most "reliably known" thing signup actually
+            // has at this exact moment — which door was tapped, BEFORE
+            // signUp() is even called — feeds the owner's New Member
+            // Alert via signUp()'s own metadata (see AuthContext.tsx).
+            const signupPath = intent === 'onlineTrial' ? 'online_trial' : intent === 'bookClass' ? 'book_class' : 'undecided';
             // Marked BEFORE signUp(), not after it resolves — signUp()
             // flipping the session live re-renders straight into MainApp,
             // which mounts CommunityScreen (and its own tour.start() call)
@@ -354,12 +361,11 @@ function OnboardingFlow({ step, setStep }: OnboardingFlowProps) {
             // redirect fires. Cleared on every branch below that does NOT
             // end in a real checkout redirect.
             if (intent === 'onlineTrial') markCheckoutRedirecting();
-            const result = await signUp(enteredEmail, password, howTrainForDoor);
+            const result = await signUp(enteredEmail, password, howTrainForDoor, { signupPath, newsletterOptIn });
             if (result.error) {
               if (intent === 'onlineTrial') clearCheckoutRedirectPending();
               return { message: result.error, kind: 'error', showSignInLink: result.emailAlreadyExists };
             }
-            setNewsletterOptIn(newsletterOptIn);
             if (result.needsEmailConfirmation) {
               if (intent === 'onlineTrial') clearCheckoutRedirectPending();
               return {
@@ -587,6 +593,7 @@ function MainApp({
   const [trophyCaseOpen, setTrophyCaseOpen] = useState(false);
   const [memberManagerOpen, setMemberManagerOpen] = useState(false);
   const [foundingFiftyAdminOpen, setFoundingFiftyAdminOpen] = useState(false);
+  const [emailAdminOpen, setEmailAdminOpen] = useState(false);
   const [contentLibraryOpen, setContentLibraryOpen] = useState(false);
   const [docsInboxOpen, setDocsInboxOpen] = useState(false);
   const [messagesDraft, setMessagesDraft] = useState<string | undefined>(undefined);
@@ -656,6 +663,7 @@ function MainApp({
     setTrophyCaseOpen(false);
     setMemberManagerOpen(false);
     setFoundingFiftyAdminOpen(false);
+    setEmailAdminOpen(false);
     setContentLibraryOpen(false);
     setDocsInboxOpen(false);
     setScheduleOpen(false);
@@ -766,6 +774,7 @@ function MainApp({
           onOpenTrophyCase={() => setTrophyCaseOpen(true)}
           onOpenMemberManager={() => setMemberManagerOpen(true)}
           onOpenFoundingFiftyAdmin={() => setFoundingFiftyAdminOpen(true)}
+          onOpenEmailAdmin={() => setEmailAdminOpen(true)}
           onOpenContentLibrary={() => setContentLibraryOpen(true)}
           onOpenDocsInbox={() => setDocsInboxOpen(true)}
           onOpenInvite={() => setInviteOpen(true)}
@@ -849,6 +858,9 @@ function MainApp({
       </ScreenOverlay>
       <ScreenOverlay visible={foundingFiftyAdminOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <FoundingFiftyAdminScreen visible={foundingFiftyAdminOpen} onClose={() => setFoundingFiftyAdminOpen(false)} />
+      </ScreenOverlay>
+      <ScreenOverlay visible={emailAdminOpen} fullBleed={sidebarOpen} topBasePadding={60}>
+        <EmailAdminScreen visible={emailAdminOpen} onClose={() => setEmailAdminOpen(false)} />
       </ScreenOverlay>
       <ScreenOverlay visible={contentLibraryOpen} fullBleed={sidebarOpen} topBasePadding={60}>
         <ContentLibraryScreen visible={contentLibraryOpen} onClose={() => setContentLibraryOpen(false)} />
@@ -1223,6 +1235,7 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
                       <ClassBookingProvider>
                       <BadgeProvider>
                         <FoundingFiftyProvider>
+                          <EmailProvider>
                           <DocsInboxProvider>
                               <ContentLibraryProvider>
                                 <GroupChatUnreadProvider>
@@ -1262,6 +1275,7 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
                                 </GroupChatUnreadProvider>
                               </ContentLibraryProvider>
                           </DocsInboxProvider>
+                          </EmailProvider>
                         </FoundingFiftyProvider>
                       </BadgeProvider>
                       </ClassBookingProvider>

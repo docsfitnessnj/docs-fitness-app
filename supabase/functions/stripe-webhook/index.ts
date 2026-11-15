@@ -1,8 +1,88 @@
 import { getStripe } from '../_shared/stripe.ts';
 import { getSupabaseAdmin } from '../_shared/supabaseAdmin.ts';
 import { planForPriceId } from '../_shared/prices.ts';
+import { sendEmail } from '../_shared/resend.ts';
 
 type SupabaseAdmin = ReturnType<typeof getSupabaseAdmin>;
+
+const OWNER_EMAIL = 'docsfitnessnj@gmail.com';
+const FROM_ALERTS = "Doc's Fitness Alerts <alerts@docsfitnessnj.com>";
+
+const PLAN_LABELS: Record<string, string> = {
+  monthly: 'Monthly (Online)',
+  annual: 'Annual (Online)',
+  founding: 'The Founding 50',
+  in_person_monthly: 'Monthly Unlimited',
+  ten_pack: '10 Class Pack',
+  drop_in: 'Drop In',
+  pilates_guest: 'Downbeach Pilates',
+};
+
+function formatDollars(cents: number | null | undefined): string {
+  if (cents == null) return '$0';
+  const dollars = cents / 100;
+  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
+}
+
+function formatEtNow(): string {
+  return (
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(new Date()) + ' ET'
+  );
+}
+
+// Round 56: an owner alert, same category as notify-new-signup — plain,
+// short, and exempt from EMAIL TEST MODE by construction (it never
+// touches dispatchToMembers/email_settings; it only ever reaches the
+// owner's own inbox regardless). Called at the very end of
+// checkout.session.completed, after the real payment/booking processing
+// has already run, and always wrapped in its own try/catch at the call
+// site — a Resend failure here must never surface as a failed webhook;
+// the money has already moved and the booking/access grant has already
+// completed by the time this runs.
+//
+// `checkout.session.completed` fires exactly once per Checkout Session —
+// i.e. exactly once when a subscription is first created (or a one-time
+// plan is purchased) — never on a subscription's later monthly renewal
+// charges, which this webhook doesn't listen for at all (it's an
+// `invoice.payment_succeeded`/`invoice.paid` event, not in this webhook's
+// subscribed event list). So every alert this sends is, by construction,
+// a genuinely new checkout — a first subscription signup, a repeat
+// one-time purchase (e.g. a second 10 Class Pack), or a resubscribe after
+// a cancellation (Stripe creates a brand-new subscription object, not a
+// renewal of the old one) — never an ongoing billing-cycle renewal; there
+// is no first-purchase-vs-renewal ambiguity to resolve here, because a
+// renewal charge never reaches this code path in the first place.
+async function sendPaymentAlert(admin: SupabaseAdmin, userId: string, plan: string | undefined, amountCents: number | null | undefined) {
+  const planLabel = plan ? (PLAN_LABELS[plan] ?? plan) : 'Unknown plan';
+  const { data: authUser } = await admin.auth.admin.getUserById(userId);
+  const email = authUser?.user?.email ?? 'unknown';
+  const { data: profile } = await admin.from('profiles').select('display_name').eq('id', userId).maybeSingle();
+  const displayName = profile?.display_name?.trim() || 'Member';
+  const amount = formatDollars(amountCents);
+
+  // The money bag emoji is a deliberate, owner-only exception to this
+  // app's standing no-emoji rule — this subject line is never seen by a
+  // member, and exists purely so this alert is instantly recognizable on
+  // a phone lock screen. It does not loosen the no-emoji rule anywhere
+  // member-facing.
+  const result = await sendEmail({
+    from: FROM_ALERTS,
+    to: OWNER_EMAIL,
+    subject: `\u{1F4B0} ${amount} · ${planLabel} · ${displayName}`,
+    text: `${displayName}\n${email}\n\n${planLabel}\n${amount}\n${formatEtNow()}`,
+  });
+  if (!result.ok) {
+    console.error('stripe-webhook: payment alert failed', result.error);
+  }
+}
 
 async function upsertSubscription(
   admin: SupabaseAdmin,
@@ -206,6 +286,16 @@ Deno.serve(async (req) => {
               }
             }
           }
+        }
+
+        // Round 56: the owner's Payment Alert. Wrapped here, at the real
+        // call site, so a Resend failure can never surface as a failed
+        // webhook — every real payment/booking side effect above has
+        // already completed by the time this runs.
+        try {
+          await sendPaymentAlert(admin, userId, plan, session.amount_total);
+        } catch (err) {
+          console.error('stripe-webhook: payment alert threw', err);
         }
         break;
       }

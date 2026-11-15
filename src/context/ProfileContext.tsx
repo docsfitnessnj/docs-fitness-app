@@ -21,6 +21,16 @@ type ProfileRow = {
   // means "never completed or skipped," on this account, ever, on any
   // device. See TourContext, the only other reader/writer of this field.
   tourCompletedAt: Date | null;
+  // Round 56 (migration_033): opted in to The Weekly Kettlebell newsletter
+  // — captured at signup (see AuthContext.signUp's signupMeta) and
+  // editable later in Settings. This is a real, persisted column now; it
+  // used to be pure client-local state in MembershipContext, which never
+  // reached the database at all.
+  newsletterOptIn: boolean;
+  // The Sunday Drop email's own opt-out — separate audience/decision from
+  // the newsletter above. Defaults true: every signed-in member gets this
+  // email unless they turn it off here.
+  weeklyEmailOptIn: boolean;
 };
 
 const DEFAULT_PROFILE: ProfileRow = {
@@ -32,6 +42,8 @@ const DEFAULT_PROFILE: ProfileRow = {
   isAdmin: false,
   showTomorrowsWorkout: true,
   tourCompletedAt: null,
+  newsletterOptIn: false,
+  weeklyEmailOptIn: true,
 };
 
 export type UpdateProfileInput = {
@@ -78,8 +90,12 @@ type ProfileContextValue = {
   // See ProfileRow.tourCompletedAt — read by TourContext to gate the
   // spotlight tour's single entry point, alongside markTourCompleted below.
   tourCompletedAt: Date | null;
+  newsletterOptIn: boolean;
+  weeklyEmailOptIn: boolean;
   updateProfile: (input: UpdateProfileInput) => Promise<{ error: string | null }>;
   setHowTrain: (value: HowTrain) => Promise<void>;
+  setNewsletterOptIn: (value: boolean) => Promise<void>;
+  setWeeklyEmailOptIn: (value: boolean) => Promise<void>;
   setShowTomorrowsWorkout: (value: boolean) => Promise<void>;
   // Writes the tour's once-ever flag — true when the tour finishes or is
   // skipped (both read as "done"), false only from the admin dev-preview
@@ -169,7 +185,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     supabase
       .from('profiles')
       .select(
-        'display_name, instagram_handle, favorite_quote, avatar_url, how_train, is_admin, show_tomorrows_workout, tour_completed_at'
+        'display_name, instagram_handle, favorite_quote, avatar_url, how_train, is_admin, show_tomorrows_workout, tour_completed_at, newsletter_opt_in, weekly_email_opt_in'
       )
       .eq('id', user.id)
       .maybeSingle()
@@ -228,6 +244,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           isAdmin: data?.is_admin ?? false,
           showTomorrowsWorkout: data?.show_tomorrows_workout ?? true,
           tourCompletedAt: data?.tour_completed_at ? new Date(data.tour_completed_at) : null,
+          newsletterOptIn: data?.newsletter_opt_in ?? false,
+          weeklyEmailOptIn: data?.weekly_email_opt_in ?? true,
         });
         hasLoadedOnce.current = true;
         if (isRefetch) {
@@ -256,6 +274,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       isAdmin: profile.isAdmin,
       showTomorrowsWorkout: profile.showTomorrowsWorkout,
       tourCompletedAt: profile.tourCompletedAt,
+      newsletterOptIn: profile.newsletterOptIn,
+      weeklyEmailOptIn: profile.weeklyEmailOptIn,
       updateProfile: async (input) => {
         if (!user) return { error: 'Not signed in.' };
         try {
@@ -317,6 +337,27 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         if (updateError) {
           // Best-effort, same as setHowTrain above — the toggle still
           // reflects instantly on this device even if the write didn't land.
+        }
+      },
+      setNewsletterOptIn: async (value) => {
+        if (!user) return;
+        setProfile((prev) => ({ ...prev, newsletterOptIn: value }));
+        const { error: updateError } = await supabase.from('profiles').update({ newsletter_opt_in: value }).eq('id', user.id);
+        if (updateError) {
+          // Best-effort, same as setHowTrain/setShowTomorrowsWorkout above
+          // — the toggle still reflects instantly on this device even if
+          // the write didn't land. Note: this does NOT remove an already-
+          // synced contact from the Resend Audience — the app only ever
+          // adds (see notify-new-signup), an unsubscribe is Resend's own
+          // state from here on, same as a direct unsubscribe link would be.
+        }
+      },
+      setWeeklyEmailOptIn: async (value) => {
+        if (!user) return;
+        setProfile((prev) => ({ ...prev, weeklyEmailOptIn: value }));
+        const { error: updateError } = await supabase.from('profiles').update({ weekly_email_opt_in: value }).eq('id', user.id);
+        if (updateError) {
+          // Best-effort, same pattern as the others on this screen.
         }
       },
       markTourCompleted: async (completed) => {

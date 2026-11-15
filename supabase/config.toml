@@ -16,3 +16,23 @@ verify_jwt = true
 # STRIPE_WEBHOOK_SECRET inside the function itself.
 [functions.stripe-webhook]
 verify_jwt = false
+
+# Round 56: both of these are called by migration_033.sql's own Postgres
+# triggers/cron functions over pg_net, never by a signed-in member — no
+# Supabase JWT exists for either call. Each verifies the caller a
+# different way instead: a shared secret header (DB_WEBHOOK_SECRET), set
+# once in both Supabase Vault (for the SQL side) and here as an Edge
+# Function secret (for this side) — see migration_033.sql's own top
+# comment and supabase/functions/_shared/webhookAuth.ts.
+[functions.notify-new-signup]
+verify_jwt = false
+
+[functions.send-weekly-release-email]
+verify_jwt = false
+
+# A real signed-in admin triggers this one directly from the app (the
+# EMAIL admin screen's SEND TEST EMAIL button) — a real Supabase JWT exists
+# here, checked before anything else, plus an explicit is_admin check
+# inside the function itself.
+[functions.admin-send-test-email]
+verify_jwt = true

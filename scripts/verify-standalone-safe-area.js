@@ -11762,6 +11762,450 @@ async function run() {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Round 56: EMAIL. The real Resend API and the real pg_net/Postgres
+  // trigger chain can't be driven from this harness at all -- no live
+  // network path to Resend, and no pg_net in any runtime this suite can
+  // reach (see AGENTS.md's Round 56 write-up for the direct local-Postgres
+  // functional test and the offline `deno test` coverage that exercise
+  // those two pieces instead). What follows is everything this harness
+  // genuinely CAN prove end to end against the real, unmodified app: the
+  // real signup metadata wiring, the real admin TEST/LIVE switch and its
+  // confirmation gate, the real SEND TEST EMAIL button, the real Settings
+  // screen opt-out toggles, and static source checks on the three new
+  // Edge Functions confirming the wiring the brief required.
+
+  // --- Signup metadata, end to end through the real onboarding flow.
+  // BOOK YOUR CLASS IN PERSON is used rather than TRAIN ONLINE -- its
+  // post-signup path is a local enterFreeTier() call, not a real Stripe
+  // Checkout redirect, so this stays scoped to the signup request itself.
+  function fulfillSignupSuccess(email) {
+    return {
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        access_token: 't',
+        refresh_token: 'r',
+        token_type: 'bearer',
+        expires_in: 3600,
+        user: { id: USER_ID, email, aud: 'authenticated', role: 'authenticated' },
+      }),
+    };
+  }
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    let capturedSignupBody = null;
+    await page.route('**/auth/v1/signup*', async (route) => {
+      try {
+        capturedSignupBody = JSON.parse(route.request().postData() || '{}');
+      } catch {
+        capturedSignupBody = null;
+      }
+      return route.fulfill(fulfillSignupSuccess('newmember@example.com'));
+    });
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('about-book-class').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    await page.getByTestId('welcome-email').fill('newmember@example.com').catch(() => {});
+    await page.getByTestId('welcome-password').fill('a-real-password-123').catch(() => {});
+    await page.getByTestId('welcome-continue').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(800);
+
+    record(
+      '[email/signup-metadata] a real signup through BOOK YOUR CLASS IN PERSON sends signup_path=book_class and newsletter_opt_in=true (the checkbox is pre-checked)',
+      !!capturedSignupBody &&
+        capturedSignupBody.data?.signup_path === 'book_class' &&
+        capturedSignupBody.data?.newsletter_opt_in === true,
+      JSON.stringify(capturedSignupBody)
+    );
+
+    await context.close();
+  }
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    let capturedSignupBody = null;
+    await page.route('**/auth/v1/signup*', async (route) => {
+      try {
+        capturedSignupBody = JSON.parse(route.request().postData() || '{}');
+      } catch {
+        capturedSignupBody = null;
+      }
+      return route.fulfill(fulfillSignupSuccess('newmember2@example.com'));
+    });
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('about-book-class').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    await page.getByTestId('welcome-email').fill('newmember2@example.com').catch(() => {});
+    await page.getByTestId('welcome-password').fill('a-real-password-123').catch(() => {});
+    await page.getByTestId('newsletter-optin-checkbox').click({ timeout: 5000 }).catch(() => {});
+    await page.getByTestId('welcome-continue').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(800);
+
+    record(
+      '[email/signup-metadata-unchecked] unchecking the newsletter box before signup sends newsletter_opt_in=false -- the real checkbox state, not a hardcoded true',
+      !!capturedSignupBody && capturedSignupBody.data?.newsletter_opt_in === false,
+      JSON.stringify(capturedSignupBody)
+    );
+    await context.close();
+  }
+
+  // Static backstop: the exact wiring AuthContext.tsx's signUp() uses to
+  // fold signupMeta into Supabase Auth's own options.data.
+  {
+    const authSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'context', 'AuthContext.tsx'), 'utf8');
+    const wiresSignupPath = /signup_path:\s*signupMeta\?\.signupPath\s*\?\?\s*null/.test(authSrc);
+    const wiresNewsletter = /newsletter_opt_in:\s*signupMeta\?\.newsletterOptIn\s*\?\?\s*false/.test(authSrc);
+    record(
+      '[email/signup-static-wiring] AuthContext.tsx signUp() passes signup_path/newsletter_opt_in through to Supabase Auth options.data',
+      wiresSignupPath && wiresNewsletter,
+      JSON.stringify({ wiresSignupPath, wiresNewsletter })
+    );
+  }
+
+  // --- The EMAIL admin screen: the TEST/LIVE master switch, its
+  // confirmation gate, and SEND TEST EMAIL.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Admin',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: true,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+          },
+        ]),
+      })
+    );
+    // Stateful -- captures the PATCH payload and serves it back, so
+    // toggling the switch exercises a real round trip, not just an
+    // assumption that the write happened.
+    let emailSettingsRow = { mode: 'test' };
+    await page.route('**/rest/v1/email_settings*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'PATCH') {
+        let payload = {};
+        try {
+          payload = JSON.parse(req.postData() || '{}');
+        } catch {}
+        emailSettingsRow = { ...emailSettingsRow, ...payload };
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([emailSettingsRow]) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([emailSettingsRow]) });
+    });
+    let testEmailInvokeCount = 0;
+    await page.route('**/functions/v1/admin-send-test-email*', async (route) => {
+      testEmailInvokeCount += 1;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ sent: true, week: 'MON 11/17 - FRI 11/21' }),
+      });
+    });
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('EMAIL', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const initialLabel = await page.getByTestId('email-test-mode-label').innerText().catch(() => '');
+    record(
+      '[email/admin-starts-test] the EMAIL admin screen starts in TEST, matching the migration default',
+      initialLabel.trim() === 'TEST',
+      JSON.stringify({ initialLabel })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'email-admin-test-mode.png') }).catch(() => {});
+
+    // TEST -> LIVE must show a real confirmation BEFORE anything is
+    // written -- CANCEL leaves it on TEST with no PATCH at all.
+    await page.getByTestId('email-test-mode-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const confirmVisible = await page.getByText('Switch To LIVE?', { exact: false }).first().isVisible().catch(() => false);
+    const confirmBodyVisible = await page
+      .getByText('Real members will receive email', { exact: false })
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'email-admin-live-confirm.png') }).catch(() => {});
+    record(
+      '[email/admin-live-confirm-shown] toggling TEST -> LIVE shows a real confirmation naming that real members will get email',
+      confirmVisible && confirmBodyVisible,
+      JSON.stringify({ confirmVisible, confirmBodyVisible })
+    );
+
+    await page.getByText('CANCEL', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const labelAfterCancel = await page.getByTestId('email-test-mode-label').innerText().catch(() => '');
+    record(
+      '[email/admin-live-cancel-noop] CANCEL leaves the mode on TEST with no write performed',
+      labelAfterCancel.trim() === 'TEST' && emailSettingsRow.mode === 'test',
+      JSON.stringify({ labelAfterCancel, emailSettingsRowMode: emailSettingsRow.mode })
+    );
+
+    // Confirming actually flips it, writes through, and shows SAVED.
+    await page.getByTestId('email-test-mode-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('SWITCH TO LIVE', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const labelAfterLive = await page.getByTestId('email-test-mode-label').innerText().catch(() => '');
+    const labelColorLive = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="email-test-mode-label"]');
+      return el ? getComputedStyle(el).color : null;
+    });
+    const savedVisibleLive = await page.getByTestId('save-confirmation-saved').isVisible().catch(() => false);
+    record(
+      '[email/admin-live-confirmed] confirming SWITCH TO LIVE actually flips the mode, writes through, shows LIVE in gold and SAVED',
+      labelAfterLive.trim() === 'LIVE' && labelColorLive === 'rgb(229, 184, 11)' && savedVisibleLive && emailSettingsRow.mode === 'live',
+      JSON.stringify({ labelAfterLive, labelColorLive, savedVisibleLive, emailSettingsRowMode: emailSettingsRow.mode })
+    );
+
+    // LIVE -> TEST needs NO confirmation at all -- turning the safety
+    // switch back toward safe is never the risky direction.
+    await page.waitForTimeout(2700); // let the prior SAVED confirmation auto-revert first
+    await page.getByTestId('email-test-mode-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const confirmShownOnLiveToTest = await page.getByText('Switch To LIVE?', { exact: false }).first().isVisible().catch(() => false);
+    const labelAfterBackToTest = await page.getByTestId('email-test-mode-label').innerText().catch(() => '');
+    record(
+      '[email/admin-test-no-confirm] LIVE -> TEST writes immediately with no confirmation dialog at all',
+      !confirmShownOnLiveToTest && labelAfterBackToTest.trim() === 'TEST' && emailSettingsRow.mode === 'test',
+      JSON.stringify({ confirmShownOnLiveToTest, labelAfterBackToTest, emailSettingsRowMode: emailSettingsRow.mode })
+    );
+
+    // SEND TEST EMAIL: a permanent, on-demand control -- works right here
+    // in TEST mode (the mode it's currently in), any number of times.
+    await page.getByTestId('send-test-email-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const successVisible = await page.getByTestId('send-test-email-success').isVisible().catch(() => false);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'email-admin-send-test-success.png') }).catch(() => {});
+    record(
+      '[email/admin-send-test-email] SEND TEST EMAIL invokes the real admin-send-test-email function and shows a success state',
+      testEmailInvokeCount === 1 && successVisible,
+      JSON.stringify({ testEmailInvokeCount, successVisible })
+    );
+
+    // A second tap works again -- this is a permanent feature, not a
+    // one-shot verification step.
+    await page.getByTestId('send-test-email-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const successVisibleAgain = await page.getByTestId('send-test-email-success').isVisible().catch(() => false);
+    record(
+      '[email/admin-send-test-email-repeatable] SEND TEST EMAIL can be sent again -- a permanent feature, not a one-time launch step',
+      testEmailInvokeCount === 2 && successVisibleAgain,
+      JSON.stringify({ testEmailInvokeCount, successVisibleAgain })
+    );
+
+    await context.close();
+  }
+
+  // SEND TEST EMAIL, error path -- a real failure from the function (or a
+  // week that genuinely doesn't exist yet) must surface as a plain error,
+  // never a silent no-op.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Admin',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: true,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+          },
+        ]),
+      })
+    );
+    await page.route('**/rest/v1/email_settings*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ mode: 'test' }]) })
+    );
+    await page.route('**/functions/v1/admin-send-test-email*', (route) =>
+      route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No scheduled week exists yet to preview.' }) })
+    );
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('EMAIL', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('send-test-email-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const errorVisible = await page.getByTestId('send-test-email-error').isVisible().catch(() => false);
+    const errorText = await page.getByTestId('send-test-email-error').innerText().catch(() => '');
+    record(
+      '[email/admin-send-test-email-error] a genuine send failure surfaces a plain error message, never a silent no-op',
+      errorVisible && errorText.length > 0,
+      JSON.stringify({ errorVisible, errorText })
+    );
+    await context.close();
+  }
+
+  // --- Settings screen: the two email opt-out toggles, each independently
+  // wired to its own profiles column.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    let profilesPatchBody = null;
+    await page.route('**/rest/v1/profiles*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'PATCH') {
+        try {
+          profilesPatchBody = JSON.parse(req.postData() || '{}');
+        } catch {
+          profilesPatchBody = null;
+        }
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Member',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: false,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+            newsletter_opt_in: true,
+            weekly_email_opt_in: true,
+          },
+        ]),
+      });
+    });
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('SETTINGS & NOTIFICATIONS', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const newsletterRowVisible = await page.getByTestId('newsletter-toggle').isVisible().catch(() => false);
+    const weeklyEmailRowVisible = await page.getByTestId('weekly-email-toggle').isVisible().catch(() => false);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'settings-email-toggles.png') }).catch(() => {});
+    record(
+      '[email/settings-both-rows-visible] Settings shows both the newsletter toggle and the new weekly email toggle',
+      newsletterRowVisible && weeklyEmailRowVisible,
+      JSON.stringify({ newsletterRowVisible, weeklyEmailRowVisible })
+    );
+
+    await page.getByTestId('weekly-email-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    record(
+      '[email/settings-weekly-email-toggle-writes] toggling New Week Email off writes weekly_email_opt_in=false to profiles',
+      !!profilesPatchBody && profilesPatchBody.weekly_email_opt_in === false,
+      JSON.stringify(profilesPatchBody)
+    );
+
+    profilesPatchBody = null;
+    await page.getByTestId('newsletter-toggle').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    record(
+      '[email/settings-newsletter-toggle-writes] toggling The Weekly Kettlebell off writes newsletter_opt_in=false to profiles, independently of the weekly-email toggle',
+      !!profilesPatchBody &&
+        profilesPatchBody.newsletter_opt_in === false &&
+        profilesPatchBody.weekly_email_opt_in === undefined,
+      JSON.stringify(profilesPatchBody)
+    );
+
+    await context.close();
+  }
+
+  // --- Static source checks on the three new Edge Functions -- the real
+  // Deno runtime can't be driven from this harness at all, the same
+  // category of gap this file has documented since the Founding 50 round
+  // (create-checkout's own enabled-switch check). These confirm the real,
+  // shipped source is wired the way the brief required.
+  {
+    const srcDir = path.join(__dirname, '..', 'supabase', 'functions');
+    const weeklyReleaseSrc = fs.readFileSync(path.join(srcDir, 'send-weekly-release-email', 'index.ts'), 'utf8');
+    const testEmailSrc = fs.readFileSync(path.join(srcDir, 'admin-send-test-email', 'index.ts'), 'utf8');
+    const signupAlertSrc = fs.readFileSync(path.join(srcDir, 'notify-new-signup', 'index.ts'), 'utf8');
+    const stripeWebhookSrc = fs.readFileSync(path.join(srcDir, 'stripe-webhook', 'index.ts'), 'utf8');
+    const resendSrc = fs.readFileSync(path.join(srcDir, '_shared', 'resend.ts'), 'utf8');
+
+    const weeklyReleaseImportsDispatch = /import\s*\{\s*dispatchToMembers\s*\}\s*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/.test(
+      weeklyReleaseSrc
+    );
+    const weeklyReleaseCallsDispatch = /dispatchToMembers\(\s*email\.subject,\s*email\.html,\s*recipients/.test(weeklyReleaseSrc);
+    record(
+      '[email/edge-fn/weekly-release-dispatches-to-members] send-weekly-release-email is the one real send site -- it imports and calls dispatchToMembers, the real enforcement point for EMAIL TEST MODE',
+      weeklyReleaseImportsDispatch && weeklyReleaseCallsDispatch,
+      JSON.stringify({ weeklyReleaseImportsDispatch, weeklyReleaseCallsDispatch })
+    );
+
+    const testEmailNeverImportsDispatch = !/memberEmailDispatch/.test(testEmailSrc);
+    const testEmailAlwaysTargetsOwner = /to:\s*OWNER_EMAIL/.test(testEmailSrc) && /sendEmail\(/.test(testEmailSrc);
+    const testEmailUsesSharedRenderer = /buildWeeklyReleaseEmail\(/.test(testEmailSrc);
+    const testEmailChecksAdmin = /profile\?\.is_admin/.test(testEmailSrc);
+    record(
+      '[email/edge-fn/test-email-bypasses-dispatch] admin-send-test-email never imports memberEmailDispatch (so it can never be affected by EMAIL TEST MODE), always targets the owner, uses the same shared renderer the real send uses, and checks admin',
+      testEmailNeverImportsDispatch && testEmailAlwaysTargetsOwner && testEmailUsesSharedRenderer && testEmailChecksAdmin,
+      JSON.stringify({ testEmailNeverImportsDispatch, testEmailAlwaysTargetsOwner, testEmailUsesSharedRenderer, testEmailChecksAdmin })
+    );
+
+    const signupAlertChecksWebhookSecret = /verifyWebhookSecret\(req\)/.test(signupAlertSrc);
+    const signupAlertNeverImportsDispatch = !/memberEmailDispatch/.test(signupAlertSrc);
+    record(
+      '[email/edge-fn/signup-alert-wiring] notify-new-signup checks the shared webhook secret (no Supabase JWT exists inside a Postgres trigger) and never touches EMAIL TEST MODE -- it only ever reaches the owner',
+      signupAlertChecksWebhookSecret && signupAlertNeverImportsDispatch,
+      JSON.stringify({ signupAlertChecksWebhookSecret, signupAlertNeverImportsDispatch })
+    );
+
+    const paymentAlertCallSiteWrapped = /try\s*\{\s*await sendPaymentAlert\(admin, userId, plan, session\.amount_total\);\s*\}\s*catch/.test(
+      stripeWebhookSrc
+    );
+    const paymentAlertNeverImportsDispatch = !/memberEmailDispatch/.test(stripeWebhookSrc);
+    const paymentAlertSubjectHasEmoji = /subject:\s*`\\u\{1F4B0\}/.test(stripeWebhookSrc);
+    record(
+      '[email/edge-fn/payment-alert-wiring] the owner Payment Alert is wrapped in its own try/catch at the real call site (a Resend failure can never surface as a failed webhook) and never touches EMAIL TEST MODE',
+      paymentAlertCallSiteWrapped && paymentAlertNeverImportsDispatch && paymentAlertSubjectHasEmoji,
+      JSON.stringify({ paymentAlertCallSiteWrapped, paymentAlertNeverImportsDispatch, paymentAlertSubjectHasEmoji })
+    );
+
+    const resendKeyFromEnv = /Deno\.env\.get\(['"]RESEND_API_KEY['"]\)/.test(resendSrc);
+    const noKeyLogging = ![weeklyReleaseSrc, testEmailSrc, signupAlertSrc, stripeWebhookSrc, resendSrc].some((src) =>
+      /console\.(log|error|warn)\([^)]*RESEND_API_KEY/.test(src)
+    );
+    record(
+      '[email/edge-fn/resend-key-hygiene] RESEND_API_KEY is read from the environment, never hardcoded, and never passed to a console.log/error/warn call anywhere across the new email functions',
+      resendKeyFromEnv && noKeyLogging,
+      JSON.stringify({ resendKeyFromEnv, noKeyLogging })
+    );
+  }
+
   await browser.close();
   console.log('\n=== SUMMARY ===');
   const failed = results.filter((r) => !r.pass);

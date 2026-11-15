@@ -157,10 +157,6 @@ type MembershipContextValue = {
   // Whether this account has already redeemed its one free first class —
   // once true, every booking (for this tier) goes through the normal gates.
   firstClassUsed: boolean;
-  // Opted in to The Weekly Kettlebell newsletter, captured at signup and
-  // editable later in Settings. Keyed to `email` so a future backend round
-  // can sync it straight to Doc's email platform.
-  newsletterOptIn: boolean;
   // True right after a real paid purchase (online plan, Monthly Unlimited,
   // 10 Class Pack) — never set by the free trial or Drop In — so the app
   // shell can show the purchase celebration exactly once, then clear it.
@@ -197,7 +193,6 @@ type MembershipContextValue = {
   useTenPackClass: () => void;
   refundTenPackClass: () => void;
   useFirstClass: () => void;
-  setNewsletterOptIn: (optIn: boolean) => void;
   clearJustPurchased: () => void;
   // In-person only now (see SettingsScreen) — online cancellation goes
   // through the real Stripe customer portal instead.
@@ -226,7 +221,6 @@ type SimulatedMembershipState = {
   trialWarningDismissed: boolean;
   tenPackClassesRemaining: number | null;
   firstClassUsed: boolean;
-  newsletterOptIn: boolean;
   justPurchased: boolean;
   planStartedAt: number | null;
   cancellationRequested: boolean;
@@ -239,7 +233,6 @@ const DEFAULT_SIMULATED_STATE: SimulatedMembershipState = {
   trialWarningDismissed: false,
   tenPackClassesRemaining: null,
   firstClassUsed: false,
-  newsletterOptIn: true,
   justPurchased: false,
   planStartedAt: null,
   cancellationRequested: false,
@@ -364,7 +357,6 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     trialWarningDismissed,
     tenPackClassesRemaining,
     firstClassUsed,
-    newsletterOptIn,
     justPurchased,
     planStartedAt,
     cancellationRequested: simulatedCancellationRequested,
@@ -520,7 +512,6 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
       tenPackClassesRemaining: isAdminPreview ? tenPackClassesRemaining : classPack.creditsRemaining,
       tenPackExpiresAt: isAdminPreview ? null : classPack.expiresAt,
       firstClassUsed,
-      newsletterOptIn,
       justPurchased,
       planRenewsAt,
       cancellationRequested,
@@ -583,7 +574,6 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
         classPack.refundCredit();
       },
       useFirstClass: () => setSimulated((prev) => ({ ...prev, firstClassUsed: true })),
-      setNewsletterOptIn: (optIn: boolean) => setSimulated((prev) => ({ ...prev, newsletterOptIn: optIn })),
       clearJustPurchased: () => setSimulated((prev) => ({ ...prev, justPurchased: false })),
       requestCancellation: () => setSimulated((prev) => ({ ...prev, cancellationRequested: true })),
       keepMembership: () => setSimulated((prev) => ({ ...prev, cancellationRequested: false })),
@@ -623,7 +613,6 @@ export function MembershipProvider({ children }: { children: React.ReactNode }) 
     trialWarningDismissed,
     tenPackClassesRemaining,
     firstClassUsed,
-    newsletterOptIn,
     justPurchased,
     simulatedHasEverTrialed,
     simulatedCancellationRequested,
