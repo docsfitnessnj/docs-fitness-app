@@ -10859,8 +10859,18 @@ async function run() {
       const door1Pill = await page.getByText('2 WEEKS FREE', { exact: false }).isVisible().catch(() => false);
       const door1Bullet1 = await page.getByText('5 workouts a week, 30 minutes or less, one kettlebell', { exact: false }).isVisible().catch(() => false);
       // Round 57: "Plus" comes out of the second bullet now that the COW
-      // counts as the 5th weekly workout, not an extra on top of 4.
-      const door1Bullet2NoPlus = await page.getByText('The Challenge of the Week with a live leaderboard', { exact: false }).isVisible().catch(() => false);
+      // counts as the 5th weekly workout, not an extra on top of 4. exact:
+      // true, not a substring match -- confirmed directly that the
+      // substring also collides with the FAQ's own "WHAT'S INSIDE" answer
+      // ("...your weekly workouts, the Challenge of the Week with a live
+      // leaderboard, the community board...", lowercase "the," but
+      // Playwright's own plain-string getByText is case-insensitive by
+      // default), which resolves to 2 elements and throws a strict-mode
+      // violation that the .catch(() => false) below was silently
+      // swallowing into a false negative. The bullet's own full text is
+      // exactly this phrase and nothing else, so exact:true is both
+      // correct and collision-free.
+      const door1Bullet2NoPlus = await page.getByText('The Challenge of the Week with a live leaderboard', { exact: true }).isVisible().catch(() => false);
       const door1Bullet2OldPlusGone = !(await page.getByText('Plus The Challenge of the Week', { exact: false }).isVisible().catch(() => false));
       const door1Bullet3 = await page.getByText('Every movement opens a breakdown video from Doc', { exact: false }).isVisible().catch(() => false);
       const door1ButtonText = await page.getByTestId('about-start-free').innerText().catch(() => '');
