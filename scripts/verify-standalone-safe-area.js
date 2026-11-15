@@ -11138,7 +11138,7 @@ async function run() {
       await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
       await page.waitForTimeout(900);
 
-      const names = ['ADAM', 'STACEY', 'JENNIFER', 'BETH', 'MIKE', 'ELLEN'];
+      const names = ['ADAM B.', 'STACEY P.', 'JENNIFER B.', 'BETH M.', 'MIKE M.', 'ELLEN C.'];
       await page.getByTestId('about-testimonial-carousel').scrollIntoViewIfNeeded();
       await page.waitForTimeout(200);
 
@@ -11748,7 +11748,7 @@ async function run() {
       await page.waitForTimeout(350);
       const desktopDotWorks = await page
         .getByTestId('about-testimonial-2')
-        .getByText('JENNIFER', { exact: false })
+        .getByText('JENNIFER B.', { exact: false })
         .first()
         .isVisible()
         .catch(() => false);

@@ -33,17 +33,17 @@ const DESKTOP_CONTENT_WIDTH = 1100;
 const CAROUSEL_WIDTH_DESKTOP = 640;
 
 const TESTIMONIALS: Testimonial[] = [
-  { name: 'ADAM', quote: "Doc's Fitness has me in the best shape of my life." },
+  { name: 'ADAM B.', quote: "Doc's Fitness has me in the best shape of my life." },
   {
-    name: 'STACEY',
+    name: 'STACEY P.',
     quote:
       "I came into Doc's looking for a good workout and what I found was a community of support, growth, and wellness.",
   },
-  { name: 'JENNIFER', quote: "The vibe is unique, it's a family, and it's a badass one!" },
-  { name: 'BETH', quote: 'Simply put, it is well worth the drive every time.' },
-  { name: 'MIKE', quote: 'A perfect balance of competition and support.' },
+  { name: 'JENNIFER B.', quote: "The vibe is unique, it's a family, and it's a badass one!" },
+  { name: 'BETH M.', quote: 'Simply put, it is well worth the drive every time.' },
+  { name: 'MIKE M.', quote: 'A perfect balance of competition and support.' },
   {
-    name: 'ELLEN',
+    name: 'ELLEN C.',
     quote: "If you're looking to get stronger and have fun through the process, Doc's Fitness is the way to go!",
   },
 ];
