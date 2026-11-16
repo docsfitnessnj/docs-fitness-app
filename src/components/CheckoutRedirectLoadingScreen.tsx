@@ -39,6 +39,26 @@ const BRAND_LINES = [
 const LINE_HOLD_MS = 2000;
 const LINE_FADE_MS = 300;
 
+// Round 61 Part 1: public/index.html's own static splash continuously
+// writes which of these 9 sayings is currently visible to this global
+// (see that file's own Round 61 comment for why it has to be continuous
+// rather than a one-shot write timed to this component's own mount).
+// Read ONLY when the splash element is still physically present in the
+// DOM at the moment this component's own lazy initializer runs below --
+// that's what distinguishes "this mount IS the boot handoff" from any
+// LATER, unrelated mount of this same shared component (the checkout-
+// redirect overlay, reused elsewhere in the app, long after the splash
+// is gone) reading a stale global left over from boot.
+function initialLineIndexFromSplashHandoff(): number {
+  if (typeof document === 'undefined') return 0;
+  if (!document.getElementById('docs-fitness-splash')) return 0;
+  const g = (window as unknown as { __splashBrandLine?: { index?: number } }).__splashBrandLine;
+  if (g && typeof g.index === 'number' && g.index >= 0 && g.index < BRAND_LINES.length) {
+    return g.index;
+  }
+  return 0;
+}
+
 // The ONLY thing on screen for the whole span between "a Stripe redirect is
 // about to happen" and "Stripe's page has actually loaded" (and, in
 // reverse, between "back from a successful checkout" and "the purchase
@@ -54,7 +74,7 @@ const LINE_FADE_MS = 300;
 export function CheckoutRedirectLoadingScreen({ message, onBackToApp }: Props) {
   const spin = useRef(new Animated.Value(0)).current;
   const lineOpacity = useRef(new Animated.Value(1)).current;
-  const [lineIndex, setLineIndex] = useState(0);
+  const [lineIndex, setLineIndex] = useState(initialLineIndexFromSplashHandoff);
   const [showBackstop, setShowBackstop] = useState(false);
 
   useEffect(() => {

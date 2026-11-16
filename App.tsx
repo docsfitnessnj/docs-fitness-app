@@ -40,7 +40,7 @@ import { BadgeProvider } from './src/context/BadgeContext';
 import { EmailProvider } from './src/context/EmailContext';
 import { FoundingFiftyProvider } from './src/context/FoundingFiftyContext';
 import { DocsInboxProvider } from './src/context/DocsInboxContext';
-import { ClassBookingProvider } from './src/context/ClassBookingContext';
+import { ClassBookingProvider, useClassBookingData } from './src/context/ClassBookingContext';
 import { ContentLibraryProvider } from './src/context/ContentLibraryContext';
 import { ScheduledContentProvider } from './src/context/ScheduledContentContext';
 import { GroupChatUnreadProvider } from './src/context/GroupChatUnreadContext';
@@ -886,6 +886,10 @@ function MainApp({
   );
 }
 
+// Round 61 Part 2: see the showMemberStateLoading comment inside
+// ResponsiveShell below.
+const EXTRA_DATA_SETTLE_CAP_MS = 3000;
+
 type ResponsiveShellProps = {
   onLayoutRootView: () => void;
 };
@@ -953,6 +957,54 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
   // this: a mock never errors unless told to.
   const memberStateError = signedUp && (stateError || profileError) ? (stateError ?? profileError ?? null) : null;
 
+  // Round 61 Part 2: a real-device screen recording caught Community
+  // assembling itself across several visible frames after this loading
+  // screen dismissed -- icons popping in, then class rows, then class
+  // type lines. Investigated directly rather than assumed: reproducing
+  // the exact handoff against the real production build under throttled
+  // network/CPU confirmed two independent causes. The icon-font half is
+  // fixed structurally above, near the top of this file -- Ionicons and
+  // MaterialCommunityIcons now join the exact same `fontsLoaded` gate the
+  // three text fonts already use, so nothing in the whole app, including
+  // this very screen, can paint a first frame before every font it needs
+  // is already loaded (confirmed: before this fix, the hamburger icon's
+  // own font-family read empty for ~1.6s after the wordmark's own text
+  // had already painted). The second cause: `memberStateLoading` below
+  // only ever covered MembershipContext/ProfileContext settling, never
+  // ClassBookingContext's own first fetch -- the real source of
+  // Community's class-card rows and (via StatusBanner's own
+  // useClassBookingData() read) its access-banner contents. Both are
+  // "first ever load only" flags (never true again on a background
+  // refetch, same scoping convention as stateLoading/profileLoading
+  // above), so folding this one in is safe to do unconditionally.
+  //
+  // `showMemberStateLoading` is a STRICT SUPERSET of `memberStateLoading`
+  // -- never narrower -- deliberately kept as its own variable rather
+  // than widening `memberStateLoading` itself, so `showSidebar` and the
+  // diagnostic console.log effect below (both already correct as they
+  // stand) are untouched. The hard cap: once memberStateLoading ITSELF
+  // clears (today's own dismiss condition), classBookingLoading gets at
+  // most EXTRA_DATA_SETTLE_CAP_MS (3000ms) more before this screen
+  // dismisses regardless -- a stalled fetch on bad LTE must never trap a
+  // member staring at LOADING YOUR ACCOUNT, and the loading screen's own
+  // pre-existing 10s BACK TO THE APP backstop (passed only to the
+  // separate checkout-redirect usage of this same shared component,
+  // below, untouched) remains the final safety net on top of this.
+  const { loading: classBookingLoading } = useClassBookingData();
+  const [extraDataCapTimedOut, setExtraDataCapTimedOut] = useState(false);
+  useEffect(() => {
+    if (memberStateLoading || !classBookingLoading) {
+      // Either today's own gate hasn't cleared yet (nothing to cap yet)
+      // or the extra data has already settled on its own -- reset so a
+      // later sign-out/sign-in cycle gets its own fresh 3s window.
+      setExtraDataCapTimedOut(false);
+      return;
+    }
+    const timer = setTimeout(() => setExtraDataCapTimedOut(true), EXTRA_DATA_SETTLE_CAP_MS);
+    return () => clearTimeout(timer);
+  }, [memberStateLoading, classBookingLoading]);
+  const showMemberStateLoading = memberStateLoading || (classBookingLoading && !extraDataCapTimedOut);
+
   useEffect(() => {
     if (!signedUp) return;
     console.log('[memberState:gate] decision', {
@@ -1017,7 +1069,7 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
                   retryProfile();
                 }}
               />
-            ) : memberStateLoading ? (
+            ) : showMemberStateLoading ? (
               <CheckoutRedirectLoadingScreen message="LOADING YOUR ACCOUNT" />
             ) : (
               <MainApp
@@ -1113,6 +1165,15 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
   );
 }
 
+// Round 61 Part 2: a font-host hiccup must resolve the icon-font gate
+// below eventually rather than leaving the ENTIRE app blank forever --
+// far worse than the icon-pop-in defect this gate fixes. Generous on
+// purpose: the real splash in public/index.html keeps covering the
+// screen the whole time this gate is unresolved (nothing in the app
+// paints until fontsLoaded is true), so a longer wait here is simply a
+// longer branded splash, never a blank or broken-looking page.
+const ICON_FONT_LOAD_TIMEOUT_MS = 5000;
+
 export default function App() {
   const [bebasLoaded] = useBebasNeueFonts({ BebasNeue_400Regular });
   const [barlowLoaded] = useBarlowFonts({
@@ -1127,7 +1188,39 @@ export default function App() {
     PublicSans_700Bold,
   });
 
-  const fontsLoaded = bebasLoaded && barlowLoaded && publicSansLoaded;
+  // Round 61 Part 2: investigated directly, not assumed -- reproducing
+  // the real-device piecemeal-render defect against a throttled build
+  // confirmed the hamburger icon's own computed font-family read empty
+  // for ~1.6s AFTER the wordmark's own (gated) text had already painted.
+  // Ionicons and MaterialCommunityIcons are the only two icon families
+  // this app uses anywhere (confirmed by grep) -- on web they're
+  // ordinary @font-face web fonts loaded over the network independently
+  // of the three useFonts() hooks above, with nothing previously
+  // awaiting them before first paint. `.loadFont()` on each resolves via
+  // expo-font's real Font.loadAsync on web too (confirmed by reading
+  // createIconSet.js directly), so folding both into the SAME fontsLoaded
+  // gate makes every icon anywhere in the app guaranteed-ready on its
+  // very first frame, not just one screen's own icons.
+  const [iconFontsLoaded, setIconFontsLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const timeout = setTimeout(() => {
+      if (!cancelled) setIconFontsLoaded(true);
+    }, ICON_FONT_LOAD_TIMEOUT_MS);
+    Promise.all([Ionicons.loadFont(), MaterialCommunityIcons.loadFont()])
+      .catch(() => {})
+      .then(() => {
+        if (cancelled) return;
+        clearTimeout(timeout);
+        setIconFontsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, []);
+
+  const fontsLoaded = bebasLoaded && barlowLoaded && publicSansLoaded && iconFontsLoaded;
 
   const onLayoutRootView = useCallback(async () => {
     if (fontsLoaded) {
