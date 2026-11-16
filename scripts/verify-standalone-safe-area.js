@@ -12272,32 +12272,142 @@ async function run() {
     );
   }
 
-  // --- Round 57: brand the Sunday Drop email. The real Deno runtime can't
+  // --- Round 57/58: brand the Sunday Drop email, then make it survive
+  // Gmail's own dark-mode color transform. The real Deno runtime can't
   // render the real template from this harness (same documented gap as
-  // every other Edge-Function-internals check in this file) -- the real
-  // rendered HTML (both light and dark `prefers-color-scheme`, and a
-  // webfonts-blocked Gmail-fallback pass) was verified directly during
-  // this round's own development by running the real, unmodified
-  // buildWeeklyReleaseEmail() through `deno run` and screenshotting the
-  // output in a real browser -- see AGENTS.md for those screenshots and
-  // findings. What follows are static source checks confirming the real,
-  // committed template is actually built the way that verification
-  // depended on -- a real hosted logo URL (never a data URI), the real
-  // brand fonts with safe fallback stacks, the dark-mode meta tags and
-  // media query, and the gold/deep-green CTA treatment.
+  // every other Edge-Function-internals check in this file), and Gmail's
+  // own proprietary per-color dark-mode transform specifically cannot be
+  // simulated anywhere outside a real Gmail client at all -- the real
+  // rendered HTML (light mode, forced-dark colorScheme emulation, remote
+  // images blocked, and a webfonts-blocked Gmail-fallback pass) was
+  // verified directly during this round's own development by running the
+  // real, unmodified buildWeeklyReleaseEmail() through `deno run` and
+  // screenshotting the output in a real browser -- see AGENTS.md for those
+  // screenshots and findings. What follows are static source checks
+  // confirming the real, committed template is actually built the way
+  // that verification depended on: Round 58's whole image-based-header
+  // strategy, no duplicated HTML headline/eyebrow text, inversion-safe
+  // body colors, the dark-mode meta tags/media query kept as progressive
+  // enhancement only, and the gold/deep-green CTA treatment.
   {
     const emailTemplateSrc = fs.readFileSync(
       path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'weeklyReleaseEmail.ts'),
       'utf8'
     );
 
-    const logoIsHostedHttpsUrl = /BADGE_LOGO_URL\s*=\s*`\$\{APP_URL\}\/badge-black\.png`/.test(emailTemplateSrc);
+    // [email/brand/header-image] Round 58: the entire green-band/badge-img/
+    // eyebrow/headline HTML block is replaced by one <img> referencing the
+    // owner-approved public/email-header.png, hosted the same stable-URL
+    // way badge-black.png already was -- never a data URI, never the
+    // fragile Metro-hashed bundle path -- displayed at the real 600px slot
+    // width, with alt text carrying the exact same message for an
+    // image-blocked client.
+    const headerImageUrlConst = /const HEADER_IMAGE_URL = `\$\{APP_URL\}\/email-header\.png`/.test(emailTemplateSrc);
     const appUrlIsGithubPages = /const APP_URL = 'https:\/\/docsfitnessnj\.github\.io\/docs-fitness-app'/.test(emailTemplateSrc);
+    // width AND height are both declared attributes (not just the CSS
+    // style's own width:100%) so an image-blocked client allocates a real,
+    // correctly-proportioned (600x220, the real asset's own 1200x440 ratio)
+    // box before the image ever loads or fails -- without a declared
+    // height, a broken/blocked <img> with no intrinsic size collapses to a
+    // tiny default box too small to show its own alt text legibly, which
+    // is exactly the failure this check guards against.
+    const headerImgTagPresent = /<img src="\$\{HEADER_IMAGE_URL\}" width="600" height="220" alt="DOC'S FITNESS\. YOUR WORKOUTS ARE HERE\."/.test(
+      emailTemplateSrc
+    );
+    const headerImgResponsiveWidth = /<img src="\$\{HEADER_IMAGE_URL\}"[\s\S]{0,200}style="display:block;width:100%;max-width:600px;/.test(
+      emailTemplateSrc
+    );
     const noDataUriAnywhere = !/data:image/.test(emailTemplateSrc);
+    const oldBadgeLogoUrlGone = !/BADGE_LOGO_URL/.test(emailTemplateSrc);
     record(
-      '[email/brand/logo-hosted-url] the header logo is a real, stable, hosted https URL off GitHub Pages -- never a data URI, never the fragile Metro-hashed bundle path',
-      logoIsHostedHttpsUrl && appUrlIsGithubPages && noDataUriAnywhere,
-      JSON.stringify({ logoIsHostedHttpsUrl, appUrlIsGithubPages, noDataUriAnywhere })
+      '[email/brand/header-image] the header is one real, stable, hosted https image (never a data URI, never the fragile Metro-hashed bundle path, never the old separate badge-img+eyebrow+headline HTML), displayed at the real 600px slot width, with alt text carrying the same message',
+      headerImageUrlConst && appUrlIsGithubPages && headerImgTagPresent && headerImgResponsiveWidth && noDataUriAnywhere && oldBadgeLogoUrlGone,
+      JSON.stringify({ headerImageUrlConst, appUrlIsGithubPages, headerImgTagPresent, headerImgResponsiveWidth, noDataUriAnywhere, oldBadgeLogoUrlGone })
+    );
+
+    // [email/brand/header-image-alt-fallback] a real, declared width/height
+    // (not just a CSS style) means an image-blocked client allocates a
+    // correctly-sized, correctly-colored box before ever attempting the
+    // image -- confirmed directly, not assumed: a real headless-Chromium
+    // render with this exact URL aborted showed the DOM's own `img.alt`
+    // resolving to the full message text and a 600x220 box painted in the
+    // real deep green (both verified via page.evaluate against the real,
+    // unmodified template), even though Chromium's OWN browser-chrome
+    // rendering of a blocked/broken <img> does not print alt text visibly
+    // the way some real email clients do -- which is exactly why the img's
+    // own inline color/background/font styling (white text, deep green
+    // background) exists: for a client that DOES render the fallback text
+    // in place, it must come out legible, not default black-on-transparent.
+    const altFallbackHasDeclaredSize = /<img src="\$\{HEADER_IMAGE_URL\}" width="600" height="220"/.test(emailTemplateSrc);
+    const altFallbackStyledForLegibility =
+      /color:#FFFFFF;background-color:\$\{LIGHT\.greenDeep\};font-size:18px;font-weight:700;font-family:\$\{LABEL_FONT_STACK\};" \/>/.test(
+        emailTemplateSrc
+      );
+    record(
+      "[email/brand/header-image-alt-fallback] the header image declares a real width+height (so a blocked/broken image still allocates a correctly-sized, correctly-colored box) and its alt-text fallback is explicitly styled white-on-deep-green for legibility in a client that renders it in place",
+      altFallbackHasDeclaredSize && altFallbackStyledForLegibility,
+      JSON.stringify({ altFallbackHasDeclaredSize, altFallbackStyledForLegibility })
+    );
+
+    // [email/brand/no-duplicate-headline] the eyebrow/headline text baked
+    // into the header image must never also appear as live HTML text in
+    // the body -- the only two places "THE NEW WEEK IS LIVE" may appear at
+    // all are the plain email subject line and the header image's own alt
+    // text (both outside the HTML body a reader actually sees rendered),
+    // and "DOC'S FITNESS" as a styled gold <div> eyebrow must be gone
+    // entirely (the footer's own plain "Doc's Fitness" signature line is a
+    // different, expected thing -- an ordinary brand-name footer credit,
+    // not a restatement of the marketing headline/eyebrow pairing).
+    const subjectStillExact = /return \{ subject: 'THE NEW WEEK IS LIVE', html, weekLabel/.test(emailTemplateSrc);
+    const noLiveHeadlineDiv = !/<div style="color:#FFFFFF;font-size:34px;letter-spacing:0\.5px;font-family:\$\{HEADLINE_FONT_STACK\};">THE NEW WEEK IS LIVE<\/div>/.test(
+      emailTemplateSrc
+    );
+    const noLiveGoldEyebrowDiv = !/<div style="color:\$\{LIGHT\.gold\};font-size:13px;letter-spacing:2px;font-weight:700;margin-bottom:8px;font-family:\$\{LABEL_FONT_STACK\};">DOC'S FITNESS<\/div>/.test(
+      emailTemplateSrc
+    );
+    // The subject line's own phrase, "THE NEW WEEK IS LIVE", must occur
+    // exactly once in the whole file -- inside the subject-line return
+    // itself, never ALSO duplicated as live HTML body text (the header
+    // image's own baked-in headline is actually the different phrase "YOUR
+    // WORKOUTS ARE HERE", confirmed directly against the real PNG, so
+    // these two phrases were never meant to match each other -- the real
+    // regression this check guards is a future edit re-adding the subject
+    // phrase as a second, live HTML headline alongside the subject).
+    const subjectPhraseOccurrences = (emailTemplateSrc.match(/THE NEW WEEK IS LIVE/g) || []).length;
+    // The image's own alt text is the one place "YOUR WORKOUTS ARE HERE"
+    // may appear as a quoted HTML attribute value; it may also appear in
+    // this file's own prose comments (not live HTML), so this only checks
+    // that no SECOND live <div> headline duplicates it.
+    const noLiveWorkoutsHeadlineDiv = !/<div style="color:#FFFFFF;font-size:34px;[\s\S]{0,80}>YOUR WORKOUTS ARE HERE<\/div>/.test(
+      emailTemplateSrc
+    );
+    record(
+      '[email/brand/no-duplicate-headline] the headline/eyebrow baked into the header image is never ALSO rendered as live HTML text in the body -- only the subject line carries "THE NEW WEEK IS LIVE", and only the image\'s own alt text carries "YOUR WORKOUTS ARE HERE"',
+      subjectStillExact && noLiveHeadlineDiv && noLiveGoldEyebrowDiv && noLiveWorkoutsHeadlineDiv && subjectPhraseOccurrences === 1,
+      JSON.stringify({ subjectStillExact, noLiveHeadlineDiv, noLiveGoldEyebrowDiv, noLiveWorkoutsHeadlineDiv, subjectPhraseOccurrences })
+    );
+
+    // [email/brand/body-inversion-safe] the one live mid-tone brand color
+    // that used to sit directly on the white card (LIGHT.green, a
+    // saturated, ~16%-lightness green used as the "YOUR WORKOUTS" section
+    // header) is gone from live text -- Gmail's dark transform can flip
+    // the white card background dark while leaving an already-dark brand
+    // color close to unchanged, producing low-contrast dark-on-dark; the
+    // section header, the day/date labels, the workout names, and the
+    // dividers now all resolve to plain near-black/muted-gray on white,
+    // which Gmail's lightness-based heuristic flips predictably together.
+    const sectionHeaderUsesPlainNearBlack = /YOUR WORKOUTS<\/div>/.test(emailTemplateSrc) &&
+      /<div class="text-strong" style="color:\$\{LIGHT\.text\};font-size:13px;letter-spacing:1\.5px;font-weight:700;margin-bottom:4px;font-family:\$\{LABEL_FONT_STACK\};">YOUR WORKOUTS<\/div>/.test(
+        emailTemplateSrc
+      );
+    const noLiveMidToneGreenText = !/color:\$\{LIGHT\.green\}[;"]/.test(emailTemplateSrc);
+    const dayLabelsStillMutedGray = /color:\$\{LIGHT\.textMuted\}/.test(emailTemplateSrc);
+    const workoutNamesStillNearBlack = /color:\$\{LIGHT\.text\};font-size:21px/.test(emailTemplateSrc);
+    const dividersStillPlainHairline = /border-bottom:1px solid \$\{LIGHT\.hairline\}/.test(emailTemplateSrc);
+    record(
+      '[email/brand/body-inversion-safe] every live body text color (section header, day/date labels, workout names, dividers) is plain near-black/muted-gray on white -- no mid-tone brand color left for Gmail\'s dark transform to remap unpredictably',
+      sectionHeaderUsesPlainNearBlack && noLiveMidToneGreenText && dayLabelsStillMutedGray && workoutNamesStillNearBlack && dividersStillPlainHairline,
+      JSON.stringify({ sectionHeaderUsesPlainNearBlack, noLiveMidToneGreenText, dayLabelsStillMutedGray, workoutNamesStillNearBlack, dividersStillPlainHairline })
     );
 
     const hasBebasFontFace = /font-family: 'Bebas Neue';[\s\S]{0,120}src: url\(https:\/\/fonts\.gstatic\.com/.test(emailTemplateSrc);
@@ -12310,34 +12420,44 @@ async function run() {
       JSON.stringify({ hasBebasFontFace, hasBarlowFontFace, headlineHasFallback, labelHasFallback })
     );
 
+    // [email/brand/dark-mode] Round 58: this mechanism is explicitly kept
+    // as progressive enhancement for a client that DOES honor
+    // prefers-color-scheme (Apple Mail, Outlook, Yahoo, Samsung Mail) --
+    // correctness for Gmail specifically never depends on it (Gmail never
+    // reads this media query at all, which is the whole reason the header
+    // became an image and the body colors became inversion-safe instead
+    // of relying on this block to reach Gmail).
     const hasColorSchemeMeta = /name="color-scheme" content="light dark"/.test(emailTemplateSrc);
     const hasSupportedColorSchemesMeta = /name="supported-color-schemes" content="light dark"/.test(emailTemplateSrc);
     const hasDarkMediaQuery = /@media \(prefers-color-scheme: dark\)/.test(emailTemplateSrc);
     const darkOverridesCardAndText = /\.card-bg \{ background-color: \$\{DARK\.cardBg\}/.test(emailTemplateSrc) &&
       /\.text-strong \{ color: \$\{DARK\.text\}/.test(emailTemplateSrc);
     record(
-      '[email/brand/dark-mode] the real template declares color-scheme/supported-color-schemes and a prefers-color-scheme: dark override for the card background and text -- legible and on-brand in dark mode, not left to a client\'s own automatic inversion',
+      '[email/brand/dark-mode] the real template declares color-scheme/supported-color-schemes and a prefers-color-scheme: dark override for the card background and text, as progressive enhancement for clients that honor it -- never what Gmail correctness depends on',
       hasColorSchemeMeta && hasSupportedColorSchemesMeta && hasDarkMediaQuery && darkOverridesCardAndText,
       JSON.stringify({ hasColorSchemeMeta, hasSupportedColorSchemesMeta, hasDarkMediaQuery, darkOverridesCardAndText })
     );
 
+    // [email/brand/cta-button] kept exactly as Round 57 built it, by
+    // reasoning rather than by guess: gold (~47% lightness) and deep green
+    // (~16% lightness) both sit well clear of the near-white/near-black
+    // bands Gmail's transform is documented to target, so a saturated
+    // mid-lightness background with dark text is the standard
+    // Gmail-dark-mode-safe button treatment -- confirmed present via the
+    // committed reasoning comment directly above the button markup, not
+    // just the colors themselves (a future edit that changes the colors
+    // without updating or re-justifying the reasoning should be caught by
+    // a human reviewer, not silently pass this check).
     const ctaGoldBackground = /bgcolor="\$\{LIGHT\.gold\}"/.test(emailTemplateSrc);
     const ctaDeepGreenText = /color:\$\{LIGHT\.greenDeep\};font-weight:700/.test(emailTemplateSrc);
     const ctaIsBulletproofTable = /<table role="presentation" cellpadding="0" cellspacing="0" align="center"[\s\S]{0,40}<tr><td align="center" bgcolor=/.test(
       emailTemplateSrc
     );
+    const ctaReasoningCommentPresent = /Round 58: left unchanged, by reasoning rather than by guess/.test(emailTemplateSrc);
     record(
-      '[email/brand/cta-button] OPEN THE APP uses the real gold background + deep green text, built as a table-cell-background button (not just a styled anchor), the standard bulletproof technique for an email client that strips an anchor\'s own background-color',
-      ctaGoldBackground && ctaDeepGreenText && ctaIsBulletproofTable,
-      JSON.stringify({ ctaGoldBackground, ctaDeepGreenText, ctaIsBulletproofTable })
-    );
-
-    const headerOrderCorrect =
-      /<img src="\$\{BADGE_LOGO_URL\}"[\s\S]{0,400}DOC'S FITNESS<\/div>[\s\S]{0,200}THE NEW WEEK IS LIVE/.test(emailTemplateSrc);
-    record(
-      '[email/brand/header-order] the header renders logo, then the DOC\'S FITNESS eyebrow, then THE NEW WEEK IS LIVE as a large headline, in that order',
-      headerOrderCorrect,
-      JSON.stringify({ headerOrderCorrect })
+      '[email/brand/cta-button] OPEN THE APP uses the real gold background + deep green text, built as a table-cell-background button (not just a styled anchor), the standard bulletproof technique for an email client that strips an anchor\'s own background-color -- with its Gmail-dark-mode-safety reasoning documented inline',
+      ctaGoldBackground && ctaDeepGreenText && ctaIsBulletproofTable && ctaReasoningCommentPresent,
+      JSON.stringify({ ctaGoldBackground, ctaDeepGreenText, ctaIsBulletproofTable, ctaReasoningCommentPresent })
     );
 
     const noEmojis = !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(emailTemplateSrc);
