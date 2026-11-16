@@ -1353,4 +1353,6 @@ The real, unmodified `buildWeeklyReleaseEmail()` was rendered via `deno run` (th
 
 `npx tsc --noEmit`: clean.
 
+482/485 checks pass, including all 11 `[email/*]` checks (8 new/rewritten `[email/brand/*]` checks plus the 3 pre-existing `[email/open-the-app-link/*]` checks from Round 57, unmodified and green). The 3 that don't (`[edit-post/tap-then-keyboard-open]`, `[edit-post/real-touch-drag]`, `[edit-post/drag-telemetry]`) are the same pre-existing, cross-round-confirmed CDP-touch-injection/timing flake class documented since Round 36-38/43 — confirmed unrelated via `git diff --name-only` against the commit immediately before this round's own work: this round touched only `AGENTS.md`, `public/email-header.png`, `scripts/verify-standalone-safe-area.js`, and `supabase/functions/_shared/weeklyReleaseEmail.ts` — never `public/index.html` or `CreatePostModal.tsx`, the only two files any of those three checks' own mechanisms depend on (`[viewport-lock] ordinary scrolling...`, the other historically-flaky check documented since Round 28, passed cleanly on this run).
+
 No database changes. No emojis anywhere in member-facing copy.
