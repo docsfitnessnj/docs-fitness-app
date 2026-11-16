@@ -12346,9 +12346,15 @@ async function run() {
       /color:\$\{LIGHT\.text\};font-size:18px;font-weight:700;font-family:\$\{LABEL_FONT_STACK\};" \/>/.test(
         emailTemplateSrc
       );
-    const altFallbackHasNoLiveBackgroundColor = !/alt="DOC'S FITNESS\. YOUR WORKOUTS ARE HERE\."[\s\S]{0,300}background-color:/.test(
-      emailTemplateSrc
-    );
+    // Scoped strictly to the <img> tag's OWN attributes (bounded by its
+    // own closing `/>`, which a plain <img> with no nested tags always
+    // has) -- a wider arbitrary-character window would bleed past this
+    // tag into the footer's own, unrelated, perfectly legitimate
+    // `background-color:${LIGHT.cardBg}` a few lines further down the
+    // markup, producing a false failure on correct code (caught directly
+    // by a real suite run before trusting this check).
+    const headerImgTagMatch = emailTemplateSrc.match(/<img src="\$\{HEADER_IMAGE_URL\}"[^>]*\/>/);
+    const altFallbackHasNoLiveBackgroundColor = !!headerImgTagMatch && !/background-color:/.test(headerImgTagMatch[0]);
     const headerSlotTdUsesCardBgNotGreenDeep =
       /<tr><td class="card-bg" style="background-color:\$\{LIGHT\.cardBg\};padding:0;line-height:0;font-size:0;">\s*<img src="\$\{HEADER_IMAGE_URL\}"/.test(
         emailTemplateSrc
@@ -12513,7 +12519,12 @@ async function run() {
     const ctaAltFallbackStyled = /alt="OPEN THE APP" style="display:block;border:0;outline:none;border-radius:8px;color:\$\{LIGHT\.text\};font-size:16px;font-weight:700;/.test(
       emailTemplateSrc
     );
-    const ctaAltFallbackHasNoLiveBackgroundColor = !/alt="OPEN THE APP"[\s\S]{0,300}background-color:/.test(emailTemplateSrc);
+    // Same scoping fix as the header's own check above -- bounded strictly
+    // to this <img> tag's own closing `/>`, not an arbitrary character
+    // window that would otherwise bleed into the footer's own legitimate
+    // background-color a few lines further down.
+    const ctaImgTagMatch = emailTemplateSrc.match(/<img src="\$\{CTA_IMAGE_URL\}"[^>]*\/>/);
+    const ctaAltFallbackHasNoLiveBackgroundColor = !!ctaImgTagMatch && !/background-color:/.test(ctaImgTagMatch[0]);
     record(
       '[email/brand/cta-image-alt-fallback] the CTA img declares real width/height and inversion-safe inline alt-fallback styling (plain near-black text, no background color of its own) so "OPEN THE APP" stays legible when the image is blocked, with no live mid-tone color left for Gmail to remap',
       ctaHasDeclaredDimensions && ctaAltFallbackStyled && ctaAltFallbackHasNoLiveBackgroundColor,
@@ -13236,7 +13247,17 @@ async function run() {
     await page.route('**/rest/v1/rpc/class_sessions_with_availability*', () => {}); // never resolves.
     await seedSignedInSession(page);
     const t0 = Date.now();
-    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' }).catch(() => {});
+    // 'networkidle' can never settle while one route is deliberately left
+    // permanently pending -- page.goto() would then hang until
+    // Playwright's own default ~30s navigation timeout (confirmed
+    // directly: a first draft of this check reported capFireMs:30045,
+    // exactly that default, with loadingVisibleEarly already false by the
+    // time goto() finally gave up -- the real 3-second cap had already
+    // fired and dismissed the screen long before this check ever got to
+    // look). 'domcontentloaded' resolves immediately regardless of any
+    // still-pending request, letting the "is it visible EARLY" check
+    // genuinely run before the cap has had a chance to fire.
+    await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' }).catch(() => {});
     const loadingVisibleEarly = await page.getByTestId('checkout-redirect-loading').isVisible().catch(() => false);
     await page.waitForFunction(() => !document.querySelector('[data-testid="checkout-redirect-loading"]'), { timeout: 10000 }).catch(() => {});
     const capFireMs = Date.now() - t0;
