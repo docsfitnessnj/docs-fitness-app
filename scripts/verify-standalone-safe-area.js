@@ -12325,28 +12325,44 @@ async function run() {
       JSON.stringify({ headerImageUrlConst, appUrlIsGithubPages, headerImgTagPresent, headerImgResponsiveWidth, noDataUriAnywhere, oldBadgeLogoUrlGone })
     );
 
-    // [email/brand/header-image-alt-fallback] a real, declared width/height
-    // (not just a CSS style) means an image-blocked client allocates a
-    // correctly-sized, correctly-colored box before ever attempting the
-    // image -- confirmed directly, not assumed: a real headless-Chromium
-    // render with this exact URL aborted showed the DOM's own `img.alt`
-    // resolving to the full message text and a 600x220 box painted in the
-    // real deep green (both verified via page.evaluate against the real,
-    // unmodified template), even though Chromium's OWN browser-chrome
-    // rendering of a blocked/broken <img> does not print alt text visibly
-    // the way some real email clients do -- which is exactly why the img's
-    // own inline color/background/font styling (white text, deep green
-    // background) exists: for a client that DOES render the fallback text
-    // in place, it must come out legible, not default black-on-transparent.
+    // [email/brand/header-image-alt-fallback] Round 61 Part 3: a real
+    // device recording showed the header slot flashing seafoam green
+    // BEFORE the real image painted in Gmail dark mode -- root-caused by
+    // reading the template directly to TWO live mid-tone colors: the old
+    // white-on-deep-green alt-fallback styling on the <img> itself, and
+    // the surrounding <td>'s own separate deep-green background sitting
+    // directly behind it. Both are now inversion-safe: a declared
+    // width/height still allocates a correctly-sized box before ever
+    // attempting the image (so a blocked/broken image never collapses to
+    // an illegibly tiny default), but the alt-fallback text is now plain
+    // near-black (LIGHT.text) with NO background color of its own, and the
+    // surrounding <td> now uses the same .card-bg/LIGHT.cardBg class the
+    // rest of the body already does -- so the waiting state (and the
+    // broken-image fallback) show only the card's own background, the
+    // identical inversion-safe pairing the body's day/date labels and
+    // workout names already use, never a second brand color of their own.
     const altFallbackHasDeclaredSize = /<img src="\$\{HEADER_IMAGE_URL\}" width="600" height="220"/.test(emailTemplateSrc);
     const altFallbackStyledForLegibility =
-      /color:#FFFFFF;background-color:\$\{LIGHT\.greenDeep\};font-size:18px;font-weight:700;font-family:\$\{LABEL_FONT_STACK\};" \/>/.test(
+      /color:\$\{LIGHT\.text\};font-size:18px;font-weight:700;font-family:\$\{LABEL_FONT_STACK\};" \/>/.test(
         emailTemplateSrc
       );
+    // Scoped strictly to the <img> tag's OWN attributes (bounded by its
+    // own closing `/>`, which a plain <img> with no nested tags always
+    // has) -- a wider arbitrary-character window would bleed past this
+    // tag into the footer's own, unrelated, perfectly legitimate
+    // `background-color:${LIGHT.cardBg}` a few lines further down the
+    // markup, producing a false failure on correct code (caught directly
+    // by a real suite run before trusting this check).
+    const headerImgTagMatch = emailTemplateSrc.match(/<img src="\$\{HEADER_IMAGE_URL\}"[^>]*\/>/);
+    const altFallbackHasNoLiveBackgroundColor = !!headerImgTagMatch && !/background-color:/.test(headerImgTagMatch[0]);
+    const headerSlotTdUsesCardBgNotGreenDeep =
+      /<tr><td class="card-bg" style="background-color:\$\{LIGHT\.cardBg\};padding:0;line-height:0;font-size:0;">\s*<img src="\$\{HEADER_IMAGE_URL\}"/.test(
+        emailTemplateSrc
+      ) && !/background-color:\$\{LIGHT\.greenDeep\}/.test(emailTemplateSrc);
     record(
-      "[email/brand/header-image-alt-fallback] the header image declares a real width+height (so a blocked/broken image still allocates a correctly-sized, correctly-colored box) and its alt-text fallback is explicitly styled white-on-deep-green for legibility in a client that renders it in place",
-      altFallbackHasDeclaredSize && altFallbackStyledForLegibility,
-      JSON.stringify({ altFallbackHasDeclaredSize, altFallbackStyledForLegibility })
+      "[email/brand/header-image-alt-fallback] the header image slot (both the surrounding <td> and the <img>'s own alt-fallback styling) is fully inversion-safe -- no live deep-green background anywhere in the slot, only the card's own background and plain near-black fallback text",
+      altFallbackHasDeclaredSize && altFallbackStyledForLegibility && altFallbackHasNoLiveBackgroundColor && headerSlotTdUsesCardBgNotGreenDeep,
+      JSON.stringify({ altFallbackHasDeclaredSize, altFallbackStyledForLegibility, altFallbackHasNoLiveBackgroundColor, headerSlotTdUsesCardBgNotGreenDeep })
     );
 
     // [email/brand/subject-line] Round 59: the subject changes from "THE
@@ -12489,21 +12505,30 @@ async function run() {
       JSON.stringify({ ctaImageUrlConst, ctaImgTagPresent, ctaWrappedInAnchor, oldBulletproofButtonGone })
     );
 
-    // [email/brand/cta-image-alt-fallback] the Round 58 lesson reapplied:
-    // a declared width+height stops a broken/blocked image from collapsing
-    // to a tiny default box, and inline color/background-color/font-size/
-    // font-weight/font-family on the <img> itself overrides both the
-    // inherited font-size:0 (from the header's own zero-gap trick) and the
-    // browser's default unstyled-black alt text -- so "OPEN THE APP" reads
-    // clearly, gold-on-green, the instant the image can't load.
+    // [email/brand/cta-image-alt-fallback] Round 61 Part 3: the CTA image
+    // used to carry a live inline background-color:${LIGHT.gold} on the
+    // <img> itself -- the identical live-mid-tone-color trap the header
+    // slot had, just not caught on camera. The Round 58 lesson (a declared
+    // width+height stops a broken/blocked image from collapsing to a tiny
+    // default box, and the img's own inline font styling overrides the
+    // inherited font-size:0) is kept, but the fallback color is now plain
+    // near-black (LIGHT.text) with NO background color of its own, letting
+    // the card's own background show through -- never a second live brand
+    // color for Gmail's dark transform to remap unpredictably.
     const ctaHasDeclaredDimensions = /<img src="\$\{CTA_IMAGE_URL\}" width="240" height="52"/.test(emailTemplateSrc);
-    const ctaAltFallbackStyled = /alt="OPEN THE APP" style="display:block;border:0;outline:none;border-radius:8px;color:\$\{LIGHT\.greenDeep\};background-color:\$\{LIGHT\.gold\};font-size:16px;font-weight:700;/.test(
+    const ctaAltFallbackStyled = /alt="OPEN THE APP" style="display:block;border:0;outline:none;border-radius:8px;color:\$\{LIGHT\.text\};font-size:16px;font-weight:700;/.test(
       emailTemplateSrc
     );
+    // Same scoping fix as the header's own check above -- bounded strictly
+    // to this <img> tag's own closing `/>`, not an arbitrary character
+    // window that would otherwise bleed into the footer's own legitimate
+    // background-color a few lines further down.
+    const ctaImgTagMatch = emailTemplateSrc.match(/<img src="\$\{CTA_IMAGE_URL\}"[^>]*\/>/);
+    const ctaAltFallbackHasNoLiveBackgroundColor = !!ctaImgTagMatch && !/background-color:/.test(ctaImgTagMatch[0]);
     record(
-      '[email/brand/cta-image-alt-fallback] the CTA img declares real width/height and inline alt-fallback styling (deep green text on gold) so "OPEN THE APP" stays legible when the image is blocked, never invisible',
-      ctaHasDeclaredDimensions && ctaAltFallbackStyled,
-      JSON.stringify({ ctaHasDeclaredDimensions, ctaAltFallbackStyled })
+      '[email/brand/cta-image-alt-fallback] the CTA img declares real width/height and inversion-safe inline alt-fallback styling (plain near-black text, no background color of its own) so "OPEN THE APP" stays legible when the image is blocked, with no live mid-tone color left for Gmail to remap',
+      ctaHasDeclaredDimensions && ctaAltFallbackStyled && ctaAltFallbackHasNoLiveBackgroundColor,
+      JSON.stringify({ ctaHasDeclaredDimensions, ctaAltFallbackStyled, ctaAltFallbackHasNoLiveBackgroundColor })
     );
 
     // [email/brand/footer-no-band] Round 59: the footer loses its deep
@@ -12531,16 +12556,23 @@ async function run() {
     const footerOptOutWordsPresent = emailTemplateSrc.includes(
       "Don't want this email? Turn it off anytime in the app, under Settings &amp; Notifications."
     );
-    const whiteTextOnlyOnHeaderImage = (emailTemplateSrc.match(/color:#FFFFFF/g) || []).length === 1;
+    // Round 61 Part 3: the header and CTA alt-fallbacks no longer use
+    // literal white text either (see header-image-alt-fallback/
+    // cta-image-alt-fallback above) -- `color:#FFFFFF` as a LIVE style
+    // string must now appear nowhere in the whole template at all. The
+    // constant `cardBg: '#FFFFFF'` definition itself is a plain hex
+    // literal assignment, never a `color:#FFFFFF` style string, so this
+    // check can't be satisfied by that line by accident.
+    const noLiveWhiteTextAnywhere = !/color:#FFFFFF/.test(emailTemplateSrc);
     record(
-      '[email/brand/footer-no-band] the footer has no colored band background anymore -- same exact copy, rendered as plain near-black/muted-gray text on the card background -- and no live white-on-color text remains anywhere outside the header image\'s own alt fallback',
+      '[email/brand/footer-no-band] the footer has no colored band background anymore -- same exact copy, rendered as plain near-black/muted-gray text on the card background -- and no live white-on-color text remains anywhere in the template (Round 61: the header/CTA alt-fallbacks are inversion-safe near-black now too, not white-on-brand-color)',
       footerGreenBandGone &&
         footerWhiteTextGone &&
         footerUsesCardBg &&
         footerSignatureInversionSafe &&
         footerOptOutCopyExact &&
         footerOptOutWordsPresent &&
-        whiteTextOnlyOnHeaderImage,
+        noLiveWhiteTextAnywhere,
       JSON.stringify({
         footerGreenBandGone,
         footerWhiteTextGone,
@@ -12548,7 +12580,7 @@ async function run() {
         footerSignatureInversionSafe,
         footerOptOutCopyExact,
         footerOptOutWordsPresent,
-        whiteTextOnlyOnHeaderImage,
+        noLiveWhiteTextAnywhere,
       })
     );
 
@@ -12960,6 +12992,302 @@ async function run() {
       }
       await context.close();
     }
+  }
+
+  // --- Round 61: one continuous loading experience, and no color flash ---
+
+  // [splash/saying-matches-forced-global] + [splash/saying-fallback-when-
+  // splash-already-gone]: public/index.html's own real, unmodified
+  // captureSplashBrandLine() honors window.__splashBrandLineTestForce
+  // when set (the same "force what the real mechanism would produce"
+  // convention this file already uses throughout) -- proving
+  // CheckoutRedirectLoadingScreen.tsx's own lazy initializer genuinely
+  // reads window.__splashBrandLine at mount, rather than always
+  // defaulting to index 0 regardless. A real REST delay (profiles/
+  // subscriptions/class_sessions_with_availability) is needed here so
+  // the loading screen stays mounted long enough to read its own brand
+  // line before memberStateLoading/classBookingLoading settle and
+  // replace it with MainApp.
+  {
+    const forcedCases = [
+      { index: 4, text: 'THE BELL IS WAITING' },
+      { index: 7, text: 'ONE MORE REP' },
+    ];
+    for (const { index, text } of forcedCases) {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await page.addInitScript((idx) => {
+        const lines = [
+          'STRONGER EVERY DAY', 'BETTER EVERY DAY', 'BETTER THAN YESTERDAY', 'SHOW UP. PICK UP. REPEAT.',
+          'THE BELL IS WAITING', 'EARN YOUR SATURDAY', 'FEEL BETTER. LOOK BETTER.', 'ONE MORE REP', 'LAST SET. BEST SET. ALWAYS',
+        ];
+        window.__splashBrandLineTestForce = { text: lines[idx], index: idx, opacity: 1, t: Date.now() };
+      }, index);
+      await setupMocks(page);
+      await page.route('**/rest/v1/**', async (route) => {
+        await new Promise((r) => setTimeout(r, 1500));
+        await route.fallback();
+      });
+      await seedSignedInSession(page);
+      const nav = page.goto(`${BASE}/`, { waitUntil: 'load' });
+      await page.waitForSelector('[data-testid="checkout-redirect-brand-line"]', { timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(100);
+      const renderedText = await page.getByTestId('checkout-redirect-brand-line').first().textContent().catch(() => null);
+      record(
+        `[splash/saying-matches-forced-global/${index}] CheckoutRedirectLoadingScreen renders the exact saying window.__splashBrandLine carries at mount, not always index 0`,
+        renderedText === text,
+        JSON.stringify({ forcedIndex: index, forcedText: text, renderedText })
+      );
+      await nav.catch(() => {});
+      await context.close();
+    }
+
+    // Fallback case: with the force global set but no splash element in
+    // the DOM at all (simulating a LATER, unrelated mount of this same
+    // shared component long after boot -- e.g. the checkout-redirect
+    // overlay), the component must NOT read the stale global -- it must
+    // behave exactly as today, index 0.
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await page.addInitScript(() => {
+        window.__splashBrandLineTestForce = { text: 'EARN YOUR SATURDAY', index: 5, opacity: 1, t: Date.now() };
+      });
+      await setupMocks(page);
+      // Delete the splash element itself the instant it's created, before
+      // the app's own JS has a chance to mount anything -- so by the time
+      // CheckoutRedirectLoadingScreen mounts, document.getElementById
+      // ('docs-fitness-splash') genuinely returns null, the real
+      // condition this fallback branch checks for.
+      await page.addInitScript(() => {
+        const remove = () => {
+          const el = document.getElementById('docs-fitness-splash');
+          if (el && el.parentNode) el.parentNode.removeChild(el);
+        };
+        remove();
+        document.addEventListener('DOMContentLoaded', remove);
+      });
+      await page.route('**/rest/v1/**', async (route) => {
+        await new Promise((r) => setTimeout(r, 1200));
+        await route.fallback();
+      });
+      await seedSignedInSession(page);
+      const nav = page.goto(`${BASE}/`, { waitUntil: 'load' });
+      await page.waitForSelector('[data-testid="checkout-redirect-brand-line"]', { timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(100);
+      const renderedText = await page.getByTestId('checkout-redirect-brand-line').first().textContent().catch(() => null);
+      record(
+        '[splash/saying-fallback-when-splash-already-gone] with no splash element present at mount, the forced global is ignored and the component falls back to its own default (index 0), exactly as today',
+        renderedText === 'STRONGER EVERY DAY',
+        JSON.stringify({ renderedText })
+      );
+      await nav.catch(() => {});
+      await context.close();
+    }
+  }
+
+  // [splash/saying-no-double-exposure-midfade] the REAL, unforced
+  // mechanism end to end: during an actual mid-fade frame (the splash's
+  // own computed opacity genuinely between 0 and 1), the splash's own
+  // live-computed visible line and the component's own rendered line
+  // must be byte-identical at every sampled frame -- no force hook here
+  // at all, since forcing the global would decouple it from the
+  // splash's own real CSS-animated visual state, which is exactly the
+  // thing this check needs to prove stays in sync.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/**', async (route) => {
+      await new Promise((r) => setTimeout(r, 3000));
+      await route.fallback();
+    });
+    await seedSignedInSession(page);
+    await page.route('**/_expo/static/js/web/*.js', async (route) => {
+      await new Promise((r) => setTimeout(r, 300));
+      await route.continue();
+    });
+    await page.addInitScript(() => {
+      window.__midFadeSamples = [];
+      function sample() {
+        const splash = document.getElementById('docs-fitness-splash');
+        const splashOpacity = splash ? parseFloat(getComputedStyle(splash).opacity) : null;
+        const splashLines = splash ? splash.querySelectorAll('.docs-fitness-splash-line') : [];
+        let splashVisibleText = null;
+        let bestOp = -1;
+        for (const el of splashLines) {
+          const op = parseFloat(getComputedStyle(el).opacity);
+          if (op > bestOp) {
+            bestOp = op;
+            splashVisibleText = el.textContent;
+          }
+        }
+        const realLine = document.querySelector('[data-testid="checkout-redirect-brand-line"]');
+        const realText = realLine ? realLine.textContent : null;
+        if (splash && splashOpacity > 0 && splashOpacity < 1 && realLine) {
+          window.__midFadeSamples.push({ splashVisibleText, realText, match: splashVisibleText === realText });
+        }
+      }
+      let n = 0;
+      function tick() {
+        sample();
+        n++;
+        if (n < 600) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+    await page.goto(`${BASE}/`, { waitUntil: 'load' });
+    await page.waitForTimeout(5000);
+    const samples = await page.evaluate(() => window.__midFadeSamples || []);
+    record(
+      '[splash/saying-no-double-exposure-midfade] during a real mid-fade frame, the splash\'s own live-visible saying and CheckoutRedirectLoadingScreen\'s own rendered saying are identical at every sampled frame -- never two different sayings on screen at once',
+      samples.length > 0 && samples.every((s) => s.match),
+      JSON.stringify({ sampleCount: samples.length, firstSample: samples[0] || null })
+    );
+    await context.close();
+  }
+
+  // [loading-gate/community-complete-on-first-frame] Part 2: a real
+  // device recording caught Community assembling itself across several
+  // visible frames after LOADING YOUR ACCOUNT dismissed. Reproduced
+  // directly against the real production build under throttled network
+  // before any fix was written (icon fonts loading ~1.6s after already-
+  // painted text, confirmed via a scratch script) -- the fix folds the
+  // icon fonts into the same fontsLoaded gate every font already uses,
+  // and folds ClassBookingContext's own first-load into the loading
+  // screen's own hold. This check drives the real, unmodified mechanism
+  // under a real REST delay and asserts the FIRST frame where the
+  // loading screen is gone already has every element the brief named:
+  // the wordmark, a real icon-font-rendered top bar icon, the date
+  // strip's day numbers, and at least one real class row.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/**', async (route) => {
+      await new Promise((r) => setTimeout(r, 900));
+      await route.fallback();
+    });
+    await seedSignedInSession(page);
+    await page.addInitScript(() => {
+      window.__loadingGateLog = [];
+      function sample() {
+        const loadingScreen = document.querySelector('[data-testid="checkout-redirect-loading"]');
+        const wordmark = document.querySelector('[data-testid="app-wordmark"]');
+        const hamburger = document.querySelector('[data-testid="open-sidebar"]');
+        let iconFontReal = false;
+        if (hamburger) {
+          const glyph = Array.from(hamburger.querySelectorAll('*')).find(
+            (el) => el.children.length === 0 && el.textContent && el.textContent.length === 1
+          );
+          if (glyph) {
+            const ff = getComputedStyle(glyph).fontFamily.toLowerCase();
+            iconFontReal = ff.indexOf('ion') >= 0 || ff.indexOf('material') >= 0;
+          }
+        }
+        const dateCells = document.querySelectorAll('[data-testid^="date-strip-cell-"]');
+        let dayNumbersPresent = dateCells.length > 0;
+        dateCells.forEach((c) => {
+          if (!/\d/.test(c.textContent || '')) dayNumbersPresent = false;
+        });
+        const classRows = document.querySelectorAll('[data-testid^="sign-up-"]');
+        window.__loadingGateLog.push({
+          t: Math.round(performance.now()),
+          loadingScreenPresent: !!loadingScreen,
+          wordmarkPresent: !!wordmark,
+          iconFontReal,
+          dayNumbersPresent,
+          classRowCount: classRows.length,
+        });
+      }
+      let n = 0;
+      function tick() {
+        sample();
+        n++;
+        if (n < 900) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+    await page.goto(`${BASE}/`, { waitUntil: 'load' });
+    await page.waitForTimeout(6000);
+    const log = await page.evaluate(() => window.__loadingGateLog || []);
+    const sawLoadingScreen = log.some((e) => e.loadingScreenPresent);
+    const firstFrameAfterDismiss = log.find((e, i) => !e.loadingScreenPresent && i > 0 && log[i - 1].loadingScreenPresent);
+    const communityCompleteImmediately =
+      !!firstFrameAfterDismiss &&
+      firstFrameAfterDismiss.wordmarkPresent &&
+      firstFrameAfterDismiss.iconFontReal &&
+      firstFrameAfterDismiss.dayNumbersPresent &&
+      firstFrameAfterDismiss.classRowCount > 0;
+    record(
+      '[loading-gate/community-complete-on-first-frame] the first sampled frame where LOADING YOUR ACCOUNT is gone already shows the wordmark, a real icon-font-rendered top bar icon, the date strip\'s day numbers, and real class rows -- nothing pops in afterward',
+      sawLoadingScreen && communityCompleteImmediately,
+      JSON.stringify({ sawLoadingScreen, firstFrameAfterDismiss, logLength: log.length })
+    );
+    if (SCREENSHOT_DIR) {
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'loading-gate-community-complete.png') }).catch(() => {});
+    }
+    await context.close();
+  }
+
+  // [loading-gate/cap-fires-when-data-never-settles] the hard rule: a
+  // data response that never resolves must never trap a member on
+  // LOADING YOUR ACCOUNT forever -- the EXTRA_DATA_SETTLE_CAP_MS (3000ms)
+  // cap must fire and the app must still appear, even in this fully
+  // degraded shape (empty class rows is the accepted fallback here, per
+  // the brief's own acceptance rule -- never the loading screen itself
+  // staying up indefinitely).
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    // class_sessions_with_availability never resolves -- registered
+    // AFTER setupMocks() so it wins, same override-priority convention
+    // this file already uses throughout.
+    await page.route('**/rest/v1/rpc/class_sessions_with_availability*', () => {}); // never resolves.
+    await seedSignedInSession(page);
+    const t0 = Date.now();
+    // 'networkidle' can never settle while one route is deliberately left
+    // permanently pending -- page.goto() would then hang until
+    // Playwright's own default ~30s navigation timeout (confirmed
+    // directly: a first draft of this check reported capFireMs:30045,
+    // exactly that default, with loadingVisibleEarly already false by the
+    // time goto() finally gave up -- the real 3-second cap had already
+    // fired and dismissed the screen long before this check ever got to
+    // look). 'domcontentloaded' resolves immediately regardless of any
+    // still-pending request, letting navigation itself not be the
+    // bottleneck -- but 'domcontentloaded' only means the raw HTML
+    // parsed, not that React has mounted anything at all yet. A second
+    // attempt that checked loadingVisibleEarly immediately after
+    // 'domcontentloaded' still read false, with capFireMs:358 and
+    // appeared:false too -- confirmed directly: at that instant NEITHER
+    // the loading screen NOR app-wordmark existed in the DOM yet, because
+    // React's own JS bundle hadn't finished evaluating/mounting, so
+    // "!document.querySelector(loading)" was already (vacuously) true
+    // before the real mechanism had any chance to run at all. The fix:
+    // wait for React to have mounted SOMETHING real first -- either the
+    // loading screen or app-wordmark, whichever wins the real race --
+    // before reading "is it visible early," so this check genuinely
+    // observes the loading screen's own real presence, not an absence
+    // that only means "nothing has rendered yet."
+    await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' }).catch(() => {});
+    await page
+      .waitForSelector('[data-testid="checkout-redirect-loading"], [data-testid="app-wordmark"]', { timeout: 10000 })
+      .catch(() => {});
+    const loadingVisibleEarly = await page.getByTestId('checkout-redirect-loading').isVisible().catch(() => false);
+    await page.waitForSelector('[data-testid="app-wordmark"]', { timeout: 10000 }).catch(() => {});
+    const capFireMs = Date.now() - t0;
+    const loadingGoneAfterCap = !(await page.getByTestId('checkout-redirect-loading').isVisible().catch(() => false));
+    const appeared = await page.getByTestId('app-wordmark').isVisible().catch(() => false);
+    record(
+      '[loading-gate/cap-fires-when-data-never-settles] a class_sessions_with_availability fetch that never resolves still dismisses LOADING YOUR ACCOUNT within the 3-second cap, and the app appears regardless (the degraded fallback, never a frozen loading screen)',
+      loadingVisibleEarly && loadingGoneAfterCap && appeared && capFireMs < 8000,
+      JSON.stringify({ loadingVisibleEarly, loadingGoneAfterCap, appeared, capFireMs })
+    );
+    if (SCREENSHOT_DIR) {
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'loading-gate-degraded-cap-fired.png') }).catch(() => {});
+    }
+    await context.close();
   }
 
   await browser.close();

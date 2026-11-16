@@ -94,6 +94,50 @@ const HEADER_IMAGE_URL = `${APP_URL}/email-header.png`;
 // stable-URL way email-header.png/badge-black.png already are.
 const CTA_IMAGE_URL = `${APP_URL}/email-cta-open-the-app.png`;
 
+// Round 61 Part 3: a real device recording of opening the Sunday Drop in
+// Gmail iOS (dark mode) showed the header slot flashing seafoam green for a
+// moment BEFORE the real header image painted. Confirmed directly by
+// reading this file, not assumed, with TWO distinct live colors found in
+// the two slots: (1) both `<img>` tags themselves carried an inline
+// `background-color` (the header's own `LIGHT.greenDeep`, the CTA's own
+// `LIGHT.gold`) — a real, live HTML color, part of the `<img>` element's
+// own box, genuinely painted the instant the element lays out, regardless
+// of whether the image itself has loaded yet (this is the box's background,
+// not a placeholder drawn only on failure); and (2) the header image's own
+// surrounding `<td>` carried that SAME `LIGHT.greenDeep` as its own
+// background — invisible as a separate finding at a glance (it reads like
+// it's just matching the image behind it), but it's a second, independent
+// live color sitting directly behind the image slot, and removing only the
+// `<img>`'s own background would still have left this one showing straight
+// through a now-transparent image box. The CTA button's own surrounding
+// `<td>` has no background color of its own, so only its `<img>` needed
+// the fix. On a cold open through a slow proxy/CDN, either box can be
+// visible for a real, human-perceptible span before the real image arrives
+// — and because both are live HTML color, not pixel content inside the
+// image, Gmail's own dark-mode transform (see the Round 58 comment above on
+// HEADER_IMAGE_URL) can and did repaint them unpredictably in exactly the
+// lightness band this whole image strategy was built to avoid. Every one
+// of these `background-color` declarations is removed outright — the
+// header `<td>` now carries the plain `.card-bg`/`${LIGHT.cardBg}` the rest
+// of the body already uses (so it inherits the same dark-mode override with
+// no new rule needed), and both slots now show only the card's own
+// background until their image paints over it, never a second brand color
+// of their own. Declared `width`/`height` on both `<img>` tags are
+// untouched, so there is still zero layout reflow whenever either image
+// does arrive.
+//
+// The alt-text fallback (shown only if the image never loads at all) is
+// restyled to match: near-black `${LIGHT.text}` text with NO background
+// color of its own, the identical inversion-safe pairing the body's
+// day/date labels and workout names already use — rather than the old
+// white-on-deep-green/deep-green-on-gold pairing, which was exactly as
+// vulnerable to Gmail's live-color transform as the box behind it. The
+// alt strings themselves, and Round 58's own font-size-zero-inheritance
+// fix (the parent cell's `font-size:0` would otherwise collapse an
+// unstyled fallback to invisible — both `<img>` tags still declare their
+// own explicit `font-size`/`font-weight`/`font-family` for exactly that
+// reason), are unchanged.
+
 // Google Fonts' own static gstatic URLs (the "latin" subset only — every
 // character this email ever renders is plain ASCII) for the app's real
 // display/label fonts (BebasNeue_400Regular, BarlowCondensed_600SemiBold/
@@ -264,8 +308,8 @@ body, .email-bg { background-color: ${LIGHT.pageBg} !important; }
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-bg" style="background-color:${LIGHT.pageBg};padding:24px 0;">
 <tr><td align="center">
 <table role="presentation" width="100%" class="card-bg" style="max-width:600px;background-color:${LIGHT.cardBg};border-radius:12px;overflow:hidden;font-family:${BODY_FONT_STACK};" cellpadding="0" cellspacing="0">
-<tr><td style="background-color:${LIGHT.greenDeep};padding:0;line-height:0;font-size:0;">
-<img src="${HEADER_IMAGE_URL}" width="600" height="220" alt="DOC'S FITNESS. YOUR WORKOUTS ARE HERE." style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;color:#FFFFFF;background-color:${LIGHT.greenDeep};font-size:18px;font-weight:700;font-family:${LABEL_FONT_STACK};" />
+<tr><td class="card-bg" style="background-color:${LIGHT.cardBg};padding:0;line-height:0;font-size:0;">
+<img src="${HEADER_IMAGE_URL}" width="600" height="220" alt="DOC'S FITNESS. YOUR WORKOUTS ARE HERE." style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;color:${LIGHT.text};font-size:18px;font-weight:700;font-family:${LABEL_FONT_STACK};" />
 </td></tr>
 <tr><td style="padding:24px 24px 8px 24px;">
 <div class="text-strong" style="color:${LIGHT.text};font-size:13px;letter-spacing:1.5px;font-weight:700;margin-bottom:4px;font-family:${LABEL_FONT_STACK};">YOUR WORKOUTS</div>
@@ -278,7 +322,7 @@ body, .email-bg { background-color: ${LIGHT.pageBg} !important; }
 <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:28px auto 8px auto;">
 <tr><td align="center">
 <a href="${APP_URL}" style="display:inline-block;">
-<img src="${CTA_IMAGE_URL}" width="240" height="52" alt="OPEN THE APP" style="display:block;border:0;outline:none;border-radius:8px;color:${LIGHT.greenDeep};background-color:${LIGHT.gold};font-size:16px;font-weight:700;letter-spacing:1px;font-family:${LABEL_FONT_STACK};" />
+<img src="${CTA_IMAGE_URL}" width="240" height="52" alt="OPEN THE APP" style="display:block;border:0;outline:none;border-radius:8px;color:${LIGHT.text};font-size:16px;font-weight:700;letter-spacing:1px;font-family:${LABEL_FONT_STACK};" />
 </a>
 </td></tr>
 </table>

@@ -1816,6 +1816,34 @@
          removed from the DOM once this full sequence completes; it is
          never removed while #root is still empty, so this can never
          itself be the cause of a blank screen. -->
+    <!-- Round 61 Part 1: the crossfade between this splash and the real
+         CheckoutRedirectLoadingScreen used to dissolve one brand saying
+         into a DIFFERENT one -- a real-device recording showed this as
+         unreadable double-exposure ghost text, a frame with two sayings
+         superimposed. Round 60 accepted this as the one difference the
+         handoff couldn't avoid; the owner has since ruled it
+         unacceptable. The fix: this splash's own cycling is deterministic
+         pure CSS with no JS driving it, so WHICH of the 9 lines is
+         currently visible at any instant is a real, directly-observable
+         fact -- read via each line's own live computed `opacity` (the
+         line with the highest opacity is the one on screen), never a
+         guess reconstructed from an assumed page-load timestamp. That
+         fact is written continuously (every 100ms, via setInterval,
+         started immediately at parse time and stopped once the splash is
+         removed) to window.__splashBrandLine -- `{text, index, opacity,
+         t}` -- so whenever CheckoutRedirectLoadingScreen.tsx happens to
+         mount (anywhere from ~200ms to several seconds after this script
+         runs, depending on device/network), a sample from within the
+         last 100ms is already sitting there for it to read on its very
+         first render, well inside each line's own 2000ms hold window.
+         Continuous writing, not a single write timed to one event, is
+         required here specifically because React's own lazy useState
+         initializer in that component runs during its render phase,
+         which happens BEFORE this script could ever react to the DOM
+         mutation that render produces -- there is no reliable way to
+         write the global in response to the mount; it has to already be
+         fresh by the time the mount's own synchronous render phase reads
+         it. -->
     <script>
       (function () {
         var splash = document.getElementById('docs-fitness-splash');
@@ -1824,8 +1852,44 @@
 
         var SETTLE_MS = 100;
         var FADE_MS = 200;
+        var BRAND_LINE_CAPTURE_INTERVAL_MS = 100;
         var started = false;
         var removed = false;
+
+        function captureSplashBrandLine() {
+          // Test-only override (never read or written by real app code) --
+          // the same "force what the real mechanism would produce"
+          // convention scripts/verify-standalone-safe-area.js already uses
+          // throughout (window.__shareCardForceColorwayIndex,
+          // window.__tourTestForceMissing, etc.) -- seeded via
+          // page.addInitScript before this script ever evaluates, so a
+          // suite check can deterministically control which saying this
+          // global reports without fighting the real 100ms interval below.
+          if (window.__splashBrandLineTestForce) {
+            window.__splashBrandLine = window.__splashBrandLineTestForce;
+            return;
+          }
+          var lines = splash.querySelectorAll('.docs-fitness-splash-line');
+          var bestIndex = -1;
+          var bestOpacity = -1;
+          for (var i = 0; i < lines.length; i++) {
+            var opacity = parseFloat(getComputedStyle(lines[i]).opacity);
+            if (!isNaN(opacity) && opacity > bestOpacity) {
+              bestOpacity = opacity;
+              bestIndex = i;
+            }
+          }
+          if (bestIndex < 0) return;
+          window.__splashBrandLine = {
+            text: lines[bestIndex].textContent,
+            index: bestIndex,
+            opacity: bestOpacity,
+            t: Date.now(),
+          };
+        }
+
+        captureSplashBrandLine();
+        var brandLineInterval = setInterval(captureSplashBrandLine, BRAND_LINE_CAPTURE_INTERVAL_MS);
 
         function startFade() {
           if (removed) return;
@@ -1839,6 +1903,7 @@
           splash.style.opacity = '0';
           setTimeout(function () {
             if (splash.parentNode) splash.parentNode.removeChild(splash);
+            clearInterval(brandLineInterval);
           }, FADE_MS + 50);
         }
 
