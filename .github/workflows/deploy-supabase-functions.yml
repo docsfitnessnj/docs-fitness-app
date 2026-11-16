@@ -21,8 +21,18 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: supabase/setup-cli@v1
+        # Pinned version + authenticated token, after "version: latest"
+        # failed twice in two days (Round 58 and Round 60 merges) with
+        # "Failed to resolve latest Supabase CLI release: rate limit
+        # exceeded" — GitHub's shared runners hitting the unauthenticated
+        # API limit just to resolve what "latest" means. An exact version
+        # skips that lookup entirely; the GITHUB_TOKEN env is a second
+        # layer in case the action still calls the API for the download.
+        # Bump this version deliberately when a newer CLI is needed.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          version: latest
+          version: 3.2.0
 
       - name: Deploy functions
         run: |
