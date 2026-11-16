@@ -1566,6 +1566,141 @@
   </head>
 
   <body>
+
+    <!-- ROUND 59: an instant splash, painted before any JavaScript runs,
+         so a member tapping OPEN THE APP from an email (or anyone else
+         loading this page cold) never sees a blank white page while the
+         real JS bundle downloads and boots -- a real-device report said
+         exactly that read as "broken." A visual twin of
+         src/components/CheckoutRedirectLoadingScreen.tsx -- the app's own
+         single shared full-screen loading component -- so there is no
+         visible handoff once React mounts and that component's own
+         loading screens take over for the rest of the boot sequence: same
+         96px badge, same gold ring spinner (RING_SIZE=118, RING_THICKNESS=
+         2, track rgba(229,184,11,0.16), arc #E5B80B, 2600ms linear
+         rotation), same cycling brand line (2000ms hold, 300ms fade,
+         ease-in-out -- LINE_HOLD_MS/LINE_FADE_MS in that file). Pure
+         HTML/CSS; the only JS is the small removal script right after
+         #root below, which never runs any app logic of its own. The badge
+         is DocsBadge's own real "white" variant (assets/brand/
+         badge-white.png -- transparent background, black ink, for this
+         light #FBFBF9 backdrop, same asset that component renders via
+         <DocsBadge variant="white" size={96} />), resized to 192x192 (2x
+         for retina) and palette-reduced to keep the inline data URI small
+         enough to paint instantly with zero network fetch -- the real
+         file's own pixels, never a hand-drawn approximation.
+
+         The brand-line list below is byte-for-byte, same order, as that
+         component's own BRAND_LINES array -- do not reword, reorder,
+         trim, or add to it here without updating BOTH places; a suite
+         check reads both sources and compares them. Implemented as 9
+         identically-shaped, absolutely-stacked elements sharing one
+         @keyframes definition (docsFitnessSplashLineCycle, one full loop
+         = 9 * 2600ms = 23400ms) with each element's own negative
+         animation-delay staggering it into its own 2600ms "turn" --
+         fade in (0% to 1.282%, 300ms), hold at full opacity (to 9.829%,
+         2000ms), fade out (to 11.111%, 300ms), then stay hidden for the
+         rest of the loop until its next turn -- the standard CSS trick
+         for cycling fixed text with no per-frame JS at all. -->
+    <style>
+      #docs-fitness-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 999999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background-color: #FBFBF9;
+        padding: 0 32px;
+        pointer-events: none;
+      }
+      #docs-fitness-splash-badge-wrap {
+        position: relative;
+        width: 118px;
+        height: 118px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #docs-fitness-splash-ring-track,
+      #docs-fitness-splash-ring-arc {
+        position: absolute;
+        width: 118px;
+        height: 118px;
+        border-radius: 59px;
+        box-sizing: border-box;
+      }
+      #docs-fitness-splash-ring-track {
+        border: 2px solid rgba(229, 184, 11, 0.16);
+      }
+      #docs-fitness-splash-ring-arc {
+        border: 2px solid transparent;
+        border-top-color: #E5B80B;
+        animation: docsFitnessSplashSpin 2600ms linear infinite;
+      }
+      #docs-fitness-splash-badge {
+        display: block;
+        width: 96px;
+        height: 96px;
+      }
+      #docs-fitness-splash-lines {
+        position: relative;
+        width: 100%;
+        max-width: 320px;
+        height: 20px;
+        margin-top: 22px;
+      }
+      .docs-fitness-splash-line {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #5F6B66;
+        font-family: -apple-system, 'Arial Narrow', Arial, sans-serif;
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 2px;
+        text-align: center;
+        text-transform: uppercase;
+        white-space: nowrap;
+        opacity: 0;
+        animation-name: docsFitnessSplashLineCycle;
+        animation-duration: 23400ms;
+        animation-timing-function: ease-in-out;
+        animation-iteration-count: infinite;
+      }
+      @keyframes docsFitnessSplashSpin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      @keyframes docsFitnessSplashLineCycle {
+        0% { opacity: 0; }
+        1.282% { opacity: 1; }
+        9.829% { opacity: 1; }
+        11.111% { opacity: 0; }
+        100% { opacity: 0; }
+      }
+    </style>
+    <div id="docs-fitness-splash">
+      <div id="docs-fitness-splash-badge-wrap">
+        <div id="docs-fitness-splash-ring-track"></div>
+        <div id="docs-fitness-splash-ring-arc"></div>
+        <img id="docs-fitness-splash-badge" alt="" src="data:image/png;base64,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" />
+      </div>
+      <div id="docs-fitness-splash-lines">
+        <div class="docs-fitness-splash-line" style="animation-delay: 0ms;">STRONGER EVERY DAY</div>
+        <div class="docs-fitness-splash-line" style="animation-delay: -2600ms;">BETTER EVERY DAY</div>
+        <div class="docs-fitness-splash-line" style="animation-delay: -5200ms;">BETTER THAN YESTERDAY</div>
+        <div class="docs-fitness-splash-line" style="animation-delay: -7800ms;">SHOW UP. PICK UP. REPEAT.</div>
+        <div class="docs-fitness-splash-line" style="animation-delay: -10400ms;">THE BELL IS WAITING</div>
+        <div class="docs-fitness-splash-line" style="animation-delay: -13000ms;">EARN YOUR SATURDAY</div>
+        <div class="docs-fitness-splash-line" style="animation-delay: -15600ms;">FEEL BETTER. LOOK BETTER.</div>
+        <div class="docs-fitness-splash-line" style="animation-delay: -18200ms;">ONE MORE REP</div>
+        <div class="docs-fitness-splash-line" style="animation-delay: -20800ms;">LAST SET. BEST SET. ALWAYS</div>
+      </div>
+    </div>
     <!-- Use static rendering with Expo Router to support running without JavaScript. -->
     <noscript>
       You need to enable JavaScript to run this app.
@@ -1587,5 +1722,33 @@
     <div id="debug-probe-100vh"></div>
     <!-- The root element for your Expo app. -->
     <div id="root"></div>
+
+    <!-- Removes the splash above the instant #root has real content --
+         i.e. React has committed its first render -- using a plain
+         MutationObserver on #root's own childList, not a timer: no
+         arbitrary delay to tune, no risk of removing the splash too early
+         (before there's anything real underneath it) or too late (an
+         extra visible frame of both). Disconnects itself the moment it
+         fires -- this script has no further job after that. -->
+    <script>
+      (function () {
+        var splash = document.getElementById('docs-fitness-splash');
+        var root = document.getElementById('root');
+        if (!splash || !root) return;
+        var observer;
+        function removeSplash() {
+          if (observer) observer.disconnect();
+          if (splash.parentNode) splash.parentNode.removeChild(splash);
+        }
+        if (root.firstChild) {
+          removeSplash();
+          return;
+        }
+        observer = new MutationObserver(function () {
+          if (root.firstChild) removeSplash();
+        });
+        observer.observe(root, { childList: true });
+      })();
+    </script>
   </body>
 </html>

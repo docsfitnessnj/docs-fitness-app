@@ -12349,42 +12349,46 @@ async function run() {
       JSON.stringify({ altFallbackHasDeclaredSize, altFallbackStyledForLegibility })
     );
 
+    // [email/brand/subject-line] Round 59: the subject changes from "THE
+    // NEW WEEK IS LIVE" to "YOUR WORKOUTS ARE HERE" so it matches the
+    // header image's own baked-in headline exactly -- the old subject
+    // phrase must be fully retired (not left dangling in a dead branch or
+    // a stale comment pretending to be current), and the new one must be
+    // the literal, real string the header image also carries, not a
+    // close-but-different rewording of it.
+    const subjectIsNewPhrase = /return \{ subject: 'YOUR WORKOUTS ARE HERE', html, weekLabel/.test(emailTemplateSrc);
+    const oldSubjectPhraseGone = !/THE NEW WEEK IS LIVE/.test(emailTemplateSrc);
+    const subjectMatchesHeaderAltText = /alt="DOC'S FITNESS\. YOUR WORKOUTS ARE HERE\."/.test(emailTemplateSrc);
+    record(
+      '[email/brand/subject-line] the subject is exactly "YOUR WORKOUTS ARE HERE", matching the header image\'s own baked-in headline -- the old "THE NEW WEEK IS LIVE" subject is fully retired, not just superseded',
+      subjectIsNewPhrase && oldSubjectPhraseGone && subjectMatchesHeaderAltText,
+      JSON.stringify({ subjectIsNewPhrase, oldSubjectPhraseGone, subjectMatchesHeaderAltText })
+    );
+
     // [email/brand/no-duplicate-headline] the eyebrow/headline text baked
-    // into the header image must never also appear as live HTML text in
-    // the body -- the only two places "THE NEW WEEK IS LIVE" may appear at
-    // all are the plain email subject line and the header image's own alt
-    // text (both outside the HTML body a reader actually sees rendered),
-    // and "DOC'S FITNESS" as a styled gold <div> eyebrow must be gone
-    // entirely (the footer's own plain "Doc's Fitness" signature line is a
-    // different, expected thing -- an ordinary brand-name footer credit,
-    // not a restatement of the marketing headline/eyebrow pairing).
-    const subjectStillExact = /return \{ subject: 'THE NEW WEEK IS LIVE', html, weekLabel/.test(emailTemplateSrc);
+    // into the header image must never also appear as a SEPARATE live HTML
+    // element in the body -- the subject's own phrase now deliberately
+    // matches the image's alt text (Round 59, see subject-line check
+    // above), so those two are no longer "duplicates" to guard against;
+    // what this check still guards is the old, now-deleted header HTML
+    // (a gold eyebrow <div>, a white headline <div>) never coming back,
+    // and no NEW live <div> ever re-duplicating either phrase as its own
+    // rendered body text (the footer's own plain "Doc's Fitness" signature
+    // line is a different, expected thing -- an ordinary brand-name footer
+    // credit, not a restatement of the marketing headline/eyebrow pairing).
     const noLiveHeadlineDiv = !/<div style="color:#FFFFFF;font-size:34px;letter-spacing:0\.5px;font-family:\$\{HEADLINE_FONT_STACK\};">THE NEW WEEK IS LIVE<\/div>/.test(
       emailTemplateSrc
     );
     const noLiveGoldEyebrowDiv = !/<div style="color:\$\{LIGHT\.gold\};font-size:13px;letter-spacing:2px;font-weight:700;margin-bottom:8px;font-family:\$\{LABEL_FONT_STACK\};">DOC'S FITNESS<\/div>/.test(
       emailTemplateSrc
     );
-    // The subject line's own phrase, "THE NEW WEEK IS LIVE", must occur
-    // exactly once in the whole file -- inside the subject-line return
-    // itself, never ALSO duplicated as live HTML body text (the header
-    // image's own baked-in headline is actually the different phrase "YOUR
-    // WORKOUTS ARE HERE", confirmed directly against the real PNG, so
-    // these two phrases were never meant to match each other -- the real
-    // regression this check guards is a future edit re-adding the subject
-    // phrase as a second, live HTML headline alongside the subject).
-    const subjectPhraseOccurrences = (emailTemplateSrc.match(/THE NEW WEEK IS LIVE/g) || []).length;
-    // The image's own alt text is the one place "YOUR WORKOUTS ARE HERE"
-    // may appear as a quoted HTML attribute value; it may also appear in
-    // this file's own prose comments (not live HTML), so this only checks
-    // that no SECOND live <div> headline duplicates it.
     const noLiveWorkoutsHeadlineDiv = !/<div style="color:#FFFFFF;font-size:34px;[\s\S]{0,80}>YOUR WORKOUTS ARE HERE<\/div>/.test(
       emailTemplateSrc
     );
     record(
-      '[email/brand/no-duplicate-headline] the headline/eyebrow baked into the header image is never ALSO rendered as live HTML text in the body -- only the subject line carries "THE NEW WEEK IS LIVE", and only the image\'s own alt text carries "YOUR WORKOUTS ARE HERE"',
-      subjectStillExact && noLiveHeadlineDiv && noLiveGoldEyebrowDiv && noLiveWorkoutsHeadlineDiv && subjectPhraseOccurrences === 1,
-      JSON.stringify({ subjectStillExact, noLiveHeadlineDiv, noLiveGoldEyebrowDiv, noLiveWorkoutsHeadlineDiv, subjectPhraseOccurrences })
+      '[email/brand/no-duplicate-headline] the old header HTML (gold eyebrow div, white headline div) never reappears, and neither phrase is ever ALSO rendered as a separate live HTML headline',
+      noLiveHeadlineDiv && noLiveGoldEyebrowDiv && noLiveWorkoutsHeadlineDiv,
+      JSON.stringify({ noLiveHeadlineDiv, noLiveGoldEyebrowDiv, noLiveWorkoutsHeadlineDiv })
     );
 
     // [email/brand/body-inversion-safe] the one live mid-tone brand color
@@ -12438,26 +12442,85 @@ async function run() {
       JSON.stringify({ hasColorSchemeMeta, hasSupportedColorSchemesMeta, hasDarkMediaQuery, darkOverridesCardAndText })
     );
 
-    // [email/brand/cta-button] kept exactly as Round 57 built it, by
-    // reasoning rather than by guess: gold (~47% lightness) and deep green
-    // (~16% lightness) both sit well clear of the near-white/near-black
-    // bands Gmail's transform is documented to target, so a saturated
-    // mid-lightness background with dark text is the standard
-    // Gmail-dark-mode-safe button treatment -- confirmed present via the
-    // committed reasoning comment directly above the button markup, not
-    // just the colors themselves (a future edit that changes the colors
-    // without updating or re-justifying the reasoning should be caught by
-    // a human reviewer, not silently pass this check).
-    const ctaGoldBackground = /bgcolor="\$\{LIGHT\.gold\}"/.test(emailTemplateSrc);
-    const ctaDeepGreenText = /color:\$\{LIGHT\.greenDeep\};font-weight:700/.test(emailTemplateSrc);
-    const ctaIsBulletproofTable = /<table role="presentation" cellpadding="0" cellspacing="0" align="center"[\s\S]{0,40}<tr><td align="center" bgcolor=/.test(
+    // [email/brand/cta-image] Round 59: real device evidence showed Gmail's
+    // dark-mode transform repainting the OPEN THE APP button anyway --
+    // gold went muddy olive, text went seafoam -- superseding Round 57/58's
+    // own lightness-band reasoning for this one live-HTML color. The
+    // button is now a single hosted image (the owner's own committed
+    // public/email-cta-open-the-app.png), wrapped in a plain anchor so the
+    // whole image is the tap target -- never a second, parallel HTML
+    // button anywhere alongside it.
+    const ctaImageUrlConst = /const CTA_IMAGE_URL = `\$\{APP_URL\}\/email-cta-open-the-app\.png`;/.test(emailTemplateSrc);
+    const ctaImgTagPresent = /<img src="\$\{CTA_IMAGE_URL\}" width="240" height="52" alt="OPEN THE APP"/.test(emailTemplateSrc);
+    const ctaWrappedInAnchor = /<a href="\$\{APP_URL\}"[^>]*>\s*<img src="\$\{CTA_IMAGE_URL\}"/.test(emailTemplateSrc);
+    const oldBulletproofButtonGone = !/<tr><td align="center" bgcolor=/.test(emailTemplateSrc) && !/bgcolor="\$\{LIGHT\.gold\}"/.test(emailTemplateSrc);
+    record(
+      '[email/brand/cta-image] OPEN THE APP is a single hosted image (CTA_IMAGE_URL) wrapped in a plain anchor -- the whole image is the tap target, and the old bgcolor table-cell button is completely gone, not left as a second button',
+      ctaImageUrlConst && ctaImgTagPresent && ctaWrappedInAnchor && oldBulletproofButtonGone,
+      JSON.stringify({ ctaImageUrlConst, ctaImgTagPresent, ctaWrappedInAnchor, oldBulletproofButtonGone })
+    );
+
+    // [email/brand/cta-image-alt-fallback] the Round 58 lesson reapplied:
+    // a declared width+height stops a broken/blocked image from collapsing
+    // to a tiny default box, and inline color/background-color/font-size/
+    // font-weight/font-family on the <img> itself overrides both the
+    // inherited font-size:0 (from the header's own zero-gap trick) and the
+    // browser's default unstyled-black alt text -- so "OPEN THE APP" reads
+    // clearly, gold-on-green, the instant the image can't load.
+    const ctaHasDeclaredDimensions = /<img src="\$\{CTA_IMAGE_URL\}" width="240" height="52"/.test(emailTemplateSrc);
+    const ctaAltFallbackStyled = /alt="OPEN THE APP" style="display:block;border:0;outline:none;border-radius:8px;color:\$\{LIGHT\.greenDeep\};background-color:\$\{LIGHT\.gold\};font-size:16px;font-weight:700;/.test(
       emailTemplateSrc
     );
-    const ctaReasoningCommentPresent = /Round 58: left unchanged, by reasoning rather than by guess/.test(emailTemplateSrc);
     record(
-      '[email/brand/cta-button] OPEN THE APP uses the real gold background + deep green text, built as a table-cell-background button (not just a styled anchor), the standard bulletproof technique for an email client that strips an anchor\'s own background-color -- with its Gmail-dark-mode-safety reasoning documented inline',
-      ctaGoldBackground && ctaDeepGreenText && ctaIsBulletproofTable && ctaReasoningCommentPresent,
-      JSON.stringify({ ctaGoldBackground, ctaDeepGreenText, ctaIsBulletproofTable, ctaReasoningCommentPresent })
+      '[email/brand/cta-image-alt-fallback] the CTA img declares real width/height and inline alt-fallback styling (deep green text on gold) so "OPEN THE APP" stays legible when the image is blocked, never invisible',
+      ctaHasDeclaredDimensions && ctaAltFallbackStyled,
+      JSON.stringify({ ctaHasDeclaredDimensions, ctaAltFallbackStyled })
+    );
+
+    // [email/brand/footer-no-band] Round 59: the footer loses its deep
+    // green band entirely -- the exact same copy renders as plain
+    // inversion-safe near-black/muted-gray text on the card background
+    // (the same .card-bg/.text-strong/.text-muted classes the body
+    // already uses), so Gmail's own transform inverts it cleanly along
+    // with the rest of the body instead of fighting a second live-colored
+    // band.
+    const footerGreenBandGone = !/background-color:\$\{LIGHT\.greenDeep\};padding:18px/.test(emailTemplateSrc);
+    const footerWhiteTextGone = !/opacity:0\.75/.test(emailTemplateSrc);
+    const footerUsesCardBg = /<tr><td class="card-bg" style="background-color:\$\{LIGHT\.cardBg\};padding:18px 24px;text-align:center;">/.test(
+      emailTemplateSrc
+    );
+    const footerSignatureInversionSafe = /<div class="text-strong" style="color:\$\{LIGHT\.text\};font-size:11px;font-family:\$\{BODY_FONT_STACK\};">Doc's Fitness<\/div>/.test(
+      emailTemplateSrc
+    );
+    const footerOptOutCopyExact = /<div class="text-muted" style="color:\$\{LIGHT\.textMuted\};font-size:11px;margin-top:6px;font-family:\$\{BODY_FONT_STACK\};">Don't want this email\? Turn it off anytime in the app, under Settings &amp; Notifications\.<\/div>/.test(
+      emailTemplateSrc
+    );
+    // A looser copy-text check (independent of which classes/colors wrap
+    // it) so this check can't pass purely because the wrapper regexes
+    // above happen to be too strict and silently fail for the wrong
+    // reason -- confirms the actual words are still there verbatim.
+    const footerOptOutWordsPresent = emailTemplateSrc.includes(
+      "Don't want this email? Turn it off anytime in the app, under Settings &amp; Notifications."
+    );
+    const whiteTextOnlyOnHeaderImage = (emailTemplateSrc.match(/color:#FFFFFF/g) || []).length === 1;
+    record(
+      '[email/brand/footer-no-band] the footer has no colored band background anymore -- same exact copy, rendered as plain near-black/muted-gray text on the card background -- and no live white-on-color text remains anywhere outside the header image\'s own alt fallback',
+      footerGreenBandGone &&
+        footerWhiteTextGone &&
+        footerUsesCardBg &&
+        footerSignatureInversionSafe &&
+        footerOptOutCopyExact &&
+        footerOptOutWordsPresent &&
+        whiteTextOnlyOnHeaderImage,
+      JSON.stringify({
+        footerGreenBandGone,
+        footerWhiteTextGone,
+        footerUsesCardBg,
+        footerSignatureInversionSafe,
+        footerOptOutCopyExact,
+        footerOptOutWordsPresent,
+        whiteTextOnlyOnHeaderImage,
+      })
     );
 
     const noEmojis = !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(emailTemplateSrc);
@@ -12535,6 +12598,176 @@ async function run() {
       !!appShareUrlMatch && !!emailAppUrlMatch && appShareUrlMatch[1] === emailAppUrlMatch[1],
       JSON.stringify({ appShareUrl: appShareUrlMatch?.[1], emailAppUrl: emailAppUrlMatch?.[1] })
     );
+  }
+
+  // --- Round 59 Part 4: an instant splash screen in public/index.html,
+  // painting before any JavaScript runs, so a member tapping OPEN THE APP
+  // from a cold Gmail in-app-browser load never stares at a blank white
+  // page while the bundle downloads. Must be a visual twin of the app's
+  // own CheckoutRedirectLoadingScreen.tsx, and must disappear completely,
+  // with no leftover tap-intercepting element, the instant the real app
+  // mounts.
+  {
+    const indexHtmlSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+    const checkoutScreenSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'components', 'CheckoutRedirectLoadingScreen.tsx'),
+      'utf8'
+    );
+
+    // [splash/present-in-served-html] a plain, unauthenticated HTTP GET of
+    // the real served document (never a page.goto(), which would already
+    // run JS) must contain the splash markup -- proving it's baked into
+    // the static document itself, not injected after the fact.
+    const rawHtmlRes = await fetch(`${BASE}/`);
+    const rawHtml = await rawHtmlRes.text();
+    const splashPresentInRawHtml =
+      rawHtml.includes('id="docs-fitness-splash"') &&
+      rawHtml.includes('id="docs-fitness-splash-badge"') &&
+      rawHtml.includes('docs-fitness-splash-line');
+    record(
+      '[splash/present-in-served-html] the splash markup is present in the raw, unauthenticated HTML response itself -- baked into the static document, not injected by any script',
+      splashPresentInRawHtml,
+      JSON.stringify({ splashPresentInRawHtml, rawHtmlLength: rawHtml.length })
+    );
+
+    // [splash/brand-lines-match-source] the 9 cycling lines baked into
+    // index.html must byte-match CheckoutRedirectLoadingScreen.tsx's own
+    // BRAND_LINES array exactly -- same strings, same order, same count --
+    // so a future edit to either file that forgets the other fails loudly
+    // instead of silently drifting the two loading experiences apart.
+    const sourceBrandLinesMatch = checkoutScreenSrc.match(/const BRAND_LINES = \[([\s\S]*?)\];/);
+    const sourceBrandLines = sourceBrandLinesMatch
+      ? sourceBrandLinesMatch[1]
+          .split('\n')
+          .map((l) => l.match(/'([^']*)'/))
+          .filter(Boolean)
+          .map((m) => m[1])
+      : [];
+    const splashLineMatches = [...indexHtmlSrc.matchAll(/class="docs-fitness-splash-line"[^>]*>([^<]*)<\/div>/g)].map(
+      (m) => m[1]
+    );
+    const brandLinesMatchExactly =
+      sourceBrandLines.length === 9 &&
+      splashLineMatches.length === 9 &&
+      sourceBrandLines.every((line, i) => line === splashLineMatches[i]);
+    record(
+      '[splash/brand-lines-match-source] the splash\'s 9 cycling lines exactly match CheckoutRedirectLoadingScreen.tsx\'s own BRAND_LINES, same order, same text, same count -- never reworded, reordered, trimmed, or added to',
+      brandLinesMatchExactly,
+      JSON.stringify({ sourceBrandLines, splashLineMatches })
+    );
+
+    // [splash/no-interference-with-shell-mechanisms] the splash's own CSS/
+    // JS must never reference any of the sanctioned safe-area/keyboard-
+    // shell variables or attributes, and must never declare a rule for
+    // html/body/#root's own selectors -- it is a fully independent overlay
+    // that disappears outright, not a participant in any of those
+    // mechanisms.
+    const splashBlockMatch = indexHtmlSrc.match(/<style>\s*#docs-fitness-splash[\s\S]*?<\/style>/);
+    const splashBlock = splashBlockMatch ? splashBlockMatch[0] : '';
+    const sanctionedShellTokens = [
+      '--real-safe-top',
+      '--real-safe-bottom',
+      '--keyboard-inset',
+      '--app-offset-top',
+      '--shell-keyboard-height',
+      'data-keyboard-shell',
+      '--viewport-scale',
+      '--composer-rise',
+    ];
+    const splashNeverReferencesShellTokens = sanctionedShellTokens.every((tok) => !splashBlock.includes(tok));
+    const splashNeverDeclaresRootOrBodyRule = !/(^|\s)(html|body|#root)\s*\{/.test(splashBlock);
+    record(
+      '[splash/no-interference-with-shell-mechanisms] the splash\'s own style block never references any sanctioned safe-area/keyboard-shell variable or attribute, and never declares its own rule for html/body/#root',
+      splashNeverReferencesShellTokens && splashNeverDeclaresRootOrBodyRule,
+      JSON.stringify({ splashNeverReferencesShellTokens, splashNeverDeclaresRootOrBodyRule, splashBlockFound: !!splashBlockMatch })
+    );
+
+    // [splash/paints-before-bundle] forcing the JS bundle response to be
+    // slow (simulating a real cold Gmail in-app-browser load) must still
+    // paint the splash immediately, with the real badge image, the ring,
+    // and a visible cycling line -- before the bundle has had any chance
+    // to run at all.
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await page.route('**/_expo/static/js/web/*.js', async (route) => {
+        await new Promise((r) => setTimeout(r, 2000));
+        await route.continue();
+      });
+      const navPromise = page.goto(`${BASE}/`, { waitUntil: 'commit' });
+      await page.waitForSelector('#docs-fitness-splash', { timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const splashState = await page.evaluate(() => {
+        const el = document.getElementById('docs-fitness-splash');
+        const badge = document.getElementById('docs-fitness-splash-badge');
+        const arc = document.getElementById('docs-fitness-splash-ring-arc');
+        const visibleLine = document.querySelector('.docs-fitness-splash-line');
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        return {
+          rect: { width: rect.width, height: rect.height },
+          badgeHasRealSrc: !!badge && badge.getAttribute('src').startsWith('data:image/png;base64,') && badge.getAttribute('src').length > 500,
+          arcPresent: !!arc,
+          anyLinePresent: !!visibleLine,
+        };
+      });
+      record(
+        '[splash/paints-before-bundle] with the real JS bundle artificially slowed, the splash is visible full-viewport with the real inline badge, the ring arc, and a cycling brand line -- before the bundle has executed at all',
+        !!splashState &&
+          splashState.rect.width > 300 &&
+          splashState.rect.height > 700 &&
+          splashState.badgeHasRealSrc &&
+          splashState.arcPresent &&
+          splashState.anyLinePresent,
+        JSON.stringify(splashState)
+      );
+      await navPromise.catch(() => {});
+      await context.close();
+    }
+
+    // [splash/removed-after-mount] + [splash/removed-after-mount-standalone]
+    // an ordinary load, and a forced-standalone load, must both end with
+    // the splash completely gone from the DOM (not just hidden), the real
+    // first screen actually rendered, and that real screen genuinely
+    // receiving taps -- nothing left over to intercept a pointer event.
+    for (const standalone of [false, true]) {
+      const label = standalone ? 'removed-after-mount-standalone' : 'removed-after-mount';
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      if (standalone) await forceStandaloneDisplayMode(page);
+      await setupMocks(page);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page
+        .waitForFunction(() => !document.getElementById('docs-fitness-splash'), { timeout: 15000 })
+        .catch(() => {});
+      await page.waitForTimeout(500);
+      const postMount = await page.evaluate(() => {
+        const splashGone = !document.getElementById('docs-fitness-splash');
+        const center = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+        const realContentPresent = !!document.getElementById('root') && document.getElementById('root').children.length > 0;
+        return {
+          splashGone,
+          topElementIsNotSplash: !!center && center.id !== 'docs-fitness-splash',
+          realContentPresent,
+        };
+      });
+      // Confirm the real screen genuinely receives a tap, not just that
+      // some non-splash element happens to be on top.
+      let tapReachedRealApp = false;
+      try {
+        await page.mouse.click(VIEWPORT.width / 2, 60);
+        await page.waitForTimeout(200);
+        tapReachedRealApp = true;
+      } catch {
+        tapReachedRealApp = false;
+      }
+      record(
+        `[splash/${label}] the splash is fully removed from the DOM after the real app mounts, the real first screen is rendered, and it genuinely receives taps with nothing left intercepting pointer events`,
+        postMount.splashGone && postMount.topElementIsNotSplash && postMount.realContentPresent && tapReachedRealApp,
+        JSON.stringify({ ...postMount, tapReachedRealApp })
+      );
+      await context.close();
+    }
   }
 
   await browser.close();
