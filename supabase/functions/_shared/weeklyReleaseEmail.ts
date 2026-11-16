@@ -81,6 +81,19 @@ const APP_URL = 'https://docsfitnessnj.github.io/docs-fitness-app';
 // which is an implementation detail of the bundler, not a stable URL).
 const HEADER_IMAGE_URL = `${APP_URL}/email-header.png`;
 
+// Round 59: real device evidence superseded Round 58's own lightness-band
+// reasoning for the OPEN THE APP button — Gmail's dark transform repainted
+// the live gold `bgcolor` button as a muddy olive with seafoam text anyway
+// (confirmed on a real iPhone), proving the "mid-lightness backgrounds are
+// left alone" heuristic isn't reliable enough for a color this
+// brand-critical. Same fix as the header: the button ships as one hosted
+// image instead of live HTML colors, since Gmail's transform never touches
+// pixel content inside an `<img>`. public/email-cta-open-the-app.png
+// (480x104, a 2x render for the real 240x52 display slot) is the owner's
+// own approved gold-rounded-rect/deep-green-text asset, hosted the same
+// stable-URL way email-header.png/badge-black.png already are.
+const CTA_IMAGE_URL = `${APP_URL}/email-cta-open-the-app.png`;
+
 // Google Fonts' own static gstatic URLs (the "latin" subset only — every
 // character this email ever renders is plain ASCII) for the app's real
 // display/label fonts (BebasNeue_400Regular, BarlowCondensed_600SemiBold/
@@ -133,14 +146,17 @@ const LIGHT = {
 
 // Dark-mode overrides. Only the elements that would otherwise read wrong
 // against a client's own forced-dark page background change at all — the
-// header/footer bands are already a deep, saturated green and the gold
-// button already has enough contrast that neither needs a dark-mode
-// variant of its own. "Legible and on brand, not pixel perfect" per the
-// brief: Gmail's and Apple Mail's own dark-mode engines differ in exactly
-// how much of this an author can actually control, so these values are a
-// deliberate, tasteful fallback the `prefers-color-scheme: dark` media
-// query below applies where a client honors it, not a guarantee every
-// dark-mode client renders identically.
+// header image and the CTA image are both hosted bitmaps, untouched by any
+// CSS override (an `<img>`'s own pixels can't be recolored by a stylesheet
+// rule), and the footer now shares the exact same `.card-bg`/`.text-strong`/
+// `.text-muted` classes the body already uses (Round 59 — it's no longer a
+// separate green band), so it inherits this same override automatically
+// with no footer-specific rule needed. "Legible and on brand, not pixel
+// perfect" per the brief: Gmail's and Apple Mail's own dark-mode engines
+// differ in exactly how much of this an author can actually control, so
+// these values are a deliberate, tasteful fallback the
+// `prefers-color-scheme: dark` media query below applies where a client
+// honors it, not a guarantee every dark-mode client renders identically.
 const DARK = {
   pageBg: '#12211C', // same near-black as colors.text, reused as a dark surface
   cardBg: '#17211D', // slightly lighter than pageBg, for a visible card edge
@@ -232,28 +248,21 @@ body, .email-bg { background-color: ${LIGHT.pageBg} !important; }
 <div class="text-strong" style="color:${LIGHT.text};font-size:13px;letter-spacing:1.5px;font-weight:700;margin-bottom:4px;font-family:${LABEL_FONT_STACK};">YOUR WORKOUTS</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsHtml}</table>
 <!--
-  Round 58: left unchanged, by reasoning rather than by guess. Gold
-  (#E5B80B) has an HSL lightness of ~47% and deep green (#054C3D) ~16% —
-  neither is anywhere near the near-white/near-black extremes Gmail's own
-  transform is documented to target (it flips backgrounds above roughly
-  90% lightness dark and below roughly 10% lightness light; a saturated,
-  mid-lightness brand color like this gold is the standard, widely-cited
-  "Gmail dark mode safe" button-background choice for exactly this reason
-  — it falls outside both trigger bands and is left alone). Deep green
-  button text sitting on that same untouched gold background has nothing
-  to conflict with, unlike the old header's white-on-deep-green pairing
-  (one color in each extreme band, flipped independently of the other).
-  Kept as real, tappable HTML — never an image — per the brief.
+  Round 59: the OPEN THE APP button is now a hosted image, not a live
+  bgcolor/HTML button — see CTA_IMAGE_URL's own comment above for why
+  (real-device evidence that Gmail's dark transform repaints gold anyway).
 -->
 <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:28px auto 8px auto;">
-<tr><td align="center" bgcolor="${LIGHT.gold}" style="background-color:${LIGHT.gold};border-radius:8px;">
-<a href="${APP_URL}" style="display:inline-block;color:${LIGHT.greenDeep};font-weight:700;font-size:14px;letter-spacing:1px;text-decoration:none;padding:14px 36px;font-family:${LABEL_FONT_STACK};">OPEN THE APP</a>
+<tr><td align="center">
+<a href="${APP_URL}" style="display:inline-block;">
+<img src="${CTA_IMAGE_URL}" width="240" height="52" alt="OPEN THE APP" style="display:block;border:0;outline:none;border-radius:8px;color:${LIGHT.greenDeep};background-color:${LIGHT.gold};font-size:16px;font-weight:700;letter-spacing:1px;font-family:${LABEL_FONT_STACK};" />
+</a>
 </td></tr>
 </table>
 </td></tr>
-<tr><td style="background-color:${LIGHT.greenDeep};padding:18px 24px;text-align:center;">
-<div style="color:#FFFFFF;font-size:11px;font-family:${BODY_FONT_STACK};">Doc's Fitness</div>
-<div style="color:#FFFFFF;opacity:0.75;font-size:11px;margin-top:6px;font-family:${BODY_FONT_STACK};">Don't want this email? Turn it off anytime in the app, under Settings &amp; Notifications.</div>
+<tr><td class="card-bg" style="background-color:${LIGHT.cardBg};padding:18px 24px;text-align:center;">
+<div class="text-strong" style="color:${LIGHT.text};font-size:11px;font-family:${BODY_FONT_STACK};">Doc's Fitness</div>
+<div class="text-muted" style="color:${LIGHT.textMuted};font-size:11px;margin-top:6px;font-family:${BODY_FONT_STACK};">Don't want this email? Turn it off anytime in the app, under Settings &amp; Notifications.</div>
 </td></tr>
 </table>
 </td></tr>
@@ -261,5 +270,5 @@ body, .email-bg { background-color: ${LIGHT.pageBg} !important; }
 </body>
 </html>`;
 
-  return { subject: 'THE NEW WEEK IS LIVE', html, weekLabel: `Week of ${formatMD(week.week_start_date)}` };
+  return { subject: 'YOUR WORKOUTS ARE HERE', html, weekLabel: `Week of ${formatMD(week.week_start_date)}` };
 }
