@@ -40,24 +40,46 @@ function addDays(iso: string, days: number): string {
 // import). No trailing slash, matching that constant exactly.
 const APP_URL = 'https://docsfitnessnj.github.io/docs-fitness-app';
 
-// Round 57: the real circular badge mark (DocsBadge's own "black" variant —
-// confirmed directly, by sampling its pixels, to be solid WHITE ink on a
-// transparent background, named "black" for the dark surface it's meant to
-// sit on, not for its own ink color) — a plain, stable copy at
-// public/badge-black.png, served by GitHub Pages at this exact URL. A
-// hosted https URL, never a data URI (Gmail strips those) and never an
-// attachment. Deliberately NOT the Metro-hashed bundle path
-// (dist/assets/assets/brand/badge-black.<hash>.png) that `require()` would
-// produce inside the app itself — that hash is an implementation detail of
-// Metro's own bundler and isn't guaranteed stable across a dependency or
-// config change, whereas `public/*` is copied byte-for-byte to the site
-// root by `expo export -p web` with its own filename intact, exactly the
-// same convention public/index.html's own og:image/twitter:image tags
-// already use for share-image-v3.jpg/share-image-square-v3.jpg. Resized
-// from the original 1384x1384 source down to 256x256 (strips EXIF/color
-// profile too) — plenty of resolution for a ~64px display size at 2-4x
-// retina, without shipping a 342KB image in every send.
-const BADGE_LOGO_URL = `${APP_URL}/badge-black.png`;
+// Round 58: Gmail's iOS/Android apps apply their own undocumented,
+// per-color dark-mode transform to every message — unlike Apple Mail,
+// Outlook, Yahoo, and Samsung Mail, Gmail never honors an author's
+// `color-scheme`/`prefers-color-scheme` at all, so the Round 57 media query
+// below is pure progressive enhancement for those other clients and never
+// reaches Gmail. Gmail's heuristic operates per declared color, not per
+// element, and (as widely documented by email-dev references, e.g.
+// Litmus/Email on Acid's own Gmail dark-mode write-ups) its most reliable
+// behavior is: a near-white background gets darkened, a near-black
+// background gets lightened, and a light (near-white) TEXT color gets
+// independently darkened wherever Gmail's own page-level flip judges the
+// surrounding context to be light — regardless of what happened to that
+// text's own real background. That's exactly the reported failure: this
+// template's old header `<td>` was deep green (`#054C3D`, ~16% lightness —
+// squarely in Gmail's "too dark, lighten it" band) while its headline text
+// was pure white (~100% lightness, Gmail's "too light for what I assume is
+// now a light page, darken it" band) — two independent flips that, applied
+// together, produced a washed-out seafoam band UNDER dark, low-contrast
+// ghost text, matching the owner's own real-device report precisely. The
+// one guarantee Gmail's transform makes is that it never touches pixel
+// content inside an `<img>` — so every pixel that must render in an EXACT
+// brand color (the badge mark, the gold eyebrow, the white Bebas headline,
+// all on true Augusta green) now ships as one pre-rendered image instead of
+// live HTML colors Gmail could flip independently of each other.
+//
+// The real circular badge mark (DocsBadge's own "black" variant — solid
+// white ink on transparent) used to be referenced here directly as a
+// 64px HTML `<img>` sitting beside live eyebrow/headline text; that whole
+// block is gone (see HEADER_IMAGE_URL below) and public/badge-black.png
+// itself is left in place, since other surfaces may still reference it.
+//
+// The approved header image (public/email-header.png, 1200x440 — a 600px
+// email slot at 2x) already contains the badge, the gold "DOC'S FITNESS"
+// eyebrow, and the white "YOUR WORKOUTS ARE HERE" headline baked onto true
+// deep-green, as one flat, Gmail-immune bitmap. Same stable-URL convention
+// badge-black.png already established: a plain file under public/, copied
+// byte-for-byte to the GitHub Pages site root by `expo export -p web` with
+// its own filename intact (never the Metro-hashed require() bundle path,
+// which is an implementation detail of the bundler, not a stable URL).
+const HEADER_IMAGE_URL = `${APP_URL}/email-header.png`;
 
 // Google Fonts' own static gstatic URLs (the "latin" subset only — every
 // character this email ever renders is plain ASCII) for the app's real
@@ -202,15 +224,27 @@ body, .email-bg { background-color: ${LIGHT.pageBg} !important; }
 <body style="margin:0;padding:0;background-color:${LIGHT.pageBg};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-bg" style="background-color:${LIGHT.pageBg};padding:24px 0;">
 <tr><td align="center">
-<table role="presentation" width="100%" class="card-bg" style="max-width:480px;background-color:${LIGHT.cardBg};border-radius:12px;overflow:hidden;font-family:${BODY_FONT_STACK};" cellpadding="0" cellspacing="0">
-<tr><td style="background-color:${LIGHT.greenDeep};padding:32px 24px;text-align:center;">
-<img src="${BADGE_LOGO_URL}" width="64" height="64" alt="Doc's Fitness" style="display:block;margin:0 auto 14px auto;border:0;outline:none;" />
-<div style="color:${LIGHT.gold};font-size:13px;letter-spacing:2px;font-weight:700;margin-bottom:8px;font-family:${LABEL_FONT_STACK};">DOC'S FITNESS</div>
-<div style="color:#FFFFFF;font-size:34px;letter-spacing:0.5px;font-family:${HEADLINE_FONT_STACK};">THE NEW WEEK IS LIVE</div>
+<table role="presentation" width="100%" class="card-bg" style="max-width:600px;background-color:${LIGHT.cardBg};border-radius:12px;overflow:hidden;font-family:${BODY_FONT_STACK};" cellpadding="0" cellspacing="0">
+<tr><td style="background-color:${LIGHT.greenDeep};padding:0;line-height:0;font-size:0;">
+<img src="${HEADER_IMAGE_URL}" width="600" height="220" alt="DOC'S FITNESS. YOUR WORKOUTS ARE HERE." style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;color:#FFFFFF;background-color:${LIGHT.greenDeep};font-size:18px;font-weight:700;font-family:${LABEL_FONT_STACK};" />
 </td></tr>
 <tr><td style="padding:24px 24px 8px 24px;">
-<div style="color:${LIGHT.green};font-size:13px;letter-spacing:1.5px;font-weight:700;margin-bottom:4px;font-family:${LABEL_FONT_STACK};">YOUR WORKOUTS</div>
+<div class="text-strong" style="color:${LIGHT.text};font-size:13px;letter-spacing:1.5px;font-weight:700;margin-bottom:4px;font-family:${LABEL_FONT_STACK};">YOUR WORKOUTS</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsHtml}</table>
+<!--
+  Round 58: left unchanged, by reasoning rather than by guess. Gold
+  (#E5B80B) has an HSL lightness of ~47% and deep green (#054C3D) ~16% —
+  neither is anywhere near the near-white/near-black extremes Gmail's own
+  transform is documented to target (it flips backgrounds above roughly
+  90% lightness dark and below roughly 10% lightness light; a saturated,
+  mid-lightness brand color like this gold is the standard, widely-cited
+  "Gmail dark mode safe" button-background choice for exactly this reason
+  — it falls outside both trigger bands and is left alone). Deep green
+  button text sitting on that same untouched gold background has nothing
+  to conflict with, unlike the old header's white-on-deep-green pairing
+  (one color in each extreme band, flipped independently of the other).
+  Kept as real, tappable HTML — never an image — per the brief.
+-->
 <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:28px auto 8px auto;">
 <tr><td align="center" bgcolor="${LIGHT.gold}" style="background-color:${LIGHT.gold};border-radius:8px;">
 <a href="${APP_URL}" style="display:inline-block;color:${LIGHT.greenDeep};font-weight:700;font-size:14px;letter-spacing:1px;text-decoration:none;padding:14px 36px;font-family:${LABEL_FONT_STACK};">OPEN THE APP</a>
