@@ -13255,11 +13255,27 @@ async function run() {
     // time goto() finally gave up -- the real 3-second cap had already
     // fired and dismissed the screen long before this check ever got to
     // look). 'domcontentloaded' resolves immediately regardless of any
-    // still-pending request, letting the "is it visible EARLY" check
-    // genuinely run before the cap has had a chance to fire.
+    // still-pending request, letting navigation itself not be the
+    // bottleneck -- but 'domcontentloaded' only means the raw HTML
+    // parsed, not that React has mounted anything at all yet. A second
+    // attempt that checked loadingVisibleEarly immediately after
+    // 'domcontentloaded' still read false, with capFireMs:358 and
+    // appeared:false too -- confirmed directly: at that instant NEITHER
+    // the loading screen NOR app-wordmark existed in the DOM yet, because
+    // React's own JS bundle hadn't finished evaluating/mounting, so
+    // "!document.querySelector(loading)" was already (vacuously) true
+    // before the real mechanism had any chance to run at all. The fix:
+    // wait for React to have mounted SOMETHING real first -- either the
+    // loading screen or app-wordmark, whichever wins the real race --
+    // before reading "is it visible early," so this check genuinely
+    // observes the loading screen's own real presence, not an absence
+    // that only means "nothing has rendered yet."
     await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' }).catch(() => {});
+    await page
+      .waitForSelector('[data-testid="checkout-redirect-loading"], [data-testid="app-wordmark"]', { timeout: 10000 })
+      .catch(() => {});
     const loadingVisibleEarly = await page.getByTestId('checkout-redirect-loading').isVisible().catch(() => false);
-    await page.waitForFunction(() => !document.querySelector('[data-testid="checkout-redirect-loading"]'), { timeout: 10000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="app-wordmark"]', { timeout: 10000 }).catch(() => {});
     const capFireMs = Date.now() - t0;
     const loadingGoneAfterCap = !(await page.getByTestId('checkout-redirect-loading').isVisible().catch(() => false));
     const appeared = await page.getByTestId('app-wordmark').isVisible().catch(() => false);
