@@ -12414,6 +12414,35 @@ async function run() {
       JSON.stringify({ sectionHeaderUsesPlainNearBlack, noLiveMidToneGreenText, dayLabelsStillMutedGray, workoutNamesStillNearBlack, dividersStillPlainHairline })
     );
 
+    // [email/brand/workout-rows-tappable] Round 60: every workout row (day
+    // label + workout name together, including the Wednesday COW row) is
+    // now wrapped in a plain anchor to the exact same APP_URL the OPEN THE
+    // APP image button already uses -- there is no per-day deep link, by
+    // design (the app has no URL mechanism for landing on one specific day,
+    // and this round was explicit it must not invent one). The anchor
+    // itself must declare its own color and text-decoration:none, since
+    // several real email clients force their own blue-underlined styling
+    // onto any anchor with no color of its own -- and the two child divs'
+    // own distinct inline colors (muted gray label, near-black name) must
+    // be completely untouched by this, since an element's own inline color
+    // always wins over whatever an ancestor anchor declares.
+    const rowAnchorPresent = /<a href="\$\{APP_URL\}" style="display:block;text-decoration:none;color:\$\{LIGHT\.text\};">/.test(emailTemplateSrc);
+    const rowAnchorWrapsLabelAndName = /<a href="\$\{APP_URL\}" style="display:block;text-decoration:none;color:\$\{LIGHT\.text\};">\s*`\s*\+\s*`<div class="text-muted"[^`]*\$\{escapeHtml\(r\.label\)\}<\/div>`\s*\+\s*`<div class="text-strong"[^`]*\$\{escapeHtml\(r\.text\)\}<\/div>`\s*\+\s*`<\/a>`/.test(
+      emailTemplateSrc
+    );
+    const noPerDayDeepLink = !/jumpToDate|day=\$\{|date=\$\{r\./.test(emailTemplateSrc);
+    const labelDivColorUntouchedByAnchor = /<div class="text-muted" style="color:\$\{LIGHT\.textMuted\};font-size:12px;letter-spacing:0\.5px;font-weight:700;font-family:\$\{LABEL_FONT_STACK\};">\$\{escapeHtml\(r\.label\)\}<\/div>/.test(
+      emailTemplateSrc
+    );
+    const nameDivColorUntouchedByAnchor = /<div class="text-strong" style="color:\$\{LIGHT\.text\};font-size:21px;letter-spacing:0\.3px;font-family:\$\{HEADLINE_FONT_STACK\};margin-top:2px;">\$\{escapeHtml\(r\.text\)\}<\/div>/.test(
+      emailTemplateSrc
+    );
+    record(
+      '[email/brand/workout-rows-tappable] every workout row renders inside a plain anchor to the exact shared APP_URL (no per-day deep link), with text-decoration:none and an explicit inline color on the anchor itself -- the two child divs keep their own distinct, untouched colors',
+      rowAnchorPresent && rowAnchorWrapsLabelAndName && noPerDayDeepLink && labelDivColorUntouchedByAnchor && nameDivColorUntouchedByAnchor,
+      JSON.stringify({ rowAnchorPresent, rowAnchorWrapsLabelAndName, noPerDayDeepLink, labelDivColorUntouchedByAnchor, nameDivColorUntouchedByAnchor })
+    );
+
     const hasBebasFontFace = /font-family: 'Bebas Neue';[\s\S]{0,120}src: url\(https:\/\/fonts\.gstatic\.com/.test(emailTemplateSrc);
     const hasBarlowFontFace = /font-family: 'Barlow Condensed';[\s\S]{0,120}src: url\(https:\/\/fonts\.gstatic\.com/.test(emailTemplateSrc);
     const headlineHasFallback = /HEADLINE_FONT_STACK = "'Bebas Neue', Impact,/.test(emailTemplateSrc);
@@ -12766,6 +12795,169 @@ async function run() {
         postMount.splashGone && postMount.topElementIsNotSplash && postMount.realContentPresent && tapReachedRealApp,
         JSON.stringify({ ...postMount, tapReachedRealApp })
       );
+      await context.close();
+    }
+
+    // --- Round 60: the splash handoff becomes one continuous screen ---
+
+    // [splash/no-external-resources] the whole splash definition (its
+    // intro comment through just before </body> -- which also sweeps in
+    // the pre-existing, unrelated safe-area/debug probes and #root
+    // sitting in between, none of which carry a src/href of their own
+    // either) must reference zero external URLs, zero CSS url(...)
+    // resources, and zero @import statements anywhere. The badge is an
+    // inline base64 data URI (confirmed present, and which never matches
+    // http(s):// or url(...)) and every rule is inline CSS -- meaning the
+    // only way a real white screen can still occur after this is the HTML
+    // document itself not yet having been delivered by the network at
+    // all, which no page code can do anything about.
+    {
+      const splashStart = indexHtmlSrc.indexOf('<!-- ROUND 59: an instant splash');
+      const bodyEnd = indexHtmlSrc.indexOf('</body>');
+      const fullSplashRegion = splashStart >= 0 && bodyEnd > splashStart ? indexHtmlSrc.slice(splashStart, bodyEnd) : '';
+      const hasExternalUrl = /https?:\/\//.test(fullSplashRegion);
+      const hasCssUrlFn = /url\(/i.test(fullSplashRegion);
+      const hasImport = /@import/i.test(fullSplashRegion);
+      const hasDataUriBadge = /src="data:image\/png;base64,/.test(fullSplashRegion);
+      record(
+        '[splash/no-external-resources] the splash block references zero external URLs, zero CSS url() resources, and zero @import statements anywhere -- the badge is confirmed as an inline base64 data URI instead',
+        !!fullSplashRegion && !hasExternalUrl && !hasCssUrlFn && !hasImport && hasDataUriBadge,
+        JSON.stringify({ regionFound: !!fullSplashRegion, hasExternalUrl, hasCssUrlFn, hasImport, hasDataUriBadge, regionLength: fullSplashRegion.length })
+      );
+    }
+
+    // [splash/geometry-matches-loading-screen] the splash's own badge and
+    // brand-line positions must coincide EXACTLY with where those same
+    // elements sit once the real, live CheckoutRedirectLoadingScreen
+    // mounts -- measured off both real DOMs on the same viewport, never
+    // a hardcoded expected value, so a future change to either side that
+    // drifts them apart fails loudly rather than silently.
+    {
+      const splashCtx = await browser.newContext({ viewport: VIEWPORT });
+      const splashPage = await splashCtx.newPage();
+      await splashPage.route('**/_expo/static/js/web/*.js', async (route) => {
+        await new Promise((r) => setTimeout(r, 4000));
+        await route.continue();
+      });
+      const splashNav = splashPage.goto(`${BASE}/`, { waitUntil: 'commit' });
+      await splashPage.waitForSelector('#docs-fitness-splash', { timeout: 5000 }).catch(() => {});
+      await splashPage.waitForTimeout(300);
+      const splashGeometry = await splashPage.evaluate(() => {
+        const r = (el) => (el ? el.getBoundingClientRect() : null);
+        return {
+          badge: r(document.getElementById('docs-fitness-splash-badge')),
+          lines: r(document.getElementById('docs-fitness-splash-lines')),
+        };
+      });
+      await splashNav.catch(() => {});
+      await splashCtx.close();
+
+      const realCtx = await browser.newContext({ viewport: VIEWPORT });
+      const realPage = await realCtx.newPage();
+      await setupMocks(realPage, USER_ID);
+      await realPage.route('**/rest/v1/profiles*', () => {}); // never resolves -- holds the real memberStateLoading screen up indefinitely so its geometry can be measured.
+      await seedSignedInSession(realPage, USER_ID);
+      const realNav = realPage.goto(`${BASE}/`, { waitUntil: 'commit' });
+      await realPage.waitForSelector('[data-testid="checkout-redirect-loading"]', { timeout: 10000 }).catch(() => {});
+      await realPage.waitForTimeout(500);
+      const realGeometry = await realPage.evaluate(() => {
+        const root = document.querySelector('[data-testid="checkout-redirect-loading"]');
+        const r = (el) => (el ? el.getBoundingClientRect() : null);
+        return {
+          badge: r(root ? root.querySelector('img') : null),
+          brandLine: r(document.querySelector('[data-testid="checkout-redirect-brand-line"]')),
+        };
+      });
+      await realNav.catch(() => {});
+      await realCtx.close();
+
+      const badgeMatches =
+        !!splashGeometry.badge &&
+        !!realGeometry.badge &&
+        Math.abs(splashGeometry.badge.width - realGeometry.badge.width) < 2 &&
+        Math.abs(splashGeometry.badge.top - realGeometry.badge.top) < 4;
+      const brandLineMatches =
+        !!splashGeometry.lines &&
+        !!realGeometry.brandLine &&
+        Math.abs(splashGeometry.lines.top - realGeometry.brandLine.top) < 4;
+      record(
+        "[splash/geometry-matches-loading-screen] the splash's badge and brand-line positions match the real, live CheckoutRedirectLoadingScreen's own rendered positions within a tight pixel tolerance, measured off both real DOMs",
+        badgeMatches && brandLineMatches,
+        JSON.stringify({ splashGeometry, realGeometry, badgeMatches, brandLineMatches })
+      );
+    }
+
+    // [splash/persists-until-real-content-painted] +
+    // [splash/fade-not-instant] + [splash/taps-pass-through-during-fade]:
+    // a single rAF-sampled log of the real, unmodified removal mechanism
+    // against an ordinary signed-in load -- proving (a) the splash never
+    // starts fading until #root already has real, nonblank text content
+    // (the fix for the Round 59 blank-middle-frame report), (b) the fade
+    // is a genuine multi-frame crossfade, not an instant swap, and (c) a
+    // real elementFromPoint hit-test during that fade already resolves
+    // past the splash to the real content underneath, at every sampled
+    // frame -- pointer-events:none proven live, not just declared.
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await page.addInitScript(() => {
+        window.__splashHandoffLog = [];
+        const t0 = performance.now();
+        function sample() {
+          const splash = document.getElementById('docs-fitness-splash');
+          const root = document.getElementById('root');
+          const rootHasText = !!root && !!root.textContent && root.textContent.trim().length > 0;
+          const hit = document.elementFromPoint(Math.floor(window.innerWidth / 2), 60);
+          const hitIsSplash = !!(hit && hit.closest && hit.closest('#docs-fitness-splash'));
+          window.__splashHandoffLog.push({
+            t: Math.round(performance.now() - t0),
+            splashPresent: !!splash,
+            splashOpacity: splash ? getComputedStyle(splash).opacity : null,
+            rootHasText,
+            hitIsSplash,
+          });
+        }
+        let frames = 0;
+        function tick() {
+          sample();
+          frames++;
+          if (frames < 240) requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      });
+      await setupMocks(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(2500);
+      const log = await page.evaluate(() => window.__splashHandoffLog || []);
+
+      const firstFadingFrame = log.find((e) => e.splashPresent && e.splashOpacity !== '1' && e.splashOpacity !== null);
+      const persistsUntilPainted = !!firstFadingFrame && firstFadingFrame.rootHasText === true;
+      record(
+        "[splash/persists-until-real-content-painted] the splash never begins fading until #root's real replacement screen already has visible, nonblank text -- never a blank frame in between",
+        persistsUntilPainted,
+        JSON.stringify({ firstFadingFrame, logLength: log.length })
+      );
+
+      const midFadeFrames = log.filter((e) => e.splashPresent && e.splashOpacity !== '1' && e.splashOpacity !== '0' && e.splashOpacity !== null);
+      const fadeNotInstant = midFadeFrames.length >= 1;
+      record(
+        '[splash/fade-not-instant] the splash\'s own removal is a genuine multi-frame opacity crossfade -- at least one sampled frame caught it strictly between fully opaque and fully transparent, never an instant swap',
+        fadeNotInstant,
+        JSON.stringify({ midFadeFrameCount: midFadeFrames.length, sampleMidFade: midFadeFrames[0] || null })
+      );
+
+      const fadingOrPresentFrames = log.filter((e) => e.splashPresent);
+      const everyFadingFrameHitRealContent = fadingOrPresentFrames.every((e) => e.splashOpacity === '1' || !e.hitIsSplash);
+      const sawAtLeastOneNonOpaquePassthroughFrame = log.some((e) => e.splashPresent && e.splashOpacity !== '1' && !e.hitIsSplash);
+      record(
+        '[splash/taps-pass-through-during-fade] a real elementFromPoint hit-test at the splash\'s own screen position resolves past it to the real content underneath at every sampled frame once it starts fading, and never hits the splash itself while fading -- pointer-events:none holds for the whole fade, not just at rest',
+        everyFadingFrameHitRealContent && sawAtLeastOneNonOpaquePassthroughFrame,
+        JSON.stringify({ everyFadingFrameHitRealContent, sawAtLeastOneNonOpaquePassthroughFrame, totalPresentFrames: fadingOrPresentFrames.length })
+      );
+
+      if (SCREENSHOT_DIR) {
+        await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'splash-settled-real-screen.png') }).catch(() => {});
+      }
       await context.close();
     }
   }

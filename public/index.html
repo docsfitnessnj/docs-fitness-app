@@ -1601,7 +1601,22 @@
          fade in (0% to 1.282%, 300ms), hold at full opacity (to 9.829%,
          2000ms), fade out (to 11.111%, 300ms), then stay hidden for the
          rest of the loop until its next turn -- the standard CSS trick
-         for cycling fixed text with no per-frame JS at all. -->
+         for cycling fixed text with no per-frame JS at all.
+
+         Round 60: the badge/ring/brand-line geometry below is calibrated
+         to coincide EXACTLY with where those same three elements sit once
+         the real CheckoutRedirectLoadingScreen mounts (measured directly
+         off the real component, not estimated), so the crossfade the
+         removal script performs below never shows a visible jump between
+         the two layers -- only the real screen's own status message
+         fading in underneath, which is the one difference the brief
+         accepted. Zero external resources anywhere in this block: the
+         badge is an inline data URI, every rule here is inline CSS, and
+         the brand-line font stack is web-safe system fonts only (no
+         @font-face, no network fetch of any kind) -- confirmed by a
+         dedicated suite check, since the only way a real white screen can
+         still occur after this is the HTML document itself not yet
+         having been delivered, which no page code can do anything about. -->
     <style>
       #docs-fitness-splash {
         position: fixed;
@@ -1639,17 +1654,51 @@
         border-top-color: #E5B80B;
         animation: docsFitnessSplashSpin 2600ms linear infinite;
       }
+      /* Round 60: DocsBadge.tsx's own INSET_RATIO (0.88) shrinks the real
+         96px badge's VISIBLE artwork to 96*0.88=84.48px inside its own
+         circular frame (breathing room against the mask) -- measured
+         directly off the real, mounted CheckoutRedirectLoadingScreen:
+         the badge's own <img> renders at 84.47x84.47, not 96x96. This
+         splash's badge is sized to match that real, visible pixel size
+         exactly, not the component's own `size` prop value, so the badge
+         itself never appears to "shrink" the instant the real screen
+         takes over. */
       #docs-fitness-splash-badge {
         display: block;
-        width: 96px;
-        height: 96px;
+        width: 84.48px;
+        height: 84.48px;
       }
+      /* Round 60: matches the real brand line's own measured rendered
+         height (14px at fontSize 12) as closely as this fallback font
+         stack allows -- was a flat 20px, which left the badge sitting
+         ~10px lower than the real screen's own badge once the full
+         geometry-match below accounted for the real screen's message
+         line too. See #docs-fitness-splash-message-space just below the
+         lines wrapper in the markup for the other half of that match. */
       #docs-fitness-splash-lines {
         position: relative;
         width: 100%;
         max-width: 320px;
-        height: 20px;
+        height: 14px;
         margin-top: 22px;
+      }
+      /* Round 60: a blank, invisible placeholder reserving the exact
+         vertical space CheckoutRedirectLoadingScreen's own status message
+         Text (e.g. "LOADING YOUR ACCOUNT") occupies once mounted --
+         margin-top 10px + height 16px, measured directly off the real
+         component at fontSize 13 (every real usage is a single short line
+         at this width, so one fixed height covers all of them). Because
+         the real screen's own badge+ring+brand-line group is vertically
+         centered TOGETHER WITH that message line (root's own
+         justifyContent:'center' centers the whole column, message
+         included), omitting this reservation would leave the splash's own
+         badge sitting measurably lower than where the real screen's badge
+         actually ends up -- a visible jump during the crossfade below,
+         not just a missing message line fading in on top of an otherwise
+         stable picture. This element never shows any text at all. */
+      #docs-fitness-splash-message-space {
+        margin-top: 10px;
+        height: 16px;
       }
       .docs-fitness-splash-line {
         position: absolute;
@@ -1700,6 +1749,7 @@
         <div class="docs-fitness-splash-line" style="animation-delay: -18200ms;">ONE MORE REP</div>
         <div class="docs-fitness-splash-line" style="animation-delay: -20800ms;">LAST SET. BEST SET. ALWAYS</div>
       </div>
+      <div id="docs-fitness-splash-message-space"></div>
     </div>
     <!-- Use static rendering with Expo Router to support running without JavaScript. -->
     <noscript>
@@ -1723,31 +1773,100 @@
     <!-- The root element for your Expo app. -->
     <div id="root"></div>
 
-    <!-- Removes the splash above the instant #root has real content --
-         i.e. React has committed its first render -- using a plain
-         MutationObserver on #root's own childList, not a timer: no
-         arbitrary delay to tune, no risk of removing the splash too early
-         (before there's anything real underneath it) or too late (an
-         extra visible frame of both). Disconnects itself the moment it
-         fires -- this script has no further job after that. -->
+    <!-- Round 59 built this as a bare "remove the instant #root gets a
+         first child" observer; a real-device screen recording showed a
+         visible blank frame -- the badge and ring present, no brand line
+         at all -- in the gap between that instant and the replacement
+         screen's own text actually being visible. Investigated directly
+         before changing anything: `fontsLoaded` (App.tsx) returns null
+         for the ENTIRE app tree until every font family has finished
+         loading, which rules out FOIT (invisible webfont text) as the
+         cause -- no text of any kind can ever commit to #root before its
+         own font is already ready. Reproducing the exact handoff against
+         the real, unmodified production build (a mocked slow profile
+         fetch holding CheckoutRedirectLoadingScreen up, a wrapped
+         MutationObserver logging the real DOM at the instant it fires,
+         repeated under a real 6x CPU-throttle via CDP) never reproduced
+         the gap in this environment -- every observed fire already had
+         the brand line's own text present with computed opacity 1. This
+         doesn't mean the real-device race isn't real (a slower device's
+         own paint/compositor scheduling, or how `useNativeDriver`-backed
+         Animated values apply their initial style on web, are both
+         plausible real causes this harness's own fast desktop GPU simply
+         never surfaces) -- it means the fix below is deliberately a
+         structural guard against the WHOLE CLASS of "committed but not
+         yet actually painted" gap, not a patch aimed at one specific
+         reproduction.
+
+         The fix: on the FIRST mutation where #root gains real content,
+         disconnect immediately (this is a one-shot signal, never an
+         ongoing debounce -- the real app keeps mutating/animating
+         forever once mounted, e.g. the spinner ring itself, so a
+         "wait until nothing changes" debounce would never fire at all),
+         then wait two chained requestAnimationFrame callbacks -- the
+         standard "guarantee at least one real paint has already
+         happened" technique -- plus a short fixed buffer, before treating
+         the replacement screen as actually painted. Only then does the
+         splash crossfade out via a real CSS opacity transition (never an
+         instant swap), so even a residual one-frame difference is masked
+         by the fade rather than cut. pointer-events stays none on the
+         splash throughout (see its own style block above) -- including
+         during the fade -- so a tap on the real screen underneath is
+         never intercepted even for a moment. The splash is only ever
+         removed from the DOM once this full sequence completes; it is
+         never removed while #root is still empty, so this can never
+         itself be the cause of a blank screen. -->
     <script>
       (function () {
         var splash = document.getElementById('docs-fitness-splash');
         var root = document.getElementById('root');
         if (!splash || !root) return;
-        var observer;
-        function removeSplash() {
-          if (observer) observer.disconnect();
-          if (splash.parentNode) splash.parentNode.removeChild(splash);
+
+        var SETTLE_MS = 100;
+        var FADE_MS = 200;
+        var started = false;
+        var removed = false;
+
+        function startFade() {
+          if (removed) return;
+          removed = true;
+          splash.style.transition = 'opacity ' + FADE_MS + 'ms ease';
+          // Force a style flush so the browser registers the current,
+          // fully-opaque state before the opacity change below is
+          // applied -- otherwise both writes can collapse into a single
+          // instant jump with no visible transition at all.
+          void splash.offsetHeight;
+          splash.style.opacity = '0';
+          setTimeout(function () {
+            if (splash.parentNode) splash.parentNode.removeChild(splash);
+          }, FADE_MS + 50);
         }
+
+        function afterNextPaint(cb) {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(cb);
+          });
+        }
+
+        function onRealScreenCommitted() {
+          if (started) return;
+          started = true;
+          afterNextPaint(function () {
+            setTimeout(startFade, SETTLE_MS);
+          });
+        }
+
         if (root.firstChild) {
-          removeSplash();
-          return;
+          onRealScreenCommitted();
+        } else {
+          var observer = new MutationObserver(function () {
+            if (root.firstChild) {
+              observer.disconnect();
+              onRealScreenCommitted();
+            }
+          });
+          observer.observe(root, { childList: true, subtree: true });
         }
-        observer = new MutationObserver(function () {
-          if (root.firstChild) removeSplash();
-        });
-        observer.observe(root, { childList: true });
       })();
     </script>
   </body>

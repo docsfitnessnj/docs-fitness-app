@@ -195,12 +195,35 @@ export async function buildWeeklyReleaseEmail(admin: SupabaseAdmin, weekId: stri
   if (byDay.thu) dayRows.push({ label: `THURSDAY ${formatMD(addDays(week.week_start_date, 3))}`, text: byDay.thu });
   if (byDay.fri) dayRows.push({ label: `FRIDAY ${formatMD(addDays(week.week_start_date, 4))}`, text: byDay.fri });
 
+  // Round 60: every workout row becomes a real tap target -- a plain
+  // anchor to the exact same APP_URL the OPEN THE APP button already
+  // uses, wrapping the WHOLE row's own content (day/date label and
+  // workout name together) rather than just the name text, since that's
+  // the larger, more reliably-tappable rectangle in a table-based email
+  // layout -- `display:block` makes the anchor itself fill the cell's
+  // full width and both text lines' combined height, not just the name
+  // line. There is no per-day deep link -- the app has no URL mechanism
+  // for landing on a specific day at all, and this round was explicit
+  // that it must not invent one -- so every row, including the COW
+  // Wednesday one, points at the same shared APP_URL.
+  //
+  // The link must stay visually invisible: `text-decoration:none` plus an
+  // explicit inline `color` on the anchor itself (never left to inherit),
+  // since several real email clients force their own blue-underlined link
+  // styling onto any anchor that doesn't declare its own color. The two
+  // child divs' own inline colors (muted gray for the label, near-black
+  // for the name) are completely untouched by this change -- an element's
+  // own inline color always wins over whatever an ancestor anchor
+  // declares, so the exact approved look is preserved by construction,
+  // not by coincidence.
   const rowsHtml = dayRows
     .map(
       (r, i) =>
         `<tr><td style="padding:12px 0;${i < dayRows.length - 1 ? `border-bottom:1px solid ${LIGHT.hairline};` : ''}" class="hairline-border">` +
+        `<a href="${APP_URL}" style="display:block;text-decoration:none;color:${LIGHT.text};">` +
         `<div class="text-muted" style="color:${LIGHT.textMuted};font-size:12px;letter-spacing:0.5px;font-weight:700;font-family:${LABEL_FONT_STACK};">${escapeHtml(r.label)}</div>` +
         `<div class="text-strong" style="color:${LIGHT.text};font-size:21px;letter-spacing:0.3px;font-family:${HEADLINE_FONT_STACK};margin-top:2px;">${escapeHtml(r.text)}</div>` +
+        `</a>` +
         '</td></tr>'
     )
     .join('');
