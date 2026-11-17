@@ -13205,88 +13205,43 @@ async function run() {
     // intro comment through just before </body> -- which also sweeps in
     // the pre-existing, unrelated safe-area/debug probes and #root
     // sitting in between, none of which carry a src/href of their own
-    // either) must reference zero external URLs, zero CSS url(...)
-    // resources, and zero @import statements anywhere. The badge is an
-    // inline base64 data URI (confirmed present, and which never matches
-    // http(s):// or url(...)) and every rule is inline CSS -- meaning the
-    // only way a real white screen can still occur after this is the HTML
-    // document itself not yet having been delivered by the network at
-    // all, which no page code can do anything about.
+    // either) must reference zero external URLs and zero @import
+    // statements anywhere. Round 63 added a real CSS `url(data:font/
+    // woff2;base64,...)` for the embedded subset font -- a data: URI is
+    // not a network request, same as the badge's own pre-existing `src=
+    // "data:image/png;base64,..."`, so hasCssUrlFn below only flags a
+    // url(...) that ISN'T a data: URI (a first draft of this check used a
+    // bare /url\(/ test and false-positived on the new, legitimate
+    // @font-face rule -- caught directly by running the check, not
+    // assumed). Every `url(` occurrence in this whole region must be
+    // immediately followed by `data:` or the check fails.
     {
       const splashStart = indexHtmlSrc.indexOf('<!-- ROUND 59: an instant splash');
       const bodyEnd = indexHtmlSrc.indexOf('</body>');
       const fullSplashRegion = splashStart >= 0 && bodyEnd > splashStart ? indexHtmlSrc.slice(splashStart, bodyEnd) : '';
       const hasExternalUrl = /https?:\/\//.test(fullSplashRegion);
-      const hasCssUrlFn = /url\(/i.test(fullSplashRegion);
+      const allUrlFnsAreDataUris = [...fullSplashRegion.matchAll(/url\(([^)]*)/gi)].every((m) => m[1].trim().startsWith('data:'));
       const hasImport = /@import/i.test(fullSplashRegion);
       const hasDataUriBadge = /src="data:image\/png;base64,/.test(fullSplashRegion);
+      const hasDataUriFont = /url\(data:font\/woff2;base64,/.test(fullSplashRegion);
       record(
-        '[splash/no-external-resources] the splash block references zero external URLs, zero CSS url() resources, and zero @import statements anywhere -- the badge is confirmed as an inline base64 data URI instead',
-        !!fullSplashRegion && !hasExternalUrl && !hasCssUrlFn && !hasImport && hasDataUriBadge,
-        JSON.stringify({ regionFound: !!fullSplashRegion, hasExternalUrl, hasCssUrlFn, hasImport, hasDataUriBadge, regionLength: fullSplashRegion.length })
+        '[splash/no-external-resources] the splash block references zero external URLs and zero @import statements anywhere, and every CSS url() occurrence is a data: URI (the embedded font and the inline badge), never a network resource',
+        !!fullSplashRegion && !hasExternalUrl && allUrlFnsAreDataUris && !hasImport && hasDataUriBadge && hasDataUriFont,
+        JSON.stringify({ regionFound: !!fullSplashRegion, hasExternalUrl, allUrlFnsAreDataUris, hasImport, hasDataUriBadge, hasDataUriFont, regionLength: fullSplashRegion.length })
       );
     }
 
-    // [splash/geometry-matches-loading-screen] the splash's own badge and
-    // brand-line positions must coincide EXACTLY with where those same
-    // elements sit once the real, live CheckoutRedirectLoadingScreen
-    // mounts -- measured off both real DOMs on the same viewport, never
-    // a hardcoded expected value, so a future change to either side that
-    // drifts them apart fails loudly rather than silently.
-    {
-      const splashCtx = await browser.newContext({ viewport: VIEWPORT });
-      const splashPage = await splashCtx.newPage();
-      await splashPage.route('**/_expo/static/js/web/*.js', async (route) => {
-        await new Promise((r) => setTimeout(r, 4000));
-        await route.continue();
-      });
-      const splashNav = splashPage.goto(`${BASE}/`, { waitUntil: 'commit' });
-      await splashPage.waitForSelector('#docs-fitness-splash', { timeout: 5000 }).catch(() => {});
-      await splashPage.waitForTimeout(300);
-      const splashGeometry = await splashPage.evaluate(() => {
-        const r = (el) => (el ? el.getBoundingClientRect() : null);
-        return {
-          badge: r(document.getElementById('docs-fitness-splash-badge')),
-          lines: r(document.getElementById('docs-fitness-splash-lines')),
-        };
-      });
-      await splashNav.catch(() => {});
-      await splashCtx.close();
-
-      const realCtx = await browser.newContext({ viewport: VIEWPORT });
-      const realPage = await realCtx.newPage();
-      await setupMocks(realPage, USER_ID);
-      await realPage.route('**/rest/v1/profiles*', () => {}); // never resolves -- holds the real memberStateLoading screen up indefinitely so its geometry can be measured.
-      await seedSignedInSession(realPage, USER_ID);
-      const realNav = realPage.goto(`${BASE}/`, { waitUntil: 'commit' });
-      await realPage.waitForSelector('[data-testid="checkout-redirect-loading"]', { timeout: 10000 }).catch(() => {});
-      await realPage.waitForTimeout(500);
-      const realGeometry = await realPage.evaluate(() => {
-        const root = document.querySelector('[data-testid="checkout-redirect-loading"]');
-        const r = (el) => (el ? el.getBoundingClientRect() : null);
-        return {
-          badge: r(root ? root.querySelector('img') : null),
-          brandLine: r(document.querySelector('[data-testid="checkout-redirect-brand-line"]')),
-        };
-      });
-      await realNav.catch(() => {});
-      await realCtx.close();
-
-      const badgeMatches =
-        !!splashGeometry.badge &&
-        !!realGeometry.badge &&
-        Math.abs(splashGeometry.badge.width - realGeometry.badge.width) < 2 &&
-        Math.abs(splashGeometry.badge.top - realGeometry.badge.top) < 4;
-      const brandLineMatches =
-        !!splashGeometry.lines &&
-        !!realGeometry.brandLine &&
-        Math.abs(splashGeometry.lines.top - realGeometry.brandLine.top) < 4;
-      record(
-        "[splash/geometry-matches-loading-screen] the splash's badge and brand-line positions match the real, live CheckoutRedirectLoadingScreen's own rendered positions within a tight pixel tolerance, measured off both real DOMs",
-        badgeMatches && brandLineMatches,
-        JSON.stringify({ splashGeometry, realGeometry, badgeMatches, brandLineMatches })
-      );
-    }
+    // Round 63 Part 4: [splash/geometry-matches-loading-screen] (Round 60)
+    // matched this splash's badge/brand-line position against a React-
+    // mounted CheckoutRedirectLoadingScreen at boot -- a handoff that no
+    // longer exists at all (that component never renders at boot now;
+    // see App.tsx's own Round 63 Part 2 comment). Deleted outright, not
+    // left disabled -- the real continuity concern it covered ("the
+    // splash is the only thing on screen, nothing else peeks through
+    // underneath it") is now covered directly by
+    // [splash/only-thing-visible-until-complete-app] further down,
+    // which asserts against the real current truth instead of a
+    // handoff that was retired this round.
 
     // [splash/persists-until-real-content-painted] +
     // [splash/fade-not-instant] + [splash/taps-pass-through-during-fade]:
@@ -13365,170 +13320,43 @@ async function run() {
 
   // --- Round 61: one continuous loading experience, and no color flash ---
 
-  // [splash/saying-matches-forced-global] + [splash/saying-fallback-when-
-  // splash-already-gone]: public/index.html's own real, unmodified
-  // captureSplashBrandLine() honors window.__splashBrandLineTestForce
-  // when set (the same "force what the real mechanism would produce"
-  // convention this file already uses throughout) -- proving
-  // CheckoutRedirectLoadingScreen.tsx's own lazy initializer genuinely
-  // reads window.__splashBrandLine at mount, rather than always
-  // defaulting to index 0 regardless. A real REST delay (profiles/
-  // subscriptions/class_sessions_with_availability) is needed here so
-  // the loading screen stays mounted long enough to read its own brand
-  // line before memberStateLoading/classBookingLoading settle and
-  // replace it with MainApp.
-  {
-    const forcedCases = [
-      { index: 4, text: 'THE BELL IS WAITING' },
-      { index: 7, text: 'ONE MORE REP' },
-    ];
-    for (const { index, text } of forcedCases) {
-      const context = await browser.newContext({ viewport: VIEWPORT });
-      const page = await context.newPage();
-      await page.addInitScript((idx) => {
-        const lines = [
-          'STRONGER EVERY DAY', 'BETTER EVERY DAY', 'BETTER THAN YESTERDAY', 'SHOW UP. PICK UP. REPEAT.',
-          'THE BELL IS WAITING', 'EARN YOUR SATURDAY', 'FEEL BETTER. LOOK BETTER.', 'ONE MORE REP', 'LAST SET. BEST SET. ALWAYS',
-        ];
-        window.__splashBrandLineTestForce = { text: lines[idx], index: idx, opacity: 1, t: Date.now() };
-      }, index);
-      await setupMocks(page);
-      await page.route('**/rest/v1/**', async (route) => {
-        await new Promise((r) => setTimeout(r, 1500));
-        await route.fallback();
-      });
-      await seedSignedInSession(page);
-      const nav = page.goto(`${BASE}/`, { waitUntil: 'load' });
-      await page.waitForSelector('[data-testid="checkout-redirect-brand-line"]', { timeout: 15000 }).catch(() => {});
-      await page.waitForTimeout(100);
-      const renderedText = await page.getByTestId('checkout-redirect-brand-line').first().textContent().catch(() => null);
-      record(
-        `[splash/saying-matches-forced-global/${index}] CheckoutRedirectLoadingScreen renders the exact saying window.__splashBrandLine carries at mount, not always index 0`,
-        renderedText === text,
-        JSON.stringify({ forcedIndex: index, forcedText: text, renderedText })
-      );
-      await nav.catch(() => {});
-      await context.close();
-    }
+  // Round 63 Part 4: Round 61's own window.__splashBrandLine sync
+  // mechanism, and the three checks that covered it
+  // ([splash/saying-matches-forced-global/4], [.../7],
+  // [splash/saying-fallback-when-splash-already-gone],
+  // [splash/saying-no-double-exposure-midfade]), are deleted outright --
+  // not skipped, not left disabled. That mechanism existed solely to
+  // disguise the handoff between this splash and a React-mounted
+  // CheckoutRedirectLoadingScreen; Round 63 deleted the handoff itself
+  // (that component no longer renders at boot at all -- see App.tsx's
+  // own Round 63 Part 2 comment), so there is nothing left for these
+  // checks to verify. The real continuity concern they covered --
+  // "never two different loading screens, never a double-exposure
+  // seam" -- is now covered by [loading-gate/community-complete-on-
+  // first-frame] and [splash/only-thing-visible-until-complete-app]
+  // below, which assert directly against the real, current truth: the
+  // splash alone is the only thing on screen for the whole boot
+  // sequence, with CheckoutRedirectLoadingScreen never appearing at all.
 
-    // Fallback case: with the force global set but no splash element in
-    // the DOM at all (simulating a LATER, unrelated mount of this same
-    // shared component long after boot -- e.g. the checkout-redirect
-    // overlay), the component must NOT read the stale global -- it must
-    // behave exactly as today, index 0.
-    {
-      const context = await browser.newContext({ viewport: VIEWPORT });
-      const page = await context.newPage();
-      await page.addInitScript(() => {
-        window.__splashBrandLineTestForce = { text: 'EARN YOUR SATURDAY', index: 5, opacity: 1, t: Date.now() };
-      });
-      await setupMocks(page);
-      // Delete the splash element itself the instant it's created, before
-      // the app's own JS has a chance to mount anything -- so by the time
-      // CheckoutRedirectLoadingScreen mounts, document.getElementById
-      // ('docs-fitness-splash') genuinely returns null, the real
-      // condition this fallback branch checks for.
-      await page.addInitScript(() => {
-        const remove = () => {
-          const el = document.getElementById('docs-fitness-splash');
-          if (el && el.parentNode) el.parentNode.removeChild(el);
-        };
-        remove();
-        document.addEventListener('DOMContentLoaded', remove);
-      });
-      await page.route('**/rest/v1/**', async (route) => {
-        await new Promise((r) => setTimeout(r, 1200));
-        await route.fallback();
-      });
-      await seedSignedInSession(page);
-      const nav = page.goto(`${BASE}/`, { waitUntil: 'load' });
-      await page.waitForSelector('[data-testid="checkout-redirect-brand-line"]', { timeout: 15000 }).catch(() => {});
-      await page.waitForTimeout(100);
-      const renderedText = await page.getByTestId('checkout-redirect-brand-line').first().textContent().catch(() => null);
-      record(
-        '[splash/saying-fallback-when-splash-already-gone] with no splash element present at mount, the forced global is ignored and the component falls back to its own default (index 0), exactly as today',
-        renderedText === 'STRONGER EVERY DAY',
-        JSON.stringify({ renderedText })
-      );
-      await nav.catch(() => {});
-      await context.close();
-    }
-  }
-
-  // [splash/saying-no-double-exposure-midfade] the REAL, unforced
-  // mechanism end to end: during an actual mid-fade frame (the splash's
-  // own computed opacity genuinely between 0 and 1), the splash's own
-  // live-computed visible line and the component's own rendered line
-  // must be byte-identical at every sampled frame -- no force hook here
-  // at all, since forcing the global would decouple it from the
-  // splash's own real CSS-animated visual state, which is exactly the
-  // thing this check needs to prove stays in sync.
-  {
-    const context = await browser.newContext({ viewport: VIEWPORT });
-    const page = await context.newPage();
-    await setupMocks(page);
-    await page.route('**/rest/v1/**', async (route) => {
-      await new Promise((r) => setTimeout(r, 3000));
-      await route.fallback();
-    });
-    await seedSignedInSession(page);
-    await page.route('**/_expo/static/js/web/*.js', async (route) => {
-      await new Promise((r) => setTimeout(r, 300));
-      await route.continue();
-    });
-    await page.addInitScript(() => {
-      window.__midFadeSamples = [];
-      function sample() {
-        const splash = document.getElementById('docs-fitness-splash');
-        const splashOpacity = splash ? parseFloat(getComputedStyle(splash).opacity) : null;
-        const splashLines = splash ? splash.querySelectorAll('.docs-fitness-splash-line') : [];
-        let splashVisibleText = null;
-        let bestOp = -1;
-        for (const el of splashLines) {
-          const op = parseFloat(getComputedStyle(el).opacity);
-          if (op > bestOp) {
-            bestOp = op;
-            splashVisibleText = el.textContent;
-          }
-        }
-        const realLine = document.querySelector('[data-testid="checkout-redirect-brand-line"]');
-        const realText = realLine ? realLine.textContent : null;
-        if (splash && splashOpacity > 0 && splashOpacity < 1 && realLine) {
-          window.__midFadeSamples.push({ splashVisibleText, realText, match: splashVisibleText === realText });
-        }
-      }
-      let n = 0;
-      function tick() {
-        sample();
-        n++;
-        if (n < 600) requestAnimationFrame(tick);
-      }
-      requestAnimationFrame(tick);
-    });
-    await page.goto(`${BASE}/`, { waitUntil: 'load' });
-    await page.waitForTimeout(5000);
-    const samples = await page.evaluate(() => window.__midFadeSamples || []);
-    record(
-      '[splash/saying-no-double-exposure-midfade] during a real mid-fade frame, the splash\'s own live-visible saying and CheckoutRedirectLoadingScreen\'s own rendered saying are identical at every sampled frame -- never two different sayings on screen at once',
-      samples.length > 0 && samples.every((s) => s.match),
-      JSON.stringify({ sampleCount: samples.length, firstSample: samples[0] || null })
-    );
-    await context.close();
-  }
-
-  // [loading-gate/community-complete-on-first-frame] Part 2: a real
-  // device recording caught Community assembling itself across several
-  // visible frames after LOADING YOUR ACCOUNT dismissed. Reproduced
-  // directly against the real production build under throttled network
-  // before any fix was written (icon fonts loading ~1.6s after already-
-  // painted text, confirmed via a scratch script) -- the fix folds the
-  // icon fonts into the same fontsLoaded gate every font already uses,
-  // and folds ClassBookingContext's own first-load into the loading
-  // screen's own hold. This check drives the real, unmodified mechanism
-  // under a real REST delay and asserts the FIRST frame where the
-  // loading screen is gone already has every element the brief named:
-  // the wordmark, a real icon-font-rendered top bar icon, the date
-  // strip's day numbers, and at least one real class row.
+  // [loading-gate/community-complete-on-first-frame] Part 2 (Round 61),
+  // re-targeted for Round 63: a real device recording caught Community
+  // assembling itself across several visible frames after the loading
+  // screen dismissed. Round 61's own fix folded icon fonts into the same
+  // fontsLoaded gate every font already uses, and folded
+  // ClassBookingContext's own first-load into the loading screen's own
+  // hold -- both still completely untouched by Round 63. What changed is
+  // WHICH element this check tracks: Round 63 Part 2 means
+  // CheckoutRedirectLoadingScreen ([data-testid="checkout-redirect-
+  // loading"]) no longer renders at boot AT ALL -- the splash itself
+  // (#docs-fitness-splash) is now the only thing up during this whole
+  // window, and App.tsx renders null underneath it (see its own Round 63
+  // Part 2 comment). This check drives the real, unmodified mechanism
+  // under a real REST delay and asserts two things together: the old
+  // loading-screen testID is NEVER seen anywhere in the whole sample
+  // (confirming Part 2's "no longer renders at boot" literally), and the
+  // FIRST frame where the splash is gone already has every element the
+  // brief named: the wordmark, a real icon-font-rendered top bar icon,
+  // the date strip's day numbers, and at least one real class row.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -13541,7 +13369,8 @@ async function run() {
     await page.addInitScript(() => {
       window.__loadingGateLog = [];
       function sample() {
-        const loadingScreen = document.querySelector('[data-testid="checkout-redirect-loading"]');
+        const splash = document.getElementById('docs-fitness-splash');
+        const checkoutRedirectLoading = document.querySelector('[data-testid="checkout-redirect-loading"]');
         const wordmark = document.querySelector('[data-testid="app-wordmark"]');
         const hamburger = document.querySelector('[data-testid="open-sidebar"]');
         let iconFontReal = false;
@@ -13562,7 +13391,8 @@ async function run() {
         const classRows = document.querySelectorAll('[data-testid^="sign-up-"]');
         window.__loadingGateLog.push({
           t: Math.round(performance.now()),
-          loadingScreenPresent: !!loadingScreen,
+          splashPresent: !!splash,
+          checkoutRedirectLoadingPresent: !!checkoutRedirectLoading,
           wordmarkPresent: !!wordmark,
           iconFontReal,
           dayNumbersPresent,
@@ -13580,18 +13410,19 @@ async function run() {
     await page.goto(`${BASE}/`, { waitUntil: 'load' });
     await page.waitForTimeout(6000);
     const log = await page.evaluate(() => window.__loadingGateLog || []);
-    const sawLoadingScreen = log.some((e) => e.loadingScreenPresent);
-    const firstFrameAfterDismiss = log.find((e, i) => !e.loadingScreenPresent && i > 0 && log[i - 1].loadingScreenPresent);
+    const sawSplash = log.some((e) => e.splashPresent);
+    const neverSawCheckoutRedirectLoading = !log.some((e) => e.checkoutRedirectLoadingPresent);
+    const firstFrameAfterSplashGone = log.find((e, i) => !e.splashPresent && i > 0 && log[i - 1].splashPresent);
     const communityCompleteImmediately =
-      !!firstFrameAfterDismiss &&
-      firstFrameAfterDismiss.wordmarkPresent &&
-      firstFrameAfterDismiss.iconFontReal &&
-      firstFrameAfterDismiss.dayNumbersPresent &&
-      firstFrameAfterDismiss.classRowCount > 0;
+      !!firstFrameAfterSplashGone &&
+      firstFrameAfterSplashGone.wordmarkPresent &&
+      firstFrameAfterSplashGone.iconFontReal &&
+      firstFrameAfterSplashGone.dayNumbersPresent &&
+      firstFrameAfterSplashGone.classRowCount > 0;
     record(
-      '[loading-gate/community-complete-on-first-frame] the first sampled frame where LOADING YOUR ACCOUNT is gone already shows the wordmark, a real icon-font-rendered top bar icon, the date strip\'s day numbers, and real class rows -- nothing pops in afterward',
-      sawLoadingScreen && communityCompleteImmediately,
-      JSON.stringify({ sawLoadingScreen, firstFrameAfterDismiss, logLength: log.length })
+      '[loading-gate/community-complete-on-first-frame] the splash is the only loading screen -- checkout-redirect-loading never appears at boot at all -- and the first sampled frame where the splash is gone already shows the wordmark, a real icon-font-rendered top bar icon, the date strip\'s day numbers, and real class rows -- nothing pops in afterward',
+      sawSplash && neverSawCheckoutRedirectLoading && communityCompleteImmediately,
+      JSON.stringify({ sawSplash, neverSawCheckoutRedirectLoading, firstFrameAfterSplashGone, logLength: log.length })
     );
     if (SCREENSHOT_DIR) {
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'loading-gate-community-complete.png') }).catch(() => {});
@@ -13599,13 +13430,87 @@ async function run() {
     await context.close();
   }
 
+  // [splash/only-thing-visible-until-complete-app] Round 63's own direct
+  // verification item: with BOTH the JS bundle AND the REST data
+  // artificially delayed (the combined worst case -- the prior check
+  // above only delays data), #root must gain its FIRST real content in
+  // one atomic commit that's already the complete app -- never a
+  // partial/empty shell first, populated later -- and checkout-redirect-
+  // loading must never appear at any sampled frame. The check is
+  // deliberately NOT "root stays childless for as long as the splash
+  // element exists in the DOM" -- a first draft asserted exactly that and
+  // failed, confirmed directly by a standalone reproduction logging every
+  // transition: the splash's own crossfade (Round 59/60) is a genuine
+  // ~250-350ms overlap by design (pointer-events:none on the splash,
+  // already-mounted real content underneath, both visible at once while
+  // fading) -- #root legitimately already has its full content WHILE the
+  // splash element is still present and fading out. The real concern is
+  // only about #root's FIRST ever mutation, not about the splash's own
+  // presence in the DOM during its own intentional fade.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/**', async (route) => {
+      await new Promise((r) => setTimeout(r, 1200));
+      await route.fallback();
+    });
+    await page.route('**/_expo/static/js/web/*.js', async (route) => {
+      await new Promise((r) => setTimeout(r, 800));
+      await route.continue();
+    });
+    await seedSignedInSession(page);
+    await page.addInitScript(() => {
+      window.__onlySplashLog = [];
+      function sample() {
+        const splash = document.getElementById('docs-fitness-splash');
+        const root = document.getElementById('root');
+        const checkoutRedirectLoading = document.querySelector('[data-testid="checkout-redirect-loading"]');
+        const wordmark = document.querySelector('[data-testid="app-wordmark"]');
+        window.__onlySplashLog.push({
+          t: Math.round(performance.now()),
+          splashPresent: !!splash,
+          rootChildCount: root ? root.children.length : -1,
+          checkoutRedirectLoadingPresent: !!checkoutRedirectLoading,
+          wordmarkPresent: !!wordmark,
+        });
+      }
+      let n = 0;
+      function tick() {
+        sample();
+        n++;
+        if (n < 900) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+    await page.goto(`${BASE}/`, { waitUntil: 'load' });
+    await page.waitForTimeout(6000);
+    const log = await page.evaluate(() => window.__onlySplashLog || []);
+    const sawSplash = log.some((e) => e.splashPresent);
+    const firstRootContentFrame = log.find((e) => e.rootChildCount > 0);
+    // Root's FIRST ever content must already be the complete app -- never
+    // a partial/empty shell that gets populated a tick later.
+    const rootFirstContentIsComplete = !!firstRootContentFrame && firstRootContentFrame.wordmarkPresent;
+    const neverSawCheckoutRedirectLoading = !log.some((e) => e.checkoutRedirectLoadingPresent);
+    const firstFrameAfterSplashGone = log.find((e, i) => !e.splashPresent && i > 0 && log[i - 1].splashPresent);
+    const completeAppOnFirstFrame = !!firstFrameAfterSplashGone && firstFrameAfterSplashGone.wordmarkPresent;
+    record(
+      "[splash/only-thing-visible-until-complete-app] with the bundle and the data both artificially delayed, #root's own first-ever content is already the complete app in one atomic commit (never a partial shell populated later), checkout-redirect-loading never appears at all, and the first frame after the splash fades still shows the complete app",
+      sawSplash && rootFirstContentIsComplete && neverSawCheckoutRedirectLoading && completeAppOnFirstFrame,
+      JSON.stringify({ sawSplash, rootFirstContentIsComplete, firstRootContentFrame, neverSawCheckoutRedirectLoading, firstFrameAfterSplashGone, logLength: log.length })
+    );
+    await context.close();
+  }
+
   // [loading-gate/cap-fires-when-data-never-settles] the hard rule: a
-  // data response that never resolves must never trap a member on
-  // LOADING YOUR ACCOUNT forever -- the EXTRA_DATA_SETTLE_CAP_MS (3000ms)
-  // cap must fire and the app must still appear, even in this fully
-  // degraded shape (empty class rows is the accepted fallback here, per
-  // the brief's own acceptance rule -- never the loading screen itself
-  // staying up indefinitely).
+  // data response that never resolves must never trap a member behind
+  // the splash forever -- the EXTRA_DATA_SETTLE_CAP_MS (3000ms) cap must
+  // fire and the app must still appear, even in this fully degraded
+  // shape (empty class rows is the accepted fallback here, per the
+  // brief's own acceptance rule -- never the loading screen itself
+  // staying up indefinitely). Re-targeted for Round 63: the thing that
+  // must eventually disappear is the splash (#docs-fitness-splash), not
+  // checkout-redirect-loading, which no longer renders at boot at all.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -13618,43 +13523,200 @@ async function run() {
     const t0 = Date.now();
     // 'networkidle' can never settle while one route is deliberately left
     // permanently pending -- page.goto() would then hang until
-    // Playwright's own default ~30s navigation timeout (confirmed
-    // directly: a first draft of this check reported capFireMs:30045,
-    // exactly that default, with loadingVisibleEarly already false by the
-    // time goto() finally gave up -- the real 3-second cap had already
-    // fired and dismissed the screen long before this check ever got to
-    // look). 'domcontentloaded' resolves immediately regardless of any
-    // still-pending request, letting navigation itself not be the
-    // bottleneck -- but 'domcontentloaded' only means the raw HTML
-    // parsed, not that React has mounted anything at all yet. A second
-    // attempt that checked loadingVisibleEarly immediately after
-    // 'domcontentloaded' still read false, with capFireMs:358 and
-    // appeared:false too -- confirmed directly: at that instant NEITHER
-    // the loading screen NOR app-wordmark existed in the DOM yet, because
-    // React's own JS bundle hadn't finished evaluating/mounting, so
-    // "!document.querySelector(loading)" was already (vacuously) true
-    // before the real mechanism had any chance to run at all. The fix:
-    // wait for React to have mounted SOMETHING real first -- either the
-    // loading screen or app-wordmark, whichever wins the real race --
-    // before reading "is it visible early," so this check genuinely
-    // observes the loading screen's own real presence, not an absence
-    // that only means "nothing has rendered yet."
+    // Playwright's own default ~30s navigation timeout. 'domcontentloaded'
+    // resolves immediately regardless of any still-pending request,
+    // letting navigation itself not be the bottleneck.
     await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' }).catch(() => {});
-    await page
-      .waitForSelector('[data-testid="checkout-redirect-loading"], [data-testid="app-wordmark"]', { timeout: 10000 })
-      .catch(() => {});
-    const loadingVisibleEarly = await page.getByTestId('checkout-redirect-loading').isVisible().catch(() => false);
     await page.waitForSelector('[data-testid="app-wordmark"]', { timeout: 10000 }).catch(() => {});
     const capFireMs = Date.now() - t0;
-    const loadingGoneAfterCap = !(await page.getByTestId('checkout-redirect-loading').isVisible().catch(() => false));
+    // app-wordmark existing means #root's real content has already
+    // committed -- but the splash's own crossfade (afterNextPaint +
+    // SETTLE_MS=100 + FADE_MS=200+50, index.html) still needs a few
+    // hundred more ms to actually finish removing it from the DOM. A
+    // first draft read splashGoneAfterCap immediately after the wordmark
+    // appeared and caught the splash mid-fade every time -- confirmed
+    // directly, not assumed, by rerunning with this wait added.
+    await page.waitForTimeout(600);
+    const splashGoneAfterCap = (await page.locator('#docs-fitness-splash').count()) === 0;
     const appeared = await page.getByTestId('app-wordmark').isVisible().catch(() => false);
     record(
-      '[loading-gate/cap-fires-when-data-never-settles] a class_sessions_with_availability fetch that never resolves still dismisses LOADING YOUR ACCOUNT within the 3-second cap, and the app appears regardless (the degraded fallback, never a frozen loading screen)',
-      loadingVisibleEarly && loadingGoneAfterCap && appeared && capFireMs < 8000,
-      JSON.stringify({ loadingVisibleEarly, loadingGoneAfterCap, appeared, capFireMs })
+      '[loading-gate/cap-fires-when-data-never-settles] a class_sessions_with_availability fetch that never resolves still dismisses the splash within the 3-second cap, and the app appears regardless (the degraded fallback, never a frozen loading screen)',
+      splashGoneAfterCap && appeared && capFireMs < 8000,
+      JSON.stringify({ splashGoneAfterCap, appeared, capFireMs })
     );
     if (SCREENSHOT_DIR) {
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'loading-gate-degraded-cap-fired.png') }).catch(() => {});
+    }
+    await context.close();
+  }
+
+  // --- Round 63: one loading screen -- the splash is it, the duplicate retires ---
+
+  // [splash/embedded-font-resolves] the splash's own brand line must
+  // genuinely resolve to the real, embedded Barlow Condensed SemiBold
+  // subset (Part 1 item 1) -- never silently fall back to the system
+  // stack. document.fonts.check() alone would only prove the face was
+  // REGISTERED, not that anything on screen actually uses it, so this
+  // also compares a real canvas text measurement using the embedded
+  // family against the same string measured with the fallback alone --
+  // a genuinely different rendered width is the real proof the custom
+  // face is what's actually being used.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    const nav = page.goto(`${BASE}/`, { waitUntil: 'commit' });
+    await page.waitForSelector('#docs-fitness-splash', { timeout: 5000 }).catch(() => {});
+    const fontCheck = await page.evaluate(async () => {
+      try {
+        await document.fonts.ready;
+      } catch (e) {
+        // ignore -- checked below regardless
+      }
+      const checkResult = document.fonts.check("600 12px 'BarlowCondensed_600SemiBold'");
+      const sample = 'STRONGER EVERY DAY';
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.font = "600 12px 'BarlowCondensed_600SemiBold', sans-serif";
+      const widthWithEmbedded = ctx.measureText(sample).width;
+      ctx.font = '600 12px sans-serif';
+      const widthFallbackOnly = ctx.measureText(sample).width;
+      return { checkResult, widthWithEmbedded, widthFallbackOnly };
+    });
+    await nav.catch(() => {});
+    const widthsDiffer = Math.abs(fontCheck.widthWithEmbedded - fontCheck.widthFallbackOnly) > 2;
+    record(
+      "[splash/embedded-font-resolves] the splash's own brand line genuinely resolves to the embedded Barlow Condensed SemiBold subset (document.fonts.check confirms it's loaded, and a canvas text measurement using it differs measurably from the plain sans-serif fallback), never silently falling back",
+      fontCheck.checkResult && widthsDiffer,
+      JSON.stringify(fontCheck)
+    );
+    await context.close();
+  }
+
+  // [splash/loading-your-account-visible-signed-in] +
+  // [splash/loading-your-account-absent-signed-out]: Part 1 item 3. The
+  // JS bundle is delayed so this is genuinely read before the React
+  // bundle has had any chance to run at all -- only the splash's own
+  // tiny synchronous localStorage-check script (and seedSignedInSession's
+  // own addInitScript, which Playwright guarantees runs before every
+  // other script on the page, including that one) are in play.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await seedSignedInSession(page);
+    await page.route('**/_expo/static/js/web/*.js', async (route) => {
+      await new Promise((r) => setTimeout(r, 2000));
+      await route.continue();
+    });
+    const nav = page.goto(`${BASE}/`, { waitUntil: 'commit' });
+    await page.waitForSelector('#docs-fitness-splash', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+    const messageSignedIn = await page.locator('#docs-fitness-splash-message').textContent().catch(() => '');
+    await nav.catch(() => {});
+    await context.close();
+    record(
+      '[splash/loading-your-account-visible-signed-in] with a real stored Supabase session and the JS bundle still delayed, the splash\'s own synchronous localStorage check already shows LOADING YOUR ACCOUNT before any React code has run',
+      (messageSignedIn || '').trim() === 'LOADING YOUR ACCOUNT',
+      JSON.stringify({ messageSignedIn })
+    );
+  }
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    // Deliberately no seedSignedInSession() call -- a genuinely anonymous
+    // visitor, no stored session key of any kind.
+    await page.route('**/_expo/static/js/web/*.js', async (route) => {
+      await new Promise((r) => setTimeout(r, 2000));
+      await route.continue();
+    });
+    const nav = page.goto(`${BASE}/`, { waitUntil: 'commit' });
+    await page.waitForSelector('#docs-fitness-splash', { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+    const messageSignedOut = await page.locator('#docs-fitness-splash-message').textContent().catch(() => '');
+    await nav.catch(() => {});
+    await context.close();
+    record(
+      '[splash/loading-your-account-absent-signed-out] with no stored session at all, the message slot stays empty -- never "LOADING YOUR ACCOUNT" for an anonymous visitor about to land on the welcome page',
+      (messageSignedOut || '').trim() === '',
+      JSON.stringify({ messageSignedOut })
+    );
+  }
+
+  // [splash/backstop-appears] + [splash/backstop-reloads-on-tap]: Part 3.
+  // The JS bundle is left permanently pending (never resolves at all --
+  // the real shape of "boot genuinely hangs"), which the splash's own
+  // inline scripts are completely independent of (they're parsed as part
+  // of the static HTML document itself, not loaded from the bundle), so
+  // the 10s backstop timer still fires normally. A plain page-global
+  // marker set before the tap, confirmed gone afterward, is the real
+  // proof a genuine navigation (not just a JS-level state reset)
+  // occurred when the reload line is tapped.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await page.route('**/_expo/static/js/web/*.js', () => {}); // never resolves -- boot genuinely hangs forever.
+    const nav = page.goto(`${BASE}/`, { waitUntil: 'commit' });
+    await page.waitForSelector('#docs-fitness-splash', { timeout: 5000 }).catch(() => {});
+    const reloadVisibleEarly = await page.locator('#docs-fitness-splash-reload').isVisible().catch(() => false);
+    await page.evaluate(() => {
+      window.__r63ReloadTestMarker = true;
+    });
+    await page.waitForTimeout(10700);
+    const reloadVisibleAfter = await page.locator('#docs-fitness-splash-reload').isVisible().catch(() => false);
+    const reloadText = await page.locator('#docs-fitness-splash-reload').textContent().catch(() => '');
+    record(
+      '[splash/backstop-appears] the TAP TO RELOAD line stays hidden at first and appears only after ~10s of a genuinely hung boot, with the exact copy the brief named',
+      !reloadVisibleEarly && reloadVisibleAfter && (reloadText || '').trim() === 'TAP TO RELOAD',
+      JSON.stringify({ reloadVisibleEarly, reloadVisibleAfter, reloadText })
+    );
+    if (reloadVisibleAfter) {
+      await page.locator('#docs-fitness-splash-reload').click().catch(() => {});
+      await page.waitForTimeout(500);
+      const markerGoneAfterReload = await page
+        .evaluate(() => typeof window.__r63ReloadTestMarker === 'undefined')
+        .catch(() => false);
+      record(
+        '[splash/backstop-reloads-on-tap] tapping TAP TO RELOAD genuinely reloads the page -- a page-global marker set beforehand is confirmed gone afterward, proving a real navigation occurred, not just a JS-level state change',
+        markerGoneAfterReload,
+        JSON.stringify({ markerGoneAfterReload })
+      );
+    } else {
+      record('[splash/backstop-reloads-on-tap] skipped -- backstop never appeared', false, 'reload line never became visible');
+    }
+    await nav.catch(() => {});
+    await context.close();
+  }
+
+  // [splash/boot-error-surfaces] Part 2's own explicit requirement: a
+  // genuine boot-level member-state failure must still surface its real
+  // error state, which also dismisses the splash -- a member can never
+  // be stuck behind it staring at a hidden error. subscriptions is the
+  // real table MembershipContext reads whose own fetch failure sets
+  // stateError (confirmed by reading that context directly).
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/subscriptions*', (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'simulated failure' }) })
+    );
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'load' });
+    await page.waitForSelector('[data-testid="member-state-error"]', { timeout: 10000 }).catch(() => {});
+    const errorVisible = await page.getByTestId('member-state-error').isVisible().catch(() => false);
+    const retryVisible = await page.getByTestId('member-state-error-retry').isVisible().catch(() => false);
+    // Same fade-timing fix as [loading-gate/cap-fires-when-data-never-
+    // settles]: the error screen existing means #root already committed
+    // real content, but the splash's own crossfade still needs a few
+    // hundred more ms to finish removing it from the DOM.
+    await page.waitForTimeout(600);
+    const splashGone = (await page.locator('#docs-fitness-splash').count()) === 0;
+    record(
+      '[splash/boot-error-surfaces] a boot-level subscriptions fetch failure still reaches MemberStateErrorScreen (real, painted content) with its real RETRY button, which correctly dismisses the splash -- never stuck behind it staring at a hidden error',
+      errorVisible && retryVisible && splashGone,
+      JSON.stringify({ errorVisible, retryVisible, splashGone })
+    );
+    if (SCREENSHOT_DIR) {
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'splash-boot-error-surfaces.png') }).catch(() => {});
     }
     await context.close();
   }

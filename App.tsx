@@ -1049,17 +1049,111 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
         : PHONE_FRAME_MAX_WIDTH;
   const sidebarWidth = isLargeDesktop ? SIDEBAR_WIDTH_LARGE : SIDEBAR_WIDTH;
 
+  // Round 63 Part 2: the static splash in public/index.html is now the
+  // ONLY loading screen a member ever sees at boot -- CheckoutRedirectLoadingScreen
+  // no longer renders here at all. The splash's own removal script watches
+  // for #root gaining a first real child (see index.html's MutationObserver),
+  // so "render nothing" has to mean LITERALLY nothing -- not just swapping
+  // this branch's own JSX for a loading screen that still sits inside the
+  // always-present `layoutRow`/`mainColumn` Views below. Those two Views
+  // are unconditional in the return statement that follows, so returning
+  // early HERE, before that tree ever mounts, is the only way #root stays
+  // genuinely childless for the whole showMemberStateLoading window --
+  // confirmed directly, not assumed: without this early return, #root's
+  // outer wrapper View would exist (and the MutationObserver would fire)
+  // the instant this component first renders, which is exactly the old
+  // "two loading screens" seam this round exists to remove.
+  //
+  // Gated on `signedUp` -- a first real build of this fix omitted that
+  // guard and broke every signed-OUT path (About, onboarding, sign-in):
+  // `showMemberStateLoading` folds in `classBookingLoading`, which (see
+  // ClassBookingContext.tsx) never resolves to false at all for a
+  // signed-out session -- its own effect bails via `if (!user) return;`
+  // before ever calling setLoading -- so an anonymous visitor would have
+  // waited out the full 3s EXTRA_DATA_SETTLE_CAP_MS cap before anything
+  // rendered at all, even though the ORIGINAL ternary below never gated
+  // the signed-out OnboardingFlow branch on this variable in the first
+  // place. Confirmed directly against a real suite run, not assumed.
+  //
+  // Error takes priority over this early return, exactly as the ternary
+  // below already prioritizes memberStateError over showMemberStateLoading
+  // -- a real fetch failure must still reach MemberStateErrorScreen (real,
+  // painted content, which correctly dismisses the splash) rather than
+  // being silently swallowed into an indefinite blank hold. A member can
+  // never be stuck behind the splash staring at a hidden error.
+  if (signedUp && showMemberStateLoading && !memberStateError) {
+    return null;
+  }
+
+  // Round 63 Part 2: styles.webSurround + ScreenErrorBoundary used to wrap
+  // <ResponsiveShell/> from OUTSIDE, in AuthGatedProviders's own JSX (see
+  // that function's own Round 63 comment) -- unconditionally, the instant
+  // authReady resolved, regardless of whatever this function decided to
+  // render. That gave #root a real DOM child (an empty View) well before
+  // the early return above ever cleared, firing the splash's removal
+  // sequence on an empty shell rather than real content -- confirmed
+  // directly with a diagnostic trace, not assumed, exactly per this
+  // round's own instruction to verify the removal observer's criterion
+  // rather than take it for granted. Moving both here, AFTER the early
+  // return, is what makes "render nothing" genuinely mean nothing: this
+  // function is the one place in the whole tree between the providers and
+  // the real app content that decides whether anything renders at all.
   return (
-    <View style={[styles.layoutRow, showSidebar && { gap: LAYOUT_GAP }]}>
-      <View
-        style={[
-          styles.mainColumn,
-          Platform.OS === 'web' && { maxWidth: mainColumnMaxWidth },
-          Platform.OS === 'web' && !signedUp && styles.mainColumnUnclipped,
-        ]}
-        onLayout={onLayoutRootView}
-      >
-        <ModalRootProvider>
+    <View style={styles.webSurround}>
+      <ScreenErrorBoundary label="DOC'S FITNESS">
+        <View style={[styles.layoutRow, showSidebar && { gap: LAYOUT_GAP }]}>
+          <View
+            style={[
+              styles.mainColumn,
+              Platform.OS === 'web' && { maxWidth: mainColumnMaxWidth },
+              Platform.OS === 'web' && !signedUp && styles.mainColumnUnclipped,
+            ]}
+            onLayout={onLayoutRootView}
+          >
+            <ModalRootProvider>
+          {/* Round 31: a real-device report found UNLOCK EVERYTHING
+              rendered on top of the signed-out welcome/About page after
+              signing out of a free account -- showAlert()'s own state
+              (alert.ts) is module-level, independent of auth, so an
+              already-showing popup survived the screen underneath
+              switching away with nothing clearing it. signOut() now
+              dismisses it immediately (see AuthContext.tsx) -- that
+              alone already fixes the reported bug -- but gating the
+              render here too is the structural half specifically for
+              the public welcome/About page: it is NOT gated on
+              `signedUp` generally, since real pre-signup screens
+              (PricingScreen, OnlineStartScreen, InPersonPlansScreen) use
+              showAlert() for genuine checkout confirmations and must
+              keep working. Only the one screen the brief named stays
+              permanently incapable of showing one, regardless of
+              whatever alert.ts happens to be holding.
+
+              Round 63 Part 2: moved to render FIRST among these siblings
+              (was last) -- AlertHost's own registration with showAlert()
+              happens inside a useEffect (alert.ts's useAlertState), not
+              synchronously during render, and React fires a commit's
+              effects in tree/JSX order, children before their own parent.
+              Before this round, AlertHost was already mounted (and
+              already registered) from an EARLIER commit by the time
+              MainApp/OnboardingFlow ever swapped in, since nothing here
+              used to wait on showMemberStateLoading at all. Now that
+              EVERYTHING in this tree mounts for the first time together,
+              in one commit (ResponsiveShell's own early `return null`,
+              above), AlertHost and MainApp mount simultaneously --  and a
+              real regression this exact ordering caused was caught
+              directly, not assumed: CommunityScreen's own one-shot
+              ?book=pilates deep-link effect (a MainApp descendant) called
+              showAlert() to open the $20 paid-booking gate, and it
+              silently did nothing, because MainApp's whole subtree's
+              effects (CommunityScreen's included) fired BEFORE AlertHost's
+              own registration effect -- AlertHost was listed after
+              MainApp in this same children array, so its useEffect simply
+              hadn't run yet. Rendering AlertHost first fixes this for
+              every one-shot effect in MainApp's subtree that calls
+              showAlert() on its own very first mount, not just this one
+              call site -- confirmed directly against the real,
+              unmodified pilates-deep-link flow after this reorder. */}
+          {!(!signedUp && onboardingStep === 'about') && <AlertHost />}
           {signedUp ? (
             memberStateError ? (
               <MemberStateErrorScreen
@@ -1069,8 +1163,6 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
                   retryProfile();
                 }}
               />
-            ) : showMemberStateLoading ? (
-              <CheckoutRedirectLoadingScreen message="LOADING YOUR ACCOUNT" />
             ) : (
               <MainApp
                 messagesOpen={messagesOpen}
@@ -1106,23 +1198,6 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
               />
             </View>
           )}
-          {/* Round 31: a real-device report found UNLOCK EVERYTHING
-              rendered on top of the signed-out welcome/About page after
-              signing out of a free account -- showAlert()'s own state
-              (alert.ts) is module-level, independent of auth, so an
-              already-showing popup survived the screen underneath
-              switching away with nothing clearing it. signOut() now
-              dismisses it immediately (see AuthContext.tsx) -- that
-              alone already fixes the reported bug -- but gating the
-              render here too is the structural half specifically for
-              the public welcome/About page: it is NOT gated on
-              `signedUp` generally, since real pre-signup screens
-              (PricingScreen, OnlineStartScreen, InPersonPlansScreen) use
-              showAlert() for genuine checkout confirmations and must
-              keep working. Only the one screen the brief named stays
-              permanently incapable of showing one, regardless of
-              whatever alert.ts happens to be holding. */}
-          {!(!signedUp && onboardingStep === 'about') && <AlertHost />}
           <StatusBar style="dark" />
         </ModalRootProvider>
       </View>
@@ -1161,6 +1236,8 @@ function ResponsiveShell({ onLayoutRootView }: ResponsiveShellProps) {
           />
         </ScrollView>
       )}
+        </View>
+      </ScreenErrorBoundary>
     </View>
   );
 }
@@ -1333,37 +1410,28 @@ function AuthGatedProviders({ resetKey, onLayoutRootView }: AuthGatedProvidersPr
                               <ContentLibraryProvider>
                                 <GroupChatUnreadProvider>
                                 <TourProvider>
-                                  <View style={styles.webSurround}>
-                                    {/* Second, outer line of defense (FIX 2,
-                                        round 115): the narrower boundary
-                                        around DOC'S GROUP CHAT inside
-                                        MainApp only catches an error thrown
-                                        by that screen's OWN subtree. Under
-                                        very many rapid open/close cycles, a
-                                        stale Realtime channel reused across
-                                        mounts (see deferredRealtimeChannel.ts
-                                        for the confirmed mechanism) could
-                                        still leave something in an
-                                        inconsistent state one level up —
-                                        e.g. in ResponsiveShell/MainApp's own
-                                        re-render around the `groupChatOpen`
-                                        toggle, or AppTopBar's chat icon —
-                                        outside that narrow boundary's reach.
-                                        This one wraps the entire signed-in
-                                        app shell, so ANY error that escapes
-                                        up this far — chat-caused or not —
-                                        still degrades to a calm recovery
-                                        state instead of a dead white tab.
-                                        Retrying here remounts the whole
-                                        shell fresh (all of MainApp's own
-                                        state, groupChatOpen included, resets
-                                        to its defaults), a bigger reset than
-                                        the inner boundary's but still far
-                                        short of reloading the page. */}
-                                    <ScreenErrorBoundary label="DOC'S FITNESS">
-                                      <ResponsiveShell onLayoutRootView={onLayoutRootView} />
-                                    </ScreenErrorBoundary>
-                                  </View>
+                                  {/* Round 63 Part 2: styles.webSurround and
+                                      ScreenErrorBoundary used to wrap
+                                      ResponsiveShell right here, unconditionally
+                                      — which gave #root a real DOM child (an
+                                      empty View) the instant authReady/this
+                                      provider tree mounted, regardless of
+                                      whatever ResponsiveShell itself decided to
+                                      render. Confirmed directly, not assumed,
+                                      exactly per this round's own instruction
+                                      to verify the splash's removal-observer
+                                      criterion rather than take it for granted:
+                                      a diagnostic trace showed #root gaining
+                                      this exact empty wrapper div well before
+                                      showMemberStateLoading ever cleared,
+                                      firing the splash's removal sequence on an
+                                      empty shell instead of real content. Both
+                                      now live INSIDE ResponsiveShell's own
+                                      return value instead (see its own Round 63
+                                      Part 2 comment), after its early `return
+                                      null`, so #root genuinely gets nothing at
+                                      all until that gate passes. */}
+                                  <ResponsiveShell onLayoutRootView={onLayoutRootView} />
                                 </TourProvider>
                                 </GroupChatUnreadProvider>
                               </ContentLibraryProvider>
