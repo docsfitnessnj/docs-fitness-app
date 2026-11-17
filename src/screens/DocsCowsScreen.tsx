@@ -12,14 +12,16 @@ import { useBadges } from '../context/BadgeContext';
 import { ContentCowScoringType, KettlebellLevels } from '../context/ContentLibraryContext';
 import {
   ChallengeScoreLevel,
+  ChallengeTeam,
   CurrentChallenge,
   LeaderboardEntry,
   useChallenge,
   useChallengeLeaderboard,
   useCurrentChallenge,
+  useMostRecentTeamPick,
 } from '../context/ChallengeContext';
 import { useDisplayName } from '../context/ProfileContext';
-import { formatEtTime } from '../lib/challengeSchedule';
+import { formatEtTime, isChristmasClassicLive } from '../lib/challengeSchedule';
 import { openMovementVault } from '../lib/movementVaultModal';
 import { colors, fonts } from '../theme';
 
@@ -30,6 +32,8 @@ const KETTLEBELL_SIZE_MAX_LENGTH = 40;
 type Entry = LeaderboardEntry;
 
 const LEVEL_OPTIONS: ChallengeScoreLevel[] = ['Rx', 'Scaled', 'Modified'];
+
+const TEAM_OPTIONS: ChallengeTeam[] = ['DAWN', 'YAWN'];
 
 // "SATURDAY 12 PM ET" (formatEtTime's own output) -> "SCORES CLOSE
 // SATURDAY · 12 PM ET" — reuses the one shared, real-data-derived
@@ -303,6 +307,32 @@ function LevelPicker({ value, onChange }: { value: ChallengeScoreLevel | null; o
   );
 }
 
+// Round 62: the Dawn vs Yawn Christmas Classic team pick, directly modeled
+// on LevelPicker above — same optional, deselectable pill pair, just DAWN
+// and YAWN instead of Rx/Scaled/Modified.
+function TeamPicker({ value, onChange }: { value: ChallengeTeam | null; onChange: (v: ChallengeTeam | null) => void }) {
+  return (
+    <>
+      <Text nativeID="cowkiller-team-label" style={styles.label}>PICK YOUR TEAM</Text>
+      <View style={styles.levelRow}>
+        {TEAM_OPTIONS.map((team) => {
+          const active = value === team;
+          return (
+            <Pressable
+              key={team}
+              style={[styles.levelPill, active && styles.levelPillActive]}
+              onPress={() => onChange(active ? null : team)}
+              testID={`cowkiller-team-${team.toLowerCase()}`}
+            >
+              <Text style={[styles.levelPillText, active && styles.levelPillTextActive]}>{team}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </>
+  );
+}
+
 function EntryForm({
   scoringType,
   onSubmit,
@@ -317,6 +347,18 @@ function EntryForm({
   const [reps, setReps] = useState('');
   const [kettlebell, setKettlebell] = useState('');
   const [level, setLevel] = useState<ChallengeScoreLevel | null>(null);
+
+  // Round 62 — the Dawn vs Yawn Christmas Classic. The picker only ever
+  // renders while the Classic's own window is live (re-checked live, every
+  // render — this form never caches "was it live a moment ago"). Prefilled
+  // once, from this member's own most recent prior entry (any challenge)
+  // that carries a team, so a member picks their team once, not three
+  // times — they can still change or deselect it on any entry. Deliberately
+  // never reset on submit, unlike every other field above: the team choice
+  // is sticky for the whole Classic, not a fresh pick per score.
+  const classicLive = isChristmasClassicLive();
+  const mostRecentTeam = useMostRecentTeamPick();
+  const [team, setTeam] = useState<ChallengeTeam | null>(mostRecentTeam ?? null);
 
   // null (the built-in fallback challenge) shows both TIME and ROUNDS, same
   // as this screen always has — a real Content Library Challenge narrows
@@ -343,6 +385,7 @@ function EntryForm({
       reps: showReps ? reps.trim() || '—' : undefined,
       time: showTime ? time.trim() || '—' : '—',
       level: level ?? undefined,
+      team: classicLive ? team ?? undefined : undefined,
     });
     recordCowKillerScore();
     setTime('');
@@ -350,6 +393,8 @@ function EntryForm({
     setReps('');
     setKettlebell('');
     setLevel(null);
+    // `team` is deliberately not reset here — see the comment above its
+    // own state declaration.
   };
 
   return (
@@ -427,6 +472,8 @@ function EntryForm({
 
       <LevelPicker value={level} onChange={setLevel} />
 
+      {classicLive && <TeamPicker value={team} onChange={setTeam} />}
+
       <Pressable style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]} disabled={!canSubmit} onPress={submit} testID="cow-submit-score">
         <Text style={styles.submitButtonText}>POST SCORE</Text>
       </Pressable>
@@ -492,9 +539,12 @@ function LeaderboardAvatar({ name, isMine }: { name: string; isMine: boolean }) 
 // time-scored and rounds-scored rows even by accident.
 function LeaderboardRow({ entry, isTimeScoring, isMine }: { entry: Entry; isTimeScoring: boolean; isMine: boolean }) {
   const primaryScore = isTimeScoring ? entry.time : `${entry.rounds}${entry.reps ? ` +${entry.reps}` : ''}`;
-  // "RX · 24KG" — level omitted entirely if not picked, never a blank
-  // "· 24KG" with a dangling separator.
-  const metaLine = `${entry.level ? `${entry.level.toUpperCase()} · ` : ''}${entry.kettlebell}KG`;
+  // "DAWN · RX · 24KG" — team (Round 62) and level each omitted entirely
+  // when not picked, never a blank/dangling "· 24KG". The join itself
+  // generalizes cleanly to any number of optional leading tokens, so a
+  // future third one would need no new logic here either.
+  const metaParts = [entry.team, entry.level?.toUpperCase()].filter(Boolean) as string[];
+  const metaLine = [...metaParts, `${entry.kettlebell}KG`].join(' · ');
   return (
     <View style={[styles.row, isMine && styles.rowMine]} testID={isMine ? 'cow-leaderboard-own-row' : undefined}>
       <Text style={styles.rank}>{entry.rank}</Text>
@@ -592,6 +642,7 @@ function DocsCowsContent() {
       reps: entry.reps,
       time: entry.time,
       level: entry.level,
+      team: entry.team,
     });
   };
 

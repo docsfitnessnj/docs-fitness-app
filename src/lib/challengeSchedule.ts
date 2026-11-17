@@ -117,6 +117,23 @@ export function getChallengeCycle(now: Date = new Date()): ChallengeCycle {
   return { cycleStart, closeAt, nextCycleStart, isClosed: now.getTime() >= closeAt.getTime() };
 }
 
+// Round 62: the Dawn vs Yawn Christmas Classic — three Christmas COWs, one
+// per week (Nov 30, Dec 7, Dec 14 2026), ending in a 2v2 finale at the gym's
+// Christmas party. This window spans the first Classic COW's own cycle
+// opening through the last one's own scores closing, computed with the
+// exact same fixed Sunday-6pm/Saturday-noon ET clock every other weekly
+// challenge boundary already uses (etWallTimeToUTC, above) rather than a
+// second, parallel date mechanism. A future year's comp updates these two
+// constants only — nothing else in the app reads a literal Christmas date.
+export const CHRISTMAS_CLASSIC_START = etWallTimeToUTC(2026, 11, 29, 18, 0).getTime();
+export const CHRISTMAS_CLASSIC_END = etWallTimeToUTC(2026, 12, 19, 12, 0).getTime();
+
+// Whether `now` falls inside the Classic's own window -- the one check
+// gating the team picker's visibility in the COW entry form.
+export function isChristmasClassicLive(now: number = Date.now()): boolean {
+  return now >= CHRISTMAS_CLASSIC_START && now < CHRISTMAS_CLASSIC_END;
+}
+
 // e.g. "SATURDAY 12 PM ET" — the shared copy format for any timing line
 // tied to a challenge cycle boundary (closeAt/nextRevealAt), used by both
 // the full Weekly Challenge screen and the sidebar's preview module so the
