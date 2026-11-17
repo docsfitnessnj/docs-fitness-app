@@ -17,6 +17,14 @@ export type ChallengeTag = 'Boathouse Crew' | 'Online';
 // then simply doesn't show rather than guessing.
 export type ChallengeScoreLevel = 'Rx' | 'Scaled' | 'Modified';
 
+// Round 62, migration_034: an OPTIONAL Dawn vs Yawn Christmas Classic team
+// pick alongside a score — same shape as ChallengeScoreLevel above, omitted
+// (undefined) means the member didn't say (every online member, every
+// non-competitor, and any entry from before this round or outside the
+// Classic's own window). Plumbing only — no team-scoring math lives here;
+// see lib/challengeSchedule.ts's CHRISTMAS_CLASSIC_START/END.
+export type ChallengeTeam = 'DAWN' | 'YAWN';
+
 export type LeaderboardEntry = {
   rank: number;
   name: string;
@@ -31,6 +39,7 @@ export type LeaderboardEntry = {
   time: string;
   tag: ChallengeTag;
   level?: ChallengeScoreLevel;
+  team?: ChallengeTeam;
 };
 
 // What the Weekly Challenge tab (and the sidebar's preview module) actually
@@ -105,6 +114,7 @@ export type ChallengeEntry = {
   time: string;
   tag: ChallengeTag;
   level?: ChallengeScoreLevel;
+  team?: ChallengeTeam;
   createdAt: number;
   // Round 44 — computed and persisted at post time (every other entry this
   // same account has ever posted for this exact challengeTitle, "same
@@ -149,6 +159,8 @@ type ChallengeEntryRow = {
   level: string | null;
   // Round 44, migration_028.
   is_pb: boolean;
+  // Round 62, migration_034 — optional Dawn vs Yawn Christmas Classic team.
+  team: string | null;
   created_at: string;
   profiles: ProfileRef;
 };
@@ -166,13 +178,14 @@ function rowToEntry(row: ChallengeEntryRow): ChallengeEntry {
     time: row.time_taken,
     tag: tagFromHowTrain(profile?.how_train),
     level: (row.level as ChallengeScoreLevel | null) ?? undefined,
+    team: (row.team as ChallengeTeam | null) ?? undefined,
     createdAt: new Date(row.created_at).getTime(),
     isPb: row.is_pb,
   };
 }
 
 const ENTRY_SELECT =
-  'id, user_id, challenge_title, kettlebell_kg, rounds, reps, time_taken, level, is_pb, created_at, profiles(display_name, how_train)';
+  'id, user_id, challenge_title, kettlebell_kg, rounds, reps, time_taken, level, team, is_pb, created_at, profiles(display_name, how_train)';
 
 // Weekly Challenge (COWs) submissions — every member's entries, read from
 // the shared `challenge_entries` table, so the leaderboard is the same for
@@ -236,6 +249,7 @@ export function ChallengeProvider({ children }: { children: React.ReactNode }) {
             reps: entry.reps ?? null,
             time_taken: entry.time,
             level: entry.level ?? null,
+            team: entry.team ?? null,
             is_pb: isPb,
           })
           .select(ENTRY_SELECT)
@@ -408,5 +422,20 @@ export function useChallengeLeaderboard(): LeaderboardEntry[] {
     time: e.time,
     tag: e.tag,
     level: e.level,
+    team: e.team,
   }));
+}
+
+// Round 62: the member's own most recent entry (any challenge — the Classic
+// spans three different COWs) that carries a team, so the entry form can
+// prefill it without asking a third time. Matches on the real user id
+// (never a display name, which two members could share), newest first.
+export function useMostRecentTeamPick(): ChallengeTeam | undefined {
+  const { entries } = useChallenge();
+  const { user } = useAuth();
+  if (!user) return undefined;
+  const mine = entries
+    .filter((e) => e.userId === user.id && e.team)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  return mine[0]?.team;
 }

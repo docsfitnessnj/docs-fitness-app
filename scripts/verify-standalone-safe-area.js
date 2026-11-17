@@ -8811,6 +8811,375 @@ async function run() {
     await context.close();
   }
 
+  // [christmas-classic/*]: Round 62, migration_034 -- the Dawn vs Yawn
+  // Christmas Classic team picker. Every check here pins the clock
+  // (page.clock.setFixedTime), per the brief's own explicit instruction,
+  // so this block can never depend on the real wall-clock day it happens
+  // to run on and can never grow a new member of the documented weekend
+  // COW-cycle flake class. "Inside window" fixtures pin to a Wednesday
+  // comfortably inside both the Classic's own window (Nov 29 2026 6pm ET
+  // -- Dec 19 2026 12pm ET) and an OPEN weekly cycle; "outside window"
+  // fixtures reuse the exact 2027-01-20T17:00:00.000Z instant
+  // [cow-scoring/*] above already established as a safe, known-open cycle
+  // well clear of the Classic's own 2026 dates.
+  const CLASSIC_INSIDE_WINDOW = new Date('2026-12-02T17:00:00.000Z');
+  const CLASSIC_OUTSIDE_WINDOW = new Date('2027-01-20T17:00:00.000Z');
+
+  function seedPublishedCowScript(fixture) {
+    try {
+      window.localStorage.setItem(
+        'contentLibraryDrafts.v1',
+        JSON.stringify([
+          {
+            id: fixture.id,
+            name: fixture.name,
+            originalTitle: fixture.name,
+            type: 'cow',
+            format: '20min AMRAP',
+            formatDescription: '',
+            movements: ['Swings', 'Push-Ups'],
+            videoUrl: '',
+            notes: '',
+            scoringType: 'time',
+            releaseAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+            status: 'published',
+            scheduled: true,
+            createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+            updatedAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+          },
+        ])
+      );
+      window.localStorage.setItem('contentLibraryDrafts.v1.seedVersion', '999');
+    } catch {}
+  }
+
+  function registerStatefulCowEntryMock(page, state) {
+    return page.route('**/rest/v1/challenge_entries*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'POST') {
+        let payload = {};
+        try {
+          payload = JSON.parse(req.postData() || '{}');
+        } catch {}
+        const row = {
+          id: `r62-cow-entry-${state.entries.length + 1}`,
+          user_id: payload.user_id ?? USER_ID,
+          challenge_title: payload.challenge_title ?? '',
+          kettlebell_kg: payload.kettlebell_kg ?? '',
+          rounds: payload.rounds ?? '',
+          reps: payload.reps ?? null,
+          time_taken: payload.time_taken ?? '',
+          level: payload.level ?? null,
+          team: payload.team ?? null,
+          is_pb: payload.is_pb ?? false,
+          created_at: new Date().toISOString(),
+          profiles: { display_name: 'Test Member', how_train: 'boathouse' },
+        };
+        state.entries.push(row);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(row) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state.entries) });
+    });
+  }
+
+  const openClassicEntryForm = async (page) => {
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /DOC'?S COWS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.getByTestId('cow-hero').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByTestId('cow-post-score-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+  };
+
+  // Block A: inside the window -- the picker renders with both pills,
+  // deselectable, posting whichever team is actually picked (or null)
+  // onto the real inserted row via the stateful mock's own INSERT capture.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await page.clock.setFixedTime(CLASSIC_INSIDE_WINDOW);
+    await setupMocks(page, USER_ID);
+    await page.addInitScript(seedPublishedCowScript, { id: 'r62-classic-a', name: 'ROUND 62 CLASSIC TEST A' });
+    const state = { entries: [] };
+    await registerStatefulCowEntryMock(page, state);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await openClassicEntryForm(page);
+
+    const labelVisible = await page.locator('#cowkiller-team-label').isVisible().catch(() => false);
+    const dawnVisible = await page.getByTestId('cowkiller-team-dawn').isVisible().catch(() => false);
+    const yawnVisible = await page.getByTestId('cowkiller-team-yawn').isVisible().catch(() => false);
+    const dawnActiveBefore = await page
+      .getByTestId('cowkiller-team-dawn')
+      .evaluate((el) => getComputedStyle(el).backgroundColor)
+      .catch(() => '');
+    const yawnActiveBefore = await page
+      .getByTestId('cowkiller-team-yawn')
+      .evaluate((el) => getComputedStyle(el).backgroundColor)
+      .catch(() => '');
+    record(
+      '[christmas-classic/picker-renders-inside-window] inside the Classic window, the team picker renders with both pills, neither active with no history',
+      labelVisible && dawnVisible && yawnVisible && dawnActiveBefore === yawnActiveBefore,
+      JSON.stringify({ labelVisible, dawnVisible, yawnVisible, dawnActiveBefore, yawnActiveBefore })
+    );
+
+    await page.getByTestId('cowkiller-team-dawn').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(150);
+    await page.getByTestId('cowkiller-level-rx').click({ timeout: 5000 }).catch(() => {});
+    await page.locator('#cowkiller-time-input').fill('30:00').catch(() => {});
+    await page.locator('#cowkiller-kettlebell-input').fill('24').catch(() => {});
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'christmas-classic-picker.png') }).catch(() => {});
+    await page.getByTestId('cow-submit-score').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    record(
+      '[christmas-classic/posts-picked-team] picking DAWN and submitting posts team=DAWN onto the real inserted row',
+      state.entries.length === 1 && state.entries[0].team === 'DAWN' && state.entries[0].level === 'Rx',
+      JSON.stringify(state.entries)
+    );
+
+    const ownRowText = await page.getByTestId('cow-leaderboard-own-row').innerText().catch(() => '');
+    record(
+      '[christmas-classic/leaderboard-teamed] the leaderboard renders the DAWN-prefixed meta line, team leading, exactly "DAWN · RX · 24KG"',
+      ownRowText.includes('DAWN · RX · 24KG'),
+      JSON.stringify({ ownRowText })
+    );
+
+    // The team pill is deliberately never reset on submit (see the
+    // comment above its own state declaration in DocsCowsScreen.tsx) --
+    // DAWN is still the active pill right now. Tapping it again must
+    // deselect back to no team, and a fresh submit must then post team as
+    // null, never a leftover/stale value.
+    await page.getByTestId('cow-post-score-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+    const dawnActiveAfterFirstSubmit = await page
+      .getByTestId('cowkiller-team-dawn')
+      .evaluate((el) => getComputedStyle(el).backgroundColor)
+      .catch(() => '');
+    await page.getByTestId('cowkiller-team-dawn').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(150);
+    await page.locator('#cowkiller-time-input').fill('28:45').catch(() => {});
+    await page.getByTestId('cow-submit-score').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    record(
+      '[christmas-classic/deselect-posts-null] tapping the active DAWN pill deselects it, and the next submit posts team=null',
+      state.entries.length === 2 && state.entries[1].team === null,
+      JSON.stringify({ dawnActiveAfterFirstSubmit, entries: state.entries })
+    );
+    await context.close();
+  }
+
+  // Block B: a member picks their team once, not three times -- a fresh
+  // entry form for a DIFFERENT Christmas COW (a different challengeTitle,
+  // exercising the brief's own "any challenge" requirement, never matched
+  // on display name) prefills from the member's own most recent prior
+  // entry that carries a team, with zero taps. The prior entry is seeded
+  // directly via the GET mock (same technique as Block D below) rather
+  // than posted live and then reached via a page.reload() -- a real,
+  // confirmed trap: page.addInitScript callbacks re-run on EVERY
+  // navigation of the same page, including a reload, so an earlier
+  // attempt at this check that tried to swap the published COW via
+  // page.evaluate() before reloading had its override silently clobbered
+  // right back by the original addInitScript call re-firing on the new
+  // document. Seeding the prior entry through the mock sidesteps that
+  // trap entirely and is a more direct test of the prefill mechanism
+  // itself regardless.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await page.clock.setFixedTime(CLASSIC_INSIDE_WINDOW);
+    await setupMocks(page, USER_ID);
+    await page.addInitScript(seedPublishedCowScript, { id: 'r62-classic-week2', name: 'ROUND 62 CLASSIC WEEK 2' });
+    const state = {
+      entries: [
+        {
+          id: 'r62-week1-entry',
+          user_id: USER_ID,
+          challenge_title: 'ROUND 62 CLASSIC WEEK 1',
+          kettlebell_kg: '—',
+          rounds: '—',
+          reps: null,
+          time_taken: '22:10',
+          level: null,
+          team: 'YAWN',
+          is_pb: false,
+          created_at: new Date(CLASSIC_INSIDE_WINDOW.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+          profiles: { display_name: 'Test Member', how_train: 'boathouse' },
+        },
+      ],
+    };
+    await registerStatefulCowEntryMock(page, state);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await openClassicEntryForm(page);
+
+    const week2Title = await page.getByTestId('cow-hero').innerText().catch(() => '');
+    const yawnActiveNoTap = await page
+      .getByTestId('cowkiller-team-yawn')
+      .evaluate((el) => getComputedStyle(el).backgroundColor)
+      .catch(() => '');
+    const dawnActiveNoTap = await page
+      .getByTestId('cowkiller-team-dawn')
+      .evaluate((el) => getComputedStyle(el).backgroundColor)
+      .catch(() => '');
+    record(
+      '[christmas-classic/prefills-across-challenges] a fresh entry form for a different Christmas COW prefills YAWN with zero taps',
+      week2Title.includes('ROUND 62 CLASSIC WEEK 2') && !!yawnActiveNoTap && yawnActiveNoTap !== dawnActiveNoTap,
+      JSON.stringify({ week2Title, yawnActiveNoTap, dawnActiveNoTap })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'christmas-classic-prefill.png') }).catch(() => {});
+
+    // The member can still submit using the prefilled value without
+    // tapping anything -- proving the prefill is really driving the
+    // submission, not just cosmetic.
+    await page.locator('#cowkiller-time-input').fill('20:00').catch(() => {});
+    await page.getByTestId('cow-submit-score').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    record(
+      '[christmas-classic/prefill-used-on-submit] submitting without touching the (prefilled) team picker posts the prefilled YAWN',
+      state.entries.length === 2 && state.entries[1].team === 'YAWN' && state.entries[1].challenge_title === 'ROUND 62 CLASSIC WEEK 2',
+      JSON.stringify(state.entries[1])
+    );
+    await context.close();
+  }
+
+  // Block C: outside the window, the picker must not render at all, and
+  // the entry form must be byte-for-byte what it is today -- the real
+  // regression guard for "a future year's comp updates the two constants
+  // only," proving the window is actually gating something rather than
+  // the picker simply always showing.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await page.clock.setFixedTime(CLASSIC_OUTSIDE_WINDOW);
+    await setupMocks(page, USER_ID);
+    await page.addInitScript(seedPublishedCowScript, { id: 'r62-classic-outside', name: 'ROUND 62 OUTSIDE WINDOW TEST' });
+    const state = { entries: [] };
+    await registerStatefulCowEntryMock(page, state);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await openClassicEntryForm(page);
+
+    const labelVisible = await page.locator('#cowkiller-team-label').isVisible().catch(() => false);
+    const dawnVisible = await page.getByTestId('cowkiller-team-dawn').isVisible().catch(() => false);
+    const yawnVisible = await page.getByTestId('cowkiller-team-yawn').isVisible().catch(() => false);
+    record(
+      '[christmas-classic/picker-absent-outside-window] outside the Classic window, the team picker does not render at all',
+      !labelVisible && !dawnVisible && !yawnVisible,
+      JSON.stringify({ labelVisible, dawnVisible, yawnVisible })
+    );
+
+    await page.getByTestId('cowkiller-level-scaled').click({ timeout: 5000 }).catch(() => {});
+    await page.locator('#cowkiller-time-input').fill('19:30').catch(() => {});
+    await page.locator('#cowkiller-kettlebell-input').fill('16').catch(() => {});
+    await page.getByTestId('cow-submit-score').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    record(
+      '[christmas-classic/form-matches-today-outside-window] outside the window the form posts exactly as it did before this round -- no team sent, level/time/kettlebell untouched',
+      state.entries.length === 1 &&
+        !state.entries[0].team &&
+        state.entries[0].level === 'Scaled' &&
+        state.entries[0].time_taken === '19:30' &&
+        state.entries[0].kettlebell_kg === '16',
+      JSON.stringify(state.entries)
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'christmas-classic-outside-window.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // Block D: the leaderboard renders a teamed entry's DAWN-prefixed meta
+  // line and a teamless entry's exact pre-Round-62 meta line side by
+  // side, with the teamless row's own JSON deliberately omitting the
+  // `team` key entirely (not just nulling it) -- simulating a genuine
+  // pre-existing row from before this column ever existed in the client's
+  // response shape, the strongest version of "pre-existing entries with
+  // no team column value render unaffected."
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await page.clock.setFixedTime(CLASSIC_INSIDE_WINDOW);
+    await setupMocks(page, USER_ID);
+    const fixtureTitle = 'ROUND 62 LEADERBOARD MIX TEST';
+    await page.addInitScript(seedPublishedCowScript, { id: 'r62-classic-mix', name: fixtureTitle });
+    const seededRows = [
+      {
+        id: 'r62-pre-existing-row',
+        user_id: 'other-member-1',
+        challenge_title: fixtureTitle,
+        kettlebell_kg: '24',
+        rounds: '—',
+        reps: null,
+        time_taken: '25:00',
+        level: 'Scaled',
+        // No `team` key at all -- see the comment above.
+        is_pb: false,
+        created_at: new Date(Date.now() - 3600_000).toISOString(),
+        profiles: { display_name: 'Pre-Existing Member', how_train: 'online' },
+      },
+      {
+        id: 'r62-teamed-row',
+        user_id: 'other-member-2',
+        challenge_title: fixtureTitle,
+        kettlebell_kg: '20',
+        rounds: '—',
+        reps: null,
+        time_taken: '18:00',
+        level: 'Rx',
+        team: 'DAWN',
+        is_pb: false,
+        created_at: new Date(Date.now() - 1800_000).toISOString(),
+        profiles: { display_name: 'Teamed Member', how_train: 'boathouse' },
+      },
+    ];
+    await page.route('**/rest/v1/challenge_entries*', async (route) => {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(seededRows) });
+    });
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisible) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: /DOC'?S COWS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.getByTestId('cow-hero').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    // Neither seeded row belongs to the signed-in member, so neither gets
+    // the own-row testID -- and there is no per-row testID for anyone
+    // else's row (by design; see LeaderboardRow). Reading the whole
+    // page's own text is the simplest reliable technique: the two meta
+    // lines below are distinct enough strings that finding either one
+    // anywhere on the page is sufficient proof of which row produced it.
+    const bodyText = await page.evaluate(() => document.body.innerText).catch(() => '');
+    record(
+      '[christmas-classic/leaderboard-teamed-mixed] a teamed entry renders "DAWN · RX · 20KG" alongside a teamless/pre-existing one on the same leaderboard',
+      bodyText.includes('DAWN · RX · 20KG') && bodyText.includes('Teamed Member'),
+      JSON.stringify({ hasTeamedLine: bodyText.includes('DAWN · RX · 20KG'), hasTeamedName: bodyText.includes('Teamed Member') })
+    );
+    record(
+      '[christmas-classic/leaderboard-preexisting-unaffected] a pre-existing row with no team key at all renders exactly "SCALED · 24KG", never a dangling separator or a literal null/undefined',
+      bodyText.includes('SCALED · 24KG') &&
+        bodyText.includes('Pre-Existing Member') &&
+        !bodyText.includes('null · SCALED') &&
+        !bodyText.includes('undefined · SCALED') &&
+        !bodyText.includes('DAWN · SCALED') &&
+        !bodyText.includes('YAWN · SCALED'),
+      JSON.stringify({ hasPreExistingLine: bodyText.includes('SCALED · 24KG'), hasPreExistingName: bodyText.includes('Pre-Existing Member') })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'christmas-classic-leaderboard-mix.png') }).catch(() => {});
+    await context.close();
+  }
+
   // [pb/*]: Round 44, Part 3 -- PB detection. wod_completions has always
   // had exactly one row per (user, day_key) -- day_key is a FIXED weekday
   // slot ('mon'..'fri'), the same slot every calendar week, never a

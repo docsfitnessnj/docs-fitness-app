@@ -628,6 +628,12 @@ create table if not exists public.challenge_entries (
   level text check (level in ('Rx', 'Scaled', 'Modified')),
   -- Round 44 / migration_028 — see wod_completions.is_pb above.
   is_pb boolean not null default false,
+  -- Round 62 / migration_034 — optional Dawn vs Yawn Christmas Classic team
+  -- pick, free at score-entry time. Null for every online member, every
+  -- non-competitor, and every entry from before this round or outside the
+  -- Classic's own window; the leaderboard then simply omits it. Plumbing
+  -- only — team scoring itself is computed by the owner outside the app.
+  team text check (team in ('DAWN', 'YAWN')),
   created_at timestamptz not null default now()
 );
 
