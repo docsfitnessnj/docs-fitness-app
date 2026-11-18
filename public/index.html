@@ -1603,21 +1603,52 @@
          rest of the loop until its next turn -- the standard CSS trick
          for cycling fixed text with no per-frame JS at all.
 
-         Round 60: the badge/ring/brand-line geometry below is calibrated
-         to coincide EXACTLY with where those same three elements sit once
-         the real CheckoutRedirectLoadingScreen mounts (measured directly
-         off the real component, not estimated), so the crossfade the
-         removal script performs below never shows a visible jump between
-         the two layers -- only the real screen's own status message
-         fading in underneath, which is the one difference the brief
-         accepted. Zero external resources anywhere in this block: the
-         badge is an inline data URI, every rule here is inline CSS, and
-         the brand-line font stack is web-safe system fonts only (no
-         @font-face, no network fetch of any kind) -- confirmed by a
-         dedicated suite check, since the only way a real white screen can
-         still occur after this is the HTML document itself not yet
-         having been delivered, which no page code can do anything about. -->
+         Round 60's own badge/ring/brand-line geometry, originally
+         calibrated to coincide with CheckoutRedirectLoadingScreen's own
+         mounted position, is kept as-is by Round 63 -- it's still the
+         right spacing for the badge/ring/brand line as a group, even
+         though that component no longer renders at boot at all (see
+         App.tsx's Round 63 Part 2 comment): this screen now holds up
+         until the real first APP screen (Community, the welcome page, or
+         the error screen) is ready, and crossfades straight into that.
+
+         Round 63: this splash is now the ONLY loading screen a member
+         ever sees for the whole boot sequence, so it embeds its own real
+         subset webfont (see the @font-face rule in the <style> block
+         below) rather than leaning on a React-mounted font from a
+         component it no longer hands off to. A data: URI is still zero
+         network requests -- nothing here fetches anything external, same
+         as every earlier round -- confirmed by a dedicated suite check,
+         since the only way a real white screen can still occur after this
+         is the HTML document itself not yet having been delivered, which
+         no page code can do anything about. -->
     <style>
+      /* Round 63: the splash is now the ONLY loading screen a member ever
+         sees at boot (CheckoutRedirectLoadingScreen no longer renders at
+         all until the real app is ready -- see App.tsx's Round 63 Part 2
+         comment), so its own brand line can no longer lean on
+         CheckoutRedirectLoadingScreen's own React-mounted webfont -- it has
+         to carry the real face itself, inline, with zero network request.
+         This is a genuine subset of the exact file the app ships
+         (node_modules/@expo-google-fonts/barlow-condensed/600SemiBold/
+         BarlowCondensed_600SemiBold.ttf, the file fonts.labelSemiBold
+         actually resolves to -- src/theme.ts), produced with fontTools'
+         own pyftsubset (never hand-assembled) down to exactly what this
+         screen's own copy needs: uppercase A-Z, space, period, comma,
+         apostrophe, 0-9. Raw woff2: 2536 bytes; base64 below: 3384 bytes --
+         comfortably under the 15KB this file's own suite check enforces.
+         A data: URI is not a network request, so this changes nothing
+         about [splash/no-external-resources]'s own zero-network guarantee.
+         The system stack stays as the fallback (first paint, before the
+         font decodes) -- same chain the splash already used, just no
+         longer the primary. */
+      @font-face {
+        font-family: 'BarlowCondensed_600SemiBold';
+        src: url(data:font/woff2;base64,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) format('woff2');
+        font-weight: 600;
+        font-style: normal;
+        font-display: block;
+      }
       #docs-fitness-splash {
         position: fixed;
         inset: 0;
@@ -1669,12 +1700,10 @@
         height: 84.48px;
       }
       /* Round 60: matches the real brand line's own measured rendered
-         height (14px at fontSize 12) as closely as this fallback font
-         stack allows -- was a flat 20px, which left the badge sitting
-         ~10px lower than the real screen's own badge once the full
-         geometry-match below accounted for the real screen's message
-         line too. See #docs-fitness-splash-message-space just below the
-         lines wrapper in the markup for the other half of that match. */
+         height (14px at fontSize 12) -- unchanged by Round 63's embedded
+         font, which was chosen from the exact same fontSize/letterSpacing
+         pair the real component uses, so this box's own height still
+         holds. */
       #docs-fitness-splash-lines {
         position: relative;
         width: 100%;
@@ -1682,23 +1711,50 @@
         height: 14px;
         margin-top: 22px;
       }
-      /* Round 60: a blank, invisible placeholder reserving the exact
-         vertical space CheckoutRedirectLoadingScreen's own status message
-         Text (e.g. "LOADING YOUR ACCOUNT") occupies once mounted --
-         margin-top 10px + height 16px, measured directly off the real
-         component at fontSize 13 (every real usage is a single short line
-         at this width, so one fixed height covers all of them). Because
-         the real screen's own badge+ring+brand-line group is vertically
-         centered TOGETHER WITH that message line (root's own
-         justifyContent:'center' centers the whole column, message
-         included), omitting this reservation would leave the splash's own
-         badge sitting measurably lower than where the real screen's badge
-         actually ends up -- a visible jump during the crossfade below,
-         not just a missing message line fading in on top of an otherwise
-         stable picture. This element never shows any text at all. */
-      #docs-fitness-splash-message-space {
+      /* Round 63 Part 1 item 3: this is no longer a blank reservation --
+         it genuinely renders "LOADING YOUR ACCOUNT" (byte-identical to
+         App.tsx's own `message="LOADING YOUR ACCOUNT"` string, including
+         its caps -- there is no CSS text-transform here, matching
+         CheckoutRedirectLoadingScreen's own `message` style exactly,
+         which has none either) whenever a stored Supabase session exists,
+         and stays empty otherwise -- an anonymous visitor lands on the
+         welcome page, where "loading your account" would be false copy.
+         Styling matches that same `message` style verbatim: color
+         #5F6B66, fontSize 13, letterSpacing 1.2px, marginTop 10px, center-
+         aligned. The synchronous check populating this lives in its own
+         small inline <script> directly below the splash markup (not the
+         removal-observer script further down in body) so it runs and
+         paints before anything else on the page even finishes parsing. */
+      #docs-fitness-splash-message {
         margin-top: 10px;
-        height: 16px;
+        min-height: 16px;
+        color: #5F6B66;
+        font-family: 'BarlowCondensed_600SemiBold', -apple-system, 'Arial Narrow', Arial, sans-serif;
+        font-size: 13px;
+        letter-spacing: 1.2px;
+        text-align: center;
+      }
+      /* Round 63 Part 3: the 10s BACK TO THE APP backstop lived on
+         CheckoutRedirectLoadingScreen, which no longer renders at boot at
+         all (Part 2) -- so the splash needs its own. Hidden until the
+         removal script's own 10s timer (below) decides boot is genuinely
+         stuck, then shown and made tappable -- the one element on this
+         whole screen that ever needs pointer-events of its own, since
+         everything else here is deliberately inert paint. Muted and
+         underlined (a quiet text link, not a bordered button -- this is
+         a backstop for an already-abnormal wait, not a call to action) in
+         the same embedded face as everything else on this screen. */
+      #docs-fitness-splash-reload {
+        display: none;
+        margin-top: 20px;
+        color: #5F6B66;
+        font-family: 'BarlowCondensed_600SemiBold', -apple-system, 'Arial Narrow', Arial, sans-serif;
+        font-size: 12px;
+        letter-spacing: 1.5px;
+        text-align: center;
+        text-decoration: underline;
+        cursor: pointer;
+        pointer-events: auto;
       }
       .docs-fitness-splash-line {
         position: absolute;
@@ -1707,8 +1763,7 @@
         align-items: center;
         justify-content: center;
         color: #5F6B66;
-        font-family: -apple-system, 'Arial Narrow', Arial, sans-serif;
-        font-weight: 700;
+        font-family: 'BarlowCondensed_600SemiBold', -apple-system, 'Arial Narrow', Arial, sans-serif;
         font-size: 12px;
         letter-spacing: 2px;
         text-align: center;
@@ -1749,8 +1804,39 @@
         <div class="docs-fitness-splash-line" style="animation-delay: -18200ms;">ONE MORE REP</div>
         <div class="docs-fitness-splash-line" style="animation-delay: -20800ms;">LAST SET. BEST SET. ALWAYS</div>
       </div>
-      <div id="docs-fitness-splash-message-space"></div>
+      <div id="docs-fitness-splash-message"></div>
+      <div id="docs-fitness-splash-reload">TAP TO RELOAD</div>
     </div>
+    <!-- Round 63 Part 1 item 3: a small, standalone, synchronous script --
+         deliberately NOT folded into the removal-observer script further
+         down in body, so this runs and paints the instant the parser
+         reaches this point, before the rest of the page (safe-area
+         probes, #root, the removal observer) is even parsed. Reads the
+         real Supabase auth session key directly -- confirmed by reading
+         src/lib/supabaseClient.ts (no explicit storageKey passed to
+         createClient, so supabase-js's own default convention applies:
+         `sb-<project-ref>-auth-token`, with the real project ref read off
+         this app's own SUPABASE_URL) -- never guessed, and matching the
+         exact key scripts/verify-standalone-safe-area.js's own
+         seedSignedInSession() already assumes. Wrapped in try/catch per
+         this app's own standing localStorage rule (a private window, a
+         blocked/cleared storage, or a security exception must never break
+         the splash) -- any failure here defaults to "not signed in," the
+         safe direction to be wrong in, same convention as every other
+         localStorage read in this app. -->
+    <script>
+      (function () {
+        try {
+          var hasSession = !!window.localStorage.getItem('sb-qooezwnskaqvmquydijg-auth-token');
+          if (hasSession) {
+            var el = document.getElementById('docs-fitness-splash-message');
+            if (el) el.textContent = 'LOADING YOUR ACCOUNT';
+          }
+        } catch (e) {
+          // localStorage unavailable -- leave the message slot empty.
+        }
+      })();
+    </script>
     <!-- Use static rendering with Expo Router to support running without JavaScript. -->
     <noscript>
       You need to enable JavaScript to run this app.
@@ -1816,34 +1902,32 @@
          removed from the DOM once this full sequence completes; it is
          never removed while #root is still empty, so this can never
          itself be the cause of a blank screen. -->
-    <!-- Round 61 Part 1: the crossfade between this splash and the real
-         CheckoutRedirectLoadingScreen used to dissolve one brand saying
-         into a DIFFERENT one -- a real-device recording showed this as
-         unreadable double-exposure ghost text, a frame with two sayings
-         superimposed. Round 60 accepted this as the one difference the
-         handoff couldn't avoid; the owner has since ruled it
-         unacceptable. The fix: this splash's own cycling is deterministic
-         pure CSS with no JS driving it, so WHICH of the 9 lines is
-         currently visible at any instant is a real, directly-observable
-         fact -- read via each line's own live computed `opacity` (the
-         line with the highest opacity is the one on screen), never a
-         guess reconstructed from an assumed page-load timestamp. That
-         fact is written continuously (every 100ms, via setInterval,
-         started immediately at parse time and stopped once the splash is
-         removed) to window.__splashBrandLine -- `{text, index, opacity,
-         t}` -- so whenever CheckoutRedirectLoadingScreen.tsx happens to
-         mount (anywhere from ~200ms to several seconds after this script
-         runs, depending on device/network), a sample from within the
-         last 100ms is already sitting there for it to read on its very
-         first render, well inside each line's own 2000ms hold window.
-         Continuous writing, not a single write timed to one event, is
-         required here specifically because React's own lazy useState
-         initializer in that component runs during its render phase,
-         which happens BEFORE this script could ever react to the DOM
-         mutation that render produces -- there is no reliable way to
-         write the global in response to the mount; it has to already be
-         fresh by the time the mount's own synchronous render phase reads
-         it. -->
+    <!-- Round 61 Part 1 built window.__splashBrandLine so this splash and
+         the React-mounted CheckoutRedirectLoadingScreen could hand off
+         mid-saying without a visible double-exposure. Round 63 deleted
+         that mechanism outright, along with the write below and
+         CheckoutRedirectLoadingScreen.tsx's own read of it
+         (initialLineIndexFromSplashHandoff) -- that component no longer
+         renders at boot AT ALL (see App.tsx's Round 63 Part 2 comment), so
+         there is no handoff left to disguise. This splash now holds up
+         through the entire boot sequence on its own and crossfades
+         directly into the real, finished first screen -- genuinely one
+         loading screen, not a seam between two.
+
+         Round 63 Part 3: the 10s BACK TO THE APP backstop lived on
+         CheckoutRedirectLoadingScreen, which (again) no longer renders at
+         boot -- so this splash needs its own last-resort way out, for the
+         one case none of the gates above it can bound: the JS bundle
+         itself never finishing its download/parse/eval at all. If the
+         splash is STILL up ~10 seconds after this script first runs, a
+         quiet TAP TO RELOAD line (hidden until then; see its own style
+         rule above) appears below the message slot and reloads the page
+         on tap -- the one element on this whole screen that ever needs
+         pointer-events of its own (the splash root is pointer-events:none
+         throughout, same as always). The checkout-redirect flow's own
+         separate 10s backstop on CheckoutRedirectLoadingScreen itself is
+         completely untouched -- this is a second, independent backstop
+         for a different screen, not a replacement. -->
     <script>
       (function () {
         var splash = document.getElementById('docs-fitness-splash');
@@ -1852,48 +1936,24 @@
 
         var SETTLE_MS = 100;
         var FADE_MS = 200;
-        var BRAND_LINE_CAPTURE_INTERVAL_MS = 100;
+        var BACKSTOP_DELAY_MS = 10000;
         var started = false;
         var removed = false;
 
-        function captureSplashBrandLine() {
-          // Test-only override (never read or written by real app code) --
-          // the same "force what the real mechanism would produce"
-          // convention scripts/verify-standalone-safe-area.js already uses
-          // throughout (window.__shareCardForceColorwayIndex,
-          // window.__tourTestForceMissing, etc.) -- seeded via
-          // page.addInitScript before this script ever evaluates, so a
-          // suite check can deterministically control which saying this
-          // global reports without fighting the real 100ms interval below.
-          if (window.__splashBrandLineTestForce) {
-            window.__splashBrandLine = window.__splashBrandLineTestForce;
-            return;
-          }
-          var lines = splash.querySelectorAll('.docs-fitness-splash-line');
-          var bestIndex = -1;
-          var bestOpacity = -1;
-          for (var i = 0; i < lines.length; i++) {
-            var opacity = parseFloat(getComputedStyle(lines[i]).opacity);
-            if (!isNaN(opacity) && opacity > bestOpacity) {
-              bestOpacity = opacity;
-              bestIndex = i;
-            }
-          }
-          if (bestIndex < 0) return;
-          window.__splashBrandLine = {
-            text: lines[bestIndex].textContent,
-            index: bestIndex,
-            opacity: bestOpacity,
-            t: Date.now(),
-          };
-        }
-
-        captureSplashBrandLine();
-        var brandLineInterval = setInterval(captureSplashBrandLine, BRAND_LINE_CAPTURE_INTERVAL_MS);
+        var backstopTimer = setTimeout(function () {
+          if (removed) return;
+          var reload = document.getElementById('docs-fitness-splash-reload');
+          if (!reload) return;
+          reload.style.display = 'block';
+          reload.addEventListener('click', function () {
+            window.location.reload();
+          });
+        }, BACKSTOP_DELAY_MS);
 
         function startFade() {
           if (removed) return;
           removed = true;
+          clearTimeout(backstopTimer);
           splash.style.transition = 'opacity ' + FADE_MS + 'ms ease';
           // Force a style flush so the browser registers the current,
           // fully-opaque state before the opacity change below is
@@ -1903,7 +1963,6 @@
           splash.style.opacity = '0';
           setTimeout(function () {
             if (splash.parentNode) splash.parentNode.removeChild(splash);
-            clearInterval(brandLineInterval);
           }, FADE_MS + 50);
         }
 
