@@ -9,6 +9,17 @@
 // any sandbox with no live network path to esm.sh) with zero network
 // dependency of its own.
 import type { getSupabaseAdmin } from './supabaseAdmin.ts';
+import {
+  APP_URL,
+  CTA_IMAGE_URL,
+  LABEL_FONT_STACK,
+  HEADLINE_FONT_STACK,
+  LIGHT,
+  escapeHtml,
+  renderEmailDocument,
+  renderFooterHtml,
+  renderOpenAppButtonHtml,
+} from './emailLayout.ts';
 
 type SupabaseAdmin = ReturnType<typeof getSupabaseAdmin>;
 
@@ -17,10 +28,6 @@ export type WeeklyReleaseEmail = {
   html: string;
   weekLabel: string;
 };
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 
 function formatMD(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
@@ -33,43 +40,38 @@ function addDays(iso: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-// Round 57: the "OPEN THE APP" target — keep in sync with
-// src/lib/links.ts's own APP_SHARE_URL, which this Deno function can't
-// import directly (a different runtime/bundler boundary, same reason
-// public/index.html's own og:url is a hand-kept literal rather than an
-// import). No trailing slash, matching that constant exactly.
-const APP_URL = 'https://docsfitnessnj.github.io/docs-fitness-app';
-
 // Round 58: Gmail's iOS/Android apps apply their own undocumented,
 // per-color dark-mode transform to every message — unlike Apple Mail,
 // Outlook, Yahoo, and Samsung Mail, Gmail never honors an author's
 // `color-scheme`/`prefers-color-scheme` at all, so the Round 57 media query
-// below is pure progressive enhancement for those other clients and never
-// reaches Gmail. Gmail's heuristic operates per declared color, not per
-// element, and (as widely documented by email-dev references, e.g.
-// Litmus/Email on Acid's own Gmail dark-mode write-ups) its most reliable
-// behavior is: a near-white background gets darkened, a near-black
-// background gets lightened, and a light (near-white) TEXT color gets
-// independently darkened wherever Gmail's own page-level flip judges the
-// surrounding context to be light — regardless of what happened to that
-// text's own real background. That's exactly the reported failure: this
-// template's old header `<td>` was deep green (`#054C3D`, ~16% lightness —
-// squarely in Gmail's "too dark, lighten it" band) while its headline text
-// was pure white (~100% lightness, Gmail's "too light for what I assume is
-// now a light page, darken it" band) — two independent flips that, applied
-// together, produced a washed-out seafoam band UNDER dark, low-contrast
-// ghost text, matching the owner's own real-device report precisely. The
-// one guarantee Gmail's transform makes is that it never touches pixel
-// content inside an `<img>` — so every pixel that must render in an EXACT
-// brand color (the badge mark, the gold eyebrow, the white Bebas headline,
-// all on true Augusta green) now ships as one pre-rendered image instead of
-// live HTML colors Gmail could flip independently of each other.
+// (see emailLayout.ts's own renderStyleBlock) is pure progressive
+// enhancement for those other clients and never reaches Gmail. Gmail's
+// heuristic operates per declared color, not per element, and (as widely
+// documented by email-dev references, e.g. Litmus/Email on Acid's own
+// Gmail dark-mode write-ups) its most reliable behavior is: a near-white
+// background gets darkened, a near-black background gets lightened, and a
+// light (near-white) TEXT color gets independently darkened wherever
+// Gmail's own page-level flip judges the surrounding context to be light —
+// regardless of what happened to that text's own real background. That's
+// exactly the reported failure: this template's old header `<td>` was deep
+// green (`#054C3D`, ~16% lightness — squarely in Gmail's "too dark, lighten
+// it" band) while its headline text was pure white (~100% lightness,
+// Gmail's "too light for what I assume is now a light page, darken it"
+// band) — two independent flips that, applied together, produced a
+// washed-out seafoam band UNDER dark, low-contrast ghost text, matching the
+// owner's own real-device report precisely. The one guarantee Gmail's
+// transform makes is that it never touches pixel content inside an
+// `<img>` — so every pixel that must render in an EXACT brand color (the
+// badge mark, the gold eyebrow, the white Bebas headline, all on true
+// Augusta green) now ships as one pre-rendered image instead of live HTML
+// colors Gmail could flip independently of each other.
 //
 // The real circular badge mark (DocsBadge's own "black" variant — solid
 // white ink on transparent) used to be referenced here directly as a
 // 64px HTML `<img>` sitting beside live eyebrow/headline text; that whole
-// block is gone (see HEADER_IMAGE_URL below) and public/badge-black.png
-// itself is left in place, since other surfaces may still reference it.
+// block is gone (see emailLayout.ts's own HEADER_IMAGE_URL) and
+// public/badge-black.png itself is left in place, since other surfaces
+// may still reference it.
 //
 // The approved header image (public/email-header.png, 1200x440 — a 600px
 // email slot at 2x) already contains the badge, the gold "DOC'S FITNESS"
@@ -79,8 +81,7 @@ const APP_URL = 'https://docsfitnessnj.github.io/docs-fitness-app';
 // byte-for-byte to the GitHub Pages site root by `expo export -p web` with
 // its own filename intact (never the Metro-hashed require() bundle path,
 // which is an implementation detail of the bundler, not a stable URL).
-const HEADER_IMAGE_URL = `${APP_URL}/email-header.png`;
-
+//
 // Round 59: real device evidence superseded Round 58's own lightness-band
 // reasoning for the OPEN THE APP button — Gmail's dark transform repainted
 // the live gold `bgcolor` button as a muddy olive with seafoam text anyway
@@ -92,8 +93,7 @@ const HEADER_IMAGE_URL = `${APP_URL}/email-header.png`;
 // (480x104, a 2x render for the real 240x52 display slot) is the owner's
 // own approved gold-rounded-rect/deep-green-text asset, hosted the same
 // stable-URL way email-header.png/badge-black.png already are.
-const CTA_IMAGE_URL = `${APP_URL}/email-cta-open-the-app.png`;
-
+//
 // Round 61 Part 3: a real device recording of opening the Sunday Drop in
 // Gmail iOS (dark mode) showed the header slot flashing seafoam green for a
 // moment BEFORE the real header image painted. Confirmed directly by
@@ -114,17 +114,16 @@ const CTA_IMAGE_URL = `${APP_URL}/email-cta-open-the-app.png`;
 // the fix. On a cold open through a slow proxy/CDN, either box can be
 // visible for a real, human-perceptible span before the real image arrives
 // — and because both are live HTML color, not pixel content inside the
-// image, Gmail's own dark-mode transform (see the Round 58 comment above on
-// HEADER_IMAGE_URL) can and did repaint them unpredictably in exactly the
-// lightness band this whole image strategy was built to avoid. Every one
-// of these `background-color` declarations is removed outright — the
-// header `<td>` now carries the plain `.card-bg`/`${LIGHT.cardBg}` the rest
-// of the body already uses (so it inherits the same dark-mode override with
-// no new rule needed), and both slots now show only the card's own
-// background until their image paints over it, never a second brand color
-// of their own. Declared `width`/`height` on both `<img>` tags are
-// untouched, so there is still zero layout reflow whenever either image
-// does arrive.
+// image, Gmail's own dark-mode transform (see the Round 58 comment above)
+// can and did repaint them unpredictably in exactly the lightness band
+// this whole image strategy was built to avoid. Every one of these
+// `background-color` declarations is removed outright — the header `<td>`
+// now carries the plain `.card-bg`/`${LIGHT.cardBg}` the rest of the body
+// already uses (so it inherits the same dark-mode override with no new
+// rule needed), and both slots now show only the card's own background
+// until their image paints over it, never a second brand color of their
+// own. Declared `width`/`height` on both `<img>` tags are untouched, so
+// there is still zero layout reflow whenever either image does arrive.
 //
 // The alt-text fallback (shown only if the image never loads at all) is
 // restyled to match: near-black `${LIGHT.text}` text with NO background
@@ -137,77 +136,13 @@ const CTA_IMAGE_URL = `${APP_URL}/email-cta-open-the-app.png`;
 // unstyled fallback to invisible — both `<img>` tags still declare their
 // own explicit `font-size`/`font-weight`/`font-family` for exactly that
 // reason), are unchanged.
-
-// Google Fonts' own static gstatic URLs (the "latin" subset only — every
-// character this email ever renders is plain ASCII) for the app's real
-// display/label fonts (BebasNeue_400Regular, BarlowCondensed_600SemiBold/
-// 700Bold in src/theme.ts). @font-face in a <style> block is read by Apple
-// Mail (macOS/iOS), which is what makes the email genuinely render in the
-// real fonts there — Gmail strips @font-face outright and always falls
-// back to the stack's next entry, which is why every font-family below
-// still carries a deliberately chosen non-webfont fallback (Impact for the
-// condensed-display headline weight, Arial Narrow for the condensed label
-// weight) so Gmail's own plain-Arial rendering still reads as bold,
-// letterspaced, all-caps and "branded enough," not accidentally plain.
-const FONT_FACES = `
-  @font-face {
-    font-family: 'Bebas Neue';
-    font-style: normal;
-    font-weight: 400;
-    src: url(https://fonts.gstatic.com/s/bebasneue/v16/JTUSjIg69CK48gW7PXoo9WlhyyTh89Y.woff2) format('woff2');
-  }
-  @font-face {
-    font-family: 'Barlow Condensed';
-    font-style: normal;
-    font-weight: 600;
-    src: url(https://fonts.gstatic.com/s/barlowcondensed/v13/HTxwL3I-JCGChYJ8VI-L6OO_au7B4873z3bWuYMBYro.woff2) format('woff2');
-  }
-  @font-face {
-    font-family: 'Barlow Condensed';
-    font-style: normal;
-    font-weight: 700;
-    src: url(https://fonts.gstatic.com/s/barlowcondensed/v13/HTxwL3I-JCGChYJ8VI-L6OO_au7B46r2z3bWuYMBYro.woff2) format('woff2');
-  }
-`;
-
-const HEADLINE_FONT_STACK = "'Bebas Neue', Impact, 'Arial Narrow', sans-serif";
-const LABEL_FONT_STACK = "'Barlow Condensed', 'Arial Narrow', Helvetica, Arial, sans-serif";
-const BODY_FONT_STACK = 'Helvetica, Arial, sans-serif';
-
-// Light-mode colors straight off src/theme.ts's own `colors` object — the
-// one source of truth for the app's real palette, kept as literals here
-// since this Deno function has no access to that TS module either.
-const LIGHT = {
-  pageBg: '#FBFBF9', // colors.background
-  cardBg: '#FFFFFF', // colors.card / colors.white
-  green: '#076652',
-  greenDeep: '#054C3D',
-  gold: '#E5B80B',
-  text: '#12211C', // colors.text
-  textMuted: '#5F6B66', // colors.textMuted
-  hairline: '#E8E6E0', // colors.hairline
-};
-
-// Dark-mode overrides. Only the elements that would otherwise read wrong
-// against a client's own forced-dark page background change at all — the
-// header image and the CTA image are both hosted bitmaps, untouched by any
-// CSS override (an `<img>`'s own pixels can't be recolored by a stylesheet
-// rule), and the footer now shares the exact same `.card-bg`/`.text-strong`/
-// `.text-muted` classes the body already uses (Round 59 — it's no longer a
-// separate green band), so it inherits this same override automatically
-// with no footer-specific rule needed. "Legible and on brand, not pixel
-// perfect" per the brief: Gmail's and Apple Mail's own dark-mode engines
-// differ in exactly how much of this an author can actually control, so
-// these values are a deliberate, tasteful fallback the
-// `prefers-color-scheme: dark` media query below applies where a client
-// honors it, not a guarantee every dark-mode client renders identically.
-const DARK = {
-  pageBg: '#12211C', // same near-black as colors.text, reused as a dark surface
-  cardBg: '#17211D', // slightly lighter than pageBg, for a visible card edge
-  text: '#FBFBF9',
-  textMuted: '#9BA6A1',
-  hairline: '#2E3A35',
-};
+//
+// Round 64: every one of the pieces described above (the font-face block,
+// the dark-mode class rules, the header image row, the CTA button, the
+// footer's "Doc's Fitness" line, the whole document shell) now lives in
+// _shared/emailLayout.ts, reused byte-for-byte by the new welcome email —
+// this file's own rendered output is unchanged by that extraction, verified
+// directly (see the suite's [email/layout-extraction-no-drift] check).
 
 // The ONE renderer for the Sunday Drop email — imported by both
 // send-weekly-release-email (the real automatic send) and
@@ -272,70 +207,19 @@ export async function buildWeeklyReleaseEmail(admin: SupabaseAdmin, weekId: stri
     )
     .join('');
 
-  // Email-client-safe: inline styles throughout (the real, always-applied
-  // default), a plain table layout (no flex/grid), with a handful of class
-  // names ALSO applied so the dark-mode media query below — which can only
-  // ever target a class/id selector in a <style> block, never override a
-  // plain inline style directly in every client — has something to hook
-  // into. color-scheme/supported-color-schemes tell a client that reads
-  // them this email has deliberately authored both appearances, rather
-  // than leaving it to guess via its own automatic color-inversion
-  // heuristics. No emojis anywhere.
-  const html = `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="color-scheme" content="light dark">
-<meta name="supported-color-schemes" content="light dark">
-<style>
-${FONT_FACES}
-body, .email-bg { background-color: ${LIGHT.pageBg} !important; }
-.card-bg { background-color: ${LIGHT.cardBg} !important; }
-.text-strong { color: ${LIGHT.text} !important; }
-.text-muted { color: ${LIGHT.textMuted} !important; }
-.hairline-border { border-color: ${LIGHT.hairline} !important; }
-@media (prefers-color-scheme: dark) {
-  body, .email-bg { background-color: ${DARK.pageBg} !important; }
-  .card-bg { background-color: ${DARK.cardBg} !important; }
-  .text-strong { color: ${DARK.text} !important; }
-  .text-muted { color: ${DARK.textMuted} !important; }
-  .hairline-border { border-color: ${DARK.hairline} !important; }
-}
-</style>
-</head>
-<body style="margin:0;padding:0;background-color:${LIGHT.pageBg};">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-bg" style="background-color:${LIGHT.pageBg};padding:24px 0;">
-<tr><td align="center">
-<table role="presentation" width="100%" class="card-bg" style="max-width:600px;background-color:${LIGHT.cardBg};border-radius:12px;overflow:hidden;font-family:${BODY_FONT_STACK};" cellpadding="0" cellspacing="0">
-<tr><td class="card-bg" style="background-color:${LIGHT.cardBg};padding:0;line-height:0;font-size:0;">
-<img src="${HEADER_IMAGE_URL}" width="600" height="220" alt="DOC'S FITNESS. YOUR WORKOUTS ARE HERE." style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;color:${LIGHT.text};font-size:18px;font-weight:700;font-family:${LABEL_FONT_STACK};" />
-</td></tr>
-<tr><td style="padding:24px 24px 8px 24px;">
-<div class="text-strong" style="color:${LIGHT.text};font-size:13px;letter-spacing:1.5px;font-weight:700;margin-bottom:4px;font-family:${LABEL_FONT_STACK};">YOUR WORKOUTS</div>
+  const bodyHtml = `<div class="text-strong" style="color:${LIGHT.text};font-size:13px;letter-spacing:1.5px;font-weight:700;margin-bottom:4px;font-family:${LABEL_FONT_STACK};">YOUR WORKOUTS</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsHtml}</table>
 <!--
   Round 59: the OPEN THE APP button is now a hosted image, not a live
   bgcolor/HTML button — see CTA_IMAGE_URL's own comment above for why
   (real-device evidence that Gmail's dark transform repaints gold anyway).
 -->
-<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:28px auto 8px auto;">
-<tr><td align="center">
-<a href="${APP_URL}" style="display:inline-block;">
-<img src="${CTA_IMAGE_URL}" width="240" height="52" alt="OPEN THE APP" style="display:block;border:0;outline:none;border-radius:8px;color:${LIGHT.text};font-size:16px;font-weight:700;letter-spacing:1px;font-family:${LABEL_FONT_STACK};" />
-</a>
-</td></tr>
-</table>
-</td></tr>
-<tr><td class="card-bg" style="background-color:${LIGHT.cardBg};padding:18px 24px;text-align:center;">
-<div class="text-strong" style="color:${LIGHT.text};font-size:11px;font-family:${BODY_FONT_STACK};">Doc's Fitness</div>
-<div class="text-muted" style="color:${LIGHT.textMuted};font-size:11px;margin-top:6px;font-family:${BODY_FONT_STACK};">Don't want this email? Turn it off anytime in the app, under Settings &amp; Notifications.</div>
-</td></tr>
-</table>
-</td></tr>
-</table>
-</body>
-</html>`;
+${renderOpenAppButtonHtml()}`;
+
+  const html = renderEmailDocument({
+    bodyHtml,
+    footerHtml: renderFooterHtml({ includeOptOut: true }),
+  });
 
   return { subject: 'YOUR WORKOUTS ARE HERE', html, weekLabel: `Week of ${formatMD(week.week_start_date)}` };
 }

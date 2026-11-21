@@ -12269,6 +12269,70 @@ async function run() {
     );
   }
 
+  // Round 64: the real end-to-end signup flow through BOOK YOUR CLASS --
+  // the same mocked /auth/v1/signup capture technique [email/signup-
+  // metadata] above already uses, reframed here to prove exactly what the
+  // new welcome-email feature needs: the real captured signup body carries
+  // both the member's own email AND signup_path=book_class (the two
+  // fields pickWelcomeVersion/dispatchToMembers need, downstream, inside
+  // notify-new-signup's own Postgres-trigger-invoked call -- a Postgres
+  // trigger has no browser-reachable entry point from this harness at all,
+  // the same documented gap as every other trigger-fired Edge Function in
+  // this file, so this is the one layer Playwright CAN actually drive:
+  // the real client-side signup call, captured exactly as it would be
+  // relayed). Signup succeeding here is NOT conditioned on the welcome
+  // email at all -- the mocked /auth/v1/signup route always returns
+  // success regardless of anything server-side, which is the real,
+  // correct shape of "a failure to send the welcome email must never fail
+  // the signup": the browser's own signup call and the server's later,
+  // independent, try/catch-wrapped welcome-email dispatch are two
+  // completely decoupled steps by construction, never one blocking the
+  // other. The real try/catch isolation itself (confirmed directly) is
+  // what [email/edge-fn/welcome-email-dispatches-to-members] above
+  // statically verifies against the real, unmodified notify-new-signup
+  // source.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    let capturedSignupBody = null;
+    await page.route('**/auth/v1/signup*', async (route) => {
+      try {
+        capturedSignupBody = JSON.parse(route.request().postData() || '{}');
+      } catch {
+        capturedSignupBody = null;
+      }
+      // Always succeeds -- standing in for the real fact that the
+      // browser's own signup call has no dependency on, and is never
+      // blocked by, whatever notify-new-signup's own welcome-email
+      // dispatch does afterward (a separate, server-side, best-effort
+      // side effect this harness can't reach directly).
+      return route.fulfill(fulfillSignupSuccess('newmember-welcome@example.com'));
+    });
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('about-book-class').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    await page.getByTestId('welcome-email').fill('newmember-welcome@example.com').catch(() => {});
+    await page.getByTestId('welcome-password').fill('a-real-password-123').catch(() => {});
+    await page.getByTestId('welcome-continue').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(900);
+
+    // The real, post-signup app shell reached successfully -- proof the
+    // client-side flow completed, independent of the email side effect.
+    const signupSucceededInApp = await page.getByTestId('open-sidebar').isVisible().catch(() => false);
+    record(
+      "[email/welcome/signup-end-to-end] a real signup through BOOK YOUR CLASS captures the exact email + signup_path=book_class notify-new-signup needs to send the in-person welcome email, and the signup itself succeeds regardless of the (separate, server-side) welcome-email dispatch",
+      !!capturedSignupBody &&
+        capturedSignupBody.email === 'newmember-welcome@example.com' &&
+        capturedSignupBody.data?.signup_path === 'book_class' &&
+        signupSucceededInApp,
+      JSON.stringify({ capturedSignupBody, signupSucceededInApp })
+    );
+
+    await context.close();
+  }
+
   // --- The EMAIL admin screen: the TEST/LIVE master switch, its
   // confirmation gate, and SEND TEST EMAIL.
   {
@@ -12311,6 +12375,11 @@ async function run() {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([emailSettingsRow]) });
     });
     let testEmailInvokeCount = 0;
+    let testWelcomeEmailsInvokeCount = 0;
+    await page.route('**/functions/v1/admin-send-test-welcome-emails*', async (route) => {
+      testWelcomeEmailsInvokeCount += 1;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sent: true }) });
+    });
     await page.route('**/functions/v1/admin-send-test-email*', async (route) => {
       testEmailInvokeCount += 1;
       return route.fulfill({
@@ -12414,6 +12483,28 @@ async function run() {
       JSON.stringify({ testEmailInvokeCount, successVisibleAgain })
     );
 
+    // Round 64: SEND TEST WELCOME EMAILS -- beside SEND TEST EMAIL, on the
+    // same admin screen, same TEST mode it's currently in -- sends BOTH
+    // versions to the owner's own inbox, repeatable.
+    await page.getByTestId('send-test-welcome-emails-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const welcomeSuccessVisible = await page.getByTestId('send-test-welcome-emails-success').isVisible().catch(() => false);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'email-admin-send-test-welcome-success.png') }).catch(() => {});
+    record(
+      '[email/welcome/admin-send-test-welcome-emails] SEND TEST WELCOME EMAILS invokes the real admin-send-test-welcome-emails function and shows a success state',
+      testWelcomeEmailsInvokeCount === 1 && welcomeSuccessVisible,
+      JSON.stringify({ testWelcomeEmailsInvokeCount, welcomeSuccessVisible })
+    );
+
+    await page.getByTestId('send-test-welcome-emails-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const welcomeSuccessVisibleAgain = await page.getByTestId('send-test-welcome-emails-success').isVisible().catch(() => false);
+    record(
+      '[email/welcome/admin-send-test-welcome-emails-repeatable] SEND TEST WELCOME EMAILS can be sent again -- a permanent feature, not a one-time launch step, and independent of EMAIL TEST MODE (both buttons reached from the same TEST-mode screen)',
+      testWelcomeEmailsInvokeCount === 2 && welcomeSuccessVisibleAgain,
+      JSON.stringify({ testWelcomeEmailsInvokeCount, welcomeSuccessVisibleAgain })
+    );
+
     await context.close();
   }
 
@@ -12464,6 +12555,55 @@ async function run() {
       '[email/admin-send-test-email-error] a genuine send failure surfaces a plain error message, never a silent no-op',
       errorVisible && errorText.length > 0,
       JSON.stringify({ errorVisible, errorText })
+    );
+    await context.close();
+  }
+
+  // Round 64: SEND TEST WELCOME EMAILS, error path -- same guarantee.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Admin',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: true,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+          },
+        ]),
+      })
+    );
+    await page.route('**/rest/v1/email_settings*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ mode: 'test' }]) })
+    );
+    await page.route('**/functions/v1/admin-send-test-welcome-emails*', (route) =>
+      route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Resend send failed.' }) })
+    );
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('EMAIL', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('send-test-welcome-emails-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const welcomeErrorVisible = await page.getByTestId('send-test-welcome-emails-error').isVisible().catch(() => false);
+    const welcomeErrorText = await page.getByTestId('send-test-welcome-emails-error').innerText().catch(() => '');
+    record(
+      '[email/welcome/admin-send-test-welcome-emails-error] a genuine send failure surfaces a plain error message, never a silent no-op',
+      welcomeErrorVisible && welcomeErrorText.length > 0,
+      JSON.stringify({ welcomeErrorVisible, welcomeErrorText })
     );
     await context.close();
   }
@@ -12557,6 +12697,9 @@ async function run() {
     const stripeWebhookSrc = fs.readFileSync(path.join(srcDir, 'stripe-webhook', 'index.ts'), 'utf8');
     const resendSrc = fs.readFileSync(path.join(srcDir, '_shared', 'resend.ts'), 'utf8');
     const dispatchCoreSrc = fs.readFileSync(path.join(srcDir, '_shared', 'memberEmailDispatchCore.ts'), 'utf8');
+    // Round 64
+    const welcomeEmailSrc = fs.readFileSync(path.join(srcDir, '_shared', 'welcomeEmail.ts'), 'utf8');
+    const testWelcomeEmailsSrc = fs.readFileSync(path.join(srcDir, 'admin-send-test-welcome-emails', 'index.ts'), 'utf8');
 
     const weeklyReleaseImportsDispatch = /import\s*\{\s*dispatchToMembers\s*\}\s*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/.test(
       weeklyReleaseSrc
@@ -12583,11 +12726,63 @@ async function run() {
     );
 
     const signupAlertChecksWebhookSecret = /verifyWebhookSecret\(req\)/.test(signupAlertSrc);
-    const signupAlertNeverImportsDispatch = !/^import\s.*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/m.test(signupAlertSrc);
+    // Round 64: notify-new-signup now legitimately imports
+    // memberEmailDispatch.ts too -- for the NEW member's own welcome
+    // email, a real member-facing send that must be governed by EMAIL
+    // TEST MODE exactly like the Sunday Drop. What actually matters (and
+    // is still true) is that the OWNER'S OWN New Member Alert -- the
+    // first sendEmail() call in this file, straight to OWNER_EMAIL -- is
+    // never itself routed through dispatchToMembers, so it reaches the
+    // owner regardless of whatever mode the switch is in.
+    const ownerAlertIsDirectSendEmail = /const alertResult = await sendEmail\(\{\s*from: FROM_ALERTS,\s*to: OWNER_EMAIL,/.test(
+      signupAlertSrc
+    );
     record(
-      '[email/edge-fn/signup-alert-wiring] notify-new-signup checks the shared webhook secret (no Supabase JWT exists inside a Postgres trigger) and never touches EMAIL TEST MODE -- it only ever reaches the owner',
-      signupAlertChecksWebhookSecret && signupAlertNeverImportsDispatch,
-      JSON.stringify({ signupAlertChecksWebhookSecret, signupAlertNeverImportsDispatch })
+      "[email/edge-fn/signup-alert-wiring] notify-new-signup checks the shared webhook secret (no Supabase JWT exists inside a Postgres trigger) and the owner's own New Member Alert is a direct sendEmail() call, never routed through dispatchToMembers -- it only ever reaches the owner",
+      signupAlertChecksWebhookSecret && ownerAlertIsDirectSendEmail,
+      JSON.stringify({ signupAlertChecksWebhookSecret, ownerAlertIsDirectSendEmail })
+    );
+
+    // Round 64: the new member's own welcome email -- the real
+    // member-facing send this round adds -- IS routed through
+    // dispatchToMembers, the one real enforcement point for EMAIL TEST
+    // MODE, with exactly the one new member as the recipient list. Also
+    // confirms it's wired to fire AFTER the owner alert and the newsletter
+    // audience add (per the brief's own "after the existing owner alert
+    // and newsletter audience add" instruction), and wrapped in its own
+    // try/catch so a failure here can never fail the signup.
+    const welcomeImportsDispatch = /import\s*\{\s*dispatchToMembers\s*\}\s*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/.test(
+      signupAlertSrc
+    );
+    const welcomeImportsBuilder = /import\s*\{\s*buildWelcomeEmail,\s*pickWelcomeVersion\s*\}\s*from\s*['"]\.\.\/_shared\/welcomeEmail\.ts['"]/.test(
+      signupAlertSrc
+    );
+    const welcomePicksVersionFromSignupPath = /pickWelcomeVersion\(signupPath\)/.test(signupAlertSrc);
+    const welcomeCallsDispatchWithOneMember = /dispatchToMembers\(welcome\.subject, welcome\.html, \[\{ email, display_name: displayName \}\]\)/.test(
+      signupAlertSrc
+    );
+    const welcomeIsWrappedInTryCatch = /try\s*\{\s*const version = pickWelcomeVersion\(signupPath\);[\s\S]{0,400}\}\s*catch \(err\) \{\s*console\.error\('notify-new-signup: welcome email send failed', err\);\s*\}/.test(
+      signupAlertSrc
+    );
+    const welcomeFiresAfterNewsletterBlock =
+      signupAlertSrc.indexOf('await addContactToAudience(') < signupAlertSrc.indexOf('pickWelcomeVersion(signupPath)') &&
+      signupAlertSrc.indexOf('pickWelcomeVersion(signupPath)') < signupAlertSrc.indexOf('return json({ received: true });');
+    record(
+      "[email/edge-fn/welcome-email-dispatches-to-members] notify-new-signup sends the new member's own welcome email through dispatchToMembers (picked by signup_path), after the owner alert and newsletter add, wrapped in its own try/catch",
+      welcomeImportsDispatch &&
+        welcomeImportsBuilder &&
+        welcomePicksVersionFromSignupPath &&
+        welcomeCallsDispatchWithOneMember &&
+        welcomeIsWrappedInTryCatch &&
+        welcomeFiresAfterNewsletterBlock,
+      JSON.stringify({
+        welcomeImportsDispatch,
+        welcomeImportsBuilder,
+        welcomePicksVersionFromSignupPath,
+        welcomeCallsDispatchWithOneMember,
+        welcomeIsWrappedInTryCatch,
+        welcomeFiresAfterNewsletterBlock,
+      })
     );
 
     const paymentAlertCallSiteWrapped = /try\s*\{\s*await sendPaymentAlert\(admin, userId, plan, session\.amount_total\);\s*\}\s*catch/.test(
@@ -12602,9 +12797,15 @@ async function run() {
     );
 
     const resendKeyFromEnv = /Deno\.env\.get\(['"]RESEND_API_KEY['"]\)/.test(resendSrc);
-    const noKeyLogging = ![weeklyReleaseSrc, testEmailSrc, signupAlertSrc, stripeWebhookSrc, resendSrc].some((src) =>
-      /console\.(log|error|warn)\([^)]*RESEND_API_KEY/.test(src)
-    );
+    const noKeyLogging = ![
+      weeklyReleaseSrc,
+      testEmailSrc,
+      signupAlertSrc,
+      stripeWebhookSrc,
+      resendSrc,
+      welcomeEmailSrc,
+      testWelcomeEmailsSrc,
+    ].some((src) => /console\.(log|error|warn)\([^)]*RESEND_API_KEY/.test(src));
     record(
       '[email/edge-fn/resend-key-hygiene] RESEND_API_KEY is read from the environment, never hardcoded, and never passed to a console.log/error/warn call anywhere across the new email functions',
       resendKeyFromEnv && noKeyLogging,
@@ -12639,6 +12840,110 @@ async function run() {
       signupAlertNeverSetsReplyTo && paymentAlertNeverSetsReplyTo,
       JSON.stringify({ signupAlertNeverSetsReplyTo, paymentAlertNeverSetsReplyTo })
     );
+
+    // --- Round 64: THE TWO WELCOME EMAILS -- static source checks.
+
+    // pickWelcomeVersion is the ONE place that decides which version a new
+    // member gets: book_class routes to in_person, every other value
+    // (including online_trial and undecided) routes to online.
+    const pickVersionLogicExact = /return signupPath === 'book_class' \? 'in_person' : 'online';/.test(welcomeEmailSrc);
+    record(
+      "[email/welcome/version-picked-from-signup-path] pickWelcomeVersion routes book_class to in_person and every other signup_path (online_trial, undecided, null) to online",
+      pickVersionLogicExact,
+      JSON.stringify({ pickVersionLogicExact })
+    );
+
+    // The exact subject and both bodies' copy strings, verbatim, word for
+    // word, per the brief -- not a close paraphrase.
+    const subjectExact = welcomeEmailSrc.includes(`const SUBJECT = "WELCOME TO DOC'S FITNESS";`);
+    const onlineIntroExact = welcomeEmailSrc.includes(
+      "Welcome to the crew. Your training lives in the app now: the workouts, the Challenge of the Week, the leaderboard, and the community board cheering it all on."
+    );
+    const inPersonIntroExact = welcomeEmailSrc.includes(
+      "Welcome to Doc's Fitness. The app is your front door to the gym now: book your classes, see the schedule, and hang with the crew on the community board."
+    );
+    const sharedStep1Exact =
+      welcomeEmailSrc.includes("1. PUT THE APP ON YOUR HOME SCREEN.") &&
+      welcomeEmailSrc.includes(
+        "Open the app in Safari, tap the Share button, then Add to Home Screen. (On Android: Chrome menu, then Add to Home screen.) Now it's one tap away, every day."
+      );
+    const onlineStep2And3Exact =
+      welcomeEmailSrc.includes("2. CHECK TODAY'S WORKOUT.") &&
+      welcomeEmailSrc.includes("It's waiting on the Community screen.") &&
+      welcomeEmailSrc.includes('3. DO IT, THEN POST IT.') &&
+      welcomeEmailSrc.includes('Your first logged workout earns your first badge. Everybody has a Day One.');
+    const inPersonStep2And3Exact =
+      welcomeEmailSrc.includes('2. BOOK YOUR CLASS.') &&
+      welcomeEmailSrc.includes('The schedule is right on the Community screen. Tap a day, tap SIGN UP.') &&
+      welcomeEmailSrc.includes('3. SHOW UP.') &&
+      welcomeEmailSrc.includes("The crew is upstairs at the boathouse. We'll see you there.");
+    const sharedClosingExact = welcomeEmailSrc.includes('Questions? Just reply to this email. A real person reads it.');
+    const sharedHeadingExact = welcomeEmailSrc.includes("YOU'RE IN.");
+    const sharedHowToStartExact = welcomeEmailSrc.includes("Here's how to start:");
+    record(
+      '[email/welcome/copy-verbatim] the exact subject and both bodies\' copy strings are present verbatim in welcomeEmail.ts, word for word, not rewritten',
+      subjectExact &&
+        onlineIntroExact &&
+        inPersonIntroExact &&
+        sharedStep1Exact &&
+        onlineStep2And3Exact &&
+        inPersonStep2And3Exact &&
+        sharedClosingExact &&
+        sharedHeadingExact &&
+        sharedHowToStartExact,
+      JSON.stringify({
+        subjectExact,
+        onlineIntroExact,
+        inPersonIntroExact,
+        sharedStep1Exact,
+        onlineStep2And3Exact,
+        inPersonStep2And3Exact,
+        sharedClosingExact,
+        sharedHeadingExact,
+        sharedHowToStartExact,
+      })
+    );
+
+    const welcomeNoEmojis = !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(welcomeEmailSrc);
+    record(
+      '[email/welcome/no-emojis] the member-facing welcome-email template contains no emojis anywhere',
+      welcomeNoEmojis,
+      JSON.stringify({ welcomeNoEmojis })
+    );
+
+    // admin-send-test-welcome-emails: same asymmetry as admin-send-test-
+    // email -- never imports the dispatch wrapper (so EMAIL TEST MODE can
+    // never affect it), always targets the owner, uses the exact same
+    // shared renderer the real send uses, checks admin, sends BOTH
+    // versions with distinguishing subject prefixes, and sets reply_to on
+    // each.
+    const testWelcomeNeverImportsDispatch = !/^import\s.*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/m.test(
+      testWelcomeEmailsSrc
+    );
+    const testWelcomeAlwaysTargetsOwner = /to: OWNER_EMAIL/.test(testWelcomeEmailsSrc) && /sendEmail\(/.test(testWelcomeEmailsSrc);
+    const testWelcomeUsesSharedRenderer =
+      /buildWelcomeEmail\('online'\)/.test(testWelcomeEmailsSrc) && /buildWelcomeEmail\('in_person'\)/.test(testWelcomeEmailsSrc);
+    const testWelcomeChecksAdmin = /profile\?\.is_admin/.test(testWelcomeEmailsSrc);
+    const testWelcomeHasDistinguishingSubjects =
+      /\[WELCOME TEST: ONLINE\]/.test(testWelcomeEmailsSrc) && /\[WELCOME TEST: IN PERSON\]/.test(testWelcomeEmailsSrc);
+    const testWelcomeSetsReplyTo = (testWelcomeEmailsSrc.match(/reply_to: MEMBER_REPLY_TO/g) ?? []).length === 2;
+    record(
+      '[email/welcome/admin-test-bypasses-dispatch] admin-send-test-welcome-emails never imports memberEmailDispatch, always targets the owner, uses the same shared renderer, checks admin, sends both versions with distinguishing subjects, and sets reply_to on each',
+      testWelcomeNeverImportsDispatch &&
+        testWelcomeAlwaysTargetsOwner &&
+        testWelcomeUsesSharedRenderer &&
+        testWelcomeChecksAdmin &&
+        testWelcomeHasDistinguishingSubjects &&
+        testWelcomeSetsReplyTo,
+      JSON.stringify({
+        testWelcomeNeverImportsDispatch,
+        testWelcomeAlwaysTargetsOwner,
+        testWelcomeUsesSharedRenderer,
+        testWelcomeChecksAdmin,
+        testWelcomeHasDistinguishingSubjects,
+        testWelcomeSetsReplyTo,
+      })
+    );
   }
 
   // --- Round 57/58: brand the Sunday Drop email, then make it survive
@@ -12659,10 +12964,22 @@ async function run() {
   // body colors, the dark-mode meta tags/media query kept as progressive
   // enhancement only, and the gold/deep-green CTA treatment.
   {
-    const emailTemplateSrc = fs.readFileSync(
-      path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'weeklyReleaseEmail.ts'),
-      'utf8'
-    );
+    // Round 64: most of the literal markup these checks look for (the
+    // header/CTA image tags, the @font-face block, the dark-mode media
+    // query, the footer, the color constants) moved out of
+    // weeklyReleaseEmail.ts into the new shared _shared/emailLayout.ts, so
+    // the new member's own welcome email could reuse it byte-for-byte
+    // instead of a second, driftable copy -- verified directly (see
+    // AGENTS.md) that weeklyReleaseEmail.ts's own rendered OUTPUT is
+    // unchanged by that extraction. These checks read the concatenation of
+    // both files -- "the real committed source that produces the Sunday
+    // Drop" is now split across two files, not one, but every check below
+    // is still asking "does this literal text/pattern exist in the real
+    // code," which concatenation answers identically to before.
+    const emailTemplateSrc =
+      fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'emailLayout.ts'), 'utf8') +
+      '\n' +
+      fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'weeklyReleaseEmail.ts'), 'utf8');
 
     // [email/brand/header-image] Round 58: the entire green-band/badge-img/
     // eyebrow/headline HTML block is replaced by one <img> referencing the
@@ -13018,10 +13335,10 @@ async function run() {
     // rather than just trusted from the comment saying so.
     const linksSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'links.ts'), 'utf8');
     const appShareUrlMatch = linksSrc.match(/export const APP_SHARE_URL = '([^']+)'/);
-    const emailTemplateSrc = fs.readFileSync(
-      path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'weeklyReleaseEmail.ts'),
-      'utf8'
-    );
+    // Round 64: APP_URL's own definition moved from weeklyReleaseEmail.ts
+    // into the new shared _shared/emailLayout.ts (reused byte-for-byte by
+    // the welcome email too) -- read from its real, current home.
+    const emailTemplateSrc = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'emailLayout.ts'), 'utf8');
     const emailAppUrlMatch = emailTemplateSrc.match(/const APP_URL = '([^']+)'/);
     record(
       '[email/open-the-app-link/url-matches-app-share-url] the email template\'s own APP_URL is byte-identical to src/lib/links.ts\'s APP_SHARE_URL, kept in sync by hand across the Deno/React-Native boundary',
