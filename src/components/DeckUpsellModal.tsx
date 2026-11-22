@@ -3,7 +3,14 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from './AppModal';
 import { ExternalLinkPressable } from './ExternalLinkPressable';
-import { DECK_STORE_URL } from '../lib/links';
+import { useMembership } from '../context/MembershipContext';
+import {
+  DECK_FREE_TIER_NOTE,
+  DECK_MEMBER_NOTE,
+  DECK_MEMBER_PRICE,
+  DECK_REGULAR_PRICE,
+  deckStoreUrl,
+} from '../data/deckPricing';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -12,6 +19,7 @@ type Props = {
 };
 
 export function DeckUpsellModal({ visible, onDismiss }: Props) {
+  const { fullContentAccess } = useMembership();
   return (
     <AppModal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
       <Pressable style={styles.backdrop} onPress={onDismiss}>
@@ -23,9 +31,29 @@ export function DeckUpsellModal({ visible, onDismiss }: Props) {
             <Ionicons name="albums" size={30} color={colors.gold} />
           </View>
           <Text style={styles.headline}>WANT THE{'\n'}REAL THING?</Text>
-          <Text style={styles.subtext}>The physical Deck of WODs — 54 cards, $52.</Text>
+          <Text style={styles.subtext}>The physical Deck of WODs — 54 cards.</Text>
 
-          <ExternalLinkPressable href={DECK_STORE_URL} style={styles.getButton} onPress={onDismiss} testID="deck-upsell-get">
+          {/* Round 65 Part 4: a standing member price, not a sale. */}
+          <View style={styles.priceRow} testID="deck-price-row">
+            <Text style={styles.price} testID="deck-price-value">
+              {fullContentAccess ? DECK_MEMBER_PRICE : DECK_REGULAR_PRICE}
+            </Text>
+            {fullContentAccess && (
+              <Text style={styles.struckPrice} testID="deck-struck-price">
+                {DECK_REGULAR_PRICE}
+              </Text>
+            )}
+          </View>
+          <Text style={styles.priceNote} testID="deck-price-note">
+            {fullContentAccess ? DECK_MEMBER_NOTE : DECK_FREE_TIER_NOTE}
+          </Text>
+
+          <ExternalLinkPressable
+            href={deckStoreUrl(fullContentAccess)}
+            style={styles.getButton}
+            onPress={onDismiss}
+            testID="deck-upsell-get"
+          >
             <Text style={styles.getButtonText}>GET THE DECK</Text>
           </ExternalLinkPressable>
 
@@ -86,6 +114,30 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: 'center',
     marginTop: 10,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginTop: 14,
+  },
+  price: {
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 26,
+    letterSpacing: 0.5,
+  },
+  struckPrice: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 17,
+    textDecorationLine: 'line-through',
+  },
+  priceNote: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    marginTop: 4,
     marginBottom: 22,
   },
   getButton: {

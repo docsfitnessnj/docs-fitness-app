@@ -957,6 +957,71 @@ function auditTwelveHourClock(record) {
   );
 }
 
+// Round 65: the money round's own static sweep, same "grep the real built
+// output" technique auditTwelveHourClock() already established -- a plain
+// text search across every shipped .js chunk for any OLD price string this
+// round was supposed to retire. Deliberately narrow and exact (never a bare
+// "$37", which the deck's own NEW member price legitimately uses) -- each
+// forbidden string below pairs an old dollar amount with enough of its own
+// surrounding context (a cadence suffix, a savings line) that it can only
+// ever match the stale copy this round replaced, never the deck's own
+// unrelated $37/$52.
+function auditStalePrices(record) {
+  if (!fs.existsSync(DIST_DIR)) {
+    record('[audit] production build output exists for the stale-price sweep', false, 'run `npx expo export -p web` first');
+    return;
+  }
+  let bundleText = '';
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/\.js$/.test(entry.name)) continue;
+      bundleText += fs.readFileSync(full, 'utf8');
+    }
+  }
+  walk(DIST_DIR);
+
+  const FORBIDDEN_STALE_PRICE_STRINGS = [
+    '$57', // old MONTHLY (ONLINE)
+    '$513', // old ANNUAL (ONLINE)
+    'Save $171', // old annual savings line
+    '$130', // old Monthly Unlimited (in person)
+    '$250', // old 10 Class Pack (in person)
+  ];
+  const foundStale = FORBIDDEN_STALE_PRICE_STRINGS.filter((s) => bundleText.includes(s));
+  record(
+    'built output: no remaining instance of the old online/in-person prices ($57/$513/old savings line/$130/$250) anywhere member facing',
+    foundStale.length === 0,
+    foundStale.length ? JSON.stringify(foundStale) : 'none found'
+  );
+
+  // The old $30 drop-in price is narrower -- "$30" alone would collide with
+  // plenty of unrelated numbers in a 390px-viewport-sized bundle (ids,
+  // pixel values). Every real old mention of it was always paired with
+  // "drop in"/"drop-in" wording nearby; the real, current copy never pairs
+  // $30 with that phrase at all (it's $25 everywhere now), so this
+  // contextual pattern can only ever match if the stale copy reappeared.
+  const oldDropInPattern = /\$30[^0-9][\s\S]{0,40}drop.?in|drop.?in[\s\S]{0,40}\$30[^0-9]/i;
+  const foundOldDropIn = oldDropInPattern.test(bundleText);
+  record(
+    'built output: no remaining "$30" drop-in price anywhere near drop-in copy (the real, current price is $25)',
+    !foundOldDropIn,
+    foundOldDropIn ? 'matched old $30-near-drop-in pattern' : 'not found'
+  );
+
+  const REQUIRED_NEW_PRICE_STRINGS = ['$27', '$243', 'Save $81', '$120', '$200', '$25', '$37', '$52'];
+  const missingNew = REQUIRED_NEW_PRICE_STRINGS.filter((s) => !bundleText.includes(s));
+  record(
+    'built output: the new online/in-person/deck prices ($27/$243/$81 savings/$120/$200/$25/$37/$52) all actually shipped',
+    missingNew.length === 0,
+    missingNew.length ? JSON.stringify(missingNew) : 'all present'
+  );
+}
+
 // Round 11's own audit: the viewport lock. Static, like the env() audit
 // above -- the viewport meta and the gesturestart/change/end handlers are
 // both plain, uncompiled text straight out of public/index.html's own
@@ -1796,6 +1861,7 @@ async function run() {
 
   auditBuiltOutputEnvConsumers(record);
   auditTwelveHourClock(record);
+  auditStalePrices(record);
   auditViewportLock(record);
 
   const VIEWPORT = { width: 390, height: 844 };
@@ -4745,7 +4811,7 @@ async function run() {
       const foundingSpotsVisible = await page.getByTestId('founding-fifty-spots-left').isVisible().catch(() => false);
       const foundingDeadlineVisible = await page.getByTestId('founding-fifty-deadline').isVisible().catch(() => false);
       const foundingPriceVisible = await page
-        .getByText('$37', { exact: false })
+        .getByText('$17', { exact: false })
         .first()
         .isVisible()
         .catch(() => false);
@@ -4838,7 +4904,7 @@ async function run() {
     }
   }
 
-  // Server-side enforcement: a stale/forged client can never get the $37
+  // Server-side enforcement: a stale/forged client can never get the $17
   // founding rate while the switch is off, regardless of what the saved
   // dates say. The Edge Function runs in Deno, outside this Playwright
   // harness's reach (same category of gap as every other "can't exercise
@@ -4854,10 +4920,232 @@ async function run() {
       edgeFnSrc
     );
     record(
-      '[founding-50/edge-function] create-checkout re-fetches and gates on the enabled switch before ever granting the $37 founding price',
+      '[founding-50/edge-function] create-checkout re-fetches and gates on the enabled switch before ever granting the $17 founding price',
       selectsEnabled && gatesOnEnabled,
       JSON.stringify({ selectsEnabled, gatesOnEnabled })
     );
+  }
+
+  // ===========================================================================
+  // Round 65: THE MONEY ROUND -- new pricing wired everywhere, promo codes,
+  // admin pack grants, and the deck member price button.
+  //
+  // [pricing/create-checkout-static]: the Deno runtime can't be driven from
+  // this harness (same category of gap as every other "can't exercise the
+  // real server runtime from here" case in this file) -- a static source
+  // check, confirming the real three new sandbox price ids and
+  // allow_promotion_codes: true at both the one-time-plan and the
+  // subscription Checkout session creation call sites, and that none of
+  // the three old archived price ids remain anywhere in the function.
+  // ---------------------------------------------------------------------------
+  {
+    const edgeFnSrc = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'prices.ts'), 'utf8');
+    const hasNewFounding = edgeFnSrc.includes('price_1UedmiK8jMUFAOQwly37MNdO');
+    const hasNewMonthly = edgeFnSrc.includes('price_1Uedm0K8jMUFAOQwzlS0OApi');
+    const hasNewAnnual = edgeFnSrc.includes('price_1UedkLK8jMUFAOQwpLT3l6k1');
+    const oldIds = ['price_1UIsagK8jMUFAOQw3ZS1IXVO', 'price_1UIseoK8jMUFAOQwWbIfi2pU', 'price_1UIsfbK8jMUFAOQwQ2t9RMs8'];
+    const noOldIds = oldIds.every((id) => !edgeFnSrc.includes(id));
+    record(
+      '[pricing/create-checkout-static] _shared/prices.ts carries exactly the three new sandbox price ids, none of the old archived ones',
+      hasNewFounding && hasNewMonthly && hasNewAnnual && noOldIds,
+      JSON.stringify({ hasNewFounding, hasNewMonthly, hasNewAnnual, noOldIds })
+    );
+
+    const checkoutSrc = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'create-checkout', 'index.ts'), 'utf8');
+    const promoCodeOccurrences = (checkoutSrc.match(/allow_promotion_codes:\s*true/g) || []).length;
+    const noFalsePromoCode = !checkoutSrc.includes('allow_promotion_codes: false');
+    record(
+      '[pricing/create-checkout-static] allow_promotion_codes: true at both Checkout session creation sites (one-time plans and subscriptions), never false',
+      promoCodeOccurrences === 2 && noFalsePromoCode,
+      JSON.stringify({ promoCodeOccurrences, noFalsePromoCode })
+    );
+  }
+
+  // [pricing/memberships-free-tier]: a free account (no subscription, no
+  // active class pack -- tier 'online_free') sees the new online prices and
+  // the already-correct in-person prices, all read live off the shared
+  // plans.ts/FoundingFiftyContext.tsx constants.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR65pricing = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR65pricing) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByText('MEMBERSHIPS', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const has27 = await page.getByText('$27', { exact: false }).first().isVisible().catch(() => false);
+    const has243 = await page.getByText('$243', { exact: false }).first().isVisible().catch(() => false);
+    const hasSave81 = await page.getByText('Save $81 a year vs monthly.', { exact: false }).first().isVisible().catch(() => false);
+    const has120 = await page.getByText('$120', { exact: false }).first().isVisible().catch(() => false);
+    const has200 = await page.getByText('$200', { exact: false }).first().isVisible().catch(() => false);
+    const has25 = await page.getByText('$25', { exact: false }).first().isVisible().catch(() => false);
+    record(
+      '[pricing/memberships-free-tier] Memberships shows $27 monthly, $243 annual with Save $81, and the correct $120/$200/$25 in-person prices',
+      has27 && has243 && hasSave81 && has120 && has200 && has25,
+      JSON.stringify({ has27, has243, hasSave81, has120, has200, has25 })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'memberships-free-tier-pricing.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [pricing/about-founding-live]: the logged-out About page's own founding
+  // door, under a forced-live launch window, shows $17 with $27 struck --
+  // the founding strikethrough treatment correctly updated from
+  // $37-struck-$57 to $17-struck-$27.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/rpc/founding_fifty_public_status*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ starts_at: FOUNDING_WINDOW_LIVE_DATES.starts_at, ends_at: FOUNDING_WINDOW_LIVE_DATES.ends_at, claimed_count: 3, enabled: true }),
+      })
+    );
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const price17Visible = await page.getByText('$17', { exact: false }).first().isVisible().catch(() => false);
+    const struck27Visible = await page.getByText('$27', { exact: false }).first().isVisible().catch(() => false);
+    record(
+      '[pricing/about-founding-live] the About page founding door shows $17 with $27 struck, under a forced-live launch window',
+      price17Visible && struck27Visible,
+      JSON.stringify({ price17Visible, struck27Visible })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-founding-17.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [deck-pricing/*]: the four GET THE DECK / GET THE PHYSICAL DECK entry
+  // points (Deck screen, the deck upsell popup, and the two Joker-
+  // verification entry points found by this round's own sweep) all read
+  // the same shared src/data/deckPricing.ts constants, so one set of
+  // behavioral checks against the Deck screen and the upsell popup covers
+  // the mechanism, plus one direct check each on the other two entry
+  // points to confirm they were actually wired, not just the two the brief
+  // named explicitly.
+  {
+    // Full-content-access tier: member price, struck regular, the quiet
+    // note, and the MEMBERPRICE discount link.
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID); // default subscription: active monthly -> fullContentAccess true
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR65deck = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR65deck) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: 'THE DECK' }).first().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const deckPriceText = await page.getByTestId('deck-price-value').innerText().catch(() => '');
+    const deckStruckText = await page.getByTestId('deck-struck-price').innerText().catch(() => '');
+    const deckNoteText = await page.getByTestId('deck-price-note').innerText().catch(() => '');
+    const deckHref = await page.getByTestId('get-physical-deck-button').getAttribute('href').catch(() => null);
+    record(
+      '[deck-pricing/deck-screen-member] full access shows $37 with $52 struck, the member note, and the MEMBERPRICE link',
+      deckPriceText === '$37' &&
+        deckStruckText === '$52' &&
+        deckNoteText === 'Members get the deck for $15 off.' &&
+        deckHref === 'https://docs-fitness-merch.myshopify.com/discount/MEMBERPRICE?redirect=/products/doc-s-deck-of-wods',
+      JSON.stringify({ deckPriceText, deckStruckText, deckNoteText, deckHref })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-screen-member-price.png') }).catch(() => {});
+
+    // The deck upsell popup itself (DeckUpsellModal, "WANT THE REAL
+    // THING?") only ever fires on a genuine first-ever deck completion --
+    // reusing the existing [structured-log/deck-log-results] completion
+    // flow for the real assertion (see [deck-pricing/upsell-popup] there)
+    // rather than forcing a second completion here just to pop it again.
+    await context.close();
+  }
+  {
+    // Free/booking-only tier: regular price, the upsell note, plain URL.
+    // Reached via Trophy Case's own Joker verification block, not the Deck
+    // screen's own button -- DeckScreen.tsx wraps its content in
+    // MembershipGate (confirmed directly by reading the code), so a free/
+    // booking-only tier never mounts the Deck screen's own button at all;
+    // Trophy Case carries no such gate and is reachable by every signed-in
+    // tier, which is exactly why it's the one real entry point this tier
+    // can actually see the free-tier treatment on.
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR65deckFree = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR65deckFree) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-trophy-case').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const deckPriceTextFree = await page.getByTestId('deck-price-value').innerText().catch(() => '');
+    const noStruckPrice = !(await page.getByTestId('deck-struck-price').isVisible().catch(() => false));
+    const deckNoteTextFree = await page.getByTestId('deck-price-note').innerText().catch(() => '');
+    const deckHrefFree = await page.getByTestId('get-the-deck-button').getAttribute('href').catch(() => null);
+    record(
+      '[deck-pricing/trophy-case-free] a free/booking-only tier shows the regular $52, "Members pay $37.", and the plain product URL (no discount)',
+      deckPriceTextFree === '$52' &&
+        noStruckPrice &&
+        deckNoteTextFree === 'Members pay $37.' &&
+        deckHrefFree === 'https://docs-fitness-merch.myshopify.com/products/doc-s-deck-of-wods',
+      JSON.stringify({ deckPriceTextFree, noStruckPrice, deckNoteTextFree, deckHrefFree })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-joker-free-price.png') }).catch(() => {});
+    await context.close();
+  }
+  {
+    // The two Joker-verification entry points (Trophy Case and Badge
+    // Detail, reached from the Profile grid) -- found by this round's own
+    // sweep, not named directly in the brief, so each gets its own direct
+    // proof that the tier-aware link/price treatment was actually wired in,
+    // not assumed from the Deck screen/upsell popup alone.
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID); // default: fullContentAccess true
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR65joker = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR65joker) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-trophy-case').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const trophyDeckHref = await page.getByTestId('get-the-deck-button').getAttribute('href').catch(() => null);
+    const trophyPriceText = await page.getByTestId('deck-price-value').innerText().catch(() => '');
+    record(
+      '[deck-pricing/trophy-case-joker] the Joker verification block (Trophy Case) shows the member price and the MEMBERPRICE link too',
+      trophyPriceText === '$37' && trophyDeckHref === 'https://docs-fitness-merch.myshopify.com/discount/MEMBERPRICE?redirect=/products/doc-s-deck-of-wods',
+      JSON.stringify({ trophyPriceText, trophyDeckHref })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-joker-price.png') }).catch(() => {});
+    await context.close();
   }
 
   // --- Round 23: 12-hour clock everywhere. The static grep in
@@ -8672,10 +8960,30 @@ async function run() {
     // ("WANT THE REAL THING?") shows on exactly that transition
     // (DeckScreen.tsx's own completedCount > prevCompletedCount.current &&
     // shouldOfferUpsell) and, left undismissed, sits on top of and
-    // intercepts clicks meant for LogResultsModal underneath it.
-    if (await page.getByTestId('deck-upsell-dismiss').isVisible().catch(() => false)) {
+    // intercepts clicks meant for LogResultsModal underneath it. Round 65:
+    // this is the one real place the popup fires on its own in this suite,
+    // so it's also where the popup's own member-price treatment gets
+    // checked -- this account is full access (it reached the Deck tab at
+    // all, which MembershipGate only allows for fullContentAccess).
+    const upsellVisibleForPricing = await page.getByTestId('deck-upsell-dismiss').isVisible().catch(() => false);
+    if (upsellVisibleForPricing) {
+      const upsellPrice = await page.getByTestId('deck-price-value').innerText().catch(() => '');
+      const upsellStruck = await page.getByTestId('deck-struck-price').innerText().catch(() => '');
+      const upsellNote = await page.getByTestId('deck-price-note').innerText().catch(() => '');
+      const upsellHref = await page.getByTestId('deck-upsell-get').getAttribute('href').catch(() => null);
+      record(
+        '[deck-pricing/upsell-popup] the deck upsell popup shows $37 struck $52, the member note, and the MEMBERPRICE link for a full-access tier',
+        upsellPrice === '$37' &&
+          upsellStruck === '$52' &&
+          upsellNote === 'Members get the deck for $15 off.' &&
+          upsellHref === 'https://docs-fitness-merch.myshopify.com/discount/MEMBERPRICE?redirect=/products/doc-s-deck-of-wods',
+        JSON.stringify({ upsellPrice, upsellStruck, upsellNote, upsellHref })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-upsell-popup-member-price.png') }).catch(() => {});
       await page.getByTestId('deck-upsell-dismiss').click({ timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(300);
+    } else {
+      record('[deck-pricing/upsell-popup] the deck upsell popup fired on this first-ever completion, so its price treatment could be checked', false, 'popup never appeared');
     }
     await page.getByTestId('close-log-results').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(300);
@@ -10177,6 +10485,196 @@ async function run() {
       JSON.stringify({ savedVisible, legacyCount })
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'member-manager-legacy-starting-count.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // ===========================================================================
+  // Round 65 Part 3.2: admin-only starting class-pack balance, for
+  // migrating existing Somble members.
+  //
+  // [member-manager/pack-credits-field]/[-save]: the identical round-trip
+  // pattern as legacy-starting-count directly above, just against the new
+  // admin_grant_class_pack_credits RPC (migration_035) instead of a plain
+  // profiles PATCH -- captured and served back by the mocked
+  // admin_list_members RPC's own pack_credits_remaining column.
+  // ---------------------------------------------------------------------------
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    let grantedCredits = 0;
+    let grantedUserId = null;
+    await page.route('**/rest/v1/profiles*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'PATCH') return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Admin',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: true,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+          },
+        ]),
+      });
+    });
+    await page.route('**/rest/v1/rpc/admin_grant_class_pack_credits*', (route) => {
+      const body = route.request().postDataJSON() || {};
+      grantedUserId = body.p_user_id;
+      grantedCredits = body.p_credits;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ credits_remaining: grantedCredits, expires_at: new Date(Date.now() + 365 * 86400000).toISOString() }]),
+      });
+    });
+    await page.route('**/rest/v1/rpc/admin_list_members*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'r65-somble-member',
+            display_name: 'Somble Migrated',
+            email: 'somble-migrated@example.com',
+            how_train: 'boathouse',
+            in_person_plan: null,
+            is_admin: false,
+            created_at: new Date(Date.now() - 200 * 86400000).toISOString(),
+            founding_member: false,
+            sub_status: null,
+            sub_plan: null,
+            sub_current_period_end: null,
+            sub_trial_end: null,
+            sub_cancel_at_period_end: null,
+            group_chat_muted: false,
+            legacy_starting_count: 0,
+            pack_credits_remaining: grantedCredits,
+          },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR65a = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR65a) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-member-manager').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('member-row-Somble Migrated').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    const packInputVisible = await page.getByTestId('pack-credits-input').isVisible().catch(() => false);
+    const packPrefill = await page.getByTestId('pack-credits-input').inputValue().catch(() => '');
+    record(
+      '[member-manager/pack-credits-field] the editable field is visible and prefills the real saved value (0)',
+      packInputVisible && packPrefill === '0',
+      JSON.stringify({ packInputVisible, packPrefill })
+    );
+
+    await page.getByTestId('pack-credits-input').fill('8');
+    await page.getByTestId('save-pack-credits').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const packSavedVisible = await page.getByTestId('save-confirmation-saved').isVisible().catch(() => false);
+    record(
+      '[member-manager/pack-credits-save] saving calls the real admin-gated RPC for exactly this member with 8 credits, shows SAVED',
+      packSavedVisible && grantedCredits === 8 && grantedUserId === 'r65-somble-member',
+      JSON.stringify({ packSavedVisible, grantedCredits, grantedUserId })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'member-manager-pack-credits.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [booking/admin-granted-pack-member-view]: the member's own view of an
+  // admin-granted balance -- a plain class_packs row (no
+  // stripe_checkout_session_id field even reaches the client; ClassPackContext
+  // never reads one) -- renders on Memberships EXACTLY like a real
+  // purchased pack ("YOUR PACK" tag, "X classes left"), and a real booking
+  // through it spends and a real cancel refunds, the identical
+  // registerClassBookingMocks mechanism the pre-existing
+  // [booking/cancel-refund] check already proves for a Stripe-purchased
+  // pack -- proving the two are genuinely indistinguishable client-side.
+  // Deliberately keeps setupMocks' own default subscription (same as
+  // [booking/cancel-refund]) rather than forcing subscriptions to [] --
+  // the per-class-day-panel booking UI (sign-up-mwf-530a et al) only
+  // renders for a fullContentAccess tier; a booking-only tier (what forcing
+  // subscriptions:[] would produce, alongside an active pack) instead shows
+  // StatusBanner's own simplified "YOU'RE DOCKSIDE" card, a genuinely
+  // different UI this check isn't about -- confirmed directly via a
+  // standalone repro before trusting it, not assumed from the symptom
+  // (an unmoving credit count) alone. "YOUR PACK"/"ten-pack-classes-left"
+  // on Memberships are gated only on hasActivePack, not on fullContentAccess,
+  // so the first half of this check is unaffected either way.
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({ id: 'sess-r65-pack', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 10, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
+    ]);
+    bookingState.packCreditsRemaining = 6;
+
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByText('MEMBERSHIPS', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const yourPackTagVisible = await page.getByTestId('your-pack-tag').isVisible().catch(() => false);
+    const classesLeftText = await page.getByTestId('ten-pack-classes-left').innerText().catch(() => '');
+    record(
+      '[booking/admin-granted-pack-member-view] an admin-granted balance renders on Memberships exactly like a purchased pack (YOUR PACK, real count)',
+      yourPackTagVisible && classesLeftText.includes('6'),
+      JSON.stringify({ yourPackTagVisible, classesLeftText })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'memberships-admin-granted-pack.png') }).catch(() => {});
+
+    // MEMBERSHIPS is opened NESTED under the still-open hamburger drawer
+    // (SidebarDrawer.tsx's own openNested() convention, same gotcha
+    // documented at readMyWorkoutsPbTag() above) -- closing it alone
+    // leaves the drawer itself open and covering the screen, so the next
+    // date-strip-cell click silently lands on PROFILE (the drawer's own
+    // menu row) instead. Root-caused directly via a standalone debug
+    // script, not assumed from the symptom (packCreditsRemaining never
+    // moving) alone.
+    await page.getByTestId('close-memberships').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('close-sidebar').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sign-up-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('OK', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    record(
+      '[booking/admin-granted-pack-spends-credit] booking against the admin-granted balance spends exactly one credit',
+      bookingState.packCreditsRemaining === 5,
+      JSON.stringify({ packCreditsRemaining: bookingState.packCreditsRemaining })
+    );
+    await page.getByTestId('cancel-class-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('Cancel Class', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    record(
+      '[booking/admin-granted-pack-refunds-credit] cancelling refunds the exact credit back to the admin-granted balance',
+      bookingState.packCreditsRemaining === 6,
+      JSON.stringify({ packCreditsRemaining: bookingState.packCreditsRemaining })
+    );
     await context.close();
   }
 

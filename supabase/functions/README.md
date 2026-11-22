@@ -16,7 +16,10 @@ in the browser.
   send a raw Stripe price id either — only a plan name, which this
   function maps to the real price itself. Drop In / Downbeach Pilates also
   require a `classSessionId`, carried through in the Checkout Session's own
-  metadata so the webhook can book the exact right class.
+  metadata so the webhook can book the exact right class. Round 65:
+  `allow_promotion_codes: true` on every Checkout session it creates — Doc
+  creates the actual promotion codes himself in the Stripe dashboard
+  (Products -> Coupons / Promotion codes); there is no in-app promo UI.
 - `stripe-webhook` — Stripe calls this directly (not the app). Verifies the
   request's signature, then writes the real truth about a member's
   subscription (`subscriptions` table) or one-time in-person purchase

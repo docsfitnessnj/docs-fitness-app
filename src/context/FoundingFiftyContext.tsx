@@ -4,7 +4,12 @@ import { etWallTimeToUTC } from '../lib/challengeSchedule';
 import { isBackendUnavailableError, supabase } from '../lib/supabaseClient';
 
 export const FOUNDING_FIFTY_CAPACITY = 50;
-export const FOUNDING_FIFTY_PRICE = 37;
+// Round 65: repriced from $37 to $17/month -- final, authoritative. The
+// online standard rate (plans.ts's own ONLINE_PLANS monthly entry) was
+// repriced in the same round, from $57 to $27 -- the founding strikethrough
+// (MembershipsScreen/PricingScreen/AboutScreen) always reads both of these
+// live, so this one constant change is the whole fix for every surface.
+export const FOUNDING_FIFTY_PRICE = 17;
 
 export type FoundingFiftyMember = {
   name: string;

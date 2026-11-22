@@ -5,7 +5,13 @@ import { BackendErrorNotice } from '../components/BackendErrorNotice';
 import { BadgeIcon } from '../components/icons/BadgeIcon';
 import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { BADGE_MAP, BadgeId, MEMBERSHIP_DISPLAY_ORDER, permanentDisplayOrder, WEEKLY_DISPLAY_ORDER } from '../data/badges';
-import { DECK_STORE_URL } from '../lib/links';
+import {
+  DECK_FREE_TIER_NOTE,
+  DECK_MEMBER_NOTE,
+  DECK_MEMBER_PRICE,
+  DECK_REGULAR_PRICE,
+  deckStoreUrl,
+} from '../data/deckPricing';
 import { HUNDRED_DOWN_TARGET, useBadges } from '../context/BadgeContext';
 import { useFoundingFifty } from '../context/FoundingFiftyContext';
 import { useMembership } from '../context/MembershipContext';
@@ -29,7 +35,7 @@ function formatEarnedDate(ts: number): string {
 export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
   const badges = useBadges();
   const founding50 = useFoundingFifty();
-  const { isAdmin } = useMembership();
+  const { isAdmin, fullContentAccess } = useMembership();
   const displayName = useDisplayName();
   const earnedSet = new Set(badges.myBadgeIds);
 
@@ -117,14 +123,36 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
         </View>
 
         {id === 'joker' && (
-          <View style={styles.jokerButtonRow}>
-            <Pressable style={styles.verifyButton} onPress={onVerifyJoker} testID="verify-ownership-button">
-              <Text style={styles.verifyButtonText}>VERIFY OWNERSHIP</Text>
-            </Pressable>
-            <ExternalLinkPressable href={DECK_STORE_URL} style={styles.getDeckButton} testID="get-the-deck-button">
-              <Text style={styles.getDeckButtonText}>GET THE DECK</Text>
-            </ExternalLinkPressable>
-          </View>
+          <>
+            {/* Round 65 Part 4: a standing member price, not a sale. */}
+            <View style={styles.jokerDeckPriceBlock}>
+              <View style={styles.jokerDeckPriceRow} testID="deck-price-row">
+                <Text style={styles.jokerDeckPrice} testID="deck-price-value">
+                  {fullContentAccess ? DECK_MEMBER_PRICE : DECK_REGULAR_PRICE}
+                </Text>
+                {fullContentAccess && (
+                  <Text style={styles.jokerDeckStruckPrice} testID="deck-struck-price">
+                    {DECK_REGULAR_PRICE}
+                  </Text>
+                )}
+              </View>
+              <Text style={styles.jokerDeckPriceNote} testID="deck-price-note">
+                {fullContentAccess ? DECK_MEMBER_NOTE : DECK_FREE_TIER_NOTE}
+              </Text>
+            </View>
+            <View style={styles.jokerButtonRow}>
+              <Pressable style={styles.verifyButton} onPress={onVerifyJoker} testID="verify-ownership-button">
+                <Text style={styles.verifyButtonText}>VERIFY OWNERSHIP</Text>
+              </Pressable>
+              <ExternalLinkPressable
+                href={deckStoreUrl(fullContentAccess)}
+                style={styles.getDeckButton}
+                testID="get-the-deck-button"
+              >
+                <Text style={styles.getDeckButtonText}>GET THE DECK</Text>
+              </ExternalLinkPressable>
+            </View>
+          </>
         )}
       </View>
     );
@@ -247,13 +275,39 @@ const styles = StyleSheet.create({
   cardStatusEarned: {
     color: colors.gold,
   },
-  jokerButtonRow: {
-    flexDirection: 'row',
-    gap: 10,
+  jokerDeckPriceBlock: {
     marginTop: 14,
     paddingTop: 14,
     borderTopWidth: 1,
     borderTopColor: colors.hairline,
+  },
+  jokerDeckPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+  },
+  jokerDeckPrice: {
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 20,
+    letterSpacing: 0.5,
+  },
+  jokerDeckStruckPrice: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+    textDecorationLine: 'line-through',
+  },
+  jokerDeckPriceNote: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  jokerButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
   },
   verifyButton: {
     flex: 1,
