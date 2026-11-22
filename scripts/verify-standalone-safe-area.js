@@ -5055,6 +5055,7 @@ async function run() {
     const deckPriceText = await page.getByTestId('deck-price-value').innerText().catch(() => '');
     const deckStruckText = await page.getByTestId('deck-struck-price').innerText().catch(() => '');
     const deckNoteText = await page.getByTestId('deck-price-note').innerText().catch(() => '');
+    const deckCheckoutNoteText = await page.getByTestId('deck-price-checkout-note').innerText().catch(() => '');
     const deckHref = await page.getByTestId('get-physical-deck-button').getAttribute('href').catch(() => null);
     record(
       '[deck-pricing/deck-screen-member] full access shows $37 with $52 struck, the member note, and the MEMBERPRICE link',
@@ -5063,6 +5064,16 @@ async function run() {
         deckNoteText === 'Members get the deck for $15 off.' &&
         deckHref === 'https://docs-fitness-merch.myshopify.com/discount/MEMBERPRICE?redirect=/products/doc-s-deck-of-wods',
       JSON.stringify({ deckPriceText, deckStruckText, deckNoteText, deckHref })
+    );
+    // Round 65 follow-up: real device testing showed Shopify's own product
+    // page still displays $52 (correct and unavoidable -- the discount
+    // applies at checkout, not on the page itself), which read like the
+    // discount was missing. This second quiet line, member tiers only,
+    // heads that off -- owner's own exact wording.
+    record(
+      '[deck-pricing/deck-screen-member] the checkout-applies-automatically line sits directly beneath the member note',
+      deckCheckoutNoteText === 'Your $15 member discount applies automatically at checkout.',
+      JSON.stringify({ deckCheckoutNoteText })
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-screen-member-price.png') }).catch(() => {});
 
@@ -5103,6 +5114,7 @@ async function run() {
     const deckPriceTextFree = await page.getByTestId('deck-price-value').innerText().catch(() => '');
     const noStruckPrice = !(await page.getByTestId('deck-struck-price').isVisible().catch(() => false));
     const deckNoteTextFree = await page.getByTestId('deck-price-note').innerText().catch(() => '');
+    const noCheckoutNoteFree = !(await page.getByTestId('deck-price-checkout-note').isVisible().catch(() => false));
     const deckHrefFree = await page.getByTestId('get-the-deck-button').getAttribute('href').catch(() => null);
     record(
       '[deck-pricing/trophy-case-free] a free/booking-only tier shows the regular $52, "Members pay $37.", and the plain product URL (no discount)',
@@ -5111,6 +5123,13 @@ async function run() {
         deckNoteTextFree === 'Members pay $37.' &&
         deckHrefFree === 'https://docs-fitness-merch.myshopify.com/products/doc-s-deck-of-wods',
       JSON.stringify({ deckPriceTextFree, noStruckPrice, deckNoteTextFree, deckHrefFree })
+    );
+    // Round 65 follow-up: the new checkout-note line is member-price only --
+    // free/booking tier copy is untouched, so it must never appear here.
+    record(
+      '[deck-pricing/trophy-case-free] the checkout-applies-automatically line never appears for a free/booking-only tier',
+      noCheckoutNoteFree,
+      JSON.stringify({ noCheckoutNoteFree })
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-joker-free-price.png') }).catch(() => {});
     await context.close();
@@ -5139,10 +5158,16 @@ async function run() {
 
     const trophyDeckHref = await page.getByTestId('get-the-deck-button').getAttribute('href').catch(() => null);
     const trophyPriceText = await page.getByTestId('deck-price-value').innerText().catch(() => '');
+    const trophyCheckoutNoteText = await page.getByTestId('deck-price-checkout-note').innerText().catch(() => '');
     record(
       '[deck-pricing/trophy-case-joker] the Joker verification block (Trophy Case) shows the member price and the MEMBERPRICE link too',
       trophyPriceText === '$37' && trophyDeckHref === 'https://docs-fitness-merch.myshopify.com/discount/MEMBERPRICE?redirect=/products/doc-s-deck-of-wods',
       JSON.stringify({ trophyPriceText, trophyDeckHref })
+    );
+    record(
+      '[deck-pricing/trophy-case-joker] the checkout-applies-automatically line sits directly beneath the member note here too',
+      trophyCheckoutNoteText === 'Your $15 member discount applies automatically at checkout.',
+      JSON.stringify({ trophyCheckoutNoteText })
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-joker-price.png') }).catch(() => {});
     await context.close();
@@ -8970,6 +8995,7 @@ async function run() {
       const upsellPrice = await page.getByTestId('deck-price-value').innerText().catch(() => '');
       const upsellStruck = await page.getByTestId('deck-struck-price').innerText().catch(() => '');
       const upsellNote = await page.getByTestId('deck-price-note').innerText().catch(() => '');
+      const upsellCheckoutNote = await page.getByTestId('deck-price-checkout-note').innerText().catch(() => '');
       const upsellHref = await page.getByTestId('deck-upsell-get').getAttribute('href').catch(() => null);
       record(
         '[deck-pricing/upsell-popup] the deck upsell popup shows $37 struck $52, the member note, and the MEMBERPRICE link for a full-access tier',
@@ -8978,6 +9004,11 @@ async function run() {
           upsellNote === 'Members get the deck for $15 off.' &&
           upsellHref === 'https://docs-fitness-merch.myshopify.com/discount/MEMBERPRICE?redirect=/products/doc-s-deck-of-wods',
         JSON.stringify({ upsellPrice, upsellStruck, upsellNote, upsellHref })
+      );
+      record(
+        '[deck-pricing/upsell-popup] the checkout-applies-automatically line sits directly beneath the member note in the popup too',
+        upsellCheckoutNote === 'Your $15 member discount applies automatically at checkout.',
+        JSON.stringify({ upsellCheckoutNote })
       );
       if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-upsell-popup-member-price.png') }).catch(() => {});
       await page.getByTestId('deck-upsell-dismiss').click({ timeout: 5000 }).catch(() => {});

@@ -6,6 +6,7 @@ import { ExternalLinkPressable } from './ExternalLinkPressable';
 import { BadgeId, BADGE_MAP } from '../data/badges';
 import {
   DECK_FREE_TIER_NOTE,
+  DECK_MEMBER_CHECKOUT_NOTE,
   DECK_MEMBER_NOTE,
   DECK_MEMBER_PRICE,
   DECK_REGULAR_PRICE,
@@ -69,9 +70,16 @@ export function BadgeDetailModal({ badgeId, earned, onClose, onVerifyJoker, lega
                   </Text>
                 )}
               </View>
-              <Text style={styles.priceNote} testID="deck-price-note">
-                {fullContentAccess ? DECK_MEMBER_NOTE : DECK_FREE_TIER_NOTE}
-              </Text>
+              <View style={styles.priceNoteGroup}>
+                <Text style={styles.priceNote} testID="deck-price-note">
+                  {fullContentAccess ? DECK_MEMBER_NOTE : DECK_FREE_TIER_NOTE}
+                </Text>
+                {fullContentAccess && (
+                  <Text style={styles.priceNote} testID="deck-price-checkout-note">
+                    {DECK_MEMBER_CHECKOUT_NOTE}
+                  </Text>
+                )}
+              </View>
               <ExternalLinkPressable
                 href={deckStoreUrl(fullContentAccess)}
                 style={styles.getDeckButton}
@@ -187,12 +195,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textDecorationLine: 'line-through',
   },
+  priceNoteGroup: {
+    marginBottom: 12,
+  },
   priceNote: {
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 12,
     textAlign: 'center',
-    marginBottom: 12,
   },
   getDeckButton: {
     width: '100%',

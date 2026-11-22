@@ -12,6 +12,7 @@ import { useMembership } from '../context/MembershipContext';
 import { DECK_CARDS, DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
 import {
   DECK_FREE_TIER_NOTE,
+  DECK_MEMBER_CHECKOUT_NOTE,
   DECK_MEMBER_NOTE,
   DECK_MEMBER_PRICE,
   DECK_REGULAR_PRICE,
@@ -129,6 +130,11 @@ function ShuffleArea({ onDeal }: { onDeal: (card: DeckCardData) => void }) {
       <Text style={styles.deckPriceNote} testID="deck-price-note">
         {fullContentAccess ? DECK_MEMBER_NOTE : DECK_FREE_TIER_NOTE}
       </Text>
+      {fullContentAccess && (
+        <Text style={styles.deckPriceNote} testID="deck-price-checkout-note">
+          {DECK_MEMBER_CHECKOUT_NOTE}
+        </Text>
+      )}
       <ExternalLinkPressable
         href={deckStoreUrl(fullContentAccess)}
         style={styles.physicalDeckButton}
