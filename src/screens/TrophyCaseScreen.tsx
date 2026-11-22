@@ -7,6 +7,7 @@ import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { BADGE_MAP, BadgeId, MEMBERSHIP_DISPLAY_ORDER, permanentDisplayOrder, WEEKLY_DISPLAY_ORDER } from '../data/badges';
 import {
   DECK_FREE_TIER_NOTE,
+  DECK_MEMBER_CHECKOUT_NOTE,
   DECK_MEMBER_NOTE,
   DECK_MEMBER_PRICE,
   DECK_REGULAR_PRICE,
@@ -139,6 +140,11 @@ export function TrophyCaseScreen({ visible, onClose, onVerifyJoker }: Props) {
               <Text style={styles.jokerDeckPriceNote} testID="deck-price-note">
                 {fullContentAccess ? DECK_MEMBER_NOTE : DECK_FREE_TIER_NOTE}
               </Text>
+              {fullContentAccess && (
+                <Text style={styles.jokerDeckPriceNote} testID="deck-price-checkout-note">
+                  {DECK_MEMBER_CHECKOUT_NOTE}
+                </Text>
+              )}
             </View>
             <View style={styles.jokerButtonRow}>
               <Pressable style={styles.verifyButton} onPress={onVerifyJoker} testID="verify-ownership-button">

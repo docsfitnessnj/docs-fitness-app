@@ -6,6 +6,7 @@ import { ExternalLinkPressable } from './ExternalLinkPressable';
 import { useMembership } from '../context/MembershipContext';
 import {
   DECK_FREE_TIER_NOTE,
+  DECK_MEMBER_CHECKOUT_NOTE,
   DECK_MEMBER_NOTE,
   DECK_MEMBER_PRICE,
   DECK_REGULAR_PRICE,
@@ -44,9 +45,16 @@ export function DeckUpsellModal({ visible, onDismiss }: Props) {
               </Text>
             )}
           </View>
-          <Text style={styles.priceNote} testID="deck-price-note">
-            {fullContentAccess ? DECK_MEMBER_NOTE : DECK_FREE_TIER_NOTE}
-          </Text>
+          <View style={styles.priceNoteGroup}>
+            <Text style={styles.priceNote} testID="deck-price-note">
+              {fullContentAccess ? DECK_MEMBER_NOTE : DECK_FREE_TIER_NOTE}
+            </Text>
+            {fullContentAccess && (
+              <Text style={[styles.priceNote, styles.priceNoteSecondLine]} testID="deck-price-checkout-note">
+                {DECK_MEMBER_CHECKOUT_NOTE}
+              </Text>
+            )}
+          </View>
 
           <ExternalLinkPressable
             href={deckStoreUrl(fullContentAccess)}
@@ -133,12 +141,19 @@ const styles = StyleSheet.create({
     fontSize: 17,
     textDecorationLine: 'line-through',
   },
+  priceNoteGroup: {
+    marginTop: 4,
+    marginBottom: 22,
+    alignItems: 'center',
+  },
   priceNote: {
     color: colors.textMuted,
     fontFamily: fonts.body,
     fontSize: 12,
-    marginTop: 4,
-    marginBottom: 22,
+    textAlign: 'center',
+  },
+  priceNoteSecondLine: {
+    marginTop: 2,
   },
   getButton: {
     backgroundColor: colors.green,

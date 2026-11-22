@@ -21,6 +21,15 @@ export const DECK_REGULAR_PRICE_URL = 'https://docs-fitness-merch.myshopify.com/
 export const DECK_MEMBER_NOTE = 'Members get the deck for $15 off.';
 export const DECK_FREE_TIER_NOTE = 'Members pay $37.';
 
+// Round 65 follow-up: real device testing showed the Shopify product page
+// itself still displays $52 (correct and unavoidable — the MEMBERPRICE
+// discount applies at checkout, via deckStoreUrl's own discount-code
+// redirect link, never on the product page itself), which read like the
+// discount was missing. This second line, member-price tiers only, directly
+// beneath DECK_MEMBER_NOTE at every entry point, heads that off. Owner's own
+// exact wording, final.
+export const DECK_MEMBER_CHECKOUT_NOTE = 'Your $15 member discount applies automatically at checkout.';
+
 // Which link a GET THE DECK button opens — the member-price discount link
 // for every full-content-access tier, the plain product page otherwise.
 export function deckStoreUrl(fullContentAccess: boolean): string {
