@@ -1801,6 +1801,54 @@ $$;
 
 grant execute on function public.refund_class_pack_credit() to authenticated;
 
+-- Round 65 (migration_035) — an admin-only starting balance, for migrating
+-- existing Somble members who still have classes left on their old packs.
+-- One admin-granted row per member, identified by
+-- `stripe_checkout_session_id is null` (a real Stripe purchase always
+-- carries a real session id) -- never ambiguous with a real purchased
+-- pack, and use_class_pack_credit()/refund_class_pack_credit() above
+-- already treat it exactly like one.
+create or replace function public.admin_grant_class_pack_credits(p_user_id uuid, p_credits integer)
+returns table (credits_remaining integer, expires_at timestamptz)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_pack_id uuid;
+  new_expires_at timestamptz := now() + interval '1 year';
+begin
+  if not public.is_admin(auth.uid()) then
+    raise exception 'FORBIDDEN';
+  end if;
+  if p_credits is null or p_credits < 0 then
+    raise exception 'Credits must be zero or more.';
+  end if;
+
+  select cp.id into target_pack_id
+  from public.class_packs cp
+  where cp.user_id = p_user_id
+    and cp.stripe_checkout_session_id is null;
+
+  if target_pack_id is null then
+    insert into public.class_packs (user_id, total_credits, credits_remaining, purchased_at, expires_at, stripe_checkout_session_id)
+    values (p_user_id, p_credits, p_credits, now(), new_expires_at, null)
+    returning id into target_pack_id;
+  else
+    update public.class_packs cp
+    set total_credits = p_credits, credits_remaining = p_credits, expires_at = new_expires_at
+    where cp.id = target_pack_id;
+  end if;
+
+  return query
+    select cp.credits_remaining, cp.expires_at
+    from public.class_packs cp
+    where cp.id = target_pack_id;
+end;
+$$;
+
+grant execute on function public.admin_grant_class_pack_credits(uuid, integer) to authenticated;
+
 -- ----------------------------------------------------------------------------
 -- IN_PERSON_PURCHASES (migration_019) — the webhook's confirmation record
 -- for a one-time in-person purchase (10 Class Pack or Drop In), keyed by
@@ -1853,7 +1901,13 @@ returns table (
   sub_trial_end timestamptz,
   sub_cancel_at_period_end boolean,
   group_chat_muted boolean,
-  legacy_starting_count integer
+  legacy_starting_count integer,
+  -- Round 65 (migration_035) -- the real balance on this member's own
+  -- admin-granted class-pack row (stripe_checkout_session_id is null),
+  -- 0 if they've never had one granted. Lets Member Manager's own input
+  -- field prefill with the real saved number, the same convention
+  -- legacy_starting_count already established.
+  pack_credits_remaining integer
 )
 language sql
 security definer
@@ -1875,11 +1929,17 @@ as $$
     s.trial_end,
     s.cancel_at_period_end,
     p.group_chat_muted,
-    p.legacy_starting_count
+    p.legacy_starting_count,
+    coalesce(gp.credits_remaining, 0) as pack_credits_remaining
   from public.profiles p
   join auth.users u on u.id = p.id
   left join public.founding_fifty_members f on f.id = p.id
   left join public.subscriptions s on s.user_id = p.id
+  left join (
+    select cp.user_id, cp.credits_remaining
+    from public.class_packs cp
+    where cp.stripe_checkout_session_id is null
+  ) gp on gp.user_id = p.id
   where public.is_admin(auth.uid())
   order by p.created_at asc;
 $$;

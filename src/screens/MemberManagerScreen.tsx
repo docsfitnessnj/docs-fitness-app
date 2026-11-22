@@ -48,23 +48,27 @@ function statusColor(kind: AdminMemberStatusKind): string {
 export function MemberManagerScreen({ visible, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<AdminMember | null>(null);
-  const { grouped, loading, error, setMemberMuted, setLegacyStartingCount } = useAdminMembers(visible);
+  const { grouped, loading, error, setMemberMuted, setLegacyStartingCount, setPackCredits } = useAdminMembers(visible);
   const badges = useBadges();
   const founding50 = useFoundingFifty();
   const jokerSaveConfirm = useSaveConfirmation();
   const muteSaveConfirm = useSaveConfirmation();
   const legacySaveConfirm = useSaveConfirmation();
+  const packSaveConfirm = useSaveConfirmation();
   const [legacyDraft, setLegacyDraft] = useState('');
+  const [packDraft, setPackDraft] = useState('');
 
   // A stale SAVED/error from a previous member shouldn't linger once Doc
-  // moves on to look at someone else, and the legacy count draft should
-  // start out showing this member's own real saved value, not whatever the
-  // previous member's field held.
+  // moves on to look at someone else, and the legacy count/pack balance
+  // drafts should start out showing this member's own real saved value,
+  // not whatever the previous member's field held.
   useEffect(() => {
     jokerSaveConfirm.reset();
     muteSaveConfirm.reset();
     legacySaveConfirm.reset();
+    packSaveConfirm.reset();
     setLegacyDraft(selected ? String(selected.legacyStartingCount) : '');
+    setPackDraft(selected ? String(selected.packCreditsRemaining) : '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
@@ -242,6 +246,50 @@ export function MemberManagerScreen({ visible, onClose }: Props) {
                 legacySaveConfirm.succeed();
               }}
               testID="save-legacy-starting-count"
+            >
+              <Text style={styles.grantButtonText}>SAVE</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.grantRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.grantTitle}>CLASS PACK BALANCE</Text>
+              <Text style={styles.grantSubtext}>
+                For migrating an existing Somble member — sets their real class-pack credits, a fresh 1-year expiry
+                from today, no payment attached. They book and cancel against it exactly like a purchased pack.
+              </Text>
+              <TextInput
+                style={styles.legacyInput}
+                value={packDraft}
+                onChangeText={setPackDraft}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={colors.textMuted}
+                testID="pack-credits-input"
+              />
+              <View style={styles.jokerSaveConfirmWrap}>
+                <SaveConfirmation state={packSaveConfirm.state} errorMessage={packSaveConfirm.errorMessage} />
+              </View>
+            </View>
+            <Pressable
+              style={styles.grantButton}
+              onPress={async () => {
+                const parsed = Math.max(0, Math.trunc(Number(packDraft)));
+                if (!Number.isFinite(parsed)) {
+                  packSaveConfirm.fail('Enter a whole number.');
+                  return;
+                }
+                packSaveConfirm.start();
+                const { error: packError } = await setPackCredits(selected.id, parsed);
+                if (packError) {
+                  packSaveConfirm.fail(packError);
+                  return;
+                }
+                setSelected((prev) => (prev ? { ...prev, packCreditsRemaining: parsed } : prev));
+                setPackDraft(String(parsed));
+                packSaveConfirm.succeed();
+              }}
+              testID="save-pack-credits"
             >
               <Text style={styles.grantButtonText}>SAVE</Text>
             </Pressable>

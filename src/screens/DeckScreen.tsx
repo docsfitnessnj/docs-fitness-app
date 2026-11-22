@@ -8,9 +8,16 @@ import { DeckUpsellModal } from '../components/DeckUpsellModal';
 import { CardBack } from '../components/CardBack';
 import { ExternalLinkPressable } from '../components/ExternalLinkPressable';
 import { useDeckProgress } from '../context/DeckProgressContext';
+import { useMembership } from '../context/MembershipContext';
 import { DECK_CARDS, DeckCardData, deckCardLabel, isRedSuit } from '../data/deckCards';
+import {
+  DECK_FREE_TIER_NOTE,
+  DECK_MEMBER_NOTE,
+  DECK_MEMBER_PRICE,
+  DECK_REGULAR_PRICE,
+  deckStoreUrl,
+} from '../data/deckPricing';
 import { openCompletionShareCard } from '../lib/completionShareCard';
-import { DECK_STORE_URL } from '../lib/links';
 import { colors, fonts } from '../theme';
 
 type Mode = 'shuffle' | 'browse';
@@ -44,6 +51,7 @@ function ProgressLine({ completed, total }: { completed: number; total: number }
 
 function ShuffleArea({ onDeal }: { onDeal: (card: DeckCardData) => void }) {
   const { pickRandomUncompleted, completedCount, totalCount, reshuffleBrowseOrder } = useDeckProgress();
+  const { fullContentAccess } = useMembership();
   const [shuffling, setShuffling] = useState(false);
   const wiggle = useRef(new Animated.Value(0)).current;
 
@@ -103,7 +111,29 @@ function ShuffleArea({ onDeal }: { onDeal: (card: DeckCardData) => void }) {
         <Text style={styles.shuffleButtonText}>{shuffling ? 'SHUFFLING…' : 'SHUFFLE THE DECK'}</Text>
       </Pressable>
 
-      <ExternalLinkPressable href={DECK_STORE_URL} style={styles.physicalDeckButton} testID="get-physical-deck-button">
+      {/* Round 65 Part 4: a standing member price, not a sale -- no
+          countdown, no urgency copy. Full access shows the member price
+          with the regular price struck through; every other tier shows the
+          regular price with a quiet upsell note. Either way the button
+          itself opens whichever URL actually matches what's shown. */}
+      <View style={styles.deckPriceRow} testID="deck-price-row">
+        <Text style={styles.deckPrice} testID="deck-price-value">
+          {fullContentAccess ? DECK_MEMBER_PRICE : DECK_REGULAR_PRICE}
+        </Text>
+        {fullContentAccess && (
+          <Text style={styles.deckStruckPrice} testID="deck-struck-price">
+            {DECK_REGULAR_PRICE}
+          </Text>
+        )}
+      </View>
+      <Text style={styles.deckPriceNote} testID="deck-price-note">
+        {fullContentAccess ? DECK_MEMBER_NOTE : DECK_FREE_TIER_NOTE}
+      </Text>
+      <ExternalLinkPressable
+        href={deckStoreUrl(fullContentAccess)}
+        style={styles.physicalDeckButton}
+        testID="get-physical-deck-button"
+      >
         <Text style={styles.physicalDeckButtonText}>GET THE PHYSICAL DECK</Text>
       </ExternalLinkPressable>
     </View>
@@ -308,13 +338,37 @@ const styles = StyleSheet.create({
     fontSize: 16,
     letterSpacing: 1,
   },
+  deckPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginTop: 14,
+  },
+  deckPrice: {
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 22,
+    letterSpacing: 0.5,
+  },
+  deckStruckPrice: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 15,
+    textDecorationLine: 'line-through',
+  },
+  deckPriceNote: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    marginTop: 2,
+  },
   physicalDeckButton: {
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: 10,
     paddingHorizontal: 24,
     paddingVertical: 11,
-    marginTop: 12,
+    marginTop: 10,
   },
   physicalDeckButtonText: {
     color: colors.textMuted,

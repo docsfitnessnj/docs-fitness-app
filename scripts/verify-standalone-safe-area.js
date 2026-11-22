@@ -957,6 +957,71 @@ function auditTwelveHourClock(record) {
   );
 }
 
+// Round 65: the money round's own static sweep, same "grep the real built
+// output" technique auditTwelveHourClock() already established -- a plain
+// text search across every shipped .js chunk for any OLD price string this
+// round was supposed to retire. Deliberately narrow and exact (never a bare
+// "$37", which the deck's own NEW member price legitimately uses) -- each
+// forbidden string below pairs an old dollar amount with enough of its own
+// surrounding context (a cadence suffix, a savings line) that it can only
+// ever match the stale copy this round replaced, never the deck's own
+// unrelated $37/$52.
+function auditStalePrices(record) {
+  if (!fs.existsSync(DIST_DIR)) {
+    record('[audit] production build output exists for the stale-price sweep', false, 'run `npx expo export -p web` first');
+    return;
+  }
+  let bundleText = '';
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/\.js$/.test(entry.name)) continue;
+      bundleText += fs.readFileSync(full, 'utf8');
+    }
+  }
+  walk(DIST_DIR);
+
+  const FORBIDDEN_STALE_PRICE_STRINGS = [
+    '$57', // old MONTHLY (ONLINE)
+    '$513', // old ANNUAL (ONLINE)
+    'Save $171', // old annual savings line
+    '$130', // old Monthly Unlimited (in person)
+    '$250', // old 10 Class Pack (in person)
+  ];
+  const foundStale = FORBIDDEN_STALE_PRICE_STRINGS.filter((s) => bundleText.includes(s));
+  record(
+    'built output: no remaining instance of the old online/in-person prices ($57/$513/old savings line/$130/$250) anywhere member facing',
+    foundStale.length === 0,
+    foundStale.length ? JSON.stringify(foundStale) : 'none found'
+  );
+
+  // The old $30 drop-in price is narrower -- "$30" alone would collide with
+  // plenty of unrelated numbers in a 390px-viewport-sized bundle (ids,
+  // pixel values). Every real old mention of it was always paired with
+  // "drop in"/"drop-in" wording nearby; the real, current copy never pairs
+  // $30 with that phrase at all (it's $25 everywhere now), so this
+  // contextual pattern can only ever match if the stale copy reappeared.
+  const oldDropInPattern = /\$30[^0-9][\s\S]{0,40}drop.?in|drop.?in[\s\S]{0,40}\$30[^0-9]/i;
+  const foundOldDropIn = oldDropInPattern.test(bundleText);
+  record(
+    'built output: no remaining "$30" drop-in price anywhere near drop-in copy (the real, current price is $25)',
+    !foundOldDropIn,
+    foundOldDropIn ? 'matched old $30-near-drop-in pattern' : 'not found'
+  );
+
+  const REQUIRED_NEW_PRICE_STRINGS = ['$27', '$243', 'Save $81', '$120', '$200', '$25', '$37', '$52'];
+  const missingNew = REQUIRED_NEW_PRICE_STRINGS.filter((s) => !bundleText.includes(s));
+  record(
+    'built output: the new online/in-person/deck prices ($27/$243/$81 savings/$120/$200/$25/$37/$52) all actually shipped',
+    missingNew.length === 0,
+    missingNew.length ? JSON.stringify(missingNew) : 'all present'
+  );
+}
+
 // Round 11's own audit: the viewport lock. Static, like the env() audit
 // above -- the viewport meta and the gesturestart/change/end handlers are
 // both plain, uncompiled text straight out of public/index.html's own
@@ -1796,6 +1861,7 @@ async function run() {
 
   auditBuiltOutputEnvConsumers(record);
   auditTwelveHourClock(record);
+  auditStalePrices(record);
   auditViewportLock(record);
 
   const VIEWPORT = { width: 390, height: 844 };
@@ -4745,7 +4811,7 @@ async function run() {
       const foundingSpotsVisible = await page.getByTestId('founding-fifty-spots-left').isVisible().catch(() => false);
       const foundingDeadlineVisible = await page.getByTestId('founding-fifty-deadline').isVisible().catch(() => false);
       const foundingPriceVisible = await page
-        .getByText('$37', { exact: false })
+        .getByText('$17', { exact: false })
         .first()
         .isVisible()
         .catch(() => false);
@@ -4838,7 +4904,7 @@ async function run() {
     }
   }
 
-  // Server-side enforcement: a stale/forged client can never get the $37
+  // Server-side enforcement: a stale/forged client can never get the $17
   // founding rate while the switch is off, regardless of what the saved
   // dates say. The Edge Function runs in Deno, outside this Playwright
   // harness's reach (same category of gap as every other "can't exercise
@@ -4854,10 +4920,232 @@ async function run() {
       edgeFnSrc
     );
     record(
-      '[founding-50/edge-function] create-checkout re-fetches and gates on the enabled switch before ever granting the $37 founding price',
+      '[founding-50/edge-function] create-checkout re-fetches and gates on the enabled switch before ever granting the $17 founding price',
       selectsEnabled && gatesOnEnabled,
       JSON.stringify({ selectsEnabled, gatesOnEnabled })
     );
+  }
+
+  // ===========================================================================
+  // Round 65: THE MONEY ROUND -- new pricing wired everywhere, promo codes,
+  // admin pack grants, and the deck member price button.
+  //
+  // [pricing/create-checkout-static]: the Deno runtime can't be driven from
+  // this harness (same category of gap as every other "can't exercise the
+  // real server runtime from here" case in this file) -- a static source
+  // check, confirming the real three new sandbox price ids and
+  // allow_promotion_codes: true at both the one-time-plan and the
+  // subscription Checkout session creation call sites, and that none of
+  // the three old archived price ids remain anywhere in the function.
+  // ---------------------------------------------------------------------------
+  {
+    const edgeFnSrc = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'prices.ts'), 'utf8');
+    const hasNewFounding = edgeFnSrc.includes('price_1UedmiK8jMUFAOQwly37MNdO');
+    const hasNewMonthly = edgeFnSrc.includes('price_1Uedm0K8jMUFAOQwzlS0OApi');
+    const hasNewAnnual = edgeFnSrc.includes('price_1UedkLK8jMUFAOQwpLT3l6k1');
+    const oldIds = ['price_1UIsagK8jMUFAOQw3ZS1IXVO', 'price_1UIseoK8jMUFAOQwWbIfi2pU', 'price_1UIsfbK8jMUFAOQwQ2t9RMs8'];
+    const noOldIds = oldIds.every((id) => !edgeFnSrc.includes(id));
+    record(
+      '[pricing/create-checkout-static] _shared/prices.ts carries exactly the three new sandbox price ids, none of the old archived ones',
+      hasNewFounding && hasNewMonthly && hasNewAnnual && noOldIds,
+      JSON.stringify({ hasNewFounding, hasNewMonthly, hasNewAnnual, noOldIds })
+    );
+
+    const checkoutSrc = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'create-checkout', 'index.ts'), 'utf8');
+    const promoCodeOccurrences = (checkoutSrc.match(/allow_promotion_codes:\s*true/g) || []).length;
+    const noFalsePromoCode = !checkoutSrc.includes('allow_promotion_codes: false');
+    record(
+      '[pricing/create-checkout-static] allow_promotion_codes: true at both Checkout session creation sites (one-time plans and subscriptions), never false',
+      promoCodeOccurrences === 2 && noFalsePromoCode,
+      JSON.stringify({ promoCodeOccurrences, noFalsePromoCode })
+    );
+  }
+
+  // [pricing/memberships-free-tier]: a free account (no subscription, no
+  // active class pack -- tier 'online_free') sees the new online prices and
+  // the already-correct in-person prices, all read live off the shared
+  // plans.ts/FoundingFiftyContext.tsx constants.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR65pricing = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR65pricing) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByText('MEMBERSHIPS', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const has27 = await page.getByText('$27', { exact: false }).first().isVisible().catch(() => false);
+    const has243 = await page.getByText('$243', { exact: false }).first().isVisible().catch(() => false);
+    const hasSave81 = await page.getByText('Save $81 a year vs monthly.', { exact: false }).first().isVisible().catch(() => false);
+    const has120 = await page.getByText('$120', { exact: false }).first().isVisible().catch(() => false);
+    const has200 = await page.getByText('$200', { exact: false }).first().isVisible().catch(() => false);
+    const has25 = await page.getByText('$25', { exact: false }).first().isVisible().catch(() => false);
+    record(
+      '[pricing/memberships-free-tier] Memberships shows $27 monthly, $243 annual with Save $81, and the correct $120/$200/$25 in-person prices',
+      has27 && has243 && hasSave81 && has120 && has200 && has25,
+      JSON.stringify({ has27, has243, hasSave81, has120, has200, has25 })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'memberships-free-tier-pricing.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [pricing/about-founding-live]: the logged-out About page's own founding
+  // door, under a forced-live launch window, shows $17 with $27 struck --
+  // the founding strikethrough treatment correctly updated from
+  // $37-struck-$57 to $17-struck-$27.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/rpc/founding_fifty_public_status*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ starts_at: FOUNDING_WINDOW_LIVE_DATES.starts_at, ends_at: FOUNDING_WINDOW_LIVE_DATES.ends_at, claimed_count: 3, enabled: true }),
+      })
+    );
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const price17Visible = await page.getByText('$17', { exact: false }).first().isVisible().catch(() => false);
+    const struck27Visible = await page.getByText('$27', { exact: false }).first().isVisible().catch(() => false);
+    record(
+      '[pricing/about-founding-live] the About page founding door shows $17 with $27 struck, under a forced-live launch window',
+      price17Visible && struck27Visible,
+      JSON.stringify({ price17Visible, struck27Visible })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'about-founding-17.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [deck-pricing/*]: the four GET THE DECK / GET THE PHYSICAL DECK entry
+  // points (Deck screen, the deck upsell popup, and the two Joker-
+  // verification entry points found by this round's own sweep) all read
+  // the same shared src/data/deckPricing.ts constants, so one set of
+  // behavioral checks against the Deck screen and the upsell popup covers
+  // the mechanism, plus one direct check each on the other two entry
+  // points to confirm they were actually wired, not just the two the brief
+  // named explicitly.
+  {
+    // Full-content-access tier: member price, struck regular, the quiet
+    // note, and the MEMBERPRICE discount link.
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID); // default subscription: active monthly -> fullContentAccess true
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR65deck = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR65deck) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByRole('tab', { name: 'THE DECK' }).first().click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const deckPriceText = await page.getByTestId('deck-price-value').innerText().catch(() => '');
+    const deckStruckText = await page.getByTestId('deck-struck-price').innerText().catch(() => '');
+    const deckNoteText = await page.getByTestId('deck-price-note').innerText().catch(() => '');
+    const deckHref = await page.getByTestId('get-physical-deck-button').getAttribute('href').catch(() => null);
+    record(
+      '[deck-pricing/deck-screen-member] full access shows $37 with $52 struck, the member note, and the MEMBERPRICE link',
+      deckPriceText === '$37' &&
+        deckStruckText === '$52' &&
+        deckNoteText === 'Members get the deck for $15 off.' &&
+        deckHref === 'https://docs-fitness-merch.myshopify.com/discount/MEMBERPRICE?redirect=/products/doc-s-deck-of-wods',
+      JSON.stringify({ deckPriceText, deckStruckText, deckNoteText, deckHref })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-screen-member-price.png') }).catch(() => {});
+
+    // The deck upsell popup itself (DeckUpsellModal, "WANT THE REAL
+    // THING?") only ever fires on a genuine first-ever deck completion --
+    // reusing the existing [structured-log/deck-log-results] completion
+    // flow for the real assertion (see [deck-pricing/upsell-popup] there)
+    // rather than forcing a second completion here just to pop it again.
+    await context.close();
+  }
+  {
+    // Free/booking-only tier: regular price, the upsell note, plain URL.
+    // Reached via Trophy Case's own Joker verification block, not the Deck
+    // screen's own button -- DeckScreen.tsx wraps its content in
+    // MembershipGate (confirmed directly by reading the code), so a free/
+    // booking-only tier never mounts the Deck screen's own button at all;
+    // Trophy Case carries no such gate and is reachable by every signed-in
+    // tier, which is exactly why it's the one real entry point this tier
+    // can actually see the free-tier treatment on.
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR65deckFree = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR65deckFree) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-trophy-case').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const deckPriceTextFree = await page.getByTestId('deck-price-value').innerText().catch(() => '');
+    const noStruckPrice = !(await page.getByTestId('deck-struck-price').isVisible().catch(() => false));
+    const deckNoteTextFree = await page.getByTestId('deck-price-note').innerText().catch(() => '');
+    const deckHrefFree = await page.getByTestId('get-the-deck-button').getAttribute('href').catch(() => null);
+    record(
+      '[deck-pricing/trophy-case-free] a free/booking-only tier shows the regular $52, "Members pay $37.", and the plain product URL (no discount)',
+      deckPriceTextFree === '$52' &&
+        noStruckPrice &&
+        deckNoteTextFree === 'Members pay $37.' &&
+        deckHrefFree === 'https://docs-fitness-merch.myshopify.com/products/doc-s-deck-of-wods',
+      JSON.stringify({ deckPriceTextFree, noStruckPrice, deckNoteTextFree, deckHrefFree })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-joker-free-price.png') }).catch(() => {});
+    await context.close();
+  }
+  {
+    // The two Joker-verification entry points (Trophy Case and Badge
+    // Detail, reached from the Profile grid) -- found by this round's own
+    // sweep, not named directly in the brief, so each gets its own direct
+    // proof that the tier-aware link/price treatment was actually wired in,
+    // not assumed from the Deck screen/upsell popup alone.
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID); // default: fullContentAccess true
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR65joker = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR65joker) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-trophy-case').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+
+    const trophyDeckHref = await page.getByTestId('get-the-deck-button').getAttribute('href').catch(() => null);
+    const trophyPriceText = await page.getByTestId('deck-price-value').innerText().catch(() => '');
+    record(
+      '[deck-pricing/trophy-case-joker] the Joker verification block (Trophy Case) shows the member price and the MEMBERPRICE link too',
+      trophyPriceText === '$37' && trophyDeckHref === 'https://docs-fitness-merch.myshopify.com/discount/MEMBERPRICE?redirect=/products/doc-s-deck-of-wods',
+      JSON.stringify({ trophyPriceText, trophyDeckHref })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'trophy-case-joker-price.png') }).catch(() => {});
+    await context.close();
   }
 
   // --- Round 23: 12-hour clock everywhere. The static grep in
@@ -8672,10 +8960,30 @@ async function run() {
     // ("WANT THE REAL THING?") shows on exactly that transition
     // (DeckScreen.tsx's own completedCount > prevCompletedCount.current &&
     // shouldOfferUpsell) and, left undismissed, sits on top of and
-    // intercepts clicks meant for LogResultsModal underneath it.
-    if (await page.getByTestId('deck-upsell-dismiss').isVisible().catch(() => false)) {
+    // intercepts clicks meant for LogResultsModal underneath it. Round 65:
+    // this is the one real place the popup fires on its own in this suite,
+    // so it's also where the popup's own member-price treatment gets
+    // checked -- this account is full access (it reached the Deck tab at
+    // all, which MembershipGate only allows for fullContentAccess).
+    const upsellVisibleForPricing = await page.getByTestId('deck-upsell-dismiss').isVisible().catch(() => false);
+    if (upsellVisibleForPricing) {
+      const upsellPrice = await page.getByTestId('deck-price-value').innerText().catch(() => '');
+      const upsellStruck = await page.getByTestId('deck-struck-price').innerText().catch(() => '');
+      const upsellNote = await page.getByTestId('deck-price-note').innerText().catch(() => '');
+      const upsellHref = await page.getByTestId('deck-upsell-get').getAttribute('href').catch(() => null);
+      record(
+        '[deck-pricing/upsell-popup] the deck upsell popup shows $37 struck $52, the member note, and the MEMBERPRICE link for a full-access tier',
+        upsellPrice === '$37' &&
+          upsellStruck === '$52' &&
+          upsellNote === 'Members get the deck for $15 off.' &&
+          upsellHref === 'https://docs-fitness-merch.myshopify.com/discount/MEMBERPRICE?redirect=/products/doc-s-deck-of-wods',
+        JSON.stringify({ upsellPrice, upsellStruck, upsellNote, upsellHref })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'deck-upsell-popup-member-price.png') }).catch(() => {});
       await page.getByTestId('deck-upsell-dismiss').click({ timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(300);
+    } else {
+      record('[deck-pricing/upsell-popup] the deck upsell popup fired on this first-ever completion, so its price treatment could be checked', false, 'popup never appeared');
     }
     await page.getByTestId('close-log-results').click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(300);
@@ -10177,6 +10485,196 @@ async function run() {
       JSON.stringify({ savedVisible, legacyCount })
     );
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'member-manager-legacy-starting-count.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // ===========================================================================
+  // Round 65 Part 3.2: admin-only starting class-pack balance, for
+  // migrating existing Somble members.
+  //
+  // [member-manager/pack-credits-field]/[-save]: the identical round-trip
+  // pattern as legacy-starting-count directly above, just against the new
+  // admin_grant_class_pack_credits RPC (migration_035) instead of a plain
+  // profiles PATCH -- captured and served back by the mocked
+  // admin_list_members RPC's own pack_credits_remaining column.
+  // ---------------------------------------------------------------------------
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    let grantedCredits = 0;
+    let grantedUserId = null;
+    await page.route('**/rest/v1/profiles*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'PATCH') return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Admin',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: true,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+          },
+        ]),
+      });
+    });
+    await page.route('**/rest/v1/rpc/admin_grant_class_pack_credits*', (route) => {
+      const body = route.request().postDataJSON() || {};
+      grantedUserId = body.p_user_id;
+      grantedCredits = body.p_credits;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ credits_remaining: grantedCredits, expires_at: new Date(Date.now() + 365 * 86400000).toISOString() }]),
+      });
+    });
+    await page.route('**/rest/v1/rpc/admin_list_members*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'r65-somble-member',
+            display_name: 'Somble Migrated',
+            email: 'somble-migrated@example.com',
+            how_train: 'boathouse',
+            in_person_plan: null,
+            is_admin: false,
+            created_at: new Date(Date.now() - 200 * 86400000).toISOString(),
+            founding_member: false,
+            sub_status: null,
+            sub_plan: null,
+            sub_current_period_end: null,
+            sub_trial_end: null,
+            sub_cancel_at_period_end: null,
+            group_chat_muted: false,
+            legacy_starting_count: 0,
+            pack_credits_remaining: grantedCredits,
+          },
+        ]),
+      })
+    );
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const nudgeVisibleR65a = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+    if (nudgeVisibleR65a) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-member-manager').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('member-row-Somble Migrated').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    const packInputVisible = await page.getByTestId('pack-credits-input').isVisible().catch(() => false);
+    const packPrefill = await page.getByTestId('pack-credits-input').inputValue().catch(() => '');
+    record(
+      '[member-manager/pack-credits-field] the editable field is visible and prefills the real saved value (0)',
+      packInputVisible && packPrefill === '0',
+      JSON.stringify({ packInputVisible, packPrefill })
+    );
+
+    await page.getByTestId('pack-credits-input').fill('8');
+    await page.getByTestId('save-pack-credits').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const packSavedVisible = await page.getByTestId('save-confirmation-saved').isVisible().catch(() => false);
+    record(
+      '[member-manager/pack-credits-save] saving calls the real admin-gated RPC for exactly this member with 8 credits, shows SAVED',
+      packSavedVisible && grantedCredits === 8 && grantedUserId === 'r65-somble-member',
+      JSON.stringify({ packSavedVisible, grantedCredits, grantedUserId })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'member-manager-pack-credits.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [booking/admin-granted-pack-member-view]: the member's own view of an
+  // admin-granted balance -- a plain class_packs row (no
+  // stripe_checkout_session_id field even reaches the client; ClassPackContext
+  // never reads one) -- renders on Memberships EXACTLY like a real
+  // purchased pack ("YOUR PACK" tag, "X classes left"), and a real booking
+  // through it spends and a real cancel refunds, the identical
+  // registerClassBookingMocks mechanism the pre-existing
+  // [booking/cancel-refund] check already proves for a Stripe-purchased
+  // pack -- proving the two are genuinely indistinguishable client-side.
+  // Deliberately keeps setupMocks' own default subscription (same as
+  // [booking/cancel-refund]) rather than forcing subscriptions to [] --
+  // the per-class-day-panel booking UI (sign-up-mwf-530a et al) only
+  // renders for a fullContentAccess tier; a booking-only tier (what forcing
+  // subscriptions:[] would produce, alongside an active pack) instead shows
+  // StatusBanner's own simplified "YOU'RE DOCKSIDE" card, a genuinely
+  // different UI this check isn't about -- confirmed directly via a
+  // standalone repro before trusting it, not assumed from the symptom
+  // (an unmoving credit count) alone. "YOUR PACK"/"ten-pack-classes-left"
+  // on Memberships are gated only on hasActivePack, not on fullContentAccess,
+  // so the first half of this check is unaffected either way.
+  {
+    const bookingState = createClassBookingState([
+      makeSessionFixture({ id: 'sess-r65-pack', classKey: 'mwf-530a', className: 'Dawn Patrol', classType: 'Kettlebell Strength', capacity: 10, date: dateAtOffsetDays(MONDAY_OFFSET, 5, 30) }),
+    ]);
+    bookingState.packCreditsRemaining = 6;
+
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await registerClassBookingMocks(page, bookingState, USER_ID);
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByText('MEMBERSHIPS', { exact: false }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const yourPackTagVisible = await page.getByTestId('your-pack-tag').isVisible().catch(() => false);
+    const classesLeftText = await page.getByTestId('ten-pack-classes-left').innerText().catch(() => '');
+    record(
+      '[booking/admin-granted-pack-member-view] an admin-granted balance renders on Memberships exactly like a purchased pack (YOUR PACK, real count)',
+      yourPackTagVisible && classesLeftText.includes('6'),
+      JSON.stringify({ yourPackTagVisible, classesLeftText })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'memberships-admin-granted-pack.png') }).catch(() => {});
+
+    // MEMBERSHIPS is opened NESTED under the still-open hamburger drawer
+    // (SidebarDrawer.tsx's own openNested() convention, same gotcha
+    // documented at readMyWorkoutsPbTag() above) -- closing it alone
+    // leaves the drawer itself open and covering the screen, so the next
+    // date-strip-cell click silently lands on PROFILE (the drawer's own
+    // menu row) instead. Root-caused directly via a standalone debug
+    // script, not assumed from the symptom (packCreditsRemaining never
+    // moving) alone.
+    await page.getByTestId('close-memberships').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('close-sidebar').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.getByTestId(`date-strip-cell-${MONDAY_OFFSET}`).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sign-up-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('OK', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    record(
+      '[booking/admin-granted-pack-spends-credit] booking against the admin-granted balance spends exactly one credit',
+      bookingState.packCreditsRemaining === 5,
+      JSON.stringify({ packCreditsRemaining: bookingState.packCreditsRemaining })
+    );
+    await page.getByTestId('cancel-class-mwf-530a').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('Cancel Class', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    record(
+      '[booking/admin-granted-pack-refunds-credit] cancelling refunds the exact credit back to the admin-granted balance',
+      bookingState.packCreditsRemaining === 6,
+      JSON.stringify({ packCreditsRemaining: bookingState.packCreditsRemaining })
+    );
     await context.close();
   }
 
@@ -12269,6 +12767,70 @@ async function run() {
     );
   }
 
+  // Round 64: the real end-to-end signup flow through BOOK YOUR CLASS --
+  // the same mocked /auth/v1/signup capture technique [email/signup-
+  // metadata] above already uses, reframed here to prove exactly what the
+  // new welcome-email feature needs: the real captured signup body carries
+  // both the member's own email AND signup_path=book_class (the two
+  // fields pickWelcomeVersion/dispatchToMembers need, downstream, inside
+  // notify-new-signup's own Postgres-trigger-invoked call -- a Postgres
+  // trigger has no browser-reachable entry point from this harness at all,
+  // the same documented gap as every other trigger-fired Edge Function in
+  // this file, so this is the one layer Playwright CAN actually drive:
+  // the real client-side signup call, captured exactly as it would be
+  // relayed). Signup succeeding here is NOT conditioned on the welcome
+  // email at all -- the mocked /auth/v1/signup route always returns
+  // success regardless of anything server-side, which is the real,
+  // correct shape of "a failure to send the welcome email must never fail
+  // the signup": the browser's own signup call and the server's later,
+  // independent, try/catch-wrapped welcome-email dispatch are two
+  // completely decoupled steps by construction, never one blocking the
+  // other. The real try/catch isolation itself (confirmed directly) is
+  // what [email/edge-fn/welcome-email-dispatches-to-members] above
+  // statically verifies against the real, unmodified notify-new-signup
+  // source.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    let capturedSignupBody = null;
+    await page.route('**/auth/v1/signup*', async (route) => {
+      try {
+        capturedSignupBody = JSON.parse(route.request().postData() || '{}');
+      } catch {
+        capturedSignupBody = null;
+      }
+      // Always succeeds -- standing in for the real fact that the
+      // browser's own signup call has no dependency on, and is never
+      // blocked by, whatever notify-new-signup's own welcome-email
+      // dispatch does afterward (a separate, server-side, best-effort
+      // side effect this harness can't reach directly).
+      return route.fulfill(fulfillSignupSuccess('newmember-welcome@example.com'));
+    });
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('about-book-class').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    await page.getByTestId('welcome-email').fill('newmember-welcome@example.com').catch(() => {});
+    await page.getByTestId('welcome-password').fill('a-real-password-123').catch(() => {});
+    await page.getByTestId('welcome-continue').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(900);
+
+    // The real, post-signup app shell reached successfully -- proof the
+    // client-side flow completed, independent of the email side effect.
+    const signupSucceededInApp = await page.getByTestId('open-sidebar').isVisible().catch(() => false);
+    record(
+      "[email/welcome/signup-end-to-end] a real signup through BOOK YOUR CLASS captures the exact email + signup_path=book_class notify-new-signup needs to send the in-person welcome email, and the signup itself succeeds regardless of the (separate, server-side) welcome-email dispatch",
+      !!capturedSignupBody &&
+        capturedSignupBody.email === 'newmember-welcome@example.com' &&
+        capturedSignupBody.data?.signup_path === 'book_class' &&
+        signupSucceededInApp,
+      JSON.stringify({ capturedSignupBody, signupSucceededInApp })
+    );
+
+    await context.close();
+  }
+
   // --- The EMAIL admin screen: the TEST/LIVE master switch, its
   // confirmation gate, and SEND TEST EMAIL.
   {
@@ -12311,6 +12873,11 @@ async function run() {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([emailSettingsRow]) });
     });
     let testEmailInvokeCount = 0;
+    let testWelcomeEmailsInvokeCount = 0;
+    await page.route('**/functions/v1/admin-send-test-welcome-emails*', async (route) => {
+      testWelcomeEmailsInvokeCount += 1;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sent: true }) });
+    });
     await page.route('**/functions/v1/admin-send-test-email*', async (route) => {
       testEmailInvokeCount += 1;
       return route.fulfill({
@@ -12414,6 +12981,28 @@ async function run() {
       JSON.stringify({ testEmailInvokeCount, successVisibleAgain })
     );
 
+    // Round 64: SEND TEST WELCOME EMAILS -- beside SEND TEST EMAIL, on the
+    // same admin screen, same TEST mode it's currently in -- sends BOTH
+    // versions to the owner's own inbox, repeatable.
+    await page.getByTestId('send-test-welcome-emails-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const welcomeSuccessVisible = await page.getByTestId('send-test-welcome-emails-success').isVisible().catch(() => false);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'email-admin-send-test-welcome-success.png') }).catch(() => {});
+    record(
+      '[email/welcome/admin-send-test-welcome-emails] SEND TEST WELCOME EMAILS invokes the real admin-send-test-welcome-emails function and shows a success state',
+      testWelcomeEmailsInvokeCount === 1 && welcomeSuccessVisible,
+      JSON.stringify({ testWelcomeEmailsInvokeCount, welcomeSuccessVisible })
+    );
+
+    await page.getByTestId('send-test-welcome-emails-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const welcomeSuccessVisibleAgain = await page.getByTestId('send-test-welcome-emails-success').isVisible().catch(() => false);
+    record(
+      '[email/welcome/admin-send-test-welcome-emails-repeatable] SEND TEST WELCOME EMAILS can be sent again -- a permanent feature, not a one-time launch step, and independent of EMAIL TEST MODE (both buttons reached from the same TEST-mode screen)',
+      testWelcomeEmailsInvokeCount === 2 && welcomeSuccessVisibleAgain,
+      JSON.stringify({ testWelcomeEmailsInvokeCount, welcomeSuccessVisibleAgain })
+    );
+
     await context.close();
   }
 
@@ -12464,6 +13053,55 @@ async function run() {
       '[email/admin-send-test-email-error] a genuine send failure surfaces a plain error message, never a silent no-op',
       errorVisible && errorText.length > 0,
       JSON.stringify({ errorVisible, errorText })
+    );
+    await context.close();
+  }
+
+  // Round 64: SEND TEST WELCOME EMAILS, error path -- same guarantee.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page);
+    await page.route('**/rest/v1/profiles*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            display_name: 'Test Admin',
+            instagram_handle: '',
+            favorite_quote: '',
+            avatar_url: null,
+            how_train: 'boathouse',
+            is_admin: true,
+            show_tomorrows_workout: true,
+            tour_completed_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+            group_chat_muted: false,
+          },
+        ]),
+      })
+    );
+    await page.route('**/rest/v1/email_settings*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ mode: 'test' }]) })
+    );
+    await page.route('**/functions/v1/admin-send-test-welcome-emails*', (route) =>
+      route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Resend send failed.' }) })
+    );
+    await seedSignedInSession(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByText('EMAIL', { exact: true }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('send-test-welcome-emails-button').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const welcomeErrorVisible = await page.getByTestId('send-test-welcome-emails-error').isVisible().catch(() => false);
+    const welcomeErrorText = await page.getByTestId('send-test-welcome-emails-error').innerText().catch(() => '');
+    record(
+      '[email/welcome/admin-send-test-welcome-emails-error] a genuine send failure surfaces a plain error message, never a silent no-op',
+      welcomeErrorVisible && welcomeErrorText.length > 0,
+      JSON.stringify({ welcomeErrorVisible, welcomeErrorText })
     );
     await context.close();
   }
@@ -12557,6 +13195,9 @@ async function run() {
     const stripeWebhookSrc = fs.readFileSync(path.join(srcDir, 'stripe-webhook', 'index.ts'), 'utf8');
     const resendSrc = fs.readFileSync(path.join(srcDir, '_shared', 'resend.ts'), 'utf8');
     const dispatchCoreSrc = fs.readFileSync(path.join(srcDir, '_shared', 'memberEmailDispatchCore.ts'), 'utf8');
+    // Round 64
+    const welcomeEmailSrc = fs.readFileSync(path.join(srcDir, '_shared', 'welcomeEmail.ts'), 'utf8');
+    const testWelcomeEmailsSrc = fs.readFileSync(path.join(srcDir, 'admin-send-test-welcome-emails', 'index.ts'), 'utf8');
 
     const weeklyReleaseImportsDispatch = /import\s*\{\s*dispatchToMembers\s*\}\s*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/.test(
       weeklyReleaseSrc
@@ -12583,11 +13224,63 @@ async function run() {
     );
 
     const signupAlertChecksWebhookSecret = /verifyWebhookSecret\(req\)/.test(signupAlertSrc);
-    const signupAlertNeverImportsDispatch = !/^import\s.*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/m.test(signupAlertSrc);
+    // Round 64: notify-new-signup now legitimately imports
+    // memberEmailDispatch.ts too -- for the NEW member's own welcome
+    // email, a real member-facing send that must be governed by EMAIL
+    // TEST MODE exactly like the Sunday Drop. What actually matters (and
+    // is still true) is that the OWNER'S OWN New Member Alert -- the
+    // first sendEmail() call in this file, straight to OWNER_EMAIL -- is
+    // never itself routed through dispatchToMembers, so it reaches the
+    // owner regardless of whatever mode the switch is in.
+    const ownerAlertIsDirectSendEmail = /const alertResult = await sendEmail\(\{\s*from: FROM_ALERTS,\s*to: OWNER_EMAIL,/.test(
+      signupAlertSrc
+    );
     record(
-      '[email/edge-fn/signup-alert-wiring] notify-new-signup checks the shared webhook secret (no Supabase JWT exists inside a Postgres trigger) and never touches EMAIL TEST MODE -- it only ever reaches the owner',
-      signupAlertChecksWebhookSecret && signupAlertNeverImportsDispatch,
-      JSON.stringify({ signupAlertChecksWebhookSecret, signupAlertNeverImportsDispatch })
+      "[email/edge-fn/signup-alert-wiring] notify-new-signup checks the shared webhook secret (no Supabase JWT exists inside a Postgres trigger) and the owner's own New Member Alert is a direct sendEmail() call, never routed through dispatchToMembers -- it only ever reaches the owner",
+      signupAlertChecksWebhookSecret && ownerAlertIsDirectSendEmail,
+      JSON.stringify({ signupAlertChecksWebhookSecret, ownerAlertIsDirectSendEmail })
+    );
+
+    // Round 64: the new member's own welcome email -- the real
+    // member-facing send this round adds -- IS routed through
+    // dispatchToMembers, the one real enforcement point for EMAIL TEST
+    // MODE, with exactly the one new member as the recipient list. Also
+    // confirms it's wired to fire AFTER the owner alert and the newsletter
+    // audience add (per the brief's own "after the existing owner alert
+    // and newsletter audience add" instruction), and wrapped in its own
+    // try/catch so a failure here can never fail the signup.
+    const welcomeImportsDispatch = /import\s*\{\s*dispatchToMembers\s*\}\s*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/.test(
+      signupAlertSrc
+    );
+    const welcomeImportsBuilder = /import\s*\{\s*buildWelcomeEmail,\s*pickWelcomeVersion\s*\}\s*from\s*['"]\.\.\/_shared\/welcomeEmail\.ts['"]/.test(
+      signupAlertSrc
+    );
+    const welcomePicksVersionFromSignupPath = /pickWelcomeVersion\(signupPath\)/.test(signupAlertSrc);
+    const welcomeCallsDispatchWithOneMember = /dispatchToMembers\(welcome\.subject, welcome\.html, \[\{ email, display_name: displayName \}\]\)/.test(
+      signupAlertSrc
+    );
+    const welcomeIsWrappedInTryCatch = /try\s*\{\s*const version = pickWelcomeVersion\(signupPath\);[\s\S]{0,400}\}\s*catch \(err\) \{\s*console\.error\('notify-new-signup: welcome email send failed', err\);\s*\}/.test(
+      signupAlertSrc
+    );
+    const welcomeFiresAfterNewsletterBlock =
+      signupAlertSrc.indexOf('await addContactToAudience(') < signupAlertSrc.indexOf('pickWelcomeVersion(signupPath)') &&
+      signupAlertSrc.indexOf('pickWelcomeVersion(signupPath)') < signupAlertSrc.indexOf('return json({ received: true });');
+    record(
+      "[email/edge-fn/welcome-email-dispatches-to-members] notify-new-signup sends the new member's own welcome email through dispatchToMembers (picked by signup_path), after the owner alert and newsletter add, wrapped in its own try/catch",
+      welcomeImportsDispatch &&
+        welcomeImportsBuilder &&
+        welcomePicksVersionFromSignupPath &&
+        welcomeCallsDispatchWithOneMember &&
+        welcomeIsWrappedInTryCatch &&
+        welcomeFiresAfterNewsletterBlock,
+      JSON.stringify({
+        welcomeImportsDispatch,
+        welcomeImportsBuilder,
+        welcomePicksVersionFromSignupPath,
+        welcomeCallsDispatchWithOneMember,
+        welcomeIsWrappedInTryCatch,
+        welcomeFiresAfterNewsletterBlock,
+      })
     );
 
     const paymentAlertCallSiteWrapped = /try\s*\{\s*await sendPaymentAlert\(admin, userId, plan, session\.amount_total\);\s*\}\s*catch/.test(
@@ -12602,9 +13295,15 @@ async function run() {
     );
 
     const resendKeyFromEnv = /Deno\.env\.get\(['"]RESEND_API_KEY['"]\)/.test(resendSrc);
-    const noKeyLogging = ![weeklyReleaseSrc, testEmailSrc, signupAlertSrc, stripeWebhookSrc, resendSrc].some((src) =>
-      /console\.(log|error|warn)\([^)]*RESEND_API_KEY/.test(src)
-    );
+    const noKeyLogging = ![
+      weeklyReleaseSrc,
+      testEmailSrc,
+      signupAlertSrc,
+      stripeWebhookSrc,
+      resendSrc,
+      welcomeEmailSrc,
+      testWelcomeEmailsSrc,
+    ].some((src) => /console\.(log|error|warn)\([^)]*RESEND_API_KEY/.test(src));
     record(
       '[email/edge-fn/resend-key-hygiene] RESEND_API_KEY is read from the environment, never hardcoded, and never passed to a console.log/error/warn call anywhere across the new email functions',
       resendKeyFromEnv && noKeyLogging,
@@ -12639,6 +13338,110 @@ async function run() {
       signupAlertNeverSetsReplyTo && paymentAlertNeverSetsReplyTo,
       JSON.stringify({ signupAlertNeverSetsReplyTo, paymentAlertNeverSetsReplyTo })
     );
+
+    // --- Round 64: THE TWO WELCOME EMAILS -- static source checks.
+
+    // pickWelcomeVersion is the ONE place that decides which version a new
+    // member gets: book_class routes to in_person, every other value
+    // (including online_trial and undecided) routes to online.
+    const pickVersionLogicExact = /return signupPath === 'book_class' \? 'in_person' : 'online';/.test(welcomeEmailSrc);
+    record(
+      "[email/welcome/version-picked-from-signup-path] pickWelcomeVersion routes book_class to in_person and every other signup_path (online_trial, undecided, null) to online",
+      pickVersionLogicExact,
+      JSON.stringify({ pickVersionLogicExact })
+    );
+
+    // The exact subject and both bodies' copy strings, verbatim, word for
+    // word, per the brief -- not a close paraphrase.
+    const subjectExact = welcomeEmailSrc.includes(`const SUBJECT = "WELCOME TO DOC'S FITNESS";`);
+    const onlineIntroExact = welcomeEmailSrc.includes(
+      "Welcome to the crew. Your training lives in the app now: the workouts, the Challenge of the Week, the leaderboard, and the community board cheering it all on."
+    );
+    const inPersonIntroExact = welcomeEmailSrc.includes(
+      "Welcome to Doc's Fitness. The app is your front door to the gym now: book your classes, see the schedule, and hang with the crew on the community board."
+    );
+    const sharedStep1Exact =
+      welcomeEmailSrc.includes("1. PUT THE APP ON YOUR HOME SCREEN.") &&
+      welcomeEmailSrc.includes(
+        "Open the app in Safari, tap the Share button, then Add to Home Screen. (On Android: Chrome menu, then Add to Home screen.) Now it's one tap away, every day."
+      );
+    const onlineStep2And3Exact =
+      welcomeEmailSrc.includes("2. CHECK TODAY'S WORKOUT.") &&
+      welcomeEmailSrc.includes("It's waiting on the Community screen.") &&
+      welcomeEmailSrc.includes('3. DO IT, THEN POST IT.') &&
+      welcomeEmailSrc.includes('Your first logged workout earns your first badge. Everybody has a Day One.');
+    const inPersonStep2And3Exact =
+      welcomeEmailSrc.includes('2. BOOK YOUR CLASS.') &&
+      welcomeEmailSrc.includes('The schedule is right on the Community screen. Tap a day, tap SIGN UP.') &&
+      welcomeEmailSrc.includes('3. SHOW UP.') &&
+      welcomeEmailSrc.includes("The crew is upstairs at the boathouse. We'll see you there.");
+    const sharedClosingExact = welcomeEmailSrc.includes('Questions? Just reply to this email. A real person reads it.');
+    const sharedHeadingExact = welcomeEmailSrc.includes("YOU'RE IN.");
+    const sharedHowToStartExact = welcomeEmailSrc.includes("Here's how to start:");
+    record(
+      '[email/welcome/copy-verbatim] the exact subject and both bodies\' copy strings are present verbatim in welcomeEmail.ts, word for word, not rewritten',
+      subjectExact &&
+        onlineIntroExact &&
+        inPersonIntroExact &&
+        sharedStep1Exact &&
+        onlineStep2And3Exact &&
+        inPersonStep2And3Exact &&
+        sharedClosingExact &&
+        sharedHeadingExact &&
+        sharedHowToStartExact,
+      JSON.stringify({
+        subjectExact,
+        onlineIntroExact,
+        inPersonIntroExact,
+        sharedStep1Exact,
+        onlineStep2And3Exact,
+        inPersonStep2And3Exact,
+        sharedClosingExact,
+        sharedHeadingExact,
+        sharedHowToStartExact,
+      })
+    );
+
+    const welcomeNoEmojis = !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(welcomeEmailSrc);
+    record(
+      '[email/welcome/no-emojis] the member-facing welcome-email template contains no emojis anywhere',
+      welcomeNoEmojis,
+      JSON.stringify({ welcomeNoEmojis })
+    );
+
+    // admin-send-test-welcome-emails: same asymmetry as admin-send-test-
+    // email -- never imports the dispatch wrapper (so EMAIL TEST MODE can
+    // never affect it), always targets the owner, uses the exact same
+    // shared renderer the real send uses, checks admin, sends BOTH
+    // versions with distinguishing subject prefixes, and sets reply_to on
+    // each.
+    const testWelcomeNeverImportsDispatch = !/^import\s.*from\s*['"]\.\.\/_shared\/memberEmailDispatch\.ts['"]/m.test(
+      testWelcomeEmailsSrc
+    );
+    const testWelcomeAlwaysTargetsOwner = /to: OWNER_EMAIL/.test(testWelcomeEmailsSrc) && /sendEmail\(/.test(testWelcomeEmailsSrc);
+    const testWelcomeUsesSharedRenderer =
+      /buildWelcomeEmail\('online'\)/.test(testWelcomeEmailsSrc) && /buildWelcomeEmail\('in_person'\)/.test(testWelcomeEmailsSrc);
+    const testWelcomeChecksAdmin = /profile\?\.is_admin/.test(testWelcomeEmailsSrc);
+    const testWelcomeHasDistinguishingSubjects =
+      /\[WELCOME TEST: ONLINE\]/.test(testWelcomeEmailsSrc) && /\[WELCOME TEST: IN PERSON\]/.test(testWelcomeEmailsSrc);
+    const testWelcomeSetsReplyTo = (testWelcomeEmailsSrc.match(/reply_to: MEMBER_REPLY_TO/g) ?? []).length === 2;
+    record(
+      '[email/welcome/admin-test-bypasses-dispatch] admin-send-test-welcome-emails never imports memberEmailDispatch, always targets the owner, uses the same shared renderer, checks admin, sends both versions with distinguishing subjects, and sets reply_to on each',
+      testWelcomeNeverImportsDispatch &&
+        testWelcomeAlwaysTargetsOwner &&
+        testWelcomeUsesSharedRenderer &&
+        testWelcomeChecksAdmin &&
+        testWelcomeHasDistinguishingSubjects &&
+        testWelcomeSetsReplyTo,
+      JSON.stringify({
+        testWelcomeNeverImportsDispatch,
+        testWelcomeAlwaysTargetsOwner,
+        testWelcomeUsesSharedRenderer,
+        testWelcomeChecksAdmin,
+        testWelcomeHasDistinguishingSubjects,
+        testWelcomeSetsReplyTo,
+      })
+    );
   }
 
   // --- Round 57/58: brand the Sunday Drop email, then make it survive
@@ -12659,10 +13462,22 @@ async function run() {
   // body colors, the dark-mode meta tags/media query kept as progressive
   // enhancement only, and the gold/deep-green CTA treatment.
   {
-    const emailTemplateSrc = fs.readFileSync(
-      path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'weeklyReleaseEmail.ts'),
-      'utf8'
-    );
+    // Round 64: most of the literal markup these checks look for (the
+    // header/CTA image tags, the @font-face block, the dark-mode media
+    // query, the footer, the color constants) moved out of
+    // weeklyReleaseEmail.ts into the new shared _shared/emailLayout.ts, so
+    // the new member's own welcome email could reuse it byte-for-byte
+    // instead of a second, driftable copy -- verified directly (see
+    // AGENTS.md) that weeklyReleaseEmail.ts's own rendered OUTPUT is
+    // unchanged by that extraction. These checks read the concatenation of
+    // both files -- "the real committed source that produces the Sunday
+    // Drop" is now split across two files, not one, but every check below
+    // is still asking "does this literal text/pattern exist in the real
+    // code," which concatenation answers identically to before.
+    const emailTemplateSrc =
+      fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'emailLayout.ts'), 'utf8') +
+      '\n' +
+      fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'weeklyReleaseEmail.ts'), 'utf8');
 
     // [email/brand/header-image] Round 58: the entire green-band/badge-img/
     // eyebrow/headline HTML block is replaced by one <img> referencing the
@@ -13018,10 +13833,10 @@ async function run() {
     // rather than just trusted from the comment saying so.
     const linksSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'links.ts'), 'utf8');
     const appShareUrlMatch = linksSrc.match(/export const APP_SHARE_URL = '([^']+)'/);
-    const emailTemplateSrc = fs.readFileSync(
-      path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'weeklyReleaseEmail.ts'),
-      'utf8'
-    );
+    // Round 64: APP_URL's own definition moved from weeklyReleaseEmail.ts
+    // into the new shared _shared/emailLayout.ts (reused byte-for-byte by
+    // the welcome email too) -- read from its real, current home.
+    const emailTemplateSrc = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', '_shared', 'emailLayout.ts'), 'utf8');
     const emailAppUrlMatch = emailTemplateSrc.match(/const APP_URL = '([^']+)'/);
     record(
       '[email/open-the-app-link/url-matches-app-share-url] the email template\'s own APP_URL is byte-identical to src/lib/links.ts\'s APP_SHARE_URL, kept in sync by hand across the Deno/React-Native boundary',

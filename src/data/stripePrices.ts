@@ -6,10 +6,12 @@
 export const STRIPE_PUBLISHABLE_KEY =
   'pk_test_51UIsNSK8jMUFAOQw4CFbnInMtwK2uyfTXXE9M5hSJCukkiOK81MZ4I2eo7KvfobD3AVR1kDUfgBkqJMwlo0buSX300PYjDC0cO';
 
+// Round 65: repriced sandbox ids ($17/$27/$243) replace the old $37/$57/$513
+// ones, kept in hand-sync with the server copy below.
 export const STRIPE_PRICE_IDS = {
-  monthly: 'price_1UIsagK8jMUFAOQw3ZS1IXVO',
-  founding: 'price_1UIseoK8jMUFAOQwWbIfi2pU',
-  annual: 'price_1UIsfbK8jMUFAOQwQ2t9RMs8',
+  monthly: 'price_1Uedm0K8jMUFAOQwzlS0OApi',
+  founding: 'price_1UedmiK8jMUFAOQwly37MNdO',
+  annual: 'price_1UedkLK8jMUFAOQwpLT3l6k1',
   // IN PERSON (Stripe round two) — kept in hand-sync with the server copy
   // (supabase/functions/_shared/prices.ts), same convention as the online
   // ids above.

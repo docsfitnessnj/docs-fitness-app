@@ -16,7 +16,10 @@ in the browser.
   send a raw Stripe price id either — only a plan name, which this
   function maps to the real price itself. Drop In / Downbeach Pilates also
   require a `classSessionId`, carried through in the Checkout Session's own
-  metadata so the webhook can book the exact right class.
+  metadata so the webhook can book the exact right class. Round 65:
+  `allow_promotion_codes: true` on every Checkout session it creates — Doc
+  creates the actual promotion codes himself in the Stripe dashboard
+  (Products -> Coupons / Promotion codes); there is no in-app promo UI.
 - `stripe-webhook` — Stripe calls this directly (not the app). Verifies the
   request's signature, then writes the real truth about a member's
   subscription (`subscriptions` table) or one-time in-person purchase
@@ -55,15 +58,23 @@ in the browser.
   surface as a failed webhook. This is an owner-only alert — it never
   touches `email_settings`/EMAIL TEST MODE, since it only ever reaches
   Doc's own inbox regardless.
-- `notify-new-signup` (migration_033, Round 56) — called by
-  `handle_new_user()`'s own Postgres trigger over `pg_net`, once per new
+- `notify-new-signup` (migration_033, Round 56; widened Round 64) — called
+  by `handle_new_user()`'s own Postgres trigger over `pg_net`, once per new
   account, with the signup's email/display name/`signup_path` (which of
   the About page's two fast-path doors, if any, was tapped) and whether
-  the newsletter checkbox was checked. Sends Doc's New Member Alert, and —
-  only if the checkbox was checked — adds the new member to the Resend
-  Audience "The Weekly Kettlebell". No Supabase JWT exists inside a
-  Postgres trigger, so `verify_jwt` is `false` here; `DB_WEBHOOK_SECRET`
-  (below) is the real gate instead.
+  the newsletter checkbox was checked. Sends Doc's New Member Alert (a
+  direct `sendEmail()` call, untouched by EMAIL TEST MODE — it only ever
+  reaches Doc's own inbox), adds the new member to the Resend Audience "The
+  Weekly Kettlebell" if the checkbox was checked, and — Round 64 — sends
+  the new member their own WELCOME TO DOC'S FITNESS email (online or
+  in-person, picked by `signup_path` via `_shared/welcomeEmail.ts`'s
+  `pickWelcomeVersion()`), routed through `_shared/memberEmailDispatch.ts`'s
+  `dispatchToMembers()` with that one member as the recipient — the same
+  EMAIL TEST MODE enforcement point the Sunday Drop uses. All three jobs
+  are independent and best-effort; a failure in any one (including the new
+  welcome-email send) is logged, never thrown back at the trigger. No
+  Supabase JWT exists inside a Postgres trigger, so `verify_jwt` is `false`
+  here; `DB_WEBHOOK_SECRET` (below) is the real gate instead.
 - `send-weekly-release-email` (migration_033, Round 56) — called by
   `release_scheduled_weeks_if_due()`'s own `pg_net` call, exactly once per
   released week (the same `released_at is null` guard that already makes
@@ -83,6 +94,16 @@ in the browser.
   direction. `verify_jwt` is `true`; a real signed-in admin session is
   required, checked the same way every other admin-only Edge Function in
   this app does.
+- `admin-send-test-welcome-emails` (Round 64) — a **permanent** admin-only
+  feature (the EMAIL admin screen's SEND TEST WELCOME EMAILS button,
+  beside SEND TEST EMAIL), reachable any number of times. Sends BOTH
+  welcome-email versions — ONLINE and IN PERSON — straight to Doc's own
+  inbox through the exact same `_shared/welcomeEmail.ts` renderer
+  `notify-new-signup` uses, each tagged in its subject (`[WELCOME TEST:
+  ONLINE]`/`[WELCOME TEST: IN PERSON]`) so they're easy to tell apart.
+  Same asymmetry as `admin-send-test-email`: deliberately never imports
+  `dispatchToMembers`, so it's unaffected by EMAIL TEST MODE. `verify_jwt`
+  is `true`, same admin check as every other admin-only function here.
 
 ## Deploying
 

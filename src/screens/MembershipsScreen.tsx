@@ -210,7 +210,7 @@ export function MembershipsScreen({ visible, onClose, onlyFullAccess = false }: 
                   </View>
 
                   {plan.key === 'annual' && (
-                    <Text style={styles.annualSavingsLine}>Save $171 a year vs monthly.</Text>
+                    <Text style={styles.annualSavingsLine}>Save $81 a year vs monthly.</Text>
                   )}
 
                   {founding && (

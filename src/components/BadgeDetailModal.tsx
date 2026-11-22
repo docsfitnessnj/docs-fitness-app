@@ -4,7 +4,14 @@ import { AppModal } from './AppModal';
 import { BadgeIcon } from './icons/BadgeIcon';
 import { ExternalLinkPressable } from './ExternalLinkPressable';
 import { BadgeId, BADGE_MAP } from '../data/badges';
-import { DECK_STORE_URL } from '../lib/links';
+import {
+  DECK_FREE_TIER_NOTE,
+  DECK_MEMBER_NOTE,
+  DECK_MEMBER_PRICE,
+  DECK_REGULAR_PRICE,
+  deckStoreUrl,
+} from '../data/deckPricing';
+import { useMembership } from '../context/MembershipContext';
 import { colors, fonts } from '../theme';
 
 type Props = {
@@ -23,6 +30,7 @@ type Props = {
 // ones render as gray silhouettes instead of disappearing: this modal is
 // what tells you how to go earn one.
 export function BadgeDetailModal({ badgeId, earned, onClose, onVerifyJoker, legacyMilestone }: Props) {
+  const { fullContentAccess } = useMembership();
   if (!badgeId) return null;
   const def = BADGE_MAP[badgeId];
 
@@ -50,7 +58,25 @@ export function BadgeDetailModal({ badgeId, earned, onClose, onVerifyJoker, lega
                   <Text style={styles.verifyButtonText}>VERIFY OWNERSHIP</Text>
                 </Pressable>
               )}
-              <ExternalLinkPressable href={DECK_STORE_URL} style={styles.getDeckButton} testID="get-the-deck-button">
+              {/* Round 65 Part 4: a standing member price, not a sale. */}
+              <View style={styles.priceRow} testID="deck-price-row">
+                <Text style={styles.price} testID="deck-price-value">
+                  {fullContentAccess ? DECK_MEMBER_PRICE : DECK_REGULAR_PRICE}
+                </Text>
+                {fullContentAccess && (
+                  <Text style={styles.struckPrice} testID="deck-struck-price">
+                    {DECK_REGULAR_PRICE}
+                  </Text>
+                )}
+              </View>
+              <Text style={styles.priceNote} testID="deck-price-note">
+                {fullContentAccess ? DECK_MEMBER_NOTE : DECK_FREE_TIER_NOTE}
+              </Text>
+              <ExternalLinkPressable
+                href={deckStoreUrl(fullContentAccess)}
+                style={styles.getDeckButton}
+                testID="get-the-deck-button"
+              >
                 <Text style={styles.getDeckButtonText}>GET THE DECK</Text>
               </ExternalLinkPressable>
             </View>
@@ -141,6 +167,32 @@ const styles = StyleSheet.create({
     fontFamily: fonts.labelBold,
     fontSize: 13,
     letterSpacing: 1,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 2,
+  },
+  price: {
+    color: colors.text,
+    fontFamily: fonts.headline,
+    fontSize: 22,
+    letterSpacing: 0.5,
+  },
+  struckPrice: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 15,
+    textDecorationLine: 'line-through',
+  },
+  priceNote: {
+    color: colors.textMuted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 12,
   },
   getDeckButton: {
     width: '100%',

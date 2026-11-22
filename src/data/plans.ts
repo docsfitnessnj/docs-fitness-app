@@ -89,12 +89,15 @@ export const ONLINE_PLAN_BULLETS = [
 
 // Names carry the "(ONLINE)" tag so the track reads even out of context —
 // card, confirmation popup, receipt, anywhere the plan is named.
+// Round 65: repriced, final and authoritative. $27 x 12 = $324; paying $243
+// saves $81, exactly 3 months at $27 -- "Pay for 9 months. Get 12." stays
+// true since $243 = 9 x $27.
 export const ONLINE_PLANS: OnlinePlan[] = [
-  { key: 'monthly', name: 'MONTHLY (ONLINE)', price: '$57', cadence: '/ month' },
+  { key: 'monthly', name: 'MONTHLY (ONLINE)', price: '$27', cadence: '/ month' },
   {
     key: 'annual',
     name: 'ANNUAL (ONLINE)',
-    price: '$513',
+    price: '$243',
     cadence: '/ year',
     banner: { title: '3 MONTHS FREE', subtitle: 'Pay for 9 months. Get 12.' },
   },

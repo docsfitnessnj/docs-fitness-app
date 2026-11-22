@@ -17,11 +17,11 @@ const ONE_TIME_PLANS: readonly PlanKey[] = ['ten_pack', 'drop_in', 'pilates_gues
 // 50 rate is never something the client asks for directly — this function
 // re-checks eligibility itself (live launch window, under 50 claimed, this
 // account hasn't already claimed one) and silently falls back to the
-// standard $57 price the moment any of that isn't true, exactly as round
+// standard $27 price the moment any of that isn't true, exactly as round
 // one's brief required. Never trust what the client showed on screen.
 //
 // Business decisions this function enforces server-side, never trusting the
-// client: the Founding 50 rate has no trial — it charges $37 immediately at
+// client: the Founding 50 rate has no trial — it charges $17 immediately at
 // checkout, rate locked in for as long as the membership stays active.
 // Standard monthly and annual keep their 14-day trial unchanged, live
 // window or not. Monthly Unlimited (IN PERSON) also has no trial — in
@@ -140,7 +140,11 @@ Deno.serve(async (req) => {
           plan: planLabel,
           ...(classSessionId ? { class_session_id: classSessionId } : {}),
         },
-        allow_promotion_codes: false,
+        // Round 65: Doc creates the real promotion codes himself in the
+        // Stripe dashboard -- this is the whole app-side change needed to
+        // let a one-time purchase (10 Class Pack / Drop In / Pilates) honor
+        // one at Checkout. No in-app promo UI.
+        allow_promotion_codes: true,
         success_url: `${origin}/?checkout=success&session_id={CHECKOUT_SESSION_ID}${planParam}`,
         cancel_url: `${origin}/?checkout=cancel${planParam}`,
       });
@@ -187,7 +191,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // No trial on the Founding 50 rate ($37 charges immediately) or on
+    // No trial on the Founding 50 rate ($17 charges immediately) or on
     // in-person Monthly Unlimited (the first-class-free hook replaces a
     // trial for in person). Standard monthly and annual keep the 14-day
     // trial.
@@ -203,7 +207,10 @@ Deno.serve(async (req) => {
       },
       client_reference_id: user.id,
       metadata: { supabase_user_id: user.id, plan: planLabel },
-      allow_promotion_codes: false,
+      // Round 65: same promo-code allowance as the one-time-plan branch
+      // above, for every subscription plan (online monthly/annual/founding,
+      // in-person Monthly Unlimited).
+      allow_promotion_codes: true,
       success_url: `${origin}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/?checkout=cancel`,
     });

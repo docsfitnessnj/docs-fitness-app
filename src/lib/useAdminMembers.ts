@@ -28,6 +28,10 @@ export type AdminMember = {
   // pre-app system, admin-editable here. Added to their real in-app
   // class_bookings count for the badge's lifetime total.
   legacyStartingCount: number;
+  // Round 65 Part 3.2 — the real balance on this member's own
+  // admin-granted class pack row (migration_035), for migrating existing
+  // Somble members. 0 if one was never granted.
+  packCreditsRemaining: number;
 };
 
 // The 7 sections Member Manager groups the roster into, in the exact order
@@ -64,6 +68,7 @@ type Row = {
   sub_cancel_at_period_end: boolean | null;
   group_chat_muted: boolean | null;
   legacy_starting_count: number | null;
+  pack_credits_remaining: number | null;
 };
 
 function formatDate(iso: string | null): string {
@@ -134,6 +139,7 @@ function mapRow(row: Row): AdminMember {
     statusLabel,
     groupChatMuted: row.group_chat_muted ?? false,
     legacyStartingCount: row.legacy_starting_count ?? 0,
+    packCreditsRemaining: row.pack_credits_remaining ?? 0,
   };
 }
 
@@ -202,5 +208,21 @@ export function useAdminMembers(active: boolean) {
     return { error: null };
   };
 
-  return { members, grouped, loading, error, refetch, setMemberMuted, setLegacyStartingCount };
+  // Round 65 Part 3.2 — migrating an existing Somble member's remaining
+  // class-pack balance. Unlike the plain profile-column writes above, this
+  // has to go through a real security-definer RPC (migration_035): there's
+  // no insert/update policy on class_packs for `authenticated` at all, by
+  // design (migration_019) — the function's own admin check is the real
+  // gate, not RLS.
+  const setPackCredits = async (id: string, credits: number): Promise<{ error: string | null }> => {
+    const { error: rpcError } = await supabase.rpc('admin_grant_class_pack_credits', {
+      p_user_id: id,
+      p_credits: credits,
+    });
+    if (rpcError) return { error: rpcError.message };
+    setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, packCreditsRemaining: credits } : m)));
+    return { error: null };
+  };
+
+  return { members, grouped, loading, error, refetch, setMemberMuted, setLegacyStartingCount, setPackCredits };
 }

@@ -36,3 +36,8 @@ verify_jwt = false
 # inside the function itself.
 [functions.admin-send-test-email]
 verify_jwt = true
+
+# Round 64: the EMAIL admin screen's SEND TEST WELCOME EMAILS button —
+# same admin-only gate as admin-send-test-email above.
+[functions.admin-send-test-welcome-emails]
+verify_jwt = true

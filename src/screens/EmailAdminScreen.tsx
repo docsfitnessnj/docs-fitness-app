@@ -40,6 +40,8 @@ export function EmailAdminScreen({ visible, onClose }: Props) {
   const [sendState, setSendState] = useState<SendState>('idle');
   const [sendError, setSendError] = useState<string | null>(null);
   const [sentWeekLabel, setSentWeekLabel] = useState<string | null>(null);
+  const [welcomeSendState, setWelcomeSendState] = useState<SendState>('idle');
+  const [welcomeSendError, setWelcomeSendError] = useState<string | null>(null);
 
   if (!visible) return null;
 
@@ -95,6 +97,24 @@ export function EmailAdminScreen({ visible, onClose }: Props) {
     setSentWeekLabel(payload.week ?? null);
   };
 
+  const sendTestWelcomeEmails = async () => {
+    setWelcomeSendState('sending');
+    setWelcomeSendError(null);
+    const { data, error } = await supabase.functions.invoke('admin-send-test-welcome-emails', { body: {} });
+    if (error) {
+      setWelcomeSendState('error');
+      setWelcomeSendError(isBackendUnavailableError(error) ? "Can't reach the backend right now." : error.message);
+      return;
+    }
+    const payload = data as { sent?: boolean; error?: string } | null;
+    if (!payload?.sent) {
+      setWelcomeSendState('error');
+      setWelcomeSendError(payload?.error ?? 'Send failed.');
+      return;
+    }
+    setWelcomeSendState('sent');
+  };
+
   return (
     <View style={styles.container}>
       <ModalHeader title="EMAIL" onBack={onClose} backTestID="close-email-admin" />
@@ -148,6 +168,34 @@ export function EmailAdminScreen({ visible, onClose }: Props) {
         {sendState === 'error' ? (
           <Text style={styles.sendResultError} testID="send-test-email-error">
             {sendError}
+          </Text>
+        ) : null}
+
+        <Text style={[styles.sectionHeading, styles.sectionHeadingSpaced]}>SEND TEST WELCOME EMAILS</Text>
+        <Text style={styles.sectionSubtext}>
+          Sends BOTH welcome-email versions — ONLINE and IN PERSON — straight to your own inbox through the same
+          shared renderer every new member's own welcome email uses, each one tagged in the subject so they're easy
+          to tell apart. Independent of EMAIL TEST MODE — this always reaches only your inbox, as many times as you
+          like.
+        </Text>
+
+        <Pressable
+          style={[styles.sendButton, welcomeSendState === 'sending' && styles.disabled]}
+          disabled={welcomeSendState === 'sending'}
+          onPress={sendTestWelcomeEmails}
+          testID="send-test-welcome-emails-button"
+        >
+          <Text style={styles.sendButtonText}>{welcomeSendState === 'sending' ? 'SENDING…' : 'SEND TEST WELCOME EMAILS'}</Text>
+        </Pressable>
+
+        {welcomeSendState === 'sent' ? (
+          <Text style={styles.sendResultSuccess} testID="send-test-welcome-emails-success">
+            Sent both versions. Check your inbox.
+          </Text>
+        ) : null}
+        {welcomeSendState === 'error' ? (
+          <Text style={styles.sendResultError} testID="send-test-welcome-emails-error">
+            {welcomeSendError}
           </Text>
         ) : null}
       </ScrollView>
@@ -236,6 +284,9 @@ const styles = StyleSheet.create({
     fontSize: 20,
     letterSpacing: 1,
     marginBottom: 8,
+  },
+  sectionHeadingSpaced: {
+    marginTop: 28,
   },
   sectionSubtext: {
     color: colors.textMuted,

@@ -55,8 +55,10 @@ export async function copyInviteLink(): Promise<boolean> {
 // the plain URLs, not an open-it function per link.
 export const MERCH_STORE_URL =
   'https://docs-fitness-merch.myshopify.com/collections/doc-s-fitness-merch?utm_source=docs_app&utm_medium=app&utm_campaign=merch';
-export const DECK_STORE_URL =
-  'https://docs-fitness-merch.myshopify.com/products/doc-s-deck-of-wods?utm_source=docs_app&utm_medium=app&utm_campaign=deck';
+// The Deck of WODs's own two URLs (member-price vs. plain product page) now
+// live in src/data/deckPricing.ts's own deckStoreUrl() — this round's
+// pricing is tier-dependent, which a single flat constant here could never
+// express.
 
 const MAPS_QUERY = encodeURIComponent(`${LOCATION.name}, ${LOCATION.city}`);
 export const LOCATION_MAPS_URL = `https://www.google.com/maps/dir/?api=1&destination=${MAPS_QUERY}`;
