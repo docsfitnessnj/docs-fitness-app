@@ -15105,6 +15105,10 @@ async function run() {
       let uploadAttempted = false;
       await setupMocks(page, USER_ID);
       await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      // Zero live stories, explicitly -- setupMocks()'s own generic default
+      // (one live photo story, see defaultStoriesFixture) would otherwise
+      // show the ADD badge next to a real ring instead of story-add-empty.
+      await registerStoryGetMock(page, []);
       await page.route('**/storage/v1/object/story-media/**', (route) => {
         uploadAttempted = true;
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -15144,6 +15148,7 @@ async function run() {
       let uploadAttempted = false;
       await setupMocks(page, USER_ID);
       await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await registerStoryGetMock(page, []);
       await page.route('**/storage/v1/object/story-media/**', (route) => {
         uploadAttempted = true;
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -15184,6 +15189,7 @@ async function run() {
       const page = await context.newPage();
       await setupMocks(page, USER_ID);
       await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await registerStoryGetMock(page, []);
       await page.route('**/storage/v1/object/story-media/**', (route) =>
         route.fulfill({
           status: 413,
@@ -15217,6 +15223,7 @@ async function run() {
       const page = await context.newPage();
       await setupMocks(page, USER_ID);
       await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await registerStoryGetMock(page, []);
       await page.route('**/storage/v1/object/story-media/**', (route) => route.abort('connectionreset'));
       await seedSignedInSession(page, USER_ID);
       await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
@@ -15508,6 +15515,23 @@ async function run() {
       await installFakeUploadProgressXHR(page, { urlPattern: 'storage/v1/object/story-media', steps: [0.2, 0.5, 0.8, 1], stepDelayMs: 350 });
       await setupMocks(page, USER_ID);
       await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      const ringCheckInserted = [];
+      await page.route('**/rest/v1/stories*', async (route) => {
+        const req = route.request();
+        if (req.method() === 'POST') {
+          let payload = {};
+          try {
+            payload = JSON.parse(req.postData() || '{}');
+          } catch {}
+          ringCheckInserted.push(payload);
+          return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify([{ id: 'r67-ring-story', ...payload }]) });
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(ringCheckInserted.map((s, i) => ({ id: `r67-ring-story-${i + 1}`, media_url: s.media_url, media_type: s.media_type, created_at: new Date().toISOString() }))),
+        });
+      });
       await seedSignedInSession(page, USER_ID);
       await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
       await page.waitForTimeout(900);
