@@ -14965,10 +14965,10 @@ async function run() {
 
       await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(400);
-      const firstSrc = await page.evaluate(() => document.querySelector('img[data-testid="story-photo"]')?.getAttribute('src') || null).catch(() => null);
+      const firstSrc = await page.evaluate(() => document.querySelector('[data-testid="story-photo"] img')?.getAttribute('src') || null).catch(() => null);
       await page.getByTestId('story-tap-right').click({ timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(400);
-      const secondSrc = await page.evaluate(() => document.querySelector('img[data-testid="story-photo"]')?.getAttribute('src') || null).catch(() => null);
+      const secondSrc = await page.evaluate(() => document.querySelector('[data-testid="story-photo"] img')?.getAttribute('src') || null).catch(() => null);
       record(
         '[stories/ordering-newest-last] the older story shows first, the newer one shows last (tapping right advances to it)',
         !!firstSrc && !!secondSrc && firstSrc.includes('older.jpg') && secondSrc.includes('newer.jpg'),

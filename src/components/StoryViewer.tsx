@@ -42,9 +42,22 @@ function VideoSegment({
   progressAnim: Animated.Value;
   onEnd: () => void;
 }) {
+  // `useVideoPlayer`'s own setup callback runs synchronously inside
+  // useMemo, during render -- strictly BEFORE VideoView's own child
+  // useEffect has mounted the real <video> element (confirmed directly
+  // by reading expo-video's web source: VideoPlayerWeb.play() only ever
+  // iterates its own _mountedVideos set, and mountVideoView() is called
+  // from VideoView's own effect, not during setup). Calling play() there
+  // is a silent no-op on web -- it iterates zero mounted videos. `muted`
+  // is unaffected by this (mountVideoView() copies _muted onto the video
+  // at mount time regardless of when it was set), which is exactly why
+  // this bug reads as "decodes fine, correctly unmuted, but never
+  // actually plays" rather than failing outright. play() is called below
+  // instead, in VideoSegment's OWN effect -- which, as this component's
+  // own child, runs after VideoView's child effect has already mounted
+  // the real element, since React fires child effects before parent ones.
   const player = useVideoPlayer(uri, (p) => {
     p.muted = false;
-    p.play();
   });
   const [codecVerdict, setCodecVerdict] = useState<CodecVerdict>('checking');
 
@@ -71,6 +84,7 @@ function VideoSegment({
 
   useEffect(() => {
     progressAnim.setValue(0);
+    player.play();
     const endSub = player.addListener('playToEnd', onEnd);
     const timeSub = player.addListener('timeUpdate', ({ currentTime }: { currentTime: number }) => {
       const duration = player.duration;
