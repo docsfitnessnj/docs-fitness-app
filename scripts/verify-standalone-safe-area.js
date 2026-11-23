@@ -14958,6 +14958,20 @@ async function run() {
         { id: 'r66-older', media_url: 'https://example.test/older.jpg', media_type: 'photo', created_at: new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString() },
         { id: 'r66-newer', media_url: 'https://example.test/newer.jpg', media_type: 'photo', created_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString() },
       ]);
+      // react-native-web's own Image component never renders its real
+      // nested <img> (or sets the painted div's background-image) until
+      // the image actually resolves -- confirmed directly: an unmocked
+      // fake URL that never loads leaves story-photo's own inner div
+      // with an EMPTY style and no <img> descendant at all, which is why
+      // the first draft of this check always read null for both. Both
+      // fake URLs need real, resolvable bytes behind them for either
+      // read to work at all.
+      await page.route('https://example.test/older.jpg', (route) =>
+        route.fulfill({ status: 200, contentType: 'image/png', body: ASPECT_RATIO_FIXTURE_PNG })
+      );
+      await page.route('https://example.test/newer.jpg', (route) =>
+        route.fulfill({ status: 200, contentType: 'image/png', body: ASPECT_RATIO_FIXTURE_PNG })
+      );
       await seedSignedInSession(page, USER_ID);
       await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
       await page.waitForTimeout(900);
