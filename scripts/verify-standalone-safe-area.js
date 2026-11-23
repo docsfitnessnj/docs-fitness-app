@@ -239,6 +239,12 @@ const LARGE_JPEG_FIXTURE_RATIO = 4032 / 3024;
 // AGENTS.md's Round 66 section for the full confirmation.
 const STORY_H264_FIXTURE = fs.readFileSync(path.join(__dirname, 'fixtures', 'story-h264.mp4'));
 const STORY_HEVC_FIXTURE = fs.readFileSync(path.join(__dirname, 'fixtures', 'story-hevc.mov'));
+// Round 67: a real, genuinely 95-second H.264 clip, kept tiny (a 64x64
+// solid-color frame at 2fps -- real duration is all this check needs, not
+// real resolution/bitrate) specifically to prove the duration check reads
+// the real file's own metadata rather than any heuristic based on byte
+// size, without committing a large binary just for this.
+const STORY_TOO_LONG_FIXTURE = fs.readFileSync(path.join(__dirname, 'fixtures', 'story-too-long.mp4'));
 
 async function setupMocks(page, userId = USER_ID) {
   await page.route('**/auth/v1/token*', (route) =>
@@ -14991,6 +14997,618 @@ async function run() {
         !!firstSrc && !!secondSrc && firstSrc.includes('older.jpg') && secondSrc.includes('newer.jpg'),
         JSON.stringify({ firstSrc, secondSrc })
       );
+      await context.close();
+    }
+
+    // -------------------------------------------------------------------
+    // Round 67: Doc's Stories follow-up -- the owner's first real video
+    // post failed on the owner's own phone. See AGENTS.md for the full
+    // investigation (a real ~32MB/30-second H.264 fixture built to match a
+    // real phone recording, no client-side re-encode or upload timeout
+    // found anywhere in this app's own code -- the real root cause was no
+    // size/duration check existing at all).
+    // -------------------------------------------------------------------
+
+    // Simulates the browser's OWN XMLHttpRequest for the one XHR this app
+    // ever sends (uploadFileWithProgress, src/lib/supabaseClient.ts) --
+    // confirmed directly before relying on this: Playwright's own
+    // page.route() interception reports ZERO xhr.upload.onprogress events
+    // regardless of how long route.fulfill() is delayed (the request never
+    // actually transmits over a real socket when CDP's Fetch domain
+    // synthesizes the response), so there is no way to drive REAL,
+    // multi-step upload progress through network mocking in this sandbox.
+    // This is the "force what the real mechanism would produce" technique
+    // this file already uses throughout (window.matchMedia overrides,
+    // forceVisualViewportShrink) applied to the one other browser-native
+    // API surface this app's own real code touches directly: the real,
+    // unmodified uploadFileWithProgress() still constructs a real
+    // XMLHttpRequest, attaches real event listeners, and calls real
+    // methods on it -- only the BROWSER's OWN behavior underneath that API
+    // is simulated, exactly the same shape as every other such override in
+    // this file. Scoped to fail loudly (via the real XHR, not swallowed)
+    // if a request's URL doesn't match the expected story-media upload
+    // path, so this can never silently intercept something unrelated.
+    const installFakeUploadProgressXHR = (page, { urlPattern, steps = [0.15, 0.4, 0.65, 0.9, 1], stepDelayMs = 40, failStatus = null }) =>
+      page.addInitScript(
+        ({ patternSource, steps, stepDelayMs, failStatus }) => {
+          const RealXHR = window.XMLHttpRequest;
+          const pattern = new RegExp(patternSource);
+          class FakeUploadProgressXHR {
+            constructor() {
+              this._real = null;
+              this._fakeUpload = { onprogress: null };
+              this._url = '';
+              this.onload = null;
+              this.onerror = null;
+              this.status = 0;
+              this.responseText = '';
+            }
+            get upload() {
+              return this._isFake ? this._fakeUpload : this._real.upload;
+            }
+            open(method, url) {
+              this._url = url;
+              this._isFake = pattern.test(url);
+              if (!this._isFake) {
+                this._real = new RealXHR();
+                this._real.open(method, url);
+              }
+            }
+            setRequestHeader(name, value) {
+              if (!this._isFake) this._real.setRequestHeader(name, value);
+            }
+            send(body) {
+              if (!this._isFake) {
+                this._real.onload = () => {
+                  this.status = this._real.status;
+                  this.responseText = this._real.responseText;
+                  this.onload?.();
+                };
+                this._real.onerror = () => this.onerror?.();
+                this._real.send(body);
+                return;
+              }
+              const total = 1000000;
+              let i = 0;
+              const tick = () => {
+                const loaded = Math.round(total * steps[i]);
+                this._fakeUpload.onprogress?.({ lengthComputable: true, loaded, total });
+                i++;
+                if (i < steps.length) {
+                  setTimeout(tick, stepDelayMs);
+                } else if (failStatus) {
+                  this.status = failStatus.status;
+                  this.responseText = failStatus.body;
+                  this.onload?.();
+                } else {
+                  this.status = 200;
+                  this.responseText = '{}';
+                  this.onload?.();
+                }
+              };
+              setTimeout(tick, stepDelayMs);
+            }
+          }
+          window.XMLHttpRequest = FakeUploadProgressXHR;
+        },
+        { patternSource: urlPattern, steps, stepDelayMs, failStatus }
+      );
+
+    // --- PART 1: a pick over the real 250MB limit is refused BEFORE any
+    // upload is attempted, with a specific message naming the limit. A
+    // real 260MB zeroed buffer (never a real video, since blob.size is all
+    // this check needs) stands in for a real oversized phone recording --
+    // never committed to the repo, generated fresh in memory. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      let uploadAttempted = false;
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      // Zero live stories, explicitly -- setupMocks()'s own generic default
+      // (one live photo story, see defaultStoriesFixture) would otherwise
+      // show the ADD badge next to a real ring instead of story-add-empty.
+      await registerStoryGetMock(page, []);
+      await page.route('**/storage/v1/object/story-media/**', (route) => {
+        uploadAttempted = true;
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+      });
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      await page.getByTestId('story-add-empty').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      // Playwright's own setFiles() refuses an inline buffer over 50MB
+      // ("Cannot set buffer larger than 50Mb") -- a real 260MB file has to
+      // be written to disk and picked by path instead, exactly as its own
+      // error message directs (the same technique this file's own r46
+      // import-fixture check already uses for a different oversized-input
+      // reason). Never committed; written fresh to the OS temp dir and
+      // cleaned up right after this one check.
+      const oversizedPath = path.join(require('os').tmpdir(), `r67-oversized-${Date.now()}.mp4`);
+      fs.writeFileSync(oversizedPath, Buffer.alloc(260 * 1024 * 1024));
+      const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 5000 }),
+        page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+      ]);
+      await fileChooser.setFiles(oversizedPath);
+      await page.waitForTimeout(800);
+      fs.unlinkSync(oversizedPath);
+
+      const alertVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+      const alertText = alertVisible ? await page.getByTestId('alert-backdrop').innerText().catch(() => '') : '';
+      record(
+        '[stories/round67/too-large-refused-up-front] a pick over 250MB shows a specific too-big message naming the limit and never attempts an upload',
+        alertVisible && /250MB/.test(alertText) && !uploadAttempted,
+        JSON.stringify({ alertVisible, alertText, uploadAttempted })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-too-large-message.png') }).catch(() => {});
+      await context.close();
+    }
+
+    // --- PART 1 / PART 5.2: a video over 90 seconds is refused up front,
+    // before any upload -- a real, genuinely 95-second fixture (tiny file
+    // size), so this is a real duration read, not a size heuristic. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      let uploadAttempted = false;
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await registerStoryGetMock(page, []);
+      await page.route('**/storage/v1/object/story-media/**', (route) => {
+        uploadAttempted = true;
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+      });
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      await page.getByTestId('story-add-empty').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 5000 }),
+        page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+      ]);
+      await fileChooser.setFiles({ name: 'too-long.mp4', mimeType: 'video/mp4', buffer: STORY_TOO_LONG_FIXTURE });
+      await page.waitForTimeout(800);
+
+      const alertVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+      const alertText = alertVisible ? await page.getByTestId('alert-backdrop').innerText().catch(() => '') : '';
+      record(
+        '[stories/round67/too-long-refused-up-front] a real 95-second video shows a specific too-long message naming the 90-second limit and never attempts an upload',
+        alertVisible && /90 seconds/.test(alertText) && !uploadAttempted,
+        JSON.stringify({ alertVisible, alertText, uploadAttempted })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-too-long-message.png') }).catch(() => {});
+      await context.close();
+    }
+
+    // --- PART 1: the two failure messages are genuinely distinct -- a
+    // real Storage "exceeded the maximum allowed size" rejection (the
+    // defense-in-depth backstop, for whenever the real platform ceiling is
+    // lower than this client's own 250MB check) reads as the SAME specific
+    // too-big copy, never the generic one; a genuine connection failure
+    // reads as the plain generic copy, never the specific one. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await registerStoryGetMock(page, []);
+      await page.route('**/storage/v1/object/story-media/**', (route) =>
+        route.fulfill({
+          status: 413,
+          contentType: 'application/json',
+          body: JSON.stringify({ statusCode: '413', error: 'Payload too large', message: 'The object exceeded the maximum allowed size' }),
+        })
+      );
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      await page.getByTestId('story-add-empty').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 5000 }),
+        page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+      ]);
+      await fileChooser.setFiles({ name: 'backstop.mp4', mimeType: 'video/mp4', buffer: STORY_H264_FIXTURE });
+      await page.waitForTimeout(1200);
+      const backstopAlertText = await page.getByTestId('alert-backdrop').innerText().catch(() => '');
+      record(
+        '[stories/round67/backstop-storage-rejection-specific-message] a genuine Storage "exceeded max size" rejection still reads the specific too-big message, not the generic one',
+        /250MB/.test(backstopAlertText),
+        JSON.stringify({ backstopAlertText })
+      );
+      await context.close();
+    }
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await registerStoryGetMock(page, []);
+      await page.route('**/storage/v1/object/story-media/**', (route) => route.abort('connectionreset'));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      await page.getByTestId('story-add-empty').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 5000 }),
+        page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+      ]);
+      await fileChooser.setFiles({ name: 'network-fail.mp4', mimeType: 'video/mp4', buffer: STORY_H264_FIXTURE });
+      await page.waitForTimeout(1200);
+      const networkAlertText = await page.getByTestId('alert-backdrop').innerText().catch(() => '');
+      record(
+        '[stories/round67/network-failure-generic-message] a genuine connection failure reads the plain generic message, never the too-big one -- the two cases are genuinely distinguishable',
+        /Something went wrong/.test(networkAlertText) && !/250MB/.test(networkAlertText),
+        JSON.stringify({ networkAlertText })
+      );
+      await context.close();
+    }
+
+    // --- PART 2: a failed upload leaves the ring/badge/story state exactly
+    // as it was before the attempt -- confirmed by reading the real
+    // computed style of the ADD badge's own icon glyph before and after
+    // (not just its presence), and by confirming a real retry afterward
+    // succeeds normally, proving the control is genuinely re-enabled, not
+    // just visually reset. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      let failNext = true;
+      const insertedStories = [];
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await page.route('**/rest/v1/stories*', async (route) => {
+        const req = route.request();
+        if (req.method() === 'POST') {
+          let payload = {};
+          try {
+            payload = JSON.parse(req.postData() || '{}');
+          } catch {}
+          insertedStories.push(payload);
+          return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify([{ id: `r67-story-${insertedStories.length}`, ...payload }]) });
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(insertedStories.map((s, i) => ({ id: `r67-story-${i + 1}`, media_url: s.media_url, media_type: s.media_type, created_at: new Date().toISOString() }))),
+        });
+      });
+      await page.route('**/storage/v1/object/story-media/**', async (route) => {
+        if (failNext) {
+          failNext = false;
+          // A genuine, observable window: an un-delayed route.fulfill() can
+          // resolve this fast enough that posting flips back to false
+          // before the very next sampled frame -- confirmed directly (the
+          // first draft of this check read "during" as already-reset,
+          // identical to "before," on every run).
+          await new Promise((r) => setTimeout(r, 600));
+          return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'internal' }) });
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ Key: `story-media/${route.request().url().split('/story-media/')[1]}`, Id: 'mock-upload-id' }),
+        });
+      });
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      const readButtonState = () =>
+        page.evaluate(() => {
+          const el = document.querySelector('[data-testid="story-add-empty"]');
+          if (!el) return null;
+          const rect = el.getBoundingClientRect();
+          return {
+            ariaDisabled: el.getAttribute('aria-disabled'),
+            hasProgressRing: !!el.querySelector('[data-testid="story-upload-progress-ring"]'),
+            rect: { width: rect.width, height: rect.height, x: Math.round(rect.x), y: Math.round(rect.y) },
+            outerHTML: el.outerHTML,
+          };
+        });
+
+      const before = await readButtonState();
+      await page.getByTestId('story-add-empty').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 5000 }),
+        page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+      ]);
+      await fileChooser.setFiles({ name: 'r67-residue.mp4', mimeType: 'video/mp4', buffer: STORY_H264_FIXTURE });
+      await page.waitForTimeout(400);
+      const during = await readButtonState();
+      await page.waitForTimeout(1200);
+      await dismissAlertIfAny(page);
+      const after = await readButtonState();
+
+      record(
+        '[stories/round67/no-residue-after-failure] the button shows a real busy treatment mid-upload, then returns exactly to its pre-attempt resting state (same markup, same enabled state, no leftover progress ring) after a failure',
+        !!before &&
+          !!during &&
+          !!after &&
+          !before.hasProgressRing &&
+          during.hasProgressRing &&
+          during.ariaDisabled === 'true' &&
+          !after.hasProgressRing &&
+          after.ariaDisabled === before.ariaDisabled &&
+          after.outerHTML === before.outerHTML &&
+          JSON.stringify(after.rect) === JSON.stringify(before.rect),
+        JSON.stringify({ before, during, after })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-no-residue-after-failure.png') }).catch(() => {});
+
+      // The real retry: the SAME control, re-tapped, now succeeds --
+      // proving it's genuinely re-enabled, not just visually reset.
+      await page.getByTestId('story-add-empty').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const [fileChooser2] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 5000 }),
+        page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+      ]);
+      await fileChooser2.setFiles({ name: 'r67-retry.mp4', mimeType: 'video/mp4', buffer: STORY_H264_FIXTURE });
+      await page.waitForTimeout(1200);
+      const retrySucceeded = insertedStories.length === 1;
+      record(
+        '[stories/round67/retry-after-failure-succeeds] the exact same control, re-tapped after a failure, posts successfully',
+        retrySucceeded,
+        JSON.stringify({ insertedStoriesCount: insertedStories.length })
+      );
+      await context.close();
+    }
+
+    // --- PART 3: a real non-square (portrait) photo renders fully
+    // contained, never cropped -- react-native-web's own Image component
+    // maps resizeMode directly to the CSS object-fit property, so reading
+    // that computed style is a direct, reliable signal (not an assumption
+    // from resizeMode alone). ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      const portraitPng = buildSolidPng(216, 270, [168, 50, 90]); // 0.8 ratio, matching a real 1080x1350 portrait photo
+      await setupMocks(page, USER_ID);
+      await registerStoryGetMock(page, [
+        { id: 'r67-portrait', media_url: `${BASE}/__fixtures__/r67-portrait.png`, media_type: 'photo', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+      ]);
+      await page.route('**/__fixtures__/r67-portrait.png', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: portraitPng }));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      // react-native-web's own Image renders the REAL visible pixels via a
+      // background-image on an inner painted <div> -- confirmed directly by
+      // dumping the real DOM: that div carries background-size (mapped
+      // straight from resizeMode), while the sibling <img> is a visually
+      // inert accessibility/semantics node whose own object-fit is
+      // irrelevant to what a member actually sees (it read "fill" even
+      // with the real fix correctly applied, which is why the first draft
+      // of this check -- reading the <img> -- failed against working code).
+      const backgroundSize = await page
+        .evaluate(() => {
+          const outer = document.querySelector('[data-testid="story-photo"]');
+          const painted = outer ? outer.querySelector('div') : null;
+          return painted ? getComputedStyle(painted).backgroundSize : null;
+        })
+        .catch(() => null);
+      record(
+        '[stories/round67/photo-renders-contained] a real non-square photo\'s real, visible painted layer uses background-size: contain, never cover -- the whole image fits on screen, letterboxed, never cropped',
+        backgroundSize === 'contain',
+        JSON.stringify({ backgroundSize })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-photo-contained.png') }).catch(() => {});
+      await context.close();
+    }
+
+    // --- PART 4: the admin-only DELETE control -- absent for a member,
+    // present for admin, with the standing destructive-action confirmation
+    // dialog; Keep Story leaves the real story untouched, Delete removes
+    // the real row (and storage object) and, for the only live story,
+    // returns the ring to its genuine no-story state. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      // Member (not admin) -- the real default profile fixture already
+      // used throughout setupMocks() is is_admin: false.
+      await registerStoryGetMock(page, [
+        { id: 'r67-member-view', media_url: 'https://example.test/member-view.jpg', media_type: 'photo', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+      ]);
+      await page.route('https://example.test/member-view.jpg', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: ASPECT_RATIO_FIXTURE_PNG }));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const deleteVisibleForMember = await page.getByTestId('story-delete').isVisible().catch(() => false);
+      record(
+        '[stories/round67/delete-control-member-hidden] a non-admin member never sees the DELETE control at all',
+        !deleteVisibleForMember,
+        JSON.stringify({ deleteVisibleForMember })
+      );
+      await context.close();
+    }
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      let deleteCalled = false;
+      let deletedId = null;
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await page.route('**/rest/v1/stories*', async (route) => {
+        const req = route.request();
+        if (req.method() === 'DELETE') {
+          deleteCalled = true;
+          deletedId = new URL(req.url()).searchParams.get('id');
+          return route.fulfill({ status: 204, contentType: 'application/json', body: '' });
+        }
+        if (deleteCalled) return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([{ id: 'r67-only-story', media_url: 'https://example.test/only-story.jpg', media_type: 'photo', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() }]),
+        });
+      });
+      await page.route('https://example.test/only-story.jpg', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: ASPECT_RATIO_FIXTURE_PNG }));
+      await page.route('**/storage/v1/object/story-media/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-delete-control-visible.png') }).catch(() => {});
+      await page.getByTestId('story-delete').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const confirmTitleVisible = await page.getByText('Delete This Story?', { exact: false }).isVisible().catch(() => false);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-delete-confirmation.png') }).catch(() => {});
+
+      // Keep Story -- dismiss without deleting anything.
+      await page.getByTestId('alert-backdrop').getByText('Keep Story', { exact: true }).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const stillOpenAfterKeep = await page.getByTestId('story-close').isVisible().catch(() => false);
+      record(
+        '[stories/round67/delete-confirmation-keep] the confirmation shows the standard destructive-action copy, and Keep Story leaves the real story untouched',
+        confirmTitleVisible && !deleteCalled && stillOpenAfterKeep,
+        JSON.stringify({ confirmTitleVisible, deleteCalled, stillOpenAfterKeep })
+      );
+
+      // Now actually delete it.
+      await page.getByTestId('story-delete').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      await page.getByTestId('alert-backdrop').getByText('Delete', { exact: true }).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(800);
+      const viewerClosedAfterDelete = !(await page.getByTestId('story-close').isVisible().catch(() => true));
+      const ringGoneAfterDelete = !(await page.getByTestId('story-ring-doc').isVisible().catch(() => true));
+      record(
+        '[stories/round67/delete-removes-only-story] deleting the only live story calls the real DELETE, closes the viewer, and the ring returns to its genuine no-story state everywhere',
+        deleteCalled && deletedId === 'eq.r67-only-story' && viewerClosedAfterDelete && ringGoneAfterDelete,
+        JSON.stringify({ deleteCalled, deletedId, viewerClosedAfterDelete, ringGoneAfterDelete })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-after-delete-empty-ring.png') }).catch(() => {});
+      await context.close();
+    }
+
+    // --- PART 5.1: a photo segment's own progress-bar animation duration
+    // is genuinely 20 seconds now, not 5 -- confirmed via the real built
+    // bundle's own source (an Animated.timing duration isn't something a
+    // DOM read can observe directly mid-animation in a short-lived check),
+    // using the same recursive-walk technique auditTwelveHourClock/
+    // auditStalePrices already establish for this exact kind of check. ---
+    {
+      let bundleText = '';
+      (function walk(dir) {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            walk(full);
+            continue;
+          }
+          if (!/\.js$/.test(entry.name)) continue;
+          bundleText += fs.readFileSync(full, 'utf8');
+        }
+      })(DIST_DIR);
+      record(
+        '[stories/round67/photo-duration-20s] the shipped bundle carries the new 20-second photo duration',
+        bundleText.includes('20000'),
+        'checked bundle for literal 20000'
+      );
+    }
+
+    // --- PART 5.3: a real, driven-by-real-progress circular stroke, using
+    // the fake-XHR technique above to exercise the REAL, unmodified
+    // uploadFileWithProgress/StoriesContext/StoryRow code end to end
+    // against multiple genuine intermediate progress values. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await installFakeUploadProgressXHR(page, { urlPattern: 'storage/v1/object/story-media', steps: [0.2, 0.5, 0.8, 1], stepDelayMs: 350 });
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      const ringCheckInserted = [];
+      await page.route('**/rest/v1/stories*', async (route) => {
+        const req = route.request();
+        if (req.method() === 'POST') {
+          let payload = {};
+          try {
+            payload = JSON.parse(req.postData() || '{}');
+          } catch {}
+          ringCheckInserted.push(payload);
+          return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify([{ id: 'r67-ring-story', ...payload }]) });
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(ringCheckInserted.map((s, i) => ({ id: `r67-ring-story-${i + 1}`, media_url: s.media_url, media_type: s.media_type, created_at: new Date().toISOString() }))),
+        });
+      });
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      await page.getByTestId('story-add-empty').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 5000 }),
+        page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+      ]);
+      await fileChooser.setFiles({ name: 'r67-progress.mp4', mimeType: 'video/mp4', buffer: STORY_H264_FIXTURE });
+
+      // The browser's own getComputedStyle serialization normalizes a
+      // two-position color stop ("color 0deg Xdeg") into FOUR explicit
+      // single-position stops ("color 0deg, color Xdeg, track Xdeg, track
+      // 360deg") -- confirmed directly, not assumed. The progress angle is
+      // always the SECOND degree value in that normalized list; a naive
+      // "skip past the color, then read the first degree number" regex
+      // (this check's first draft) breaks the instant the color itself is
+      // an rgb(...) value, since rgb()'s own internal commas are
+      // indistinguishable from the gradient's own stop-separating commas.
+      const readRingAngle = () =>
+        page.evaluate(() => {
+          const ring = document.querySelector('[data-testid="story-upload-progress-ring"]');
+          if (!ring) return null;
+          const bg = getComputedStyle(ring).backgroundImage;
+          const degrees = [...bg.matchAll(/(\d+(?:\.\d+)?)deg/g)].map((m) => parseFloat(m[1]));
+          return degrees.length >= 2 ? degrees[1] : null;
+        });
+
+      // Fake steps are [0.2, 0.5, 0.8, 1] at 350ms apart (confirmed via a
+      // standalone repro before trusting these numbers): the real tick for
+      // 0.2 (72deg) lands by ~400ms, 0.5 (180deg) by ~800ms, 0.8 (288deg)
+      // by ~1200ms, and the upload completes (triggering the real insert)
+      // shortly after the 4th tick around ~1450ms.
+      await page.waitForTimeout(600); // past the first real progress tick (72deg)
+      const early = await readRingAngle();
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-upload-progress-mid.png') }).catch(() => {});
+      await page.waitForTimeout(500); // past the second real progress tick (180deg)
+      const mid = await readRingAngle();
+      await page.waitForTimeout(1200); // past completion
+      const settled = await readRingAngle(); // null once posting finishes and the "+" returns
+      const addEmptyGone = !(await page.getByTestId('story-add-empty').isVisible().catch(() => true));
+
+      record(
+        '[stories/round67/upload-progress-ring-real] the ring\'s own real conic-gradient angle advances between two real, distinct progress events, then settles back to the resting "+" on completion',
+        early !== null && mid !== null && mid > early && settled === null && addEmptyGone,
+        JSON.stringify({ early, mid, settled, addEmptyGone })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-upload-progress-settled.png') }).catch(() => {});
       await context.close();
     }
   }

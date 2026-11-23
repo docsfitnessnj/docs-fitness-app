@@ -3139,9 +3139,14 @@ create policy "only admin can delete a story"
 -- STORAGE: story-media bucket — same public-read / admin-write shape as
 -- community-media and group-chat-media (see migration_036.sql's own header
 -- comment for why INSERT/DELETE are admin-only rather than owner-folder-
--- scoped here). 100MB cap, generous for a real phone-recorded video story.
+-- scoped here). 250MB cap (migration_037.sql, Round 67 — bumped from an
+-- original 100MB after a real 30-second phone video failed to post; see
+-- that migration's own comment for the honest caveat about Supabase's
+-- separate, project-level global upload size limit, which this bucket
+-- setting can never exceed), comfortably covering a real 90-second
+-- phone-recorded video story.
 insert into storage.buckets (id, name, public, file_size_limit)
-values ('story-media', 'story-media', true, 104857600)
+values ('story-media', 'story-media', true, 262144000)
 on conflict (id) do nothing;
 
 drop policy if exists "story media is publicly viewable" on storage.objects;

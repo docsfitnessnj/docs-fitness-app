@@ -5,9 +5,16 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { AppModal } from './AppModal';
 import { StoryItem, useStories } from '../context/StoriesContext';
 import { browserCanDecodeHevc, detectVideoCodecFromUrl } from '../lib/videoCodec';
+import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
 
-const ITEM_DURATION_MS = 5000;
+// Round 67 PART 5.1: a photo segment displays for 20 seconds, up from
+// Round 66's original 5 -- an owner decision, final. Also the fallback
+// advance timer for a video this browser genuinely can't decode at all
+// (see VideoSegment's own codecVerdict effect below), for the same
+// consistency reason Round 66 picked a single shared constant in the
+// first place.
+const ITEM_DURATION_MS = 20000;
 const SWIPE_DOWN_CLOSE_THRESHOLD = 80;
 
 type CodecVerdict = 'checking' | 'known-ok' | 'known-undecodable';
@@ -117,6 +124,9 @@ function VideoSegment({
 
   return (
     <View style={StyleSheet.absoluteFill}>
+      {/* PART 3: already contentFit="contain" since Round 66 -- confirmed
+          directly rather than assumed before touching anything; only the
+          photo segment above needed the fix from "cover" to "contain". */}
       <VideoView player={player} style={StyleSheet.absoluteFill} nativeControls={false} contentFit="contain" testID="story-video" />
       {codecVerdict === 'known-undecodable' && (
         <View style={styles.undecodableBanner} testID="story-undecodable" pointerEvents="none">
@@ -131,10 +141,14 @@ type Props = {
   stories: StoryItem[];
   startIndex: number;
   onClose: () => void;
+  // PART 4: gates the quiet DELETE control below -- members never see it.
+  // The real enforcement is server-side (migration_036.sql's own RLS
+  // delete policy); this is purely the UI gate.
+  isAdmin?: boolean;
 };
 
-export function StoryViewer({ stories, startIndex, onClose }: Props) {
-  const { markViewed } = useStories();
+export function StoryViewer({ stories, startIndex, onClose, isAdmin = false }: Props) {
+  const { markViewed, deleteStory } = useStories();
   const [index, setIndex] = useState(startIndex);
   const progressAnims = useRef(stories.map(() => new Animated.Value(0))).current;
   const dragY = useRef(new Animated.Value(0)).current;
@@ -151,6 +165,43 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
 
   const goBack = () => {
     setIndex((prev) => Math.max(0, prev - 1));
+  };
+
+  // PART 4: the owner's own "posted by mistake" escape hatch. Deletes the
+  // real row (and, best-effort, the underlying Storage object) server
+  // side -- never a local-only hide, since every other open member session
+  // needs to lose it too (the existing realtime subscription in
+  // StoriesContext already handles that half for free). `remainingCount`
+  // is computed off THIS closure's own `stories` prop (which still
+  // includes the one just deleted) rather than re-reading context state
+  // right after the await, since React hasn't re-rendered this component
+  // with the parent's new, shrunk array yet at that exact point -- this
+  // avoids a stale-read race entirely rather than working around one.
+  const handleDeleteCurrent = async () => {
+    const target = stories[index];
+    if (!target) return;
+    const ok = await deleteStory(target.id);
+    if (!ok) {
+      showAlert("Couldn't Delete Story", 'Something went wrong. Try again.');
+      return;
+    }
+    const remainingCount = stories.length - 1;
+    if (remainingCount <= 0) {
+      onClose();
+    } else if (index >= remainingCount) {
+      setIndex(remainingCount - 1);
+    }
+    // else: index stays put -- the next render (once the parent passes the
+    // real, now-shorter stories array) shows what was the next segment,
+    // the same "delete this one, advance to the next" shape Instagram's
+    // own stories use.
+  };
+
+  const confirmDeleteCurrent = () => {
+    showAlert('Delete This Story?', "This can't be undone.", [
+      { text: 'Keep Story', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: handleDeleteCurrent },
+    ]);
   };
 
   useEffect(() => {
@@ -231,8 +282,16 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
               AppTopBar's own placeholder pattern -- keeps "DOC" visually
               centered now that the left side has no back control (the left
               tap zone already handles "previous", so a dedicated BACK
-              button was redundant -- see AGENTS.md). */}
-          <View style={styles.closeButtonSlot} />
+              button was redundant -- see AGENTS.md). PART 4: admin gets a
+              real, quiet DELETE control in this same slot instead of the
+              plain spacer -- members never see it. */}
+          {isAdmin ? (
+            <Pressable onPress={confirmDeleteCurrent} hitSlop={10} style={styles.closeButtonSlot} testID="story-delete">
+              <Ionicons name="trash-outline" size={20} color={colors.white} />
+            </Pressable>
+          ) : (
+            <View style={styles.closeButtonSlot} />
+          )}
           <Text style={styles.headerText}>DOC</Text>
           <Pressable onPress={onClose} hitSlop={10} style={styles.closeButtonSlot} testID="story-close">
             <Ionicons name="close" size={22} color={colors.white} />
@@ -243,7 +302,14 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
           {current.mediaType === 'video' ? (
             <VideoSegment key={current.id} uri={current.mediaUri} progressAnim={progressAnims[index]} onEnd={goNext} />
           ) : (
-            <Image source={{ uri: current.mediaUri }} style={StyleSheet.absoluteFill} resizeMode="cover" testID="story-photo" />
+            // PART 3: the same house rule as the About page's own crew photo
+            // -- media renders at its natural aspect ratio, never cropped to
+            // fill. "contain" fits the whole image on screen, letterboxed on
+            // the viewer's own black background (container's backgroundColor
+            // below) when the ratios differ, instead of the old "cover"
+            // crop, which is what zoomed and cropped the owner's real
+            // posted 1080x1350 portrait photo.
+            <Image source={{ uri: current.mediaUri }} style={StyleSheet.absoluteFill} resizeMode="contain" testID="story-photo" />
           )}
         </View>
 

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StoryViewer } from './StoryViewer';
 import { StoryLockedModal } from './StoryLockedModal';
+import { CircularProgressRing } from './CircularProgressRing';
 import { KettlewaveMark } from './brand/KettlewaveMark';
 import { useMembership } from '../context/MembershipContext';
 import { useStories } from '../context/StoriesContext';
@@ -37,7 +38,7 @@ type Props = {
 };
 
 export function StoryRow({ compact = false, isAdmin = false }: Props) {
-  const { activeStories, hasUnviewed, posting, postStory } = useStories();
+  const { activeStories, hasUnviewed, posting, uploadProgress, postStory } = useStories();
   const { registerTarget } = useTour();
   const { storiesAccess } = useMembership();
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -91,7 +92,14 @@ export function StoryRow({ compact = false, isAdmin = false }: Props) {
               hitSlop={6}
             >
               {posting ? (
-                <ActivityIndicator size="small" color={colors.white} />
+                <CircularProgressRing
+                  size={addBadgeSize}
+                  strokeWidth={2}
+                  progress={typeof uploadProgress === 'number' ? uploadProgress : 0}
+                  indeterminate={typeof uploadProgress !== 'number'}
+                  color={colors.white}
+                  trackColor={colors.green}
+                />
               ) : (
                 <Ionicons name="add" size={addBadgeSize * 0.65} color={colors.white} />
               )}
@@ -112,7 +120,14 @@ export function StoryRow({ compact = false, isAdmin = false }: Props) {
             style={[styles.ring, styles.ringEmpty, { width: ringSize, height: ringSize, borderRadius: ringSize / 2 }]}
           >
             {posting ? (
-              <ActivityIndicator size="small" color={colors.textMuted} />
+              <CircularProgressRing
+                size={ringSize - 10}
+                strokeWidth={3}
+                progress={typeof uploadProgress === 'number' ? uploadProgress : 0}
+                indeterminate={typeof uploadProgress !== 'number'}
+                color={colors.green}
+                trackColor={colors.card}
+              />
             ) : (
               <Ionicons name="add" size={ringSize * 0.4} color={colors.textMuted} />
             )}
@@ -122,7 +137,7 @@ export function StoryRow({ compact = false, isAdmin = false }: Props) {
       )}
 
       {viewerOpen && (
-        <StoryViewer stories={activeStories} startIndex={0} onClose={() => setViewerOpen(false)} />
+        <StoryViewer stories={activeStories} startIndex={0} isAdmin={isAdmin} onClose={() => setViewerOpen(false)} />
       )}
       <StoryLockedModal visible={lockedOpen} onClose={() => setLockedOpen(false)} />
     </View>

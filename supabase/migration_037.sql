@@ -1,0 +1,51 @@
+-- Doc's Fitness — migration 037
+-- ============================================================================
+-- Round 67: Doc's Stories follow-up. The owner's first real video post (a
+-- 30-second phone clip) failed with a generic "couldn't post" alert while a
+-- photo posted fine the same session. Raises the story-media bucket's own
+-- file_size_limit (migration_036.sql) from 100MB to 250MB -- comfortably
+-- covering a real 90-second phone video at typical modern-iPhone bitrates:
+-- a real H.264 fixture built for this round (1080x1920, 30fps, ~9Mbps --
+-- "tens of MB," exactly matching a real phone recording) weighed 32MB for
+-- just 30 seconds, so a 90-second clip at the same bitrate runs roughly
+-- 100MB, and a higher-bitrate or 4K recording can run well past that.
+-- Kept in sync with MAX_STORY_UPLOAD_BYTES (src/context/StoriesContext.tsx)
+-- -- the same convention migration_016.sql already established for group
+-- chat's own 50MB cap.
+--
+-- IMPORTANT, carried over honestly from migration_016.sql's own documented
+-- caveat, since this round's own investigation found the identical
+-- uncertainty still applies: a bucket's file_size_limit can only ever
+-- LOWER what Supabase's own PROJECT-LEVEL global upload size limit already
+-- allows, never raise above it -- that global ceiling lives in the
+-- Supabase Dashboard (Project Settings -> Storage -> Upload file size
+-- limit), not in any table this or any other migration can reach.
+-- migration_016.sql's own comment states this project's ceiling was 50MB
+-- as of that round (Supabase's then-published free-tier default); if it's
+-- still 50MB today, this migration's own 250MB bucket setting is necessary
+-- but NOT sufficient on its own for a video over 50MB to succeed -- the
+-- owner should check (and, if needed, raise) that Dashboard setting too.
+-- This sandbox has no way to confirm the real project's current platform
+-- ceiling, so this is reported here rather than assumed either way. The
+-- client-side pre-upload size check (MAX_STORY_UPLOAD_BYTES,
+-- StoriesContext.tsx) is still the real, primary fix regardless of where
+-- that ceiling actually sits -- it refuses a too-large pick instantly and
+-- honestly, before any upload is ever attempted, exactly the same "the
+-- real fix is client-side, the bucket setting is defense in depth"
+-- philosophy migration_016.sql already laid out for group chat.
+--
+-- No client-side video re-encoding and no upload timeout were found
+-- anywhere in this app's own code during this round's own investigation
+-- (confirmed by reading useMediaPicker.ts, downscaleImage.ts, and
+-- @supabase/storage-js's own upload path directly) -- the only
+-- "re-encoding" that can happen at all is iOS Safari's own native
+-- HEVC-to-H.264 transcode, driven by the file input's accept attribute
+-- (Round 66), entirely outside this app's JS and outside anything a
+-- migration or client-side fix could change.
+--
+-- Safe to run once, and safe to re-run.
+-- ============================================================================
+
+update storage.buckets
+set file_size_limit = 262144000 -- 250MB in bytes; keep in sync with MAX_STORY_UPLOAD_BYTES (src/context/StoriesContext.tsx)
+where id = 'story-media';
