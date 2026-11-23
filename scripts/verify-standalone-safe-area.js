@@ -15285,9 +15285,15 @@ async function run() {
           body: JSON.stringify(insertedStories.map((s, i) => ({ id: `r67-story-${i + 1}`, media_url: s.media_url, media_type: s.media_type, created_at: new Date().toISOString() }))),
         });
       });
-      await page.route('**/storage/v1/object/story-media/**', (route) => {
+      await page.route('**/storage/v1/object/story-media/**', async (route) => {
         if (failNext) {
           failNext = false;
+          // A genuine, observable window: an un-delayed route.fulfill() can
+          // resolve this fast enough that posting flips back to false
+          // before the very next sampled frame -- confirmed directly (the
+          // first draft of this check read "during" as already-reset,
+          // identical to "before," on every run).
+          await new Promise((r) => setTimeout(r, 600));
           return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'internal' }) });
         }
         return route.fulfill({
@@ -15384,16 +15390,25 @@ async function run() {
 
       await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(500);
-      const objectFit = await page
+      // react-native-web's own Image renders the REAL visible pixels via a
+      // background-image on an inner painted <div> -- confirmed directly by
+      // dumping the real DOM: that div carries background-size (mapped
+      // straight from resizeMode), while the sibling <img> is a visually
+      // inert accessibility/semantics node whose own object-fit is
+      // irrelevant to what a member actually sees (it read "fill" even
+      // with the real fix correctly applied, which is why the first draft
+      // of this check -- reading the <img> -- failed against working code).
+      const backgroundSize = await page
         .evaluate(() => {
-          const img = document.querySelector('[data-testid="story-photo"] img');
-          return img ? getComputedStyle(img).objectFit : null;
+          const outer = document.querySelector('[data-testid="story-photo"]');
+          const painted = outer ? outer.querySelector('div') : null;
+          return painted ? getComputedStyle(painted).backgroundSize : null;
         })
         .catch(() => null);
       record(
-        '[stories/round67/photo-renders-contained] a real non-square photo renders with CSS object-fit: contain, never cover -- the whole image fits on screen, letterboxed, never cropped',
-        objectFit === 'contain',
-        JSON.stringify({ objectFit })
+        '[stories/round67/photo-renders-contained] a real non-square photo\'s real, visible painted layer uses background-size: contain, never cover -- the whole image fits on screen, letterboxed, never cropped',
+        backgroundSize === 'contain',
+        JSON.stringify({ backgroundSize })
       );
       if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-photo-contained.png') }).catch(() => {});
       await context.close();
@@ -15554,18 +15569,32 @@ async function run() {
       ]);
       await fileChooser.setFiles({ name: 'r67-progress.mp4', mimeType: 'video/mp4', buffer: STORY_H264_FIXTURE });
 
+      // The browser's own getComputedStyle serialization normalizes a
+      // two-position color stop ("color 0deg Xdeg") into FOUR explicit
+      // single-position stops ("color 0deg, color Xdeg, track Xdeg, track
+      // 360deg") -- confirmed directly, not assumed. The progress angle is
+      // always the SECOND degree value in that normalized list; a naive
+      // "skip past the color, then read the first degree number" regex
+      // (this check's first draft) breaks the instant the color itself is
+      // an rgb(...) value, since rgb()'s own internal commas are
+      // indistinguishable from the gradient's own stop-separating commas.
       const readRingAngle = () =>
         page.evaluate(() => {
           const ring = document.querySelector('[data-testid="story-upload-progress-ring"]');
           if (!ring) return null;
           const bg = getComputedStyle(ring).backgroundImage;
-          const match = /conic-gradient\([^,]+?\s(\d+(?:\.\d+)?)deg/.exec(bg);
-          return match ? parseFloat(match[1]) : null;
+          const degrees = [...bg.matchAll(/(\d+(?:\.\d+)?)deg/g)].map((m) => parseFloat(m[1]));
+          return degrees.length >= 2 ? degrees[1] : null;
         });
 
-      await page.waitForTimeout(150); // mid-way through the first 350ms step
+      // Fake steps are [0.2, 0.5, 0.8, 1] at 350ms apart (confirmed via a
+      // standalone repro before trusting these numbers): the real tick for
+      // 0.2 (72deg) lands by ~400ms, 0.5 (180deg) by ~800ms, 0.8 (288deg)
+      // by ~1200ms, and the upload completes (triggering the real insert)
+      // shortly after the 4th tick around ~1450ms.
+      await page.waitForTimeout(600); // past the first real progress tick (72deg)
       const early = await readRingAngle();
-      await page.waitForTimeout(500); // past the second/third real progress events
+      await page.waitForTimeout(500); // past the second real progress tick (180deg)
       const mid = await readRingAngle();
       await page.waitForTimeout(1200); // past completion
       const settled = await readRingAngle(); // null once posting finishes and the "+" returns
