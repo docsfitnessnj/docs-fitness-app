@@ -225,6 +225,21 @@ function buildSolidJpeg(width, height, [r, g, b]) {
 const LARGE_JPEG_FIXTURE = buildSolidJpeg(4032, 3024, [90, 150, 110]);
 const LARGE_JPEG_FIXTURE_RATIO = 4032 / 3024;
 
+// Round 66: two small, genuinely decodable real video files (committed
+// binary assets under scripts/fixtures/, built with ffmpeg and confirmed
+// directly against this sandbox's own headless Chromium before being
+// trusted -- never a hand-assembled byte string, the same "real file"
+// standard every other fixture in this file already holds to) --
+// STORY_H264_FIXTURE (libx264 + AAC, 640x360, 2s) genuinely decodes and
+// plays, sound included; STORY_HEVC_FIXTURE (libx265/hvc1 + AAC, same
+// dimensions/duration) reaches readyState 4 and its audio track genuinely
+// plays, but videoWidth/videoHeight never leave 0 -- confirmed directly,
+// not assumed, the identical "plays the audio, never paints a frame"
+// failure MediaViewer.tsx's own HEVC fallback already exists for. See
+// AGENTS.md's Round 66 section for the full confirmation.
+const STORY_H264_FIXTURE = fs.readFileSync(path.join(__dirname, 'fixtures', 'story-h264.mp4'));
+const STORY_HEVC_FIXTURE = fs.readFileSync(path.join(__dirname, 'fixtures', 'story-hevc.mov'));
+
 async function setupMocks(page, userId = USER_ID) {
   await page.route('**/auth/v1/token*', (route) =>
     route.fulfill({
@@ -306,6 +321,11 @@ async function setupMocks(page, userId = USER_ID) {
     if (table === 'next_scheduled_release_at') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
     }
+    // Round 66: see defaultStoriesFixture()'s own comment above -- the
+    // real baseline every pre-existing check already assumes.
+    if (table === 'stories') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(defaultStoriesFixture()) });
+    }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
   });
   // Round 28: CommunityContext.tsx's addTextPost/addWodResultPost/
@@ -323,6 +343,16 @@ async function setupMocks(page, userId = USER_ID) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ Key: `community-media/${route.request().url().split('/community-media/')[1]}`, Id: 'mock-upload-id' }),
+    })
+  );
+  // Round 66: StoriesContext.tsx's postStory() uploads to the real
+  // story-media Storage bucket (migration_036.sql) before ever inserting
+  // the row -- same shape/response as the community-media mock above.
+  await page.route('**/storage/v1/object/story-media/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ Key: `story-media/${route.request().url().split('/story-media/')[1]}`, Id: 'mock-upload-id' }),
     })
   );
   await page.routeWebSocket(/realtime/, (ws) => ws.close());
@@ -465,6 +495,26 @@ function defaultClassSessionsFixture() {
     }
   }
   return rows;
+}
+
+// ---------------------------------------------------------------------------
+// Round 66: Doc's Stories go real (migration_036.sql) -- StoriesContext.tsx
+// now genuinely fetches from `stories` instead of an always-populated local
+// seed array. Every pre-existing check in this file (hundreds of them) was
+// written against that old array, which ALWAYS rendered a gold/green ring
+// with 3 stories -- without a realistic default here, setupMocks()'s own
+// generic `[]` fallback would silently empty the ring for every one of
+// them, same root cause Round 24 already hit and fixed this exact way for
+// class_sessions_with_availability. One live photo story, same convention.
+function defaultStoriesFixture() {
+  return [
+    {
+      id: 'default-story-1',
+      media_url: 'https://example.test/default-story.jpg',
+      media_type: 'photo',
+      created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -14565,6 +14615,384 @@ async function run() {
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'splash-boot-error-surfaces.png') }).catch(() => {});
     }
     await context.close();
+  }
+
+  // ---------------------------------------------------------------------
+  // Round 66: Doc's Stories go real -- server-backed (migration_036.sql),
+  // admin-posted, 24-hour expiry, replacing the device-local seed array
+  // StoriesContext.tsx ran on since it was first built. See AGENTS.md.
+  // ---------------------------------------------------------------------
+  {
+    const registerStoryGetMock = (page, rows) =>
+      page.route('**/rest/v1/stories*', (route) => {
+        if (route.request().method() !== 'GET') return route.fallback();
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rows) });
+      });
+    const dismissAlertIfAny = async (page) => {
+      if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+        await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(400);
+      }
+    };
+    const readVideoState = (page) =>
+      page.evaluate(() => {
+        const el = document.querySelector('video');
+        if (!el) return null;
+        return { videoWidth: el.videoWidth, videoHeight: el.videoHeight, muted: el.muted, paused: el.paused, currentTime: el.currentTime };
+      });
+
+    // --- Admin, zero live stories: the empty-state ADD affordance shows,
+    // the real ring doesn't exist at all -- then post a real H.264 video
+    // through the real filechooser, end to end, and confirm it uploads to
+    // story-media (never a blob: URL) with no failure alert. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      const insertedStories = [];
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await page.route('**/rest/v1/stories*', async (route) => {
+        const req = route.request();
+        if (req.method() === 'POST') {
+          let payload = {};
+          try {
+            payload = JSON.parse(req.postData() || '{}');
+          } catch {}
+          insertedStories.push(payload);
+          return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify([{ id: `r66-story-${insertedStories.length}`, ...payload }]) });
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(
+            insertedStories.map((s, i) => ({ id: `r66-story-${i + 1}`, media_url: s.media_url, media_type: s.media_type, created_at: new Date().toISOString() }))
+          ),
+        });
+      });
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      const addEmptyVisible = await page.getByTestId('story-add-empty').isVisible().catch(() => false);
+      const ringVisibleBeforePost = await page.getByTestId('story-ring-doc').isVisible().catch(() => false);
+      record(
+        '[stories/admin-empty-state] with zero live stories, admin sees the ADD STORY affordance and no ring at all',
+        addEmptyVisible && !ringVisibleBeforePost,
+        JSON.stringify({ addEmptyVisible, ringVisibleBeforePost })
+      );
+
+      await page.getByTestId('story-add-empty').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 5000 }),
+        page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+      ]);
+      await fileChooser.setFiles({ name: 'r66-story.mp4', mimeType: 'video/mp4', buffer: STORY_H264_FIXTURE });
+      await page.waitForTimeout(1200);
+
+      const postedStory = insertedStories[0];
+      record(
+        '[stories/admin-posts-video] posting a real video through the admin ADD STORY flow uploads to story-media and inserts a video row, never a blob: URL',
+        !!postedStory &&
+          postedStory.media_type === 'video' &&
+          typeof postedStory.media_url === 'string' &&
+          postedStory.media_url.includes('/storage/v1/object/public/story-media/') &&
+          !postedStory.media_url.startsWith('blob:'),
+        JSON.stringify({ postedStory })
+      );
+      const errorAlertAfterPost = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
+      record('[stories/admin-posts-video] no failure alert after a successful post', !errorAlertAfterPost, JSON.stringify({ errorAlertAfterPost }));
+
+      await page.waitForTimeout(500);
+      const ringVisibleAfterPost = await page.getByTestId('story-ring-doc').isVisible().catch(() => false);
+      const addBadgeVisibleAfterPost = await page.getByTestId('story-add-badge').isVisible().catch(() => false);
+      const addEmptyGoneAfterPost = !(await page.getByTestId('story-add-empty').isVisible().catch(() => true));
+      record(
+        '[stories/admin-posts-video] after posting, the real ring renders with the ADD badge next to it (not the empty-state button)',
+        ringVisibleAfterPost && addBadgeVisibleAfterPost && addEmptyGoneAfterPost,
+        JSON.stringify({ ringVisibleAfterPost, addBadgeVisibleAfterPost, addEmptyGoneAfterPost })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-admin-posted-video.png') }).catch(() => {});
+      await context.close();
+    }
+
+    // --- Admin, a live story already exists: the ADD badge sits next to
+    // the real ring (not the empty-state button) -- posts a real photo
+    // this time. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      const insertedStories = [];
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await page.route('**/rest/v1/stories*', async (route) => {
+        const req = route.request();
+        if (req.method() === 'POST') {
+          let payload = {};
+          try {
+            payload = JSON.parse(req.postData() || '{}');
+          } catch {}
+          insertedStories.push(payload);
+          return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify([{ id: `r66-story-${insertedStories.length}`, ...payload }]) });
+        }
+        const baseline = [{ id: 'r66-existing', media_url: 'https://example.test/existing.jpg', media_type: 'photo', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() }];
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([
+            ...baseline,
+            ...insertedStories.map((s, i) => ({ id: `r66-story-${i + 1}`, media_url: s.media_url, media_type: s.media_type, created_at: new Date().toISOString() })),
+          ]),
+        });
+      });
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      const ringVisible = await page.getByTestId('story-ring-doc').isVisible().catch(() => false);
+      const addBadgeVisible = await page.getByTestId('story-add-badge').isVisible().catch(() => false);
+      record(
+        '[stories/admin-with-live-story] the ADD badge sits next to the real ring, not the standalone empty-state button',
+        ringVisible && addBadgeVisible,
+        JSON.stringify({ ringVisible, addBadgeVisible })
+      );
+
+      await page.getByTestId('story-add-badge').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 5000 }),
+        page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
+      ]);
+      await fileChooser.setFiles({ name: 'r66-story.png', mimeType: 'image/png', buffer: ASPECT_RATIO_FIXTURE_PNG });
+      await page.waitForTimeout(1200);
+
+      const postedPhoto = insertedStories[0];
+      record(
+        '[stories/admin-posts-photo] posting a real photo through the ADD badge uploads to story-media and inserts a photo row',
+        !!postedPhoto &&
+          postedPhoto.media_type === 'photo' &&
+          typeof postedPhoto.media_url === 'string' &&
+          postedPhoto.media_url.includes('/storage/v1/object/public/story-media/'),
+        JSON.stringify({ postedPhoto })
+      );
+      await context.close();
+    }
+
+    // --- Member (full access, not admin) opens a real posted H.264 video
+    // story: genuinely decodes (nonzero videoWidth/videoHeight), plays
+    // (not paused), and is NOT muted -- "with sound," per the brief. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await registerStoryGetMock(page, [
+        { id: 'r66-video-story', media_url: `${BASE}/__fixtures__/story-h264.mp4`, media_type: 'video', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+      ]);
+      await page.route('**/__fixtures__/story-h264.mp4', (route) =>
+        route.fulfill({ status: 200, contentType: 'video/mp4', body: STORY_H264_FIXTURE })
+      );
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(1500);
+
+      const videoState = await readVideoState(page);
+      const undecodableBannerVisible = await page.getByTestId('story-undecodable').isVisible().catch(() => false);
+      record(
+        '[stories/member-viewer-plays-video] a real H.264 story genuinely decodes (nonzero videoWidth/videoHeight), plays, and is unmuted (sound)',
+        !!videoState && videoState.videoWidth > 0 && videoState.videoHeight > 0 && !videoState.muted && !videoState.paused && !undecodableBannerVisible,
+        JSON.stringify({ videoState, undecodableBannerVisible })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-member-video-playing.png') }).catch(() => {});
+      await context.close();
+    }
+
+    // --- An HEVC-encoded story: confirmed directly (not assumed) against
+    // this sandbox's own headless Chromium -- the real "cannot play"
+    // fallback banner appears, and the viewer doesn't get stuck forever
+    // (its own fixed-timer fallback still advances). See AGENTS.md. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await registerStoryGetMock(page, [
+        { id: 'r66-hevc-story', media_url: `${BASE}/__fixtures__/story-hevc.mov`, media_type: 'video', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+      ]);
+      await page.route('**/__fixtures__/story-hevc.mov', (route) =>
+        route.fulfill({ status: 200, contentType: 'video/quicktime', body: STORY_HEVC_FIXTURE })
+      );
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(1500);
+      const bannerVisible = await page.getByTestId('story-undecodable').isVisible().catch(() => false);
+      record(
+        '[stories/hevc-fallback-banner] a genuinely undecodable HEVC story shows the honest "cannot play in this browser" banner, confirmed directly against this sandbox\'s own Chromium',
+        bannerVisible,
+        JSON.stringify({ bannerVisible })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-hevc-fallback-banner.png') }).catch(() => {});
+
+      // The fixed-timer fallback (ITEM_DURATION_MS) still advances/closes
+      // the viewer instead of leaving it stuck on a frozen frame forever --
+      // this is the only story, so it should close the whole viewer.
+      // StoryViewer.tsx's own ITEM_DURATION_MS fixed-timer fallback (5000ms).
+      await page.waitForTimeout(5000 + 1500);
+      const viewerStillOpen = await page.getByTestId('story-close').isVisible().catch(() => false);
+      record(
+        '[stories/hevc-fallback-banner] the viewer still advances/closes via the fixed-timer fallback instead of hanging forever on the undecodable video',
+        !viewerStillOpen,
+        JSON.stringify({ viewerStillOpen })
+      );
+      await context.close();
+    }
+
+    // --- A free/booking-only (non-admin, non-full-access) tier taps the
+    // ring with a live story present: the locked modal still gates it,
+    // completely unaffected by this round -- storiesAccess/the locked
+    // modal's own copy were never touched. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/subscriptions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+      await page.route('**/rest/v1/class_packs*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      const ringVisible = await page.getByTestId('story-ring-doc').isVisible().catch(() => false);
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      const lockedCopyVisible = await page.getByText("Doc's Daily Story is for members.", { exact: false }).isVisible().catch(() => false);
+      const realViewerOpened = await page.getByTestId('story-close').isVisible().catch(() => false);
+      record(
+        '[stories/locked-tier-still-locked] a free/booking-only account tapping the ring (with a live story present) still sees the locked modal, never the real viewer -- storiesAccess/StoryLockedModal untouched',
+        ringVisible && lockedCopyVisible && !realViewerOpened,
+        JSON.stringify({ ringVisible, lockedCopyVisible, realViewerOpened })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-locked-tier.png') }).catch(() => {});
+      await context.close();
+    }
+
+    // --- Ring states: unviewed (gold), then viewed (green) after opening
+    // and closing it once -- the default baseline fixture's one live
+    // story, unchanged by this round's visual design rules. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      const ringColorUnviewed = await page
+        .evaluate(() => {
+          const ring = document.querySelector('[data-testid="story-ring-doc"] > div');
+          return ring ? getComputedStyle(ring).borderColor : null;
+        })
+        .catch(() => null);
+      record(
+        '[stories/ring-unviewed-gold] an unviewed live story shows the gold ring, unchanged',
+        ringColorUnviewed === 'rgb(229, 184, 11)',
+        JSON.stringify({ ringColorUnviewed })
+      );
+
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.getByTestId('story-close').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const ringColorViewed = await page.evaluate(() => {
+        const ring = document.querySelector('[data-testid="story-ring-doc"] > div');
+        return ring ? getComputedStyle(ring).borderColor : null;
+      }).catch(() => null);
+      record(
+        '[stories/ring-viewed-green] opening and closing the story once flips the ring to the green viewed color, unchanged',
+        ringColorViewed === 'rgb(7, 102, 82)',
+        JSON.stringify({ ringColorViewed })
+      );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-ring-viewed-green.png') }).catch(() => {});
+      await context.close();
+    }
+
+    // --- Ring states: zero live stories, non-admin -- the ring is
+    // entirely absent, no add affordance either, exactly the existing
+    // "no story" state this round deliberately left unchanged. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await registerStoryGetMock(page, []);
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      const ringVisible = await page.getByTestId('story-ring-doc').isVisible().catch(() => false);
+      const addBadgeVisible = await page.getByTestId('story-add-badge').isVisible().catch(() => false);
+      const addEmptyVisible = await page.getByTestId('story-add-empty').isVisible().catch(() => false);
+      record(
+        '[stories/ring-absent-no-story] with zero live stories, a non-admin member sees nothing at all -- the existing "no story" state, unchanged',
+        !ringVisible && !addBadgeVisible && !addEmptyVisible,
+        JSON.stringify({ ringVisible, addBadgeVisible, addEmptyVisible })
+      );
+      await context.close();
+    }
+
+    // --- Ordering: newest last, the real Instagram-story stacking order
+    // (the old local seed array happened to run the opposite way -- see
+    // AGENTS.md). startIndex 0 shows the OLDER story; tapping right moves
+    // to the NEWER one, which is last. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await registerStoryGetMock(page, [
+        { id: 'r66-older', media_url: 'https://example.test/older.jpg', media_type: 'photo', created_at: new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString() },
+        { id: 'r66-newer', media_url: 'https://example.test/newer.jpg', media_type: 'photo', created_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString() },
+      ]);
+      // react-native-web's own Image component never renders its real
+      // nested <img> (or sets the painted div's background-image) until
+      // the image actually resolves -- confirmed directly: an unmocked
+      // fake URL that never loads leaves story-photo's own inner div
+      // with an EMPTY style and no <img> descendant at all, which is why
+      // the first draft of this check always read null for both. Both
+      // fake URLs need real, resolvable bytes behind them for either
+      // read to work at all.
+      await page.route('https://example.test/older.jpg', (route) =>
+        route.fulfill({ status: 200, contentType: 'image/png', body: ASPECT_RATIO_FIXTURE_PNG })
+      );
+      await page.route('https://example.test/newer.jpg', (route) =>
+        route.fulfill({ status: 200, contentType: 'image/png', body: ASPECT_RATIO_FIXTURE_PNG })
+      );
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const firstSrc = await page.evaluate(() => document.querySelector('[data-testid="story-photo"] img')?.getAttribute('src') || null).catch(() => null);
+      await page.getByTestId('story-tap-right').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const secondSrc = await page.evaluate(() => document.querySelector('[data-testid="story-photo"] img')?.getAttribute('src') || null).catch(() => null);
+      record(
+        '[stories/ordering-newest-last] the older story shows first, the newer one shows last (tapping right advances to it)',
+        !!firstSrc && !!secondSrc && firstSrc.includes('older.jpg') && secondSrc.includes('newer.jpg'),
+        JSON.stringify({ firstSrc, secondSrc })
+      );
+      await context.close();
+    }
   }
 
   await browser.close();

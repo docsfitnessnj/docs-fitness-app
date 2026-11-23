@@ -1,12 +1,131 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, PanResponder, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { AppModal } from './AppModal';
 import { StoryItem, useStories } from '../context/StoriesContext';
+import { browserCanDecodeHevc, detectVideoCodecFromUrl } from '../lib/videoCodec';
 import { colors, fonts } from '../theme';
 
 const ITEM_DURATION_MS = 5000;
 const SWIPE_DOWN_CLOSE_THRESHOLD = 80;
+
+type CodecVerdict = 'checking' | 'known-ok' | 'known-undecodable';
+
+// Round 66: a real video story, in the same inline-fullscreen treatment
+// expo-video already gives every other video in this app (MediaViewer's
+// pattern) -- but driving THIS viewer's own progress bar and auto-advance
+// off the real video's own playback (timeUpdate/playToEnd), not the fixed
+// ITEM_DURATION_MS timer an image segment still uses below. Confirmed
+// directly (not assumed) against a real H.264 fixture and a real
+// HEVC-encoded one: H.264 decodes and plays, sound included, in this
+// sandbox's own headless Chromium; an HEVC file reaches readyState 4 and
+// its audio track genuinely plays, but videoWidth/videoHeight never leave
+// 0 -- the identical silent "plays the audio, never paints a frame"
+// failure MediaViewer.tsx's own HEVC fallback already exists for, now
+// independently confirmed for Stories. codecVerdict reuses that exact
+// mechanism (detectVideoCodecFromUrl + browserCanDecodeHevc) so a member
+// on a browser that genuinely can't decode HEVC sees the same honest
+// banner instead of a frozen black frame -- and falls back to the fixed
+// timer for its own auto-advance, since playToEnd's own timing can't be
+// trusted as the story's pacing once the video track itself never
+// resolves. In practice this almost never fires: the web admin posting
+// flow's own picker (useMediaPicker.ts's WEB_ACCEPT) already forces an
+// iPhone's HEVC .mov to transcode to H.264 before it's ever picked, so a
+// story posted from the real web admin flow is H.264 by construction.
+function VideoSegment({
+  uri,
+  progressAnim,
+  onEnd,
+}: {
+  uri: string;
+  progressAnim: Animated.Value;
+  onEnd: () => void;
+}) {
+  // `useVideoPlayer`'s own setup callback runs synchronously inside
+  // useMemo, during render -- strictly BEFORE VideoView's own child
+  // useEffect has mounted the real <video> element (confirmed directly
+  // by reading expo-video's web source: VideoPlayerWeb.play() only ever
+  // iterates its own _mountedVideos set, and mountVideoView() is called
+  // from VideoView's own effect, not during setup). Calling play() there
+  // is a silent no-op on web -- it iterates zero mounted videos. `muted`
+  // is unaffected by this (mountVideoView() copies _muted onto the video
+  // at mount time regardless of when it was set), which is exactly why
+  // this bug reads as "decodes fine, correctly unmuted, but never
+  // actually plays" rather than failing outright. play() is called below
+  // instead, in VideoSegment's OWN effect -- which, as this component's
+  // own child, runs after VideoView's child effect has already mounted
+  // the real element, since React fires child effects before parent ones.
+  const player = useVideoPlayer(uri, (p) => {
+    p.muted = false;
+  });
+  const [codecVerdict, setCodecVerdict] = useState<CodecVerdict>('checking');
+
+  useEffect(() => {
+    setCodecVerdict('checking');
+    if (Platform.OS !== 'web') {
+      setCodecVerdict('known-ok');
+      return;
+    }
+    let cancelled = false;
+    detectVideoCodecFromUrl(uri)
+      .then((codec) => {
+        if (cancelled) return;
+        if (codec === 'hevc') setCodecVerdict(browserCanDecodeHevc() ? 'known-ok' : 'known-undecodable');
+        else setCodecVerdict('known-ok');
+      })
+      .catch(() => {
+        if (!cancelled) setCodecVerdict('known-ok');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [uri]);
+
+  useEffect(() => {
+    progressAnim.setValue(0);
+    player.play();
+    const endSub = player.addListener('playToEnd', onEnd);
+    const timeSub = player.addListener('timeUpdate', ({ currentTime }: { currentTime: number }) => {
+      const duration = player.duration;
+      if (duration > 0) progressAnim.setValue(Math.min(1, currentTime / duration));
+    });
+    return () => {
+      endSub.remove();
+      timeSub.remove();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player]);
+
+  // A genuinely undecodable video never reaches playToEnd in a way this
+  // story's own pacing can rely on -- falls back to the same fixed timer
+  // an image segment uses, so the viewer still advances instead of
+  // sitting on a frozen frame forever.
+  useEffect(() => {
+    if (codecVerdict !== 'known-undecodable') return;
+    progressAnim.setValue(0);
+    const animation = Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: ITEM_DURATION_MS,
+      useNativeDriver: false,
+    });
+    animation.start(({ finished }) => {
+      if (finished) onEnd();
+    });
+    return () => animation.stop();
+  }, [codecVerdict, progressAnim, onEnd]);
+
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      <VideoView player={player} style={StyleSheet.absoluteFill} nativeControls={false} contentFit="contain" testID="story-video" />
+      {codecVerdict === 'known-undecodable' && (
+        <View style={styles.undecodableBanner} testID="story-undecodable" pointerEvents="none">
+          <Text style={styles.undecodableText}>This video cannot play in this browser. It will still play on your phone.</Text>
+        </View>
+      )}
+    </View>
+  );
+}
 
 type Props = {
   stories: StoryItem[];
@@ -45,6 +164,11 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
     });
 
     progressAnims[index].setValue(0);
+
+    // A video segment drives its own progress/auto-advance off the real
+    // playback (VideoSegment, above) -- nothing to start here for it.
+    if (current.mediaType === 'video') return;
+
     const animation = Animated.timing(progressAnims[index], {
       toValue: 1,
       duration: ITEM_DURATION_MS,
@@ -80,7 +204,7 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
   return (
     <AppModal visible transparent animationType="fade" onRequestClose={onClose}>
       <Animated.View
-        style={[styles.container, { backgroundColor: current.placeholderColor, transform: [{ translateY: dragY }] }]}
+        style={[styles.container, { transform: [{ translateY: dragY }] }]}
         nativeID="story-viewer-safe-top"
         {...panResponder.panHandlers}
       >
@@ -116,12 +240,11 @@ export function StoryViewer({ stories, startIndex, onClose }: Props) {
         </View>
 
         <View style={styles.mediaArea}>
-          <Ionicons
-            name={current.mediaType === 'video' ? 'videocam-outline' : 'image-outline'}
-            size={72}
-            color="rgba(255,255,255,0.55)"
-          />
-          <Text style={styles.mediaLabel}>{current.placeholderLabel}</Text>
+          {current.mediaType === 'video' ? (
+            <VideoSegment key={current.id} uri={current.mediaUri} progressAnim={progressAnims[index]} onEnd={goNext} />
+          ) : (
+            <Image source={{ uri: current.mediaUri }} style={StyleSheet.absoluteFill} resizeMode="cover" testID="story-photo" />
+          )}
         </View>
 
         <View style={styles.tapZones} pointerEvents="box-none">
@@ -141,6 +264,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 50,
+    backgroundColor: '#000000',
   },
   progressRow: {
     flexDirection: 'row',
@@ -197,15 +321,21 @@ const styles = StyleSheet.create({
   },
   mediaArea: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  mediaLabel: {
+  undecodableBanner: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    top: '50%',
+    transform: [{ translateY: -20 }],
+    alignItems: 'center',
+  },
+  undecodableText: {
     color: 'rgba(255,255,255,0.85)',
     fontFamily: fonts.labelSemiBold,
-    fontSize: 15,
-    letterSpacing: 0.5,
-    marginTop: 16,
+    fontSize: 14,
+    letterSpacing: 0.3,
+    textAlign: 'center',
   },
   tapZones: {
     position: 'absolute',

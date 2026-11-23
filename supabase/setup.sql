@@ -3101,6 +3101,67 @@ begin
 end;
 $$;
 
+-- ----------------------------------------------------------------------------
+-- Round 66 (migration_036) — Doc's Stories, real and server-backed: one row
+-- per posted photo/video, live for exactly 24 hours from created_at,
+-- enforced in the SELECT policy itself rather than client clock math.
+-- Admin can always read every story (including an expired one, for the
+-- posting screen's own management view); only admin can post or delete one.
+-- ----------------------------------------------------------------------------
+create table if not exists public.stories (
+  id uuid primary key default gen_random_uuid(),
+  media_url text not null,
+  media_type text not null check (media_type in ('photo', 'video')),
+  created_by uuid references public.profiles (id),
+  created_at timestamptz not null default now()
+);
+
+alter table public.stories enable row level security;
+
+drop policy if exists "a story is readable for 24 hours, admin always" on public.stories;
+create policy "a story is readable for 24 hours, admin always"
+  on public.stories for select
+  to authenticated
+  using (created_at > now() - interval '24 hours' or public.is_admin(auth.uid()));
+
+drop policy if exists "only admin can post a story" on public.stories;
+create policy "only admin can post a story"
+  on public.stories for insert
+  to authenticated
+  with check (public.is_admin(auth.uid()) and (created_by is null or created_by = auth.uid()));
+
+drop policy if exists "only admin can delete a story" on public.stories;
+create policy "only admin can delete a story"
+  on public.stories for delete
+  to authenticated
+  using (public.is_admin(auth.uid()));
+
+-- STORAGE: story-media bucket — same public-read / admin-write shape as
+-- community-media and group-chat-media (see migration_036.sql's own header
+-- comment for why INSERT/DELETE are admin-only rather than owner-folder-
+-- scoped here). 100MB cap, generous for a real phone-recorded video story.
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('story-media', 'story-media', true, 104857600)
+on conflict (id) do nothing;
+
+drop policy if exists "story media is publicly viewable" on storage.objects;
+create policy "story media is publicly viewable"
+  on storage.objects for select
+  to public
+  using (bucket_id = 'story-media');
+
+drop policy if exists "only admin uploads story media" on storage.objects;
+create policy "only admin uploads story media"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'story-media' and public.is_admin(auth.uid()));
+
+drop policy if exists "only admin deletes story media" on storage.objects;
+create policy "only admin deletes story media"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'story-media' and public.is_admin(auth.uid()));
+
 -- ============================================================================
 -- Everything above this line is the full backend. Run it once, in full.
 -- ============================================================================

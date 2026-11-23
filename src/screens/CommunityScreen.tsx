@@ -346,6 +346,7 @@ export default function CommunityScreen() {
   } = useMembership();
   const { howTrain, loading: profileLoading, refetching: profileRefetching } = useProfile();
   const { activeStories } = useStories();
+  const isAdmin = useCanModerate();
   const tour = useTour();
   const { hasBookedDropInBefore, sessions, loading: sessionsLoading } = useClassBookingData();
   // Online members train on their own, so the in-person class sign-up card
@@ -468,7 +469,7 @@ export default function CommunityScreen() {
         isCompleted={() => false}
         isCowDayAt={(index) => isCowDayFor(days[index], scheduledCurrentWeek)}
         scrollable
-        leading={activeStories.length > 0 ? <StoryRow compact /> : undefined}
+        leading={activeStories.length > 0 || isAdmin ? <StoryRow compact isAdmin={isAdmin} /> : undefined}
       />
       {profileLoading ? (
         // Same quiet treatment as every other "still loading" screen in
