@@ -14839,6 +14839,7 @@ async function run() {
         bannerVisible,
         JSON.stringify({ bannerVisible })
       );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-hevc-fallback-banner.png') }).catch(() => {});
 
       // The fixed-timer fallback (ITEM_DURATION_MS) still advances/closes
       // the viewer instead of leaving it stuck on a frozen frame forever --
@@ -14879,6 +14880,7 @@ async function run() {
         ringVisible && lockedCopyVisible && !realViewerOpened,
         JSON.stringify({ ringVisible, lockedCopyVisible, realViewerOpened })
       );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-locked-tier.png') }).catch(() => {});
       await context.close();
     }
 
@@ -14919,6 +14921,7 @@ async function run() {
         ringColorViewed === 'rgb(7, 102, 82)',
         JSON.stringify({ ringColorViewed })
       );
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-ring-viewed-green.png') }).catch(() => {});
       await context.close();
     }
 
