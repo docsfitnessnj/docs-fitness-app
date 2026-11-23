@@ -15120,13 +15120,22 @@ async function run() {
 
       await page.getByTestId('story-add-empty').click({ timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(300);
-      const oversizedBuffer = Buffer.alloc(260 * 1024 * 1024);
+      // Playwright's own setFiles() refuses an inline buffer over 50MB
+      // ("Cannot set buffer larger than 50Mb") -- a real 260MB file has to
+      // be written to disk and picked by path instead, exactly as its own
+      // error message directs (the same technique this file's own r46
+      // import-fixture check already uses for a different oversized-input
+      // reason). Never committed; written fresh to the OS temp dir and
+      // cleaned up right after this one check.
+      const oversizedPath = path.join(require('os').tmpdir(), `r67-oversized-${Date.now()}.mp4`);
+      fs.writeFileSync(oversizedPath, Buffer.alloc(260 * 1024 * 1024));
       const [fileChooser] = await Promise.all([
         page.waitForEvent('filechooser', { timeout: 5000 }),
         page.getByText('Photo Library', { exact: false }).click({ timeout: 5000 }),
       ]);
-      await fileChooser.setFiles({ name: 'huge-video.mp4', mimeType: 'video/mp4', buffer: oversizedBuffer });
+      await fileChooser.setFiles(oversizedPath);
       await page.waitForTimeout(800);
+      fs.unlinkSync(oversizedPath);
 
       const alertVisible = await page.getByTestId('alert-backdrop').isVisible().catch(() => false);
       const alertText = alertVisible ? await page.getByTestId('alert-backdrop').innerText().catch(() => '') : '';
