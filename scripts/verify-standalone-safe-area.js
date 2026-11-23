@@ -15473,9 +15473,11 @@ async function run() {
 
       await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(400);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-delete-control-visible.png') }).catch(() => {});
       await page.getByTestId('story-delete').click({ timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(300);
       const confirmTitleVisible = await page.getByText('Delete This Story?', { exact: false }).isVisible().catch(() => false);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-delete-confirmation.png') }).catch(() => {});
 
       // Keep Story -- dismiss without deleting anything.
       await page.getByTestId('alert-backdrop').getByText('Keep Story', { exact: true }).click({ timeout: 5000 }).catch(() => {});
@@ -15594,6 +15596,7 @@ async function run() {
       // shortly after the 4th tick around ~1450ms.
       await page.waitForTimeout(600); // past the first real progress tick (72deg)
       const early = await readRingAngle();
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-upload-progress-mid.png') }).catch(() => {});
       await page.waitForTimeout(500); // past the second real progress tick (180deg)
       const mid = await readRingAngle();
       await page.waitForTimeout(1200); // past completion
@@ -15605,7 +15608,7 @@ async function run() {
         early !== null && mid !== null && mid > early && settled === null && addEmptyGone,
         JSON.stringify({ early, mid, settled, addEmptyGone })
       );
-      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-upload-progress-mid.png') }).catch(() => {});
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-upload-progress-settled.png') }).catch(() => {});
       await context.close();
     }
   }
