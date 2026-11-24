@@ -138,6 +138,11 @@ type CommunityContextValue = {
   // database rejected it (pin limit reached, or not actually an admin).
   togglePin: (postId: string) => Promise<boolean>;
   markRead: (postId: string) => void;
+  // Round 69: the existing internal refetch(), already called after every
+  // write below — exposed on the public API so Community's own
+  // pull-to-refresh gesture can trigger a real refresh through this same
+  // mechanism rather than a second, parallel fetch.
+  refetch: () => PromiseLike<void>;
 };
 
 const CommunityContext = createContext<CommunityContextValue | undefined>(undefined);
@@ -455,6 +460,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       markRead: (postId) => {
         setLastViewedAt((prev) => ({ ...prev, [postId]: Date.now() }));
       },
+      refetch,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, lastViewedAt, loading, error, user]);

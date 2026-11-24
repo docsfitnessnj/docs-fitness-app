@@ -102,6 +102,11 @@ type StoriesContextValue = {
   // it actually succeeded so the caller (StoryViewer) can decide what to
   // show/advance to without guessing from a later refetch.
   deleteStory: (id: string) => Promise<boolean>;
+  // Round 69: the existing internal fetchStories(), already called after
+  // every write/realtime update below -- exposed on the public API so
+  // Community's own pull-to-refresh gesture can trigger a real refresh of
+  // the story ring through this same mechanism, never a second fetch.
+  refetch: () => Promise<void>;
 };
 
 const StoriesContext = createContext<StoriesContextValue | undefined>(undefined);
@@ -305,8 +310,9 @@ export function StoriesProvider({ children }: { children: React.ReactNode }) {
       uploadProgress,
       postStory,
       deleteStory,
+      refetch: fetchStories,
     };
-  }, [stories, viewed, posting, uploadProgress, postStory, deleteStory]);
+  }, [stories, viewed, posting, uploadProgress, postStory, deleteStory, fetchStories]);
 
   return <StoriesContext.Provider value={value}>{children}</StoriesContext.Provider>;
 }

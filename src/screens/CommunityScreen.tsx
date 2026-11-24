@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppPressable } from '../components/AppPressable';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +9,7 @@ import { CreatePostModal } from '../components/CreatePostModal';
 import { PostAuthorBadges } from '../components/PostAuthorBadges';
 import { PostDetailModal } from '../components/PostDetailModal';
 import { renderWeeklyReleaseBody } from '../components/WeeklyReleasePostBody';
-import { ScreenContainer } from '../components/ScreenContainer';
+import { CommunityPullToRefresh } from '../components/CommunityPullToRefresh';
 import { StatusBanner } from '../components/StatusBanner';
 import { StoryRow } from '../components/StoryRow';
 import { DateStrip } from '../components/DateStrip';
@@ -335,7 +335,7 @@ export default function CommunityScreen() {
   // render — holding the Post object itself would freeze the detail view on
   // a stale snapshot the moment a comment/like/reaction updates it in context.
   const [detailPostId, setDetailPostId] = useState<string | null>(null);
-  const { posts } = useCommunity();
+  const { posts, refetch: refetchPosts } = useCommunity();
   const detailPost = detailPostId ? posts.find((p) => p.id === detailPostId) ?? null : null;
   const {
     wodAccessLevel,
@@ -345,10 +345,15 @@ export default function CommunityScreen() {
     stateRefetching: membershipRefetching,
   } = useMembership();
   const { howTrain, loading: profileLoading, refetching: profileRefetching } = useProfile();
-  const { activeStories } = useStories();
+  const { activeStories, refetch: refetchStories } = useStories();
   const isAdmin = useCanModerate();
   const tour = useTour();
-  const { hasBookedDropInBefore, sessions, loading: sessionsLoading } = useClassBookingData();
+  const {
+    hasBookedDropInBefore,
+    sessions,
+    loading: sessionsLoading,
+    refetch: refetchClassBooking,
+  } = useClassBookingData();
   // Online members train on their own, so the in-person class sign-up card
   // and schedule strip aren't the front door for them the way they are for
   // Boathouse locals — UNLESS they've layered in-person booking on top of
@@ -447,7 +452,22 @@ export default function CommunityScreen() {
   }, [jumpToDate]);
 
   const isUnlocked = (index: number) => isDayWodUnlocked(days[index], wodAccessLevel);
-  const { currentWeek: scheduledCurrentWeek } = useScheduledContent();
+  const { currentWeek: scheduledCurrentWeek, refetch: refetchScheduledContent } = useScheduledContent();
+
+  // Round 69: THE WAVE FILLS THE BELL -- "a real refetch of what the
+  // Community screen already shows, through the contexts' existing
+  // refetch mechanisms only." Deliberately excludes membership/profile
+  // refetches (those are account-state, not feed content, and already
+  // refresh themselves on their own schedule elsewhere) -- a judgment
+  // call reported in this round's own PR rather than silently decided.
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([
+      refetchPosts(),
+      refetchStories(),
+      refetchClassBooking(),
+      Promise.resolve(refetchScheduledContent()),
+    ]);
+  }, [refetchPosts, refetchStories, refetchClassBooking, refetchScheduledContent]);
 
   const openComposer = () => {
     setEditingPost(null);
@@ -459,7 +479,7 @@ export default function CommunityScreen() {
   };
 
   return (
-    <ScreenContainer>
+    <CommunityPullToRefresh onRefresh={handleRefresh}>
       <StatusBanner />
       <DateStrip
         week={days}
@@ -507,7 +527,7 @@ export default function CommunityScreen() {
           />
         </>
       )}
-    </ScreenContainer>
+    </CommunityPullToRefresh>
   );
 }
 
