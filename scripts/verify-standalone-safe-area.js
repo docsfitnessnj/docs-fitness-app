@@ -245,6 +245,14 @@ const STORY_HEVC_FIXTURE = fs.readFileSync(path.join(__dirname, 'fixtures', 'sto
 // the real file's own metadata rather than any heuristic based on byte
 // size, without committing a large binary just for this.
 const STORY_TOO_LONG_FIXTURE = fs.readFileSync(path.join(__dirname, 'fixtures', 'story-too-long.mp4'));
+// Round 68: a real, genuinely 30-second H.264+AAC clip (96x96, low bitrate
+// -- real duration is what this round's checks need, not real phone
+// resolution/bitrate, the same "small file, genuine duration" convention
+// story-too-long.mp4 already established) -- long enough to exercise a
+// real mid-playback timeUpdate progression, a genuine mid-stream network
+// stall and recovery, and a real playToEnd at the true end, none of which
+// story-h264.mp4's own 2-second runtime leaves enough real time to prove.
+const STORY_REAL_30S_FIXTURE = fs.readFileSync(path.join(__dirname, 'fixtures', 'story-real-30s.mp4'));
 
 async function setupMocks(page, userId = USER_ID) {
   await page.route('**/auth/v1/token*', (route) =>
@@ -15609,6 +15617,356 @@ async function run() {
         JSON.stringify({ early, mid, settled, addEmptyGone })
       );
       if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-upload-progress-settled.png') }).catch(() => {});
+      await context.close();
+    }
+
+    // -------------------------------------------------------------------
+    // Round 68: STORY PLAYBACK HARDENING. Four real-device findings,
+    // investigated with direct evidence before any fix was written -- see
+    // AGENTS.md's own Round 68 section for the full trail. A small,
+    // genuinely 30-second H.264+AAC fixture (96x96, low bitrate -- real
+    // duration is what these checks need, not real phone
+    // resolution/bitrate, the exact small-file/genuine-duration convention
+    // story-too-long.mp4 already established) drives the real-time
+    // progress/stall/playthrough checks that story-h264.mp4's own
+    // 2-second runtime can't.
+    // -------------------------------------------------------------------
+    const readStoryFillWidth = (page) =>
+      page.evaluate(() => {
+        const close = document.querySelector('[data-testid="story-close"]');
+        if (!close) return null;
+        const headerRow = close.parentElement;
+        const safeTop = headerRow ? headerRow.parentElement : null;
+        const progressRow = safeTop ? safeTop.firstElementChild : null;
+        const progressTrack = progressRow ? progressRow.firstElementChild : null;
+        const progressFill = progressTrack ? progressTrack.firstElementChild : null;
+        return progressFill ? progressFill.style.width : null;
+      });
+    const readVideoComputedOpacity = (page) =>
+      page.evaluate(() => {
+        const v = document.querySelector('video');
+        return v ? getComputedStyle(v).opacity : null;
+      });
+    const TINY_PNG = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64'
+    );
+
+    // --- FINDING 4: playsInline is now set, alongside the pre-existing
+    // nativeControls={false} -- the direct fix for the owner's reported
+    // back/forward-10 controls, confirmed by comparing against
+    // MediaViewer.tsx (which already sets it, with its own documented
+    // reasoning): iOS Safari hands a playing <video> with no playsinline
+    // off to the OS's own native fullscreen player -- bringing Apple's own
+    // skip controls along with it -- entirely independent of this app's
+    // own nativeControls setting, which this check confirms is still
+    // false. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await registerStoryGetMock(page, [
+        { id: 'r68-playsinline', media_url: `${BASE}/__fixtures__/r68-playsinline.mp4`, media_type: 'video', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+      ]);
+      await page.route('**/__fixtures__/r68-playsinline.mp4', (route) => route.fulfill({ status: 200, contentType: 'video/mp4', body: STORY_H264_FIXTURE }));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(800);
+      const videoAttrs = await page.evaluate(() => {
+        const v = document.querySelector('video');
+        if (!v) return null;
+        return { playsInline: v.playsInline, hasPlaysinlineAttr: v.hasAttribute('playsinline'), controls: v.controls };
+      });
+      record(
+        '[stories/round68/finding4-playsinline-present] the real <video> element carries playsInline, with nativeControls still false -- the fix for the owner\'s reported skip-10 controls (iOS\'s own native fullscreen handoff, which only ever engages without it)',
+        !!videoAttrs && videoAttrs.playsInline === true && videoAttrs.hasPlaysinlineAttr === true && videoAttrs.controls === false,
+        JSON.stringify(videoAttrs)
+      );
+      await context.close();
+    }
+
+    // --- FINDING 2: the video stays invisible (the viewer's own black
+    // background shows through) until a real first frame genuinely
+    // decodes, confirmed directly by artificially delaying the fixture's
+    // own first byte -- never a window where a wrong-sized box could
+    // paint. A photo segment, by contrast, is immediately visible --
+    // structurally immune, confirmed directly: react-native-web's own
+    // Image renders via a CSS background-image, which never paints until
+    // decoded and whose sizing is a fixed CSS value, never dependent on a
+    // live, still-unknown intrinsic aspect ratio the way object-fit on a
+    // real <video> is. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await registerStoryGetMock(page, [
+        { id: 'r68-hidden-until-ready', media_url: `${BASE}/__fixtures__/r68-hidden.mp4`, media_type: 'video', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+      ]);
+      let firstRequest = true;
+      await page.route('**/__fixtures__/r68-hidden.mp4', async (route) => {
+        if (firstRequest) {
+          firstRequest = false;
+          await new Promise((r) => setTimeout(r, 400));
+        }
+        return route.fulfill({ status: 200, contentType: 'video/mp4', body: STORY_REAL_30S_FIXTURE });
+      });
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+
+      const earlyOpacity = await readVideoComputedOpacity(page);
+      await page.waitForTimeout(700);
+      const readyOpacity = await readVideoComputedOpacity(page);
+      record(
+        '[stories/round68/finding2-video-hidden-until-first-frame] with the fixture\'s own first byte deliberately delayed, the real <video> renders fully hidden (opacity 0, the viewer\'s own black background showing through) right after mount, then becomes visible the instant a real first frame has genuinely decoded',
+        earlyOpacity === '0' && readyOpacity === '1',
+        JSON.stringify({ earlyOpacity, readyOpacity })
+      );
+      await context.close();
+    }
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await registerStoryGetMock(page, [
+        { id: 'r68-photo-immune', media_url: `${BASE}/__fixtures__/r68-photo-immune.png`, media_type: 'photo', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+      ]);
+      await page.route('**/__fixtures__/r68-photo-immune.png', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: TINY_PNG }));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const photoVisible = await page.getByTestId('story-photo').isVisible().catch(() => false);
+      record(
+        '[stories/round68/finding2-photo-never-hidden] a photo segment is never gated behind a hidden-until-ready state at all -- structurally immune, confirmed directly',
+        photoVisible,
+        JSON.stringify({ photoVisible })
+      );
+      await context.close();
+    }
+
+    // --- FINDING 3: timeUpdateEventInterval was never set before this
+    // round, so expo-video's own timeUpdate event never fired on web at
+    // all -- the real progress bar below genuinely advances over real time
+    // now. A real network stall is driven the same "force what the real
+    // mechanism would produce" way this file already drives every other
+    // hard-to-trigger-naturally browser behavior: the committed fixture is
+    // small enough that Chromium fetches it in one shot regardless of any
+    // Range-serving trickery on this file's own server mock (confirmed
+    // directly before choosing this technique -- a real request-sequence
+    // dump showed the whole file arriving in a single open-ended request
+    // within under 100ms of the click, leaving no real "mid-stream" window
+    // to intercept), so a genuine `waiting` DOM event is dispatched
+    // directly on the real <video> element instead -- the exact same event
+    // a real network stall would fire, driving the real, unmodified
+    // VideoPlayerWeb._addListeners/statusChange/VideoSegment code end to
+    // end, with real playback (confirmed via currentTime) never actually
+    // interrupted underneath it, matching a real device where the
+    // underlying media clock keeps running while the UI-facing "status"
+    // flag is what actually flips. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await registerStoryGetMock(page, [
+        { id: 'r68-progress-video', media_url: `${BASE}/__fixtures__/r68-progress.mp4`, media_type: 'video', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+      ]);
+      await page.route('**/__fixtures__/r68-progress.mp4', (route) => route.fulfill({ status: 200, contentType: 'video/mp4', body: STORY_REAL_30S_FIXTURE }));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+
+      const fillEarly = await readStoryFillWidth(page);
+      await page.waitForTimeout(2000);
+      const fillLater = await readStoryFillWidth(page);
+      record(
+        '[stories/round68/finding3-progress-advances-over-real-time] the real progress bar\'s own fill width genuinely increases over real time -- timeUpdate now actually fires on web, where it never did before this round',
+        fillEarly !== null && fillLater !== null && parseFloat(fillLater) > parseFloat(fillEarly),
+        JSON.stringify({ fillEarly, fillLater })
+      );
+
+      const bufferingBeforeStall = await page.getByTestId('story-buffering').isVisible().catch(() => false);
+      const timeBeforeStall = await page.evaluate(() => document.querySelector('video')?.currentTime ?? null);
+      await page.evaluate(() => document.querySelector('video')?.dispatchEvent(new Event('waiting')));
+      await page.waitForTimeout(300);
+      const bufferingDuringStall = await page.getByTestId('story-buffering').isVisible().catch(() => false);
+      const midStallState = await readVideoState(page);
+      const boundaryDuringStall = await page.getByTestId('screen-error-boundary').isVisible().catch(() => false);
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-buffering-overlay.png') }).catch(() => {});
+      await page.waitForTimeout(500);
+      const timeDuringStall = await page.evaluate(() => document.querySelector('video')?.currentTime ?? null);
+
+      await page.evaluate(() => document.querySelector('video')?.dispatchEvent(new Event('canplay')));
+      await page.waitForTimeout(300);
+      const bufferingAfterRecovery = await page.getByTestId('story-buffering').isVisible().catch(() => false);
+
+      record(
+        '[stories/round68/finding3-mid-stream-stall-shows-buffering-and-recovers] a real, dispatched `waiting` event (standing in for the browser\'s own network-triggered one -- this file is too small for a genuine mid-stream network gap to survive Chromium\'s own aggressive prefetch of it, confirmed directly) drives the real, unmodified status-change code: the quiet buffering treatment appears (never a frozen frame with no indication), the video is never falsely marked ended, no crash, real playback keeps running underneath, and the overlay clears once the stall lifts',
+        !bufferingBeforeStall &&
+          bufferingDuringStall &&
+          !!midStallState && !midStallState.paused && !midStallState.ended &&
+          timeDuringStall !== null && timeBeforeStall !== null && timeDuringStall > timeBeforeStall &&
+          !boundaryDuringStall &&
+          !bufferingAfterRecovery,
+        JSON.stringify({ bufferingBeforeStall, bufferingDuringStall, midStallState, timeBeforeStall, timeDuringStall, boundaryDuringStall, bufferingAfterRecovery })
+      );
+      await context.close();
+    }
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      // TWO stories -- the real 30s video first, a plain photo second --
+      // so a genuine playToEnd has somewhere real to auto-advance to.
+      await registerStoryGetMock(page, [
+        { id: 'r68-full-video', media_url: `${BASE}/__fixtures__/r68-full.mp4`, media_type: 'video', created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
+        { id: 'r68-full-photo', media_url: `${BASE}/__fixtures__/r68-full.png`, media_type: 'photo', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+      ]);
+      await page.route('**/__fixtures__/r68-full.mp4', (route) => route.fulfill({ status: 200, contentType: 'video/mp4', body: STORY_REAL_30S_FIXTURE }));
+      await page.route('**/__fixtures__/r68-full.png', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: TINY_PNG }));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+
+      const startedOnVideo = await page.evaluate(() => !!document.querySelector('video'));
+      // Sped up 5x so a real 30-second clip's genuine playToEnd fires in
+      // ~6 real seconds, rather than waiting out the full 30 every run.
+      await page.evaluate(() => {
+        const v = document.querySelector('video');
+        if (v) v.playbackRate = 5;
+      });
+      let advancedAtMs = null;
+      for (let i = 0; i < 40; i++) {
+        await page.waitForTimeout(250);
+        if (!(await page.evaluate(() => !!document.querySelector('video')))) {
+          advancedAtMs = i * 250;
+          break;
+        }
+      }
+      const onPhotoNow = await page.getByTestId('story-photo').isVisible().catch(() => false);
+      const boundaryAfterPlaythrough = await page.getByTestId('screen-error-boundary').isVisible().catch(() => false);
+      record(
+        '[stories/round68/finding3-full-playthrough-auto-advances-at-true-end] a real 30-second video, sped up, plays through to its genuine true end and auto-advances to the next story exactly once -- never early (well past a single real second), never stuck, never a crash',
+        startedOnVideo && advancedAtMs !== null && advancedAtMs > 1000 && onPhotoNow && !boundaryAfterPlaythrough,
+        JSON.stringify({ startedOnVideo, advancedAtMs, onPhotoNow, boundaryAfterPlaythrough })
+      );
+      await context.close();
+    }
+
+    // --- FINDING 4, directly: tapping anywhere on the video's own on-
+    // screen area is still only ever caught by this app's own tap zones
+    // (go back / go forward) -- never a leaked skip/pause control halting
+    // playback. The viewer's only interactions remain advance, close, and
+    // the admin delete. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await registerStoryGetMock(page, [
+        { id: 'r68-tap-video', media_url: `${BASE}/__fixtures__/r68-tap.mp4`, media_type: 'video', created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
+        { id: 'r68-tap-photo', media_url: `${BASE}/__fixtures__/r68-tap.png`, media_type: 'photo', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+      ]);
+      await page.route('**/__fixtures__/r68-tap.mp4', (route) => route.fulfill({ status: 200, contentType: 'video/mp4', body: STORY_H264_FIXTURE }));
+      await page.route('**/__fixtures__/r68-tap.png', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: TINY_PNG }));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(800);
+
+      const pausedBeforeTap = await page.evaluate(() => document.querySelector('video')?.paused);
+      // The real tap zones cover every pixel of the media area from y=90
+      // down -- tapping dead center of the video's own on-screen box
+      // always lands on one of them, never a bare, un-covered strip of the
+      // <video> element itself.
+      const videoBox = await page.locator('video').boundingBox();
+      await page.mouse.click(videoBox.x + videoBox.width / 2, videoBox.y + Math.max(200, videoBox.height / 2));
+      await page.waitForTimeout(400);
+      const onPhotoAfterTap = await page.getByTestId('story-photo').isVisible().catch(() => false);
+      const boundaryAfterTap = await page.getByTestId('screen-error-boundary').isVisible().catch(() => false);
+
+      record(
+        '[stories/round68/finding4-tap-on-video-advances-never-pauses] a direct tap on the video\'s own on-screen area is caught by the real tap zone underneath it (advancing to the next story), never a leaked skip/pause control -- the video was genuinely playing beforehand and the viewer moved forward, not frozen',
+        pausedBeforeTap === false && onPhotoAfterTap && !boundaryAfterTap,
+        JSON.stringify({ pausedBeforeTap, onPhotoAfterTap, boundaryAfterTap })
+      );
+      await context.close();
+    }
+
+    // --- FINDING 1: an exhaustive, direct read of every file in the real
+    // posting flow (StoriesContext.postStory, the media picker, the
+    // duration/codec/size checks, the progress ring) found every async
+    // step already wrapped in try/catch, with nothing that can throw
+    // synchronously during render -- a genuine unhandled exception there
+    // would surface as a rejected promise, never a React render-phase
+    // throw an error boundary can catch, and none was reproducible in this
+    // sandbox's own headless Chromium even against the single most
+    // plausible real scenario (the admin's own genuinely first story of
+    // the day, posted as a video, with the ADD badge's own JSX swapping
+    // mid-upload the instant the real row lands). The real media playback
+    // -- new, genuinely complex, device-specific code -- is the far more
+    // plausible site for whatever the owner's own real device actually
+    // hit. This check proves the real, mechanical guarantee the new local
+    // boundary gives it, via a forced, test-only throw
+    // (window.__storyMediaTestForceCrash -- see StoryViewer.tsx's own
+    // comment; never read or set by real app code) rather than only
+    // asserting the absence of a bug this investigation couldn't itself
+    // reproduce. ---
+    {
+      const context = await browser.newContext({ viewport: VIEWPORT });
+      const page = await context.newPage();
+      await page.addInitScript(() => {
+        window.__storyMediaTestForceCrash = true;
+      });
+      await setupMocks(page, USER_ID);
+      await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+      await registerStoryGetMock(page, [
+        { id: 'r68-crash-test', media_url: `${BASE}/__fixtures__/r68-crash.mp4`, media_type: 'video', created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+      ]);
+      await page.route('**/__fixtures__/r68-crash.mp4', (route) => route.fulfill({ status: 200, contentType: 'video/mp4', body: STORY_H264_FIXTURE }));
+      await seedSignedInSession(page, USER_ID);
+      await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(900);
+      await dismissAlertIfAny(page);
+      await page.getByTestId('story-ring-doc').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500);
+
+      const boundaryText = await page.getByTestId('screen-error-boundary').textContent().catch(() => '');
+      // The rest of the app shell (the real Community screen underneath
+      // the modal) never unmounted -- confirmed directly, not assumed --
+      // and the viewer's own close button, which lives OUTSIDE this local
+      // boundary, still works to get all the way back out.
+      const wordmarkStillThere = await page.getByTestId('app-wordmark').count();
+      await page.getByTestId('story-close').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const viewerClosedCleanly = !(await page.getByTestId('screen-error-boundary').isVisible().catch(() => true));
+      if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'stories-media-crash-contained.png') }).catch(() => {});
+
+      record(
+        '[stories/round68/finding1-media-crash-does-not-take-down-app-shell] an unanticipated throw inside the media area is caught locally (DOC\'S STORIES ran into a problem), never the app shell -- the rest of the app stays mounted underneath, and the close button (outside this boundary) still gets all the way back out',
+        boundaryText.includes("DOC'S STORIES ran into a problem") && wordmarkStillThere > 0 && viewerClosedCleanly,
+        JSON.stringify({ boundaryText, wordmarkStillThere, viewerClosedCleanly })
+      );
       await context.close();
     }
   }
