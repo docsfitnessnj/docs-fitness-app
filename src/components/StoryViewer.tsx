@@ -1,12 +1,48 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Image, PanResponder, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, PanResponder, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { AppModal } from './AppModal';
+import { ScreenErrorBoundary } from './ScreenErrorBoundary';
 import { StoryItem, useStories } from '../context/StoriesContext';
 import { browserCanDecodeHevc, detectVideoCodecFromUrl } from '../lib/videoCodec';
 import { showAlert } from '../lib/alert';
 import { colors, fonts } from '../theme';
+
+// Round 68 FINDING 2: a real device showed a video story mount tiny, in
+// the top-left corner, before snapping to its correct full letterboxed
+// size a moment later. The real, confirmed root cause is a plain CSS
+// fact about REPLACED elements (<video>/<img>), not a timing quirk: per
+// CSS 2.1 10.3.8 (absolutely positioned, replaced elements), when a
+// replaced element's own width/height are left `auto`, `inset: 0` alone
+// does NOT stretch it edge-to-edge the way it would a plain <div> --
+// width/height instead resolve to the element's own INTRINSIC size (the
+// real decoded video's own pixel dimensions once known, or the browser's
+// 300x150 UA fallback box before that), anchored top-left. Confirmed two
+// ways before trusting it: an isolated test page (position:absolute;
+// inset:0 alone vs. the same plus explicit width:100%/height:100%)
+// reproduced exactly this split -- 300x150 pinned at the container's own
+// top-left without the explicit size, the full container with it -- and a
+// real screenshot of this component's own pre-fix markup, caught only by
+// actually looking at the rendered pixels (not just reading computed
+// `position`/`inset` strings, which read correctly either way and are
+// what the first pass of this investigation checked), showed the live
+// story video sitting exactly top-left at its own small intrinsic size.
+// MediaViewer.tsx's own <VideoView> already carries `width: '100%', height:
+// '100%'` in its own styles.video -- confirmed directly, this component
+// was the one place in the app that omitted it, the same shape as the
+// missing playsInline below. The fix (VideoSegment's own style array)
+// adds that explicit sizing so the box itself is ALWAYS correctly sized
+// regardless of the video's own intrinsic dimensions -- independent of,
+// and layered with, the hide-until-first-frame treatment just below,
+// which still matters for a second, narrower reason: object-fit's own
+// positioning of the DECODED FRAME CONTENT inside that now-always-correct
+// box still needs a known aspect ratio, so the video stays invisible
+// until a real first frame confirms one, rather than ever showing a
+// blank/mis-fit frame inside an already-correctly-sized box. This many
+// milliseconds is a safety net only, not the expected path --
+// onFirstFrameRender (below) almost always fires well under it.
+const FRAME_READY_FALLBACK_MS = 6000;
 
 // Round 67 PART 5.1: a photo segment displays for 20 seconds, up from
 // Round 66's original 5 -- an owner decision, final. Also the fallback
@@ -63,10 +99,35 @@ function VideoSegment({
   // instead, in VideoSegment's OWN effect -- which, as this component's
   // own child, runs after VideoView's child effect has already mounted
   // the real element, since React fires child effects before parent ones.
+  //
+  // Round 68 FINDING 3: timeUpdateEventInterval defaults to 0 on web
+  // (confirmed directly by reading VideoPlayer.web.tsx's own source) --
+  // expo-video's own timeUpdate event is NEVER emitted unless this is
+  // explicitly set to a positive number of seconds. Without it, the
+  // progress bar below stayed frozen at 0% for the real video's ENTIRE
+  // runtime regardless of how playback was actually going underneath it --
+  // exactly the "stalls and never finishes" symptom a real device
+  // reported, even on a video that may well have been playing (or had
+  // already ended) just fine.
   const player = useVideoPlayer(uri, (p) => {
     p.muted = false;
+    p.timeUpdateEventInterval = 0.25;
   });
   const [codecVerdict, setCodecVerdict] = useState<CodecVerdict>('checking');
+  // Round 68 FINDING 2: see the module-level comment on FRAME_READY_FALLBACK_MS
+  // above -- the video stays invisible (the viewer's own black background
+  // shows through) until the browser has genuinely decoded a real first
+  // frame, which is also the exact moment its intrinsic size is finally
+  // known, so there is never a window where a wrong-sized box can paint.
+  const [frameReady, setFrameReady] = useState(false);
+  // Round 68 FINDING 3: a quiet buffering treatment, driven by the real
+  // player's own statusChange event -- 'loading' is exactly what a real
+  // network stall mid-playback sets (VideoPlayerWeb's own onwaiting
+  // handler), 'readyToPlay' is what clears it once enough data is
+  // buffered again. Gated on frameReady below so the ordinary, expected
+  // buffering every video does before its very first frame never shows
+  // this banner -- only a stall AFTER playback has genuinely started.
+  const [buffering, setBuffering] = useState(false);
 
   useEffect(() => {
     setCodecVerdict('checking');
@@ -97,12 +158,28 @@ function VideoSegment({
       const duration = player.duration;
       if (duration > 0) progressAnim.setValue(Math.min(1, currentTime / duration));
     });
+    const statusSub = player.addListener('statusChange', ({ status }: { status: string }) => {
+      setBuffering(status === 'loading');
+    });
     return () => {
       endSub.remove();
       timeSub.remove();
+      statusSub.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player]);
+
+  // Round 68 FINDING 2: a safety net only -- onFirstFrameRender (the real,
+  // typed expo-video hook bound to the native loadeddata event) almost
+  // always fires well inside this window. If it genuinely never does (a
+  // dropped connection, a file that fails to decode at all), this still
+  // reveals whatever's there rather than leaving the viewer on a
+  // permanently hidden black frame with no way to tell anything is wrong.
+  useEffect(() => {
+    if (frameReady) return;
+    const timer = setTimeout(() => setFrameReady(true), FRAME_READY_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, [frameReady, uri]);
 
   // A genuinely undecodable video never reaches playToEnd in a way this
   // story's own pacing can rely on -- falls back to the same fixed timer
@@ -126,8 +203,34 @@ function VideoSegment({
     <View style={StyleSheet.absoluteFill}>
       {/* PART 3: already contentFit="contain" since Round 66 -- confirmed
           directly rather than assumed before touching anything; only the
-          photo segment above needed the fix from "cover" to "contain". */}
-      <VideoView player={player} style={StyleSheet.absoluteFill} nativeControls={false} contentFit="contain" testID="story-video" />
+          photo segment above needed the fix from "cover" to "contain".
+          Round 68 FINDING 4: playsInline is the owner decision's own real
+          fix -- confirmed by direct comparison against MediaViewer.tsx
+          (which already sets it, with its own documented reasoning) that
+          this component alone omitted it. Without it, iOS Safari hands a
+          playing <video> off to the OS's own native fullscreen player,
+          entirely independent of this app's nativeControls={false} --
+          which brings along Apple's own skip-back/skip-forward-10 controls,
+          exactly the ones the owner found halting playback. nativeControls
+          stays false and fullscreenOptions stays unset (so expo-video's
+          own default controlsList="nofullscreen" still applies) -- the
+          story viewer's only interactions remain the existing tap
+          zones/close/admin-delete, never a scrub or skip control of any
+          kind. */}
+      <VideoView
+        player={player}
+        style={[StyleSheet.absoluteFill, styles.videoStretch, !frameReady && styles.hiddenUntilReady]}
+        nativeControls={false}
+        contentFit="contain"
+        playsInline
+        onFirstFrameRender={() => setFrameReady(true)}
+        testID="story-video"
+      />
+      {frameReady && buffering && codecVerdict !== 'known-undecodable' && (
+        <View style={styles.bufferingOverlay} testID="story-buffering" pointerEvents="none">
+          <ActivityIndicator color={colors.white} size="small" />
+        </View>
+      )}
       {codecVerdict === 'known-undecodable' && (
         <View style={styles.undecodableBanner} testID="story-undecodable" pointerEvents="none">
           <Text style={styles.undecodableText}>This video cannot play in this browser. It will still play on your phone.</Text>
@@ -135,6 +238,39 @@ function VideoSegment({
       )}
     </View>
   );
+}
+
+// Round 68 FINDING 1: a real device took the WHOLE APP down to the error
+// boundary during the owner's own first video post, then worked on retry --
+// an exhaustive, direct read of every file in the real posting flow found
+// nothing that could throw synchronously during React's render/commit/
+// effect work (every async step is already wrapped in try/catch, surfacing
+// as the existing Couldn't Post Story alert -- a thrown promise rejection,
+// which a React error boundary can never catch at all, regardless of the
+// cause), and a targeted repro of the single most plausible real scenario
+// (admin's own first story of the day, posted as a video, with the ADD
+// badge's own JSX swapping mid-upload the instant the real row lands)
+// didn't reproduce a crash in this sandbox's own headless Chromium either.
+// The real, new, genuinely complex code is the media playback just below,
+// not the posting flow -- this boundary (see its own comment at the real
+// call site) is the mechanical guarantee that whatever the owner's device
+// actually hit, it can never take the app shell down again. This hook lets
+// the suite prove that guarantee directly, by forcing the exact kind of
+// unanticipated render-phase throw no amount of reading can rule out for
+// certain, rather than only asserting the absence of a bug this
+// investigation couldn't reproduce. Real app code never reads or sets this
+// global -- the same "force what the real mechanism would produce"
+// convention this app's own test suite already uses throughout
+// (window.__tourTestForceMissing, window.__shareCardForceColorwayIndex).
+declare global {
+  // eslint-disable-next-line no-var
+  var __storyMediaTestForceCrash: boolean | undefined;
+}
+function StoryMediaCrashTestHook() {
+  if (typeof window !== 'undefined' && window.__storyMediaTestForceCrash) {
+    throw new Error('forced test crash (window.__storyMediaTestForceCrash)');
+  }
+  return null;
 }
 
 type Props = {
@@ -299,18 +435,43 @@ export function StoryViewer({ stories, startIndex, onClose, isAdmin = false }: P
         </View>
 
         <View style={styles.mediaArea}>
-          {current.mediaType === 'video' ? (
-            <VideoSegment key={current.id} uri={current.mediaUri} progressAnim={progressAnims[index]} onEnd={goNext} />
-          ) : (
-            // PART 3: the same house rule as the About page's own crew photo
-            // -- media renders at its natural aspect ratio, never cropped to
-            // fill. "contain" fits the whole image on screen, letterboxed on
-            // the viewer's own black background (container's backgroundColor
-            // below) when the ratios differ, instead of the old "cover"
-            // crop, which is what zoomed and cropped the owner's real
-            // posted 1080x1350 portrait photo.
-            <Image source={{ uri: current.mediaUri }} style={StyleSheet.absoluteFill} resizeMode="contain" testID="story-photo" />
-          )}
+          {/* Round 68 FINDING 1: an exhaustive, direct read of every file in
+              the real posting flow (StoriesContext.postStory, the media
+              picker, the duration/codec/size checks, the progress ring)
+              found every async step already wrapped in try/catch, with
+              nothing that can throw synchronously during render -- a
+              genuine unhandled exception there would surface as a
+              rejected promise, never a React render-phase throw an error
+              boundary can catch, and none was reproducible in this
+              sandbox's own headless Chromium even against the real
+              scenario most likely to trigger it (the admin's own
+              genuinely first story of the day, posted as a video, with
+              the ADD badge's own JSX swapping mid-upload the instant the
+              real row lands). The real media playback below -- new,
+              genuinely complex, device-specific code -- is the far more
+              plausible site for whatever the owner's own real device hit.
+              This boundary is the same backstop ScreenErrorBoundary.tsx's
+              own comment already documents for DOC'S GROUP CHAT: it
+              doesn't replace fixing a known bug, it's what keeps the next
+              unanticipated one from being able to take the WHOLE APP down
+              -- scoped to just this media area (not the whole viewer), so
+              the close button and tap zones above/below stay fully
+              reachable even if the media itself crashes. */}
+          <ScreenErrorBoundary label="DOC'S STORIES">
+            <StoryMediaCrashTestHook />
+            {current.mediaType === 'video' ? (
+              <VideoSegment key={current.id} uri={current.mediaUri} progressAnim={progressAnims[index]} onEnd={goNext} />
+            ) : (
+              // PART 3: the same house rule as the About page's own crew photo
+              // -- media renders at its natural aspect ratio, never cropped to
+              // fill. "contain" fits the whole image on screen, letterboxed on
+              // the viewer's own black background (container's backgroundColor
+              // below) when the ratios differ, instead of the old "cover"
+              // crop, which is what zoomed and cropped the owner's real
+              // posted 1080x1350 portrait photo.
+              <Image source={{ uri: current.mediaUri }} style={StyleSheet.absoluteFill} resizeMode="contain" testID="story-photo" />
+            )}
+          </ScreenErrorBoundary>
         </View>
 
         <View style={styles.tapZones} pointerEvents="box-none">
@@ -387,6 +548,39 @@ const styles = StyleSheet.create({
   },
   mediaArea: {
     flex: 1,
+  },
+  // Round 68 FINDING 2 -- the real fix: a replaced element (<video>) with
+  // only position:absolute + inset:0 (StyleSheet.absoluteFill) does NOT
+  // stretch to fill its container the way a plain View does -- per CSS
+  // 2.1 10.3.8, its own auto width/height resolve to its INTRINSIC size
+  // instead, anchored top-left. Explicit width/height:'100%' (the same
+  // pairing MediaViewer.tsx's own styles.video already uses) is what
+  // actually forces the box itself to fill mediaArea, independent of
+  // whatever the video's own real pixel dimensions turn out to be.
+  videoStretch: {
+    width: '100%',
+    height: '100%',
+  },
+  // Round 68 FINDING 2 -- opacity, not display:none or a conditional
+  // unmount: the real <video> element stays mounted and decoding the whole
+  // time, it just isn't painted yet. Unmounting it instead would cancel
+  // and restart the real network request/decode every time frameReady
+  // flips, which is exactly the kind of self-inflicted stall Finding 3
+  // already has enough real causes to fix without adding a new one here.
+  hiddenUntilReady: {
+    opacity: 0,
+  },
+  // Round 68 FINDING 3 -- centered over the video, pointerEvents:'none' so
+  // it can never itself become a tappable surface (this app's own standing
+  // "fills are paint, not controls" rule, AGENTS.md).
+  bufferingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   undecodableBanner: {
     position: 'absolute',

@@ -113,7 +113,15 @@ export async function uploadFileWithProgress(
     // Matches storage-js's own header for a plain (non-upsert) upload.
     xhr.setRequestHeader('x-upsert', 'false');
     xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) onProgress(event.loaded / event.total);
+      // Round 68: guard against event.total === 0, a real (if unusual)
+      // progress-event shape right at the very start of a large request
+      // before Content-Length is fully resolved -- loaded/total would
+      // otherwise be NaN, which a consumer rendering it straight into a
+      // CSS conic-gradient (CircularProgressRing) can't do anything useful
+      // with. Found during a direct investigation of a real-device app
+      // crash during story posting; not itself confirmed as that crash's
+      // cause, but a genuine, cheap-to-close gap all the same.
+      if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
