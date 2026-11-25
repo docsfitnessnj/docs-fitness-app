@@ -42,18 +42,16 @@ export function CommunityPullToRefresh({ onRefresh, children }: Props) {
     <View style={styles.container}>
       {/*
         Round 69: the indicator must be revealed from its OWN bottom edge
-        upward, the exact same direction the wave fill inside it rises --
-        never clipped from the top (which would show the bell's handle
-        first and hide the rising wave until the pull is nearly done, the
-        opposite of the intended read). This outer box's own height is
-        driven directly by pullDistance (clamped to
+        upward, never clipped from the top. This outer box's own height
+        is driven directly by pullDistance (clamped to
         INDICATOR_AREA_HEIGHT), with overflow:hidden; the inner box stays
-        pinned to this outer box's own bottom edge at its full,
-        unclamped height, so growing the outer box upward from zero
-        uncovers the inner box's bottom portion first -- the same
-        "overflow + fixed inner height" technique PullToRefreshIndicator
-        itself already uses for the wave's own fill level, just applied
-        one layer up, to the whole mark.
+        pinned to this outer box's own bottom edge at its full, unclamped
+        height, so growing the outer box upward from zero uncovers the
+        inner box's bottom portion first. Unchanged by Round 70's own
+        indicator redesign (the gold ring replacing the wave fill, see
+        PullToRefreshIndicator.tsx) -- this outer reveal mechanism is
+        geometry this file owns, not something that lives inside the
+        indicator itself, so it needed no changes either way.
       */}
       <View
         testID="pull-to-refresh-area"

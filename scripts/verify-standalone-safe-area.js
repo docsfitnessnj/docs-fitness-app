@@ -15993,14 +15993,32 @@ async function run() {
   // express on its own (the keyboard shell being open) is read, never
   // written, straight off the existing `data-keyboard-shell` attribute
   // public/index.html's own untouched mechanism already maintains.
+  //
+  // Round 70: THE GOLD RING AROUND THE BELL. The gesture, thresholds, and
+  // every fence above are completely unmodified -- only
+  // PullToRefreshIndicator.tsx's own visuals changed (the wave fill
+  // retired in favor of a gold ring drawn via one CSS conic-gradient
+  // sweep, the same technique CircularProgressRing.tsx/Round 67 already
+  // established, replicated rather than imported). The checks below that
+  // used to read the wave's own fill height (`pull-to-refresh-wave`) now
+  // read the ring's own real conic-gradient sweep angle off
+  // `pull-to-refresh-ring` instead, via the identical "the browser
+  // normalizes a two-position color stop into four explicit
+  // single-position stops, so the progress angle is always the SECOND
+  // degree value" technique Round 67's own
+  // `[stories/round67/upload-progress-ring-real]` check already
+  // established -- not re-derived from scratch.
   const cdpTouch = async (session, type, touches) => {
     await session.send('Input.dispatchTouchEvent', { type, touchPoints: touches.map((t) => ({ x: t.x, y: t.y })) });
   };
-  // Mirrors PullToRefreshIndicator.tsx's own INDICATOR_BOX_HEIGHT constant
-  // (34 / (219/311), rounded) -- kept in sync by hand, the same
-  // documented-duplication convention this file already uses for other
-  // app constants it has no import path to (e.g. STANDARD_COLORWAY_IDS).
-  const INDICATOR_BOX_HEIGHT_FOR_CHECKS = 48;
+  const readPullRingAngle = (page) =>
+    page.evaluate(() => {
+      const ring = document.querySelector('[data-testid="pull-to-refresh-ring"]');
+      if (!ring) return null;
+      const bg = getComputedStyle(ring).backgroundImage;
+      const degrees = [...bg.matchAll(/(\d+(?:\.\d+)?)deg/g)].map((m) => parseFloat(m[1]));
+      return degrees.length >= 2 ? degrees[1] : null;
+    });
 
   function manyFillerPosts(n, userId) {
     const rows = [];
@@ -16031,7 +16049,7 @@ async function run() {
   // --- Context A: the core gesture arc -- partial pull, threshold pull,
   // a genuine release-triggered refresh (through the real contexts' own
   // refetch mechanisms, counted via the real network calls they make),
-  // the slosh while that refresh is artificially held open, and the
+  // the spin while that refresh is artificially held open, and the
   // settle back to rest. ---
   {
     const context = await browser.newContext({ viewport: VIEWPORT, hasTouch: true, isMobile: true });
@@ -16043,7 +16061,7 @@ async function run() {
     let storiesGetCount = 0;
     await page.route('**/rest/v1/community_posts*', async (route) => {
       postsGetCount += 1;
-      // Held open for 1.2s -- long enough to give the dock/slosh phase a
+      // Held open for 1.2s -- long enough to give the dock/spin phase a
       // real window to be sampled in, short enough the check still runs
       // quickly.
       await new Promise((r) => setTimeout(r, 1200));
@@ -16073,32 +16091,27 @@ async function run() {
       await page.waitForTimeout(16);
     }
     await page.waitForTimeout(80);
-    const waveHeightPartial = await page
-      .locator('[data-testid="pull-to-refresh-wave"]')
-      .evaluate((n) => n.getBoundingClientRect().height)
-      .catch(() => 0);
+    const ringAnglePartial = await readPullRingAngle(page);
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'pull-to-refresh-partial.png') }).catch(() => {});
     record(
-      '[pull-to-refresh/partial-pull-low-wave] a short pull (40px raw) shows a real, genuinely PARTIAL wave fill -- some fill, nowhere near the full bell',
-      waveHeightPartial > 2 && waveHeightPartial < INDICATOR_BOX_HEIGHT_FOR_CHECKS - 4,
-      JSON.stringify({ waveHeightPartial })
+      '[pull-to-refresh/partial-pull-low-arc] a short pull (40px raw) traces a real, genuinely PARTIAL gold arc -- some sweep, nowhere near the full circle',
+      ringAnglePartial !== null && ringAnglePartial > 10 && ringAnglePartial < 320,
+      JSON.stringify({ ringAnglePartial })
     );
 
-    // Continue past the threshold (raw 150px total -> resisted ~82px).
+    // Continue past the threshold (raw 150px total -> resisted ~82px,
+    // clamped to progress === 1).
     for (let dy = 50; dy <= 150; dy += 10) {
       await cdpTouch(cdp, 'touchMove', [{ x, y: startY + dy }]);
       await page.waitForTimeout(16);
     }
     await page.waitForTimeout(80);
-    const waveHeightFull = await page
-      .locator('[data-testid="pull-to-refresh-wave"]')
-      .evaluate((n) => n.getBoundingClientRect().height)
-      .catch(() => 0);
+    const ringAngleFull = await readPullRingAngle(page);
     if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'pull-to-refresh-threshold.png') }).catch(() => {});
     record(
-      '[pull-to-refresh/threshold-pull-full-bell] a pull past the threshold shows the wave fully filled -- the complete bell, not a partial one',
-      waveHeightFull >= INDICATOR_BOX_HEIGHT_FOR_CHECKS - 1,
-      JSON.stringify({ waveHeightFull })
+      '[pull-to-refresh/threshold-pull-full-ring] a pull past the threshold completes the full circle -- the complete ring, not a partial arc',
+      ringAngleFull !== null && ringAngleFull >= 358,
+      JSON.stringify({ ringAngleFull })
     );
 
     // Release past threshold: a real refresh must fire through the real
@@ -16120,29 +16133,37 @@ async function run() {
       return parts.length === 6 ? parts[5] : null;
     })();
 
-    // Slosh: sample the wave's own fill height twice, well apart, while
-    // the artificially-held-open community_posts request is still
-    // pending (so the gesture is still genuinely in its 'refreshing'
-    // phase) -- a real oscillation, not a static full fill.
-    const sloshSample1 = await page
-      .locator('[data-testid="pull-to-refresh-wave"]')
-      .evaluate((n) => n.getBoundingClientRect().height)
-      .catch(() => 0);
-    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'pull-to-refresh-slosh.png') }).catch(() => {});
+    // Spin: sample the ring's own real, computed CSS transform twice,
+    // well apart, while the artificially-held-open community_posts
+    // request is still pending (so the gesture is still genuinely in its
+    // 'refreshing' phase) -- the transform is driven entirely by the
+    // injected @keyframes animation while refreshing (no inline rotate
+    // is ever set in that state), so two differing, genuinely-a-rotation
+    // samples prove a real, continuing spin, never a static completed
+    // ring.
+    const spinSample1 = await page
+      .locator('[data-testid="pull-to-refresh-ring"]')
+      .evaluate((n) => getComputedStyle(n).transform)
+      .catch(() => '');
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'pull-to-refresh-spin.png') }).catch(() => {});
     await page.waitForTimeout(550);
-    const sloshSample2 = await page
-      .locator('[data-testid="pull-to-refresh-wave"]')
-      .evaluate((n) => n.getBoundingClientRect().height)
-      .catch(() => 0);
+    const spinSample2 = await page
+      .locator('[data-testid="pull-to-refresh-ring"]')
+      .evaluate((n) => getComputedStyle(n).transform)
+      .catch(() => '');
     record(
       '[pull-to-refresh/docks-at-threshold-on-release] releasing past the threshold docks the content at (close to) the real threshold itself (70px), never left wherever the raw release point happened to be',
       dockedTranslateY !== null && Math.abs(dockedTranslateY - 70) <= 2,
       JSON.stringify({ dockedTransform, dockedTranslateY })
     );
     record(
-      '[pull-to-refresh/slosh-animates-during-refresh] while docked and refreshing, the wave genuinely oscillates -- two real samples, ~550ms apart, differ',
-      sloshSample1 !== sloshSample2,
-      JSON.stringify({ sloshSample1, sloshSample2 })
+      '[pull-to-refresh/ring-spins-during-refresh] while docked and refreshing, the completed ring genuinely spins -- two real computed-transform samples, ~550ms apart, are both genuine rotation matrices (never "none") and differ from each other',
+      spinSample1 !== '' &&
+        spinSample2 !== '' &&
+        spinSample1 !== 'none' &&
+        spinSample2 !== 'none' &&
+        spinSample1 !== spinSample2,
+      JSON.stringify({ spinSample1, spinSample2 })
     );
 
     await page.waitForTimeout(1200); // let the held-open requests resolve and the settle finish
@@ -16343,15 +16364,14 @@ async function run() {
       await cdpTouch(cdp, 'touchMove', [{ x, y: startY + dy }]);
       await page.waitForTimeout(16);
     }
-    const waveHeightAfterReturn = await page
-      .locator('[data-testid="pull-to-refresh-wave"]')
-      .evaluate((n) => n.getBoundingClientRect().height)
-      .catch(() => 0);
+    const ringAngleAfterReturn = await readPullRingAngle(page);
     await cdpTouch(cdp, 'touchEnd', []);
     record(
       '[pull-to-refresh/disarmed-off-tab-rearmed-on-return] while on a different tab the gesture never engages Community\'s own (still-mounted but hidden) scroll container, and it genuinely re-arms the instant Community is focused again -- a real teardown/reattach, not an accident of DOM coverage alone',
-      (transformWhileOffTab === 'none' || transformWhileOffTab === 'matrix(1, 0, 0, 1, 0, 0)') && waveHeightAfterReturn > 0,
-      JSON.stringify({ transformWhileOffTab, waveHeightAfterReturn })
+      (transformWhileOffTab === 'none' || transformWhileOffTab === 'matrix(1, 0, 0, 1, 0, 0)') &&
+        ringAngleAfterReturn !== null &&
+        ringAngleAfterReturn > 0,
+      JSON.stringify({ transformWhileOffTab, ringAngleAfterReturn })
     );
 
     await context.close();
