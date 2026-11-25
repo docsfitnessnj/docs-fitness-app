@@ -15971,6 +15971,451 @@ async function run() {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Round 69: PULL TO REFRESH -- THE WAVE FILLS THE BELL.
+  //
+  // A from-scratch, fully self-contained gesture for the Community feed
+  // only (src/lib/usePullToRefreshGesture.ts, src/components/
+  // CommunityPullToRefresh.tsx, src/components/PullToRefreshIndicator.tsx)
+  // -- the brief's own hard fence 1 forbids touching public/index.html,
+  // the keyboard shell mechanism, the editor caret/drag mechanisms, the
+  // viewport lock, the overscroll rules, or the safe-area system in any
+  // way, and none of those files are touched by this round at all
+  // (confirmed directly via `git diff --name-only` before this PR, and
+  // restated in the PR description per fence 5). The gesture's own touch
+  // listeners attach directly to the real DOM node behind
+  // `community-scroll` (via a plain forwarded ref, never a nativeID,
+  // avoiding any collision with the other three tab screens that stay
+  // mounted simultaneously per Round 46's own documented finding) --
+  // never document/window/body -- so a covering overlay/modal/story
+  // viewer simply wins the browser's own hit-test and this gesture never
+  // sees the touch at all; the one disarm condition DOM coverage can't
+  // express on its own (the keyboard shell being open) is read, never
+  // written, straight off the existing `data-keyboard-shell` attribute
+  // public/index.html's own untouched mechanism already maintains.
+  const cdpTouch = async (session, type, touches) => {
+    await session.send('Input.dispatchTouchEvent', { type, touchPoints: touches.map((t) => ({ x: t.x, y: t.y })) });
+  };
+  // Mirrors PullToRefreshIndicator.tsx's own INDICATOR_BOX_HEIGHT constant
+  // (34 / (219/311), rounded) -- kept in sync by hand, the same
+  // documented-duplication convention this file already uses for other
+  // app constants it has no import path to (e.g. STANDARD_COLORWAY_IDS).
+  const INDICATOR_BOX_HEIGHT_FOR_CHECKS = 48;
+
+  function manyFillerPosts(n, userId) {
+    const rows = [];
+    for (let i = 0; i < n; i++) {
+      rows.push({
+        id: `r69-post-${i}`,
+        title: `Post number ${i}`,
+        body: 'Filler body text, just long enough to give this feed real vertical height so a genuine scroll is possible.',
+        category: 'General',
+        kind: 'text',
+        media_url: null,
+        media_type: null,
+        workout_title: null,
+        workout_notes: null,
+        workout_results_line: null,
+        is_pb: false,
+        pinned: false,
+        created_at: new Date(Date.now() - i * 60000).toISOString(),
+        author_id: userId,
+        profiles: { display_name: 'Test Member' },
+        community_comments: [],
+        community_reactions: [],
+      });
+    }
+    return rows;
+  }
+
+  // --- Context A: the core gesture arc -- partial pull, threshold pull,
+  // a genuine release-triggered refresh (through the real contexts' own
+  // refetch mechanisms, counted via the real network calls they make),
+  // the slosh while that refresh is artificially held open, and the
+  // settle back to rest. ---
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    await seedSignedInSession(page);
+    await setupMocks(page);
+
+    let postsGetCount = 0;
+    let storiesGetCount = 0;
+    await page.route('**/rest/v1/community_posts*', async (route) => {
+      postsGetCount += 1;
+      // Held open for 1.2s -- long enough to give the dock/slosh phase a
+      // real window to be sampled in, short enough the check still runs
+      // quickly.
+      await new Promise((r) => setTimeout(r, 1200));
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.route('**/rest/v1/stories*', async (route) => {
+      storiesGetCount += 1;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' }).catch(() => {});
+    await page.getByTestId('app-wordmark').waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const scroll = page.locator('[data-testid="community-scroll"]');
+    await scroll.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+    const box = await scroll.boundingBox();
+    const cdp = await context.newCDPSession(page);
+    const x = box.x + box.width / 2;
+    const startY = box.y + 60;
+    const postsAfterLoad = postsGetCount;
+
+    // Partial pull: raw 40px -> resisted well under the 70px threshold.
+    await cdpTouch(cdp, 'touchStart', [{ x, y: startY }]);
+    for (let dy = 10; dy <= 40; dy += 10) {
+      await cdpTouch(cdp, 'touchMove', [{ x, y: startY + dy }]);
+      await page.waitForTimeout(16);
+    }
+    await page.waitForTimeout(80);
+    const waveHeightPartial = await page
+      .locator('[data-testid="pull-to-refresh-wave"]')
+      .evaluate((n) => n.getBoundingClientRect().height)
+      .catch(() => 0);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'pull-to-refresh-partial.png') }).catch(() => {});
+    record(
+      '[pull-to-refresh/partial-pull-low-wave] a short pull (40px raw) shows a real, genuinely PARTIAL wave fill -- some fill, nowhere near the full bell',
+      waveHeightPartial > 2 && waveHeightPartial < INDICATOR_BOX_HEIGHT_FOR_CHECKS - 4,
+      JSON.stringify({ waveHeightPartial })
+    );
+
+    // Continue past the threshold (raw 150px total -> resisted ~82px).
+    for (let dy = 50; dy <= 150; dy += 10) {
+      await cdpTouch(cdp, 'touchMove', [{ x, y: startY + dy }]);
+      await page.waitForTimeout(16);
+    }
+    await page.waitForTimeout(80);
+    const waveHeightFull = await page
+      .locator('[data-testid="pull-to-refresh-wave"]')
+      .evaluate((n) => n.getBoundingClientRect().height)
+      .catch(() => 0);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'pull-to-refresh-threshold.png') }).catch(() => {});
+    record(
+      '[pull-to-refresh/threshold-pull-full-bell] a pull past the threshold shows the wave fully filled -- the complete bell, not a partial one',
+      waveHeightFull >= INDICATOR_BOX_HEIGHT_FOR_CHECKS - 1,
+      JSON.stringify({ waveHeightFull })
+    );
+
+    // Release past threshold: a real refresh must fire through the real
+    // contexts' own refetch mechanisms (never new data plumbing) --
+    // proven here by the real GET count genuinely increasing, not by a
+    // second, parallel assumption.
+    await cdpTouch(cdp, 'touchEnd', []);
+    await page.waitForTimeout(300);
+    const dockedTransform = await scroll.evaluate((n) => getComputedStyle(n).transform).catch(() => '');
+    // A CSS matrix() reports its translateY as the 6th component --
+    // parsed directly rather than assumed, since this is the one place
+    // this block checks the gesture actually DOCKED at (close to) the
+    // real PULL_TO_REFRESH_THRESHOLD rather than at wherever the raw
+    // release point happened to be (82px of resisted pull).
+    const dockedTranslateY = (() => {
+      const m = dockedTransform.match(/matrix\(([^)]+)\)/);
+      if (!m) return null;
+      const parts = m[1].split(',').map((s) => parseFloat(s.trim()));
+      return parts.length === 6 ? parts[5] : null;
+    })();
+
+    // Slosh: sample the wave's own fill height twice, well apart, while
+    // the artificially-held-open community_posts request is still
+    // pending (so the gesture is still genuinely in its 'refreshing'
+    // phase) -- a real oscillation, not a static full fill.
+    const sloshSample1 = await page
+      .locator('[data-testid="pull-to-refresh-wave"]')
+      .evaluate((n) => n.getBoundingClientRect().height)
+      .catch(() => 0);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'pull-to-refresh-slosh.png') }).catch(() => {});
+    await page.waitForTimeout(550);
+    const sloshSample2 = await page
+      .locator('[data-testid="pull-to-refresh-wave"]')
+      .evaluate((n) => n.getBoundingClientRect().height)
+      .catch(() => 0);
+    record(
+      '[pull-to-refresh/docks-at-threshold-on-release] releasing past the threshold docks the content at (close to) the real threshold itself (70px), never left wherever the raw release point happened to be',
+      dockedTranslateY !== null && Math.abs(dockedTranslateY - 70) <= 2,
+      JSON.stringify({ dockedTransform, dockedTranslateY })
+    );
+    record(
+      '[pull-to-refresh/slosh-animates-during-refresh] while docked and refreshing, the wave genuinely oscillates -- two real samples, ~550ms apart, differ',
+      sloshSample1 !== sloshSample2,
+      JSON.stringify({ sloshSample1, sloshSample2 })
+    );
+
+    await page.waitForTimeout(1200); // let the held-open requests resolve and the settle finish
+    const settledTransform = await scroll.evaluate((n) => getComputedStyle(n).transform).catch(() => '');
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'pull-to-refresh-settled.png') }).catch(() => {});
+    record(
+      '[pull-to-refresh/springs-away-after-settling] once the refetches genuinely resolve, the indicator springs away and the content returns to its own identity transform -- no leftover offset',
+      settledTransform === 'none' || settledTransform === 'matrix(1, 0, 0, 1, 0, 0)',
+      JSON.stringify({ settledTransform })
+    );
+    record(
+      '[pull-to-refresh/real-refetch-through-existing-contexts] the real community_posts and stories GET endpoints were each hit again after release -- a genuine refresh through CommunityContext/StoriesContext\'s own existing refetch, never a second, parallel fetch',
+      postsGetCount > postsAfterLoad && storiesGetCount >= 1,
+      JSON.stringify({ postsGetCount, postsAfterLoad, storiesGetCount })
+    );
+
+    // Short pull released well under threshold: springs back, and NEVER
+    // triggers a refresh at all.
+    const postsBeforeShortPull = postsGetCount;
+    await cdpTouch(cdp, 'touchStart', [{ x, y: startY }]);
+    for (let dy = 10; dy <= 30; dy += 10) {
+      await cdpTouch(cdp, 'touchMove', [{ x, y: startY + dy }]);
+      await page.waitForTimeout(16);
+    }
+    const midShortPullTransform = await scroll.evaluate((n) => getComputedStyle(n).transform).catch(() => '');
+    await cdpTouch(cdp, 'touchEnd', []);
+    await page.waitForTimeout(400);
+    const afterShortPullTransform = await scroll.evaluate((n) => getComputedStyle(n).transform).catch(() => '');
+    record(
+      '[pull-to-refresh/release-below-threshold-springs-back-no-refresh] a short pull (well under threshold) follows the finger, then springs back to rest on release -- and triggers NO refresh at all',
+      midShortPullTransform !== 'matrix(1, 0, 0, 1, 0, 0)' &&
+        (afterShortPullTransform === 'none' || afterShortPullTransform === 'matrix(1, 0, 0, 1, 0, 0)') &&
+        postsGetCount === postsBeforeShortPull,
+      JSON.stringify({ midShortPullTransform, afterShortPullTransform, postsGetCount, postsBeforeShortPull })
+    );
+
+    await context.close();
+  }
+
+  // --- Context B: a pull during an in-flight refresh never stacks a
+  // second one. ---
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    await seedSignedInSession(page);
+    await setupMocks(page);
+    let postsGetCount = 0;
+    await page.route('**/rest/v1/community_posts*', async (route) => {
+      postsGetCount += 1;
+      await new Promise((r) => setTimeout(r, 1500));
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' }).catch(() => {});
+    await page.getByTestId('app-wordmark').waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const scroll = page.locator('[data-testid="community-scroll"]');
+    await scroll.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+    const box = await scroll.boundingBox();
+    const cdp = await context.newCDPSession(page);
+    const x = box.x + box.width / 2;
+    const startY = box.y + 60;
+    const postsAfterLoad = postsGetCount;
+
+    await cdpTouch(cdp, 'touchStart', [{ x, y: startY }]);
+    for (let dy = 10; dy <= 150; dy += 10) {
+      await cdpTouch(cdp, 'touchMove', [{ x, y: startY + dy }]);
+      await page.waitForTimeout(16);
+    }
+    await cdpTouch(cdp, 'touchEnd', []);
+    await page.waitForTimeout(300); // now docked and genuinely refreshing (the held-open request hasn't resolved yet)
+    const postsAfterFirstRelease = postsGetCount;
+
+    // Attempt a second pull while the first is still in flight.
+    await cdpTouch(cdp, 'touchStart', [{ x, y: startY }]);
+    for (let dy = 10; dy <= 150; dy += 10) {
+      await cdpTouch(cdp, 'touchMove', [{ x, y: startY + dy }]);
+      await page.waitForTimeout(16);
+    }
+    await cdpTouch(cdp, 'touchEnd', []);
+    await page.waitForTimeout(300);
+    const postsAfterSecondAttempt = postsGetCount;
+
+    await page.waitForTimeout(1800); // let the one real in-flight request resolve and settle
+    record(
+      '[pull-to-refresh/no-second-refresh-stacking] attempting a second pull while a refresh is already in flight never stacks a second refetch -- the real GET count stays exactly one call past the initial load, both right after the first release and right after the second attempt',
+      postsAfterFirstRelease === postsAfterLoad + 1 && postsAfterSecondAttempt === postsAfterLoad + 1,
+      JSON.stringify({ postsAfterLoad, postsAfterFirstRelease, postsAfterSecondAttempt })
+    );
+    await context.close();
+  }
+
+  // --- Context C: every disarm condition from fence 4, plus ordinary
+  // scrolling showing no trace of the feature at all. ---
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    await seedSignedInSession(page);
+    await setupMocks(page);
+    await page.route('**/rest/v1/community_posts*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(manyFillerPosts(20, USER_ID)) })
+    );
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' }).catch(() => {});
+    await page.getByTestId('app-wordmark').waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const scroll = page.locator('[data-testid="community-scroll"]');
+    await scroll.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+    const dims = await scroll.evaluate((n) => ({ scrollHeight: n.scrollHeight, clientHeight: n.clientHeight }));
+    const box = await scroll.boundingBox();
+    const cdp = await context.newCDPSession(page);
+    const x = box.x + box.width / 2;
+
+    // Ordinary scrolling, driven by a real touch drag, genuinely moves the
+    // feed -- confirms the gesture never interferes with normal scrolling
+    // at all, before testing the disarm states below.
+    await cdpTouch(cdp, 'touchStart', [{ x, y: box.y + 500 }]);
+    for (let dy = 10; dy <= 300; dy += 10) {
+      await cdpTouch(cdp, 'touchMove', [{ x, y: box.y + 500 - dy }]);
+      await page.waitForTimeout(8);
+    }
+    await cdpTouch(cdp, 'touchEnd', []);
+    await page.waitForTimeout(250);
+    const scrollTopMidFeed = await scroll.evaluate((n) => n.scrollTop);
+    record(
+      '[pull-to-refresh/ordinary-scrolling-unaffected] a real feed with real scrollable height (scrollHeight > clientHeight) scrolls normally via an ordinary touch drag',
+      dims.scrollHeight > dims.clientHeight && scrollTopMidFeed > 100,
+      JSON.stringify({ dims, scrollTopMidFeed })
+    );
+
+    // Disarmed: not at exact scroll top.
+    await cdpTouch(cdp, 'touchStart', [{ x, y: box.y + 200 }]);
+    for (let dy = 10; dy <= 150; dy += 10) {
+      await cdpTouch(cdp, 'touchMove', [{ x, y: box.y + 200 + dy }]);
+      await page.waitForTimeout(16);
+    }
+    await page.waitForTimeout(80);
+    const indicatorHeightMidFeed = await page
+      .locator('[data-testid="pull-to-refresh-area"]')
+      .evaluate((n) => n.getBoundingClientRect().height)
+      .catch(() => -1);
+    const transformMidFeed = await scroll.evaluate((n) => getComputedStyle(n).transform).catch(() => '');
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'pull-to-refresh-no-trace-mid-feed.png') }).catch(() => {});
+    await cdpTouch(cdp, 'touchEnd', []);
+    record(
+      '[pull-to-refresh/disarmed-not-at-scroll-top] the same downward drag that would arm a pull at the top produces ZERO effect mid-feed -- no indicator reveal, no content shift, no trace at all',
+      indicatorHeightMidFeed === 0 && (transformMidFeed === 'none' || transformMidFeed === 'matrix(1, 0, 0, 1, 0, 0)'),
+      JSON.stringify({ indicatorHeightMidFeed, transformMidFeed })
+    );
+
+    // Back to the exact top before testing the remaining disarm states.
+    await scroll.evaluate((n) => {
+      n.scrollTop = 0;
+    });
+    await page.waitForTimeout(150);
+    const startY = box.y + 60;
+
+    // Disarmed: a real covering overlay (the composer) is open -- proven
+    // via ordinary DOM hit-testing, not a special-cased flag this gesture
+    // has to know about.
+    await page.getByTestId('composer-bar').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const composerOpen = await page.getByTestId('compose-close').isVisible().catch(() => false);
+    await cdpTouch(cdp, 'touchStart', [{ x, y: startY }]);
+    for (let dy = 10; dy <= 150; dy += 10) {
+      await cdpTouch(cdp, 'touchMove', [{ x, y: startY + dy }]);
+      await page.waitForTimeout(16);
+    }
+    const transformComposerOpen = await scroll.evaluate((n) => getComputedStyle(n).transform).catch(() => '');
+    await cdpTouch(cdp, 'touchEnd', []);
+    await page.getByTestId('compose-close').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
+    record(
+      '[pull-to-refresh/disarmed-overlay-open] with the real composer modal open (a covering, higher-stacking-order DOM node), the same gesture at the same screen coordinates never reaches the scroll container at all',
+      composerOpen && (transformComposerOpen === 'none' || transformComposerOpen === 'matrix(1, 0, 0, 1, 0, 0)'),
+      JSON.stringify({ composerOpen, transformComposerOpen })
+    );
+
+    // Disarmed while on a different tab, and genuinely re-armed on
+    // return -- confirming the attach/detach lifecycle is actually tied
+    // to tab focus (fence 3), not merely harmless by accident.
+    await page.getByRole('tab', { name: /YOUR WORKOUTS/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await cdpTouch(cdp, 'touchStart', [{ x, y: startY }]);
+    for (let dy = 10; dy <= 150; dy += 10) {
+      await cdpTouch(cdp, 'touchMove', [{ x, y: startY + dy }]);
+      await page.waitForTimeout(16);
+    }
+    await cdpTouch(cdp, 'touchEnd', []);
+    await page.waitForTimeout(150);
+    const transformWhileOffTab = await scroll.evaluate((n) => getComputedStyle(n).transform).catch(() => '');
+    await page.getByRole('tab', { name: /Community/i }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await scroll.evaluate((n) => {
+      n.scrollTop = 0;
+    });
+    await page.waitForTimeout(150);
+    await cdpTouch(cdp, 'touchStart', [{ x, y: startY }]);
+    for (let dy = 10; dy <= 150; dy += 10) {
+      await cdpTouch(cdp, 'touchMove', [{ x, y: startY + dy }]);
+      await page.waitForTimeout(16);
+    }
+    const waveHeightAfterReturn = await page
+      .locator('[data-testid="pull-to-refresh-wave"]')
+      .evaluate((n) => n.getBoundingClientRect().height)
+      .catch(() => 0);
+    await cdpTouch(cdp, 'touchEnd', []);
+    record(
+      '[pull-to-refresh/disarmed-off-tab-rearmed-on-return] while on a different tab the gesture never engages Community\'s own (still-mounted but hidden) scroll container, and it genuinely re-arms the instant Community is focused again -- a real teardown/reattach, not an accident of DOM coverage alone',
+      (transformWhileOffTab === 'none' || transformWhileOffTab === 'matrix(1, 0, 0, 1, 0, 0)') && waveHeightAfterReturn > 0,
+      JSON.stringify({ transformWhileOffTab, waveHeightAfterReturn })
+    );
+
+    await context.close();
+  }
+
+  // --- Context D: disarmed while the keyboard shell is genuinely open.
+  // Forcing a bare `data-keyboard-shell="open"` attribute directly proved
+  // flaky in practice: the real, untouched public/index.html mechanism
+  // (syncKeyboardShellMode) re-evaluates on its own always-on 250ms
+  // interval (Round 17's own documented backstop) and, finding none of
+  // the real conditions it actually checks for (display-mode: standalone,
+  // a genuinely shrunk visualViewport), would silently overwrite a bare
+  // forced attribute moments later -- a real, reproducible race, not a
+  // one-off. The fix is the same "force what the real mechanism would
+  // produce" technique this file already uses throughout
+  // (forceStandaloneDisplayMode + forceVisualViewportShrink, the exact
+  // pair the pre-existing [keyboard-snapshot] checks already establish):
+  // the REAL mechanism then genuinely, stably computes "open" on every
+  // tick, since the stub persists, so there's nothing left to race. ---
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    await forceStandaloneDisplayMode(page);
+    await seedSignedInSession(page);
+    await setupMocks(page);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' }).catch(() => {});
+    await page.getByTestId('app-wordmark').waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const scroll = page.locator('[data-testid="community-scroll"]');
+    await scroll.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+    await scroll.evaluate((n) => {
+      n.scrollTop = 0;
+    });
+    const box = await scroll.boundingBox();
+    const cdp = await context.newCDPSession(page);
+    const x = box.x + box.width / 2;
+    const startY = box.y + 60;
+
+    await forceVisualViewportShrink(page, 300);
+    await page.waitForTimeout(300);
+    const shellState = await readKeyboardShellState(page);
+
+    await cdpTouch(cdp, 'touchStart', [{ x, y: startY }]);
+    for (let dy = 10; dy <= 150; dy += 10) {
+      await cdpTouch(cdp, 'touchMove', [{ x, y: startY + dy }]);
+      await page.waitForTimeout(16);
+    }
+    const transformKeyboardOpen = await scroll.evaluate((n) => getComputedStyle(n).transform).catch(() => '');
+    const indicatorHeightKeyboardOpen = await page
+      .locator('[data-testid="pull-to-refresh-area"]')
+      .evaluate((n) => n.getBoundingClientRect().height)
+      .catch(() => -1);
+    await cdpTouch(cdp, 'touchEnd', []);
+    record(
+      '[pull-to-refresh/disarmed-keyboard-shell-open] with the real, unmodified keyboard-shell mechanism genuinely open (data-keyboard-shell="open", forced the same way the pre-existing [keyboard-snapshot] checks already do), the same gesture at the real scroll top produces zero effect',
+      shellState.attr === 'open' &&
+        indicatorHeightKeyboardOpen === 0 &&
+        (transformKeyboardOpen === 'none' || transformKeyboardOpen === 'matrix(1, 0, 0, 1, 0, 0)'),
+      JSON.stringify({ shellState, transformKeyboardOpen, indicatorHeightKeyboardOpen })
+    );
+    await context.close();
+  }
+
   await browser.close();
   console.log('\n=== SUMMARY ===');
   const failed = results.filter((r) => !r.pass);
