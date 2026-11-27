@@ -33,7 +33,7 @@ function WodEditor({ week, wod, onClose }: { week: ScheduledWeek; wod: Scheduled
   const [movements, setMovements] = useState(wod.movements.join('\n'));
   const [videoUrl, setVideoUrl] = useState(wod.videoUrl);
   const [notes, setNotes] = useState(wod.notes);
-  const { state, start, succeed, fail } = useSaveConfirmation();
+  const { state, errorMessage, start, succeed, fail } = useSaveConfirmation();
 
   const handleSave = async () => {
     start();
@@ -95,7 +95,7 @@ function WodEditor({ week, wod, onClose }: { week: ScheduledWeek; wod: Scheduled
           <Text style={styles.removeButtonText}>REMOVE</Text>
         </Pressable>
       </View>
-      <SaveConfirmation state={state} />
+      <SaveConfirmation state={state} errorMessage={errorMessage} />
     </View>
   );
 }
@@ -147,7 +147,7 @@ function CowEditor({ week, cow }: { week: ScheduledWeek; cow: ScheduledCow | nul
   const [theWork, setTheWork] = useState(cow?.theWork ?? '');
   const [theCatch, setTheCatch] = useState(cow?.theCatch ?? '');
   const [finishNote, setFinishNote] = useState(cow?.finishNote ?? '');
-  const { state, start, succeed, fail } = useSaveConfirmation();
+  const { state, errorMessage, start, succeed, fail } = useSaveConfirmation();
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -200,7 +200,7 @@ function CowEditor({ week, cow }: { week: ScheduledWeek; cow: ScheduledCow | nul
       <Pressable style={styles.saveButton} onPress={handleSave} testID="scheduled-cow-save">
         <Text style={styles.saveButtonText}>SAVE</Text>
       </Pressable>
-      <SaveConfirmation state={state} />
+      <SaveConfirmation state={state} errorMessage={errorMessage} />
     </View>
   );
 }
