@@ -41,6 +41,13 @@ export function ScheduledWeekImportScreen({ onBack, onImported }: Props) {
   const [preview, setPreview] = useState<{ weeks: ParsedWeekPreview[]; globalProblems: string[] } | null>(null);
   const [modes, setModes] = useState<Record<number, 'replace' | 'skip'>>({});
   const [importing, setImporting] = useState(false);
+  // Round 71: importWeeks() now throws a real, specific message the instant
+  // any write fails — never silently succeeds, never leaves the admin
+  // guessing which week or which piece. Shown in the same red problems-box
+  // styling the preview already uses for a parse problem, so a real import
+  // failure reads with the same weight as everything else on this screen
+  // that means "something needs your attention."
+  const [importError, setImportError] = useState<string | null>(null);
 
   const existingDates = new Set(existingWeeks.map((w) => w.weekStartDate));
 
@@ -61,6 +68,7 @@ export function ScheduledWeekImportScreen({ onBack, onImported }: Props) {
   const handleImport = async () => {
     if (!preview) return;
     setImporting(true);
+    setImportError(null);
     try {
       await importWeeks(
         preview.weeks.map((w) => ({
@@ -71,6 +79,8 @@ export function ScheduledWeekImportScreen({ onBack, onImported }: Props) {
         }))
       );
       onImported();
+    } catch (e) {
+      setImportError((e as Error)?.message ?? "Couldn't import. Try again.");
     } finally {
       setImporting(false);
     }
@@ -162,6 +172,12 @@ export function ScheduledWeekImportScreen({ onBack, onImported }: Props) {
             >
               <Text style={styles.importButtonText}>{importing ? 'IMPORTING…' : `IMPORT ${preview.weeks.length} WEEK${preview.weeks.length === 1 ? '' : 'S'}`}</Text>
             </Pressable>
+
+            {importError && (
+              <View style={[styles.globalProblemsBox, styles.importErrorBox]} testID="scheduled-import-error">
+                <Text style={styles.problemText}>{importError}</Text>
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
@@ -203,6 +219,10 @@ const styles = StyleSheet.create({
   },
   results: {
     marginTop: 20,
+  },
+  importErrorBox: {
+    marginTop: 12,
+    marginBottom: 0,
   },
   globalProblemsBox: {
     backgroundColor: colors.card,

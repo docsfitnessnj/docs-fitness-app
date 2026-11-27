@@ -562,6 +562,15 @@ function thisWeekMonday() {
   return monday;
 }
 
+// Round 71: scheduled_cows.week_id carries its own real UNIQUE constraint
+// (migration_030.sql) -- PostgREST serves scheduled_weeks -> scheduled_cows
+// as a genuine ONE-TO-ONE embed, a bare object or null, NEVER an array,
+// confirmed directly against real production data. The old mock here
+// served an array either way, which is exactly the "mock shape doesn't
+// match what PostgREST actually sends" class Round 34 already documented
+// for .single() -- every pre-existing check using this helper exercised a
+// shape the real server never produces, so none of them could ever have
+// caught the real bug. Every check in this file now gets the real shape.
 function makeScheduledWeekRow({ id, weekStartDateMs, releaseAtMs, releasedAtMs = null, wods = [], cow = null }) {
   return {
     id,
@@ -579,19 +588,17 @@ function makeScheduledWeekRow({ id, weekStartDateMs, releaseAtMs, releasedAtMs =
       notes: w.notes || '',
     })),
     scheduled_cows: cow
-      ? [
-          {
-            id: `${id}-cow`,
-            name: cow.name,
-            video_url: cow.videoUrl || '',
-            scoring_type: cow.scoringType || 'time',
-            kettlebells: cow.kettlebells || null,
-            the_work: cow.theWork || null,
-            the_catch: cow.theCatch || null,
-            finish_note: cow.finishNote || null,
-          },
-        ]
-      : [],
+      ? {
+          id: `${id}-cow`,
+          name: cow.name,
+          video_url: cow.videoUrl || '',
+          scoring_type: cow.scoringType || 'time',
+          kettlebells: cow.kettlebells || null,
+          the_work: cow.theWork || null,
+          the_catch: cow.theCatch || null,
+          finish_note: cow.finishNote || null,
+        }
+      : null,
   };
 }
 
@@ -663,6 +670,210 @@ function buildScheduledImportFixtureXlsx(weekStartDateMs) {
   const outPath = path.join(require('os').tmpdir(), `r46-import-fixture-${Date.now()}.xlsx`);
   XLSX.writeFile(workbook, outPath);
   return outPath;
+}
+
+// Round 71: the exact real production shape -- 3 weeks, 4 WODs + 1 COW
+// each, a WODs sheet and a COWs sheet (12 WOD rows, 3 COW rows total) --
+// built with the real `xlsx` package, never a hand-assembled byte string,
+// same convention as buildScheduledImportFixtureXlsx above. The 3 COW
+// names/scoring types (OPENING BELL rounds_reps, THE COUNTDOWN time, FINAL
+// BELL time) match the real bug report's own fixture exactly.
+const R71_COW_NAMES = ['OPENING BELL', 'THE COUNTDOWN', 'FINAL BELL'];
+const R71_COW_SCORING = { 'OPENING BELL': 'AMRAP', 'THE COUNTDOWN': 'FOR TIME', 'FINAL BELL': 'FOR TIME' };
+function buildScheduledImportFixtureXlsxThreeWeeks(weekStartDatesMs) {
+  const wodRows = [];
+  const cowRows = [];
+  weekStartDatesMs.forEach((weekStartMs, wi) => {
+    const days = [
+      { offsetDays: 0, day: 'MONDAY', name: `W${wi + 1} Monday`, format: '21-15-9' },
+      { offsetDays: 1, day: 'TUESDAY', name: `W${wi + 1} Tuesday`, format: 'AMRAP 20' },
+      { offsetDays: 3, day: 'THURSDAY', name: `W${wi + 1} Thursday`, format: 'EMOM 15' },
+      { offsetDays: 4, day: 'FRIDAY', name: `W${wi + 1} Friday`, format: 'For Time' },
+    ];
+    for (const d of days) {
+      wodRows.push({
+        'Release date': mdY(weekStartMs + d.offsetDays * 86400000),
+        Day: d.day,
+        'Workout name': d.name,
+        Format: d.format,
+        'Format description': '',
+        Movements: 'Swings',
+        'Video URL': '',
+        Notes: '',
+      });
+    }
+    const cowName = R71_COW_NAMES[wi];
+    cowRows.push({
+      'Week of': mdY(weekStartMs),
+      'Challenge name': cowName,
+      'Video URL': '',
+      'Scoring type': R71_COW_SCORING[cowName],
+      'Prescribed kettlebells': '24kg',
+      'The Work': 'Do the real work',
+      'The Catch': 'Catch the real penalty',
+      'Finish note': 'Finish strong.',
+    });
+  });
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(wodRows), 'WODs');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(cowRows), 'COWs');
+  const outPath = path.join(require('os').tmpdir(), `r71-import-fixture-3wk-${Date.now()}.xlsx`);
+  XLSX.writeFile(workbook, outPath);
+  return outPath;
+}
+
+// Round 71: a genuinely stateful mock for the import's own write sequence
+// -- the established convention (see registerClassBookingMocks above) --
+// so [scheduled/import-replace] can assert the real scheduled_cows rows a
+// REPLACE import writes, not just that a POST happened. `state.weeks` is a
+// plain array of {id, week_start_date, release_at, released_at, wods, cow}
+// seeded with the 3 PRE-EXISTING (colliding) weeks' own old content;
+// `failCowInsertForWeekStart` (a 'YYYY-MM-DD' string, or null) forces that
+// one week's own scheduled_cows insert to fail with a realistic
+// Postgrest-shaped error, for the second check's own forced-failure path.
+function registerScheduledImportStatefulMock(page, state) {
+  // week_start_date is kept as a plain epoch-ms number throughout this
+  // mock's own state, never round-tripped through a 'YYYY-MM-DD' string
+  // and back -- `new Date('YYYY-MM-DD')` parses as UTC midnight, which
+  // `pgDateOnly`'s own LOCAL getFullYear/getMonth/getDate read-back would
+  // only agree with at UTC+0, the exact well-documented quirk
+  // ScheduledContentContext.tsx's own parseDateOnly() is written to avoid.
+  const rowForWeek = (w) =>
+    makeScheduledWeekRow({
+      id: w.id,
+      weekStartDateMs: w.weekStartDateMs,
+      releaseAtMs: w.release_at,
+      releasedAtMs: w.released_at,
+      wods: w.wods,
+      cow: w.cow,
+    });
+
+  return page.route('**/rest/v1/scheduled_*', async (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    const method = req.method();
+    const table = url.pathname.split('/').pop();
+
+    if (table === 'scheduled_weeks') {
+      if (method === 'GET') {
+        // Round 71: a real bug in THIS mock, caught by its own
+        // strengthened checks -- `url.search.includes('select=id')` was
+        // meant to detect only the narrow importWeeks() collision check
+        // (`.select('id').eq('week_start_date', dateStr).maybeSingle()`),
+        // but the FULL embed select (used by the provider's own initial
+        // load AND every refetch() afterward) also happens to start with
+        // the literal column name "id" -- `select=id, week_start_date,
+        // release_at, ...` -- so that substring matched BOTH requests,
+        // meaning the real week list was never actually served at all,
+        // on the initial load or on any later refetch. The real
+        // distinguishing signal is the presence of a `week_start_date`
+        // FILTER param, which only the narrow collision check ever sends.
+        if (url.searchParams.has('week_start_date')) {
+          const dateParam = (url.searchParams.get('week_start_date') || '').replace(/^eq\./, '');
+          const existing = state.weeks.find((w) => pgDateOnly(w.weekStartDateMs) === dateParam);
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: existing ? JSON.stringify({ id: existing.id }) : JSON.stringify(null),
+          });
+        }
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state.weeks.map(rowForWeek)) });
+      }
+      if (method === 'POST') {
+        const body = req.postDataJSON() || {};
+        const id = `r71-week-${state.nextId++}`;
+        const [y, m, d] = String(body.week_start_date).split('-').map(Number);
+        state.weeks.push({ id, weekStartDateMs: new Date(y, m - 1, d).getTime(), release_at: Date.now(), released_at: null, wods: [], cow: null });
+        // A real, UNSOLICITED second finding, the exact Round-34-documented
+        // class the production root cause itself belongs to: importWeeks()
+        // calls `.insert({...}).select('id').single()` here -- `.single()`
+        // only ever unwraps an array when postgrest-js's own isMaybeSingle
+        // is set, which `.maybeSingle()` sets and `.single()` never does
+        // (confirmed directly by reading @supabase/postgrest-js). The
+        // first version of this mock answered `[{id}]` (array-wrapped),
+        // which a real PostgREST server never would for `.single()` --
+        // `created.id` then read `undefined` off the array itself, so
+        // every subsequent WOD/COW insert for a NEWLY CREATED week carried
+        // `week_id: undefined` and could never be attributed to the right
+        // week in this mock's own state. Caught by this round's own
+        // strengthened [scheduled/import] check (which finally asserts
+        // the COW actually landed, closing the exact coverage gap the
+        // real production bug exploited) -- not a guess, a real bug this
+        // round's own verification work found and fixed.
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    }
+
+    // Round 71: the URL's own `week_id=eq.<id>` filter only exists on a
+    // DELETE (or an UPDATE's `.eq()`) -- a real POST (insert) carries NO
+    // query-string filter at all; `week_id` lives in the REQUEST BODY
+    // instead (each row's own field for scheduled_wods' array insert, the
+    // single object's own field for scheduled_cows). Reading it from the
+    // URL unconditionally (the first version of this mock) meant `week`
+    // was always undefined for every POST, so neither a real WOD nor a
+    // real COW insert was ever actually attributed to the right week in
+    // this mock's own state -- a real mock bug, not an app bug, caught by
+    // this round's own direct reproduction before being trusted.
+    const weekIdFromUrl = (url.searchParams.get('week_id') || '').replace(/^eq\./, '');
+    let postBody;
+    if (method === 'POST') postBody = req.postDataJSON();
+    const weekIdFromBody = method === 'POST' ? (Array.isArray(postBody) ? postBody[0]?.week_id : postBody?.week_id) : undefined;
+    const weekId = method === 'POST' ? weekIdFromBody : weekIdFromUrl;
+    const week = state.weeks.find((w) => w.id === weekId);
+
+    if (table === 'scheduled_wods') {
+      if (method === 'DELETE') {
+        if (week) week.wods = [];
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      }
+      if (method === 'POST') {
+        const rows = Array.isArray(postBody) ? postBody : [postBody];
+        if (week) {
+          week.wods.push(
+            ...rows.map((r) => ({ dayOfWeek: r.day_of_week, name: r.name, format: r.format, formatDescription: r.format_description, movements: r.movements, videoUrl: r.video_url, notes: r.notes }))
+          );
+        }
+        return route.fulfill({ status: 201, contentType: 'application/json', body: '[]' });
+      }
+    }
+
+    if (table === 'scheduled_cows') {
+      if (method === 'DELETE') {
+        if (week) week.cow = null;
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      }
+      if (method === 'POST') {
+        const body = postBody || {};
+        if (state.failCowInsertForWeekStart && week && pgDateOnly(week.weekStartDateMs) === state.failCowInsertForWeekStart) {
+          return route.fulfill({
+            status: 409,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              message: `duplicate key value violates unique constraint "scheduled_cows_week_id_key"`,
+              code: '23505',
+              details: `Key (week_id)=(${weekId}) already exists.`,
+              hint: null,
+            }),
+          });
+        }
+        if (week) {
+          week.cow = {
+            name: body.name,
+            videoUrl: body.video_url,
+            scoringType: body.scoring_type,
+            kettlebells: body.kettlebells,
+            theWork: body.the_work,
+            theCatch: body.the_catch,
+            finishNote: body.finish_note,
+          };
+        }
+        return route.fulfill({ status: 201, contentType: 'application/json', body: '[]' });
+      }
+    }
+
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
 }
 
 function bookedCountFor(state, sessionId) {
@@ -1916,7 +2127,7 @@ async function tabLabelBaselineGap(page) {
 }
 
 async function run() {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
   const results = [];
   const record = (name, pass, detail) => {
     results.push({ name, pass, detail });
@@ -11697,7 +11908,15 @@ async function run() {
   // string) with a WODs sheet (4 real rows) and a COWs sheet (1 real row),
   // uploaded through the real admin import screen, previewed, and
   // confirmed -- a genuine round trip through buildImportPreview() and
-  // importWeeks(), not an assumption.
+  // importWeeks(), not an assumption. Round 71: the mock now genuinely
+  // CAPTURES the POSTed COW (the stateful convention this file already
+  // uses for class bookings etc.) and the GET read-back reflects it -- the
+  // old mock always answered `cow: null` regardless of what was posted,
+  // which is exactly the coverage gap that let the real "every COW reads
+  // Not set after import" production bug through unnoticed: this check
+  // technically ran and technically passed, but against a world where the
+  // COW could never have shown up wrong, because nothing ever asserted it
+  // showed up right either.
   {
     const context = await browser.newContext({ viewport: VIEWPORT });
     const page = await context.newPage();
@@ -11705,26 +11924,8 @@ async function run() {
     await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
 
     const importMonday = thisWeekMonday().getTime() + 14 * 86400000;
-    const importedWeeks = [];
-    await page.route('**/rest/v1/scheduled_weeks*', async (route) => {
-      const req = route.request();
-      if (req.method() === 'GET') {
-        const url = new URL(req.url());
-        if (url.search.includes('select=id')) {
-          // The importWeeks() collision check -- nothing exists yet.
-          return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
-        }
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(importedWeeks) });
-      }
-      if (req.method() === 'POST') {
-        const id = `imported-week-${importedWeeks.length + 1}`;
-        importedWeeks.push(makeScheduledWeekRow({ id, weekStartDateMs: importMonday, releaseAtMs: importMonday - 2 * 86400000, wods: [], cow: null }));
-        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify([{ id }]) });
-      }
-      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
-    });
-    await page.route('**/rest/v1/scheduled_wods*', (route) => route.fulfill({ status: 201, contentType: 'application/json', body: '[]' }));
-    await page.route('**/rest/v1/scheduled_cows*', (route) => route.fulfill({ status: 201, contentType: 'application/json', body: '[]' }));
+    const state = { weeks: [], nextId: 1 };
+    await registerScheduledImportStatefulMock(page, state);
 
     await seedSignedInSession(page, USER_ID);
     await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
@@ -11764,9 +11965,353 @@ async function run() {
     const backToList = await page.getByTestId('scheduled-weeks-open-import').isVisible().catch(() => false);
     record(
       '[scheduled/import] confirming the import actually writes the week (POST reaches scheduled_weeks) and returns to the WEEKLY RELEASES list',
-      backToList && importedWeeks.length === 1,
-      JSON.stringify({ backToList, importedWeeksCount: importedWeeks.length })
+      backToList && state.weeks.length === 1,
+      JSON.stringify({ backToList, importedWeeksCount: state.weeks.length })
     );
+
+    // The regression guard itself: expand the newly-imported week and
+    // confirm its real COW name shows, never "Not set" -- the exact thing
+    // the real bug report described and the old mock could never have
+    // caught.
+    const newWeekId = state.weeks[0]?.id;
+    if (newWeekId) {
+      await page.getByTestId(`scheduled-week-toggle-${newWeekId}`).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+    }
+    const cowNameVisible = await page.getByText('R46 Import COW', { exact: false }).isVisible().catch(() => false);
+    const notSetVisible = await page.getByText('Not set', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[scheduled/import] the imported week shows its real COW name afterward, never "Not set"',
+      cowNameVisible && !notSetVisible,
+      JSON.stringify({ cowNameVisible, notSetVisible, postedCow: state.weeks[0]?.cow ?? null })
+    );
+    await context.close();
+  }
+
+  // [scheduled/import-replace]: the real production bug's own exact shape
+  // -- a real .xlsx with a WODs sheet (12 rows across 3 weeks) and a COWs
+  // sheet (3 rows), 3 weeks that ALREADY EXIST (collide), REPLACE selected
+  // on all three, import confirmed -- and the real scheduled_cows writes
+  // asserted through a stateful mock, never just "a POST happened." All 3
+  // weeks' own real COW names (OPENING BELL, THE COUNTDOWN, FINAL BELL)
+  // must show afterward, none reading "Not set".
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+
+    const week1 = thisWeekMonday().getTime() + 21 * 86400000;
+    const week2 = week1 + 7 * 86400000;
+    const week3 = week2 + 7 * 86400000;
+    const state = {
+      nextId: 1,
+      weeks: [
+        { id: 'r71-existing-1', weekStartDateMs: week1, release_at: week1 - 2 * 86400000, released_at: null, wods: [{ dayOfWeek: 'mon', name: 'Old W1 Monday' }], cow: { name: 'Old COW 1', scoringType: 'time' } },
+        { id: 'r71-existing-2', weekStartDateMs: week2, release_at: week2 - 2 * 86400000, released_at: null, wods: [{ dayOfWeek: 'mon', name: 'Old W2 Monday' }], cow: { name: 'Old COW 2', scoringType: 'time' } },
+        { id: 'r71-existing-3', weekStartDateMs: week3, release_at: week3 - 2 * 86400000, released_at: null, wods: [{ dayOfWeek: 'mon', name: 'Old W3 Monday' }], cow: { name: 'Old COW 3', scoringType: 'time' } },
+      ],
+    };
+    await registerScheduledImportStatefulMock(page, state);
+
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-content-library').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.getByTestId('content-tab-weekly-releases').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('scheduled-weeks-open-import').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    const fixturePath = buildScheduledImportFixtureXlsxThreeWeeks([week1, week2, week3]);
+    const [fileChooser] = await Promise.all([
+      page.waitForEvent('filechooser', { timeout: 5000 }),
+      page.getByTestId('scheduled-import-choose-file').click(),
+    ]);
+    await fileChooser.setFiles(fixturePath);
+    await page.waitForTimeout(700);
+
+    const threeWeeksFound = await page.getByText('3 weeks found', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[scheduled/import-replace] the preview finds all 3 colliding weeks, each with its own real COW name',
+      threeWeeksFound &&
+        (await page.getByText('OPENING BELL', { exact: false }).isVisible().catch(() => false)) &&
+        (await page.getByText('THE COUNTDOWN', { exact: false }).isVisible().catch(() => false)) &&
+        (await page.getByText('FINAL BELL', { exact: false }).isVisible().catch(() => false)),
+      JSON.stringify({ threeWeeksFound })
+    );
+
+    // REPLACE on all 3 -- each week's own collision row carries its own
+    // SKIP/REPLACE pair, keyed by weekStartDate.
+    for (const ms of [week1, week2, week3]) {
+      await page.getByTestId(`scheduled-import-replace-${ms}`).click({ timeout: 5000 }).catch(() => {});
+    }
+    await page.waitForTimeout(200);
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'scheduled-import-replace-preview.png') }).catch(() => {});
+
+    await page.getByTestId('scheduled-import-confirm').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(900);
+    const backToList = await page.getByTestId('scheduled-weeks-open-import').isVisible().catch(() => false);
+    const noImportError = !(await page.getByTestId('scheduled-import-error').isVisible().catch(() => false));
+    record(
+      '[scheduled/import-replace] confirming REPLACE on all 3 colliding weeks succeeds with no error banner',
+      backToList && noImportError,
+      JSON.stringify({ backToList, noImportError })
+    );
+
+    const realCowState = state.weeks.map((w) => ({ id: w.id, cow: w.cow }));
+    record(
+      '[scheduled/import-replace] the real scheduled_cows writes landed -- all 3 weeks carry their NEW cow (never the old one, never null)',
+      realCowState.every((w) => w.cow && ['OPENING BELL', 'THE COUNTDOWN', 'FINAL BELL'].includes(w.cow.name)),
+      JSON.stringify(realCowState)
+    );
+
+    // Expand each of the 3 weeks in the real WEEKLY RELEASES list and read
+    // the rendered COW row directly -- the actual member-facing (well,
+    // admin-facing) proof, not just the mock's own captured state.
+    const expectedNames = ['OPENING BELL', 'THE COUNTDOWN', 'FINAL BELL'];
+    const renderedResults = [];
+    for (let i = 0; i < 3; i++) {
+      const weekId = state.weeks[i].id;
+      await page.getByTestId(`scheduled-week-toggle-${weekId}`).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const nameVisible = await page.getByText(expectedNames[i], { exact: false }).isVisible().catch(() => false);
+      renderedResults.push({ weekId, expected: expectedNames[i], nameVisible });
+      await page.getByTestId(`scheduled-week-toggle-${weekId}`).click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(150);
+    }
+    const anyNotSet = await page.getByText('Not set', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[scheduled/import-replace] all 3 weeks render their real new COW name in WEEKLY RELEASES, never "Not set"',
+      renderedResults.every((r) => r.nameVisible) && !anyNotSet,
+      JSON.stringify({ renderedResults, anyNotSet })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'scheduled-import-replace-result.png') }).catch(() => {});
+    await context.close();
+  }
+
+  // [scheduled/import-cow-failure]: the Part 1 deliverable's own direct
+  // proof -- force the THIRD week's scheduled_cows insert to fail with a
+  // real Postgrest-shaped error (a duplicate-key/unique-constraint shape,
+  // the one real schema-level asymmetry scheduled_cows has against
+  // scheduled_wods) and confirm the import screen shows the real error
+  // text, never reports success, and never silently returns to the list.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+
+    const week1 = thisWeekMonday().getTime() + 28 * 86400000;
+    const week2 = week1 + 7 * 86400000;
+    const week3 = week2 + 7 * 86400000;
+    const state = {
+      nextId: 1,
+      weeks: [
+        { id: 'r71-fail-1', weekStartDateMs: week1, release_at: week1 - 2 * 86400000, released_at: null, wods: [{ dayOfWeek: 'mon', name: 'Old W1 Monday' }], cow: { name: 'Old COW 1', scoringType: 'time' } },
+        { id: 'r71-fail-2', weekStartDateMs: week2, release_at: week2 - 2 * 86400000, released_at: null, wods: [{ dayOfWeek: 'mon', name: 'Old W2 Monday' }], cow: { name: 'Old COW 2', scoringType: 'time' } },
+        { id: 'r71-fail-3', weekStartDateMs: week3, release_at: week3 - 2 * 86400000, released_at: null, wods: [{ dayOfWeek: 'mon', name: 'Old W3 Monday' }], cow: { name: 'Old COW 3', scoringType: 'time' } },
+      ],
+      // The 3rd week's own scheduled_cows insert is the one write this
+      // check forces to fail.
+      failCowInsertForWeekStart: pgDateOnly(week3),
+    };
+    await registerScheduledImportStatefulMock(page, state);
+
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-content-library').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.getByTestId('content-tab-weekly-releases').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('scheduled-weeks-open-import').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    const fixturePath = buildScheduledImportFixtureXlsxThreeWeeks([week1, week2, week3]);
+    const [fileChooser] = await Promise.all([
+      page.waitForEvent('filechooser', { timeout: 5000 }),
+      page.getByTestId('scheduled-import-choose-file').click(),
+    ]);
+    await fileChooser.setFiles(fixturePath);
+    await page.waitForTimeout(700);
+    for (const ms of [week1, week2, week3]) {
+      await page.getByTestId(`scheduled-import-replace-${ms}`).click({ timeout: 5000 }).catch(() => {});
+    }
+    await page.waitForTimeout(200);
+
+    await page.getByTestId('scheduled-import-confirm').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(900);
+
+    const errorBox = page.getByTestId('scheduled-import-error');
+    const errorVisible = await errorBox.isVisible().catch(() => false);
+    const errorText = errorVisible ? await errorBox.innerText().catch(() => '') : '';
+    const stillOnImportScreen = await page.getByTestId('scheduled-import-confirm').isVisible().catch(() => false);
+    const chooseFileStillThere = await page.getByTestId('scheduled-import-choose-file').isVisible().catch(() => false);
+    record(
+      '[scheduled/import-cow-failure] a forced scheduled_cows write failure shows the real error on the import screen, never a silent return to the list',
+      errorVisible &&
+        /couldn.?t save the COW/i.test(errorText) &&
+        /duplicate key|unique constraint/i.test(errorText) &&
+        stillOnImportScreen &&
+        chooseFileStillThere,
+      JSON.stringify({ errorVisible, errorText, stillOnImportScreen, chooseFileStillThere })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'scheduled-import-cow-failure.png') }).catch(() => {});
+
+    // The two earlier weeks' own writes genuinely landed (a partial import
+    // is left as is, per the brief) -- the 3rd week's own COW DELETE still
+    // ran (removing "Old COW 3") before its own INSERT failed, so it's
+    // left with no COW row at all, the exact real-world "Not set" shape
+    // the production bug report described.
+    const week1Cow = state.weeks[0].cow?.name ?? null;
+    const week2Cow = state.weeks[1].cow?.name ?? null;
+    const week3Cow = state.weeks[2].cow?.name ?? null;
+    record(
+      "[scheduled/import-cow-failure] the first 2 weeks' real writes landed before the 3rd week's failure stopped the loop -- a partial import, not a silent total one",
+      week1Cow === 'OPENING BELL' && week2Cow === 'THE COUNTDOWN' && week3Cow === null,
+      JSON.stringify({ week1Cow, week2Cow, week3Cow })
+    );
+    await context.close();
+  }
+
+  // [scheduled/cow-embed-one-to-one]: the real production root cause,
+  // confirmed directly against production SQL -- scheduled_cows.week_id
+  // carries its own real UNIQUE constraint (migration_030.sql), so
+  // PostgREST serves scheduled_weeks -> scheduled_cows as a genuine
+  // ONE-TO-ONE embed, a bare object (or null), never an array. Every COW
+  // write always succeeded; `row.scheduled_cows?.[0]` reading a bare
+  // object (which has no numeric index 0) was the entire bug, both for
+  // WEEKLY RELEASES reading "Not set" everywhere AND for a manual COW
+  // save failing: with week.cow misread as null, CowEditor's own save took
+  // the INSERT branch and hit the real unique constraint violation on the
+  // row that secretly already existed -- shown only as the generic
+  // "Couldn't save. Try again." because SaveConfirmation wasn't being
+  // given the real errorMessage. This block proves both halves fixed:
+  // the real one-to-one shape reads correctly, and a manual re-save of an
+  // EXISTING COW takes the UPDATE path (never a duplicate-key insert) and,
+  // on a genuine failure, shows the real database error text.
+  {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await setupMocks(page, USER_ID);
+    await page.route('**/rest/v1/profiles*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminProfileFixture()) }));
+
+    const monday = thisWeekMonday().getTime() + 35 * 86400000;
+    // makeScheduledWeekRow (fixed this round) now serves the real
+    // PostgREST shape -- a bare object for scheduled_cows, never an
+    // array -- so this fixture IS the production shape, not an assumption.
+    const weekRow = makeScheduledWeekRow({
+      id: 'r71-embed-week',
+      weekStartDateMs: monday,
+      releaseAtMs: monday - 2 * 86400000,
+      releasedAtMs: monday - 2 * 86400000,
+      wods: [{ dayOfWeek: 'mon', name: 'R71 Embed Monday' }],
+      cow: { name: 'R71 Existing COW', scoringType: 'time', videoUrl: '' },
+    });
+    record(
+      '[scheduled/cow-embed-one-to-one] the fixture itself carries the real PostgREST shape -- scheduled_cows is a bare object, never an array',
+      !Array.isArray(weekRow.scheduled_cows) && weekRow.scheduled_cows !== null && typeof weekRow.scheduled_cows === 'object',
+      JSON.stringify({ scheduledCowsShape: weekRow.scheduled_cows })
+    );
+    await registerScheduledWeeksMock(page, [weekRow]);
+    let lastCowPatchBody = null;
+    let failNextCowPatch = false;
+    await page.route('**/rest/v1/scheduled_cows*', (route) => {
+      if (route.request().method() !== 'PATCH') return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      lastCowPatchBody = route.request().postDataJSON();
+      if (failNextCowPatch) {
+        return route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            message: 'duplicate key value violates unique constraint "scheduled_cows_week_id_key"',
+            code: '23505',
+            details: 'Key (week_id)=(r71-embed-week) already exists.',
+            hint: null,
+          }),
+        });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+
+    await seedSignedInSession(page, USER_ID);
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    if (await page.getByTestId('alert-backdrop').isVisible().catch(() => false)) {
+      await page.getByTestId('alert-backdrop').click({ position: { x: 5, y: 5 }, timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    await page.getByTestId('open-sidebar').click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByTestId('sidebar-content-library').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.getByTestId('content-tab-weekly-releases').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.getByTestId('scheduled-week-toggle-r71-embed-week').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+
+    const cowNameShown = await page.getByText('R71 Existing COW', { exact: false }).isVisible().catch(() => false);
+    const notSetShown = await page.getByText('Not set', { exact: false }).isVisible().catch(() => false);
+    record(
+      '[scheduled/cow-embed-one-to-one] a real one-to-one (bare object) COW embed renders its real name in WEEKLY RELEASES, never "Not set"',
+      cowNameShown && !notSetShown,
+      JSON.stringify({ cowNameShown, notSetShown })
+    );
+
+    // Open the COW editor on this ALREADY-EXISTING cow and confirm the
+    // name field is genuinely prefilled (proving week.cow is populated,
+    // not blank) before touching it at all.
+    await page.getByTestId('scheduled-cow-row').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const nameFieldValue = await page.getByTestId('scheduled-cow-name').inputValue().catch(() => '');
+    record(
+      '[scheduled/cow-embed-one-to-one] the COW editor opens already prefilled with the real existing name, not blank',
+      nameFieldValue === 'R71 Existing COW',
+      JSON.stringify({ nameFieldValue })
+    );
+
+    // Save with no changes -- if week.cow were still misread as null,
+    // updateCow() would take the INSERT branch and this PATCH mock would
+    // never even be hit (an unmocked POST would 404/fall through). This
+    // proves the UPDATE branch is genuinely taken.
+    await page.getByTestId('scheduled-cow-save').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const savedShown = await page.getByTestId('save-confirmation-saved').isVisible().catch(() => false);
+    record(
+      '[scheduled/cow-embed-one-to-one] re-saving an existing COW takes the real UPDATE path (a real PATCH to scheduled_cows) and shows SAVED',
+      savedShown && lastCowPatchBody !== null,
+      JSON.stringify({ savedShown, lastCowPatchBody })
+    );
+
+    // Now force the SAME update to genuinely fail, and confirm the real
+    // database error text renders -- never the generic fallback -- the
+    // direct proof of this round's SaveConfirmation errorMessage fix.
+    failNextCowPatch = true;
+    await page.getByTestId('scheduled-cow-save').click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const errorNode = page.getByTestId('save-confirmation-error');
+    const errorShown = await errorNode.isVisible().catch(() => false);
+    const errorNodeText = errorShown ? await errorNode.innerText().catch(() => '') : '';
+    record(
+      '[scheduled/cow-embed-one-to-one] a genuine update failure shows the REAL database error text, never the generic "Couldn\'t save. Try again." fallback',
+      errorShown && /duplicate key|unique constraint/i.test(errorNodeText) && !/^Couldn.?t save\. Try again\.$/i.test(errorNodeText.trim()),
+      JSON.stringify({ errorShown, errorNodeText })
+    );
+    if (SCREENSHOT_DIR) await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'scheduled-cow-real-error.png') }).catch(() => {});
     await context.close();
   }
 

@@ -75,8 +75,28 @@ type ScheduledWeekRow = {
   release_at: string;
   released_at: string | null;
   scheduled_wods: ScheduledWodRow[];
-  scheduled_cows: ScheduledCowRow[];
+  // Round 71: scheduled_cows.week_id carries its own UNIQUE constraint
+  // (migration_030.sql) -- PostgREST detects that and embeds
+  // scheduled_weeks -> scheduled_cows as a genuine ONE-TO-ONE relationship,
+  // a bare object or null, NEVER an array, confirmed directly against real
+  // production data. This was the entire production bug: every scheduled
+  // COW's own INSERT always succeeded; `row.scheduled_cows?.[0]` (an
+  // object has no numeric index 0) silently read `undefined` instead,
+  // which is why every scheduled COW read "Not set" everywhere, app wide.
+  // Typed as either shape here so rowToWeek's own normalizer below is the
+  // one place that has to know this.
+  scheduled_cows: ScheduledCowRow | ScheduledCowRow[] | null;
 };
+
+// A one-to-one PostgREST embed (the child's own FK column carries a UNIQUE
+// constraint, like scheduled_cows.week_id) serves as a bare object or
+// null; a one-to-many embed serves an array. Accepting either shape here
+// means a future PostgREST version, or a test mock shaped either way, can
+// never silently regress this again.
+function normalizeOneToOneEmbed<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
 
 type ScheduledWodRow = {
   id: string;
@@ -110,6 +130,7 @@ function parseDateOnly(value: string): number {
 }
 
 function rowToWeek(row: ScheduledWeekRow): ScheduledWeek {
+  const cowRow = normalizeOneToOneEmbed(row.scheduled_cows);
   return {
     id: row.id,
     weekStartDate: parseDateOnly(row.week_start_date),
@@ -125,16 +146,16 @@ function rowToWeek(row: ScheduledWeekRow): ScheduledWeek {
       videoUrl: w.video_url,
       notes: w.notes,
     })),
-    cow: row.scheduled_cows?.[0]
+    cow: cowRow
       ? {
-          id: row.scheduled_cows[0].id,
-          name: row.scheduled_cows[0].name,
-          videoUrl: row.scheduled_cows[0].video_url,
-          scoringType: row.scheduled_cows[0].scoring_type,
-          kettlebells: row.scheduled_cows[0].kettlebells ?? undefined,
-          theWork: row.scheduled_cows[0].the_work ?? undefined,
-          theCatch: row.scheduled_cows[0].the_catch ?? undefined,
-          finishNote: row.scheduled_cows[0].finish_note ?? undefined,
+          id: cowRow.id,
+          name: cowRow.name,
+          videoUrl: cowRow.video_url,
+          scoringType: cowRow.scoring_type,
+          kettlebells: cowRow.kettlebells ?? undefined,
+          theWork: cowRow.the_work ?? undefined,
+          theCatch: cowRow.the_catch ?? undefined,
+          finishNote: cowRow.finish_note ?? undefined,
         }
       : null,
   };
@@ -190,6 +211,13 @@ function toDateOnlyString(ms: number): string {
   return `${y}-${m}-${day}`;
 }
 
+// Round 71: a real, human-readable week name for an import error — "Week
+// of November 10, 2026", not a bare epoch timestamp or a date-only string
+// nobody asked to read.
+function readableWeekLabel(ms: number): string {
+  return new Date(ms).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
 export function ScheduledContentProvider({ children }: { children: React.ReactNode }) {
   const { user, authReady } = useAuth();
   const [weeks, setWeeks] = useState<ScheduledWeek[]>([]);
@@ -197,11 +225,25 @@ export function ScheduledContentProvider({ children }: { children: React.ReactNo
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refetchTick, setRefetchTick] = useState(0);
+  // Round 71: a real, separate bug found while reproducing the one-to-one
+  // embed fix end to end -- `loading` used to flip `true` on EVERY refetch,
+  // not just the first one, which flips ScheduledWeeksScreen's own render
+  // over to its bare "Loading…" text, unmounting the entire week list
+  // (and any open WodEditor/CowEditor along with it) the instant any
+  // mutation (updateCow/importWeeks/etc, every one of which calls
+  // refetch()) ran — so a real, successful manual COW save's own SAVED
+  // confirmation was being rendered into a component that had already
+  // unmounted a moment earlier, never visible to the admin at all. The
+  // same first-load-only convention this app's other contexts already use
+  // (e.g. ClassBookingContext's own `loading` flag) fixes it: only the
+  // very first load ever shows the loading state; a later refetch keeps
+  // the existing UI mounted and just updates once the real data lands.
+  const hasLoadedOnceRef = React.useRef(false);
 
   useEffect(() => {
     if (!authReady || !user) return;
     let cancelled = false;
-    setLoading(true);
+    if (!hasLoadedOnceRef.current) setLoading(true);
     Promise.all([
       supabase.from('scheduled_weeks').select(SELECT).order('week_start_date', { ascending: true }),
       supabase.rpc('next_scheduled_release_at'),
@@ -212,6 +254,7 @@ export function ScheduledContentProvider({ children }: { children: React.ReactNo
         setLoading(false);
         return;
       }
+      hasLoadedOnceRef.current = true;
       setWeeks(((weeksRes.data as unknown as ScheduledWeekRow[]) ?? []).map(rowToWeek));
       setNextReleaseAt(nextRes.data ? new Date(nextRes.data as string).getTime() : null);
       setLoading(false);
@@ -238,59 +281,97 @@ export function ScheduledContentProvider({ children }: { children: React.ReactNo
       nextWeek,
       nextReleaseAt: nextReleaseAt && nextReleaseAt > Date.now() ? nextReleaseAt : null,
       refetch,
+      // Round 71: a real production import previewed cleanly (3 weeks, 4
+      // WODs and a correctly named COW each, zero problems shown) and then
+      // silently dropped every COW — every write below except the
+      // scheduled_weeks insert used to discard its own error entirely, so
+      // whatever the database actually said when it refused a write was
+      // thrown away and the screen behaved as if the import had fully
+      // succeeded. Every write here now checks its own error and throws a
+      // message naming the real week, which specific write failed, and the
+      // database's own error message, so a future failure is loud and
+      // diagnosable rather than silent. A failure stops the loop right
+      // where it happened — whatever earlier weeks/writes already landed
+      // stays as it is, never rolled back, since there was never a single
+      // transaction spanning them to roll back in the first place — and
+      // `refetch()` still runs in `finally` so the WEEKLY RELEASES list
+      // reflects exactly what's really in the database afterward, success
+      // or partial failure alike.
       importWeeks: async (importedWeeks) => {
-        for (const w of importedWeeks) {
-          const dateStr = toDateOnlyString(w.weekStartDate);
-          const { data: existing } = await supabase
-            .from('scheduled_weeks')
-            .select('id')
-            .eq('week_start_date', dateStr)
-            .maybeSingle();
+        try {
+          for (const w of importedWeeks) {
+            const dateStr = toDateOnlyString(w.weekStartDate);
+            const label = readableWeekLabel(w.weekStartDate);
 
-          let weekId: string;
-          if (existing) {
-            if (w.mode === 'skip') continue;
-            weekId = (existing as { id: string }).id;
-            await supabase.from('scheduled_wods').delete().eq('week_id', weekId);
-            await supabase.from('scheduled_cows').delete().eq('week_id', weekId);
-          } else {
-            const { data: created, error: createErr } = await supabase
+            const { data: existing, error: existingErr } = await supabase
               .from('scheduled_weeks')
-              .insert({ week_start_date: dateStr })
               .select('id')
-              .single();
-            if (createErr || !created) throw createErr ?? new Error('Could not create scheduled week.');
-            weekId = (created as { id: string }).id;
-          }
+              .eq('week_start_date', dateStr)
+              .maybeSingle();
+            if (existingErr) {
+              throw new Error(`Week of ${label}: couldn't check for an existing week. ${existingErr.message}`);
+            }
 
-          if (w.wods.length > 0) {
-            await supabase.from('scheduled_wods').insert(
-              w.wods.map((wod) => ({
+            let weekId: string;
+            if (existing) {
+              if (w.mode === 'skip') continue;
+              weekId = (existing as { id: string }).id;
+              const { error: delWodsErr } = await supabase.from('scheduled_wods').delete().eq('week_id', weekId);
+              if (delWodsErr) {
+                throw new Error(`Week of ${label}: couldn't remove the old WODs. ${delWodsErr.message}`);
+              }
+              const { error: delCowErr } = await supabase.from('scheduled_cows').delete().eq('week_id', weekId);
+              if (delCowErr) {
+                throw new Error(`Week of ${label}: couldn't remove the old COW. ${delCowErr.message}`);
+              }
+            } else {
+              const { data: created, error: createErr } = await supabase
+                .from('scheduled_weeks')
+                .insert({ week_start_date: dateStr })
+                .select('id')
+                .single();
+              if (createErr || !created) {
+                throw new Error(`Week of ${label}: couldn't create the week. ${createErr?.message ?? 'No row was returned.'}`);
+              }
+              weekId = (created as { id: string }).id;
+            }
+
+            if (w.wods.length > 0) {
+              const { error: wodsErr } = await supabase.from('scheduled_wods').insert(
+                w.wods.map((wod) => ({
+                  week_id: weekId,
+                  day_of_week: wod.dayOfWeek,
+                  name: wod.name,
+                  format: wod.format,
+                  format_description: wod.formatDescription,
+                  movements: wod.movements,
+                  video_url: wod.videoUrl,
+                  notes: wod.notes,
+                }))
+              );
+              if (wodsErr) {
+                throw new Error(`Week of ${label}: couldn't save the WODs. ${wodsErr.message}`);
+              }
+            }
+            if (w.cow) {
+              const { error: cowErr } = await supabase.from('scheduled_cows').insert({
                 week_id: weekId,
-                day_of_week: wod.dayOfWeek,
-                name: wod.name,
-                format: wod.format,
-                format_description: wod.formatDescription,
-                movements: wod.movements,
-                video_url: wod.videoUrl,
-                notes: wod.notes,
-              }))
-            );
+                name: w.cow.name,
+                video_url: w.cow.videoUrl,
+                scoring_type: w.cow.scoringType,
+                kettlebells: w.cow.kettlebells ?? null,
+                the_work: w.cow.theWork ?? null,
+                the_catch: w.cow.theCatch ?? null,
+                finish_note: w.cow.finishNote ?? null,
+              });
+              if (cowErr) {
+                throw new Error(`Week of ${label}: couldn't save the COW. ${cowErr.message}`);
+              }
+            }
           }
-          if (w.cow) {
-            await supabase.from('scheduled_cows').insert({
-              week_id: weekId,
-              name: w.cow.name,
-              video_url: w.cow.videoUrl,
-              scoring_type: w.cow.scoringType,
-              kettlebells: w.cow.kettlebells ?? null,
-              the_work: w.cow.theWork ?? null,
-              the_catch: w.cow.theCatch ?? null,
-              finish_note: w.cow.finishNote ?? null,
-            });
-          }
+        } finally {
+          refetch();
         }
-        refetch();
       },
       updateWod: async (wodId, input) => {
         const patch: Record<string, unknown> = {};
